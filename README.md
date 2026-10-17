@@ -24,6 +24,12 @@ Pre-alpha. Nothing is usable yet; the design is being turned into milestones.
 - Fully local: no server process, no telemetry, no network access beyond
   fetching pinned sources.
 
+## Build
+
+`rust-toolchain.toml` pins the compiler; rustup installs it on the first
+`cargo` call. Build with `cargo build --workspace` and run with
+`cargo run -p codecite -- --version`.
+
 ## License
 
 Apache-2.0 (to be added with the first code).
