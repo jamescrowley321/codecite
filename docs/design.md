@@ -274,7 +274,7 @@ codecite has no network listener by default and makes no outbound calls except f
 - **Data boundary:** never index PHI, customer data or secrets. A deny-list skips `.env`, key and certificate files, and a secrets scan skips files with high-entropy credentials.
 - **Untrusted code:** language servers and some SCIP indexers execute project code (rust-analyzer runs build scripts and proc macros, for example). They run only on sources marked trusted, with timeouts. Third-party reference corpora default to tree-sitter only.
 - **Read-only queries:** `search`, `read` and the graph tools open the database read-only. Only `index` writes.
-- **Supply chain:** pinned toolchain, `cargo-deny` and `cargo-audit` in CI, a minimal dependency set, and signed release artifacts with an SBOM.
+- **Supply chain:** pinned toolchain, `cargo-deny` in CI (its advisories check reads RustSec, the database `cargo-audit` uses), a minimal dependency set, and signed release artifacts with an SBOM.
 
 ## Evaluation plan
 
