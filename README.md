@@ -36,4 +36,4 @@ before pushing; `cargo deny` needs `cargo install cargo-deny --locked`.
 
 ## License
 
-Apache-2.0 (to be added with the first code).
+codecite is licensed under the [Apache License 2.0](LICENSE). Attribution notices are in [NOTICE](NOTICE).
