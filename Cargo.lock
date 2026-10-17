@@ -115,6 +115,7 @@ name = "codecite-index"
 version = "0.0.0"
 dependencies = [
  "codecite-core",
+ "thiserror",
 ]
 
 [[package]]
@@ -122,6 +123,7 @@ name = "codecite-lsp"
 version = "0.0.0"
 dependencies = [
  "codecite-core",
+ "thiserror",
 ]
 
 [[package]]
@@ -129,6 +131,7 @@ name = "codecite-mcp"
 version = "0.0.0"
 dependencies = [
  "codecite-core",
+ "thiserror",
 ]
 
 [[package]]
