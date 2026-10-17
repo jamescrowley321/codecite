@@ -1,0 +1,11 @@
+[package]
+name = "codecite-core"
+description = "Schema and query engine for codecite corpora"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
