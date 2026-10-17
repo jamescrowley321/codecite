@@ -10,7 +10,7 @@
 
 ```bash
 ~/repos/codecite/ralph/run.sh                                  # TUI
-~/repos/codecite/ralph/run.sh --no-tui -a                      # headless
+~/repos/codecite/ralph/run.sh -a                               # headless
 RALPH_REF=origin/<branch> ~/repos/codecite/ralph/run.sh        # loop files from a branch
 ```
 
