@@ -19,6 +19,8 @@ dbg_macro = "warn"
 todo = "warn"
 
 [workspace.dependencies]
+# The internal crates' versions must match `workspace.package.version`: for
+# 0.0.x, Cargo treats "0.0.0" as exactly =0.0.0, so a bump changes all five.
 codecite-core = { path = "crates/codecite-core", version = "0.0.0" }
 codecite-index = { path = "crates/codecite-index", version = "0.0.0" }
 codecite-lsp = { path = "crates/codecite-lsp", version = "0.0.0" }

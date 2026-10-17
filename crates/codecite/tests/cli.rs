@@ -2,9 +2,13 @@
 
 use std::process::{Command, Output};
 
+/// Runs the built binary with colour off, so assertions see plain text even
+/// when the caller's shell sets `CLICOLOR_FORCE`.
 fn codecite(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_codecite"))
         .args(args)
+        .env_remove("CLICOLOR_FORCE")
+        .env("NO_COLOR", "1")
         .output()
         .expect("failed to run codecite")
 }
