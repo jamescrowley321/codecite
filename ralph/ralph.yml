@@ -1,0 +1,12 @@
+# Ralph Orchestrator configuration for the codecite loop. Launch with ralph/run.sh.
+# Docs: https://github.com/mikeyobrien/ralph-orchestrator
+
+cli:
+  backend: "claude"
+  timeout: 900  # 15 minutes per iteration
+
+event_loop:
+  prompt_file: "PROMPT.md"
+  completion_promise: "LOOP_COMPLETE"
+  max_iterations: 100
+  max_consecutive_failures: 5
