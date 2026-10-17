@@ -26,3 +26,5 @@ codecite-index = { path = "crates/codecite-index", version = "0.0.0" }
 codecite-lsp = { path = "crates/codecite-lsp", version = "0.0.0" }
 codecite-mcp = { path = "crates/codecite-mcp", version = "0.0.0" }
 clap = { version = "4", features = ["derive"] }
+thiserror = "2"
+anyhow = "1"
