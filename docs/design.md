@@ -79,8 +79,13 @@ Each corpus is one SQLite file in WAL mode, holding sources, chunks, a full-text
 CREATE TABLE meta     (key TEXT PRIMARY KEY, value TEXT);          -- schema_version, indexed_at, manifest_hash
 
 CREATE TABLE source (
-  id INTEGER PRIMARY KEY, repo_url TEXT NOT NULL, commit_sha TEXT NOT NULL,
-  license_spdx TEXT, license_class TEXT NOT NULL,                   -- adapt | approach_only | excluded
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE,
+  kind TEXT NOT NULL,                                               -- local | git | document
+  url TEXT NOT NULL,                                                -- repo URL, local path or document URL
+  revision TEXT NOT NULL,                                           -- commit SHA, or sha256 of a document
+  is_current INTEGER NOT NULL DEFAULT 1,                            -- 0 for an older pinned version of a document
+  obsoleted_by TEXT, updated_by TEXT,                               -- hand-written in the manifest
+  license_spdx TEXT, license_class TEXT NOT NULL,                   -- adapt | approach_only | quote | excluded
   indexed_at TEXT NOT NULL
 );
 
@@ -93,8 +98,11 @@ CREATE TABLE document (
 CREATE TABLE chunk (
   id INTEGER PRIMARY KEY, document_id INTEGER NOT NULL REFERENCES document(id),
   start_line INTEGER NOT NULL, end_line INTEGER NOT NULL,
-  kind TEXT NOT NULL,                                               -- function | class | section | window
+  kind TEXT NOT NULL,                                               -- function | class | section | step | window
   symbol_id TEXT REFERENCES symbol(id),
+  number TEXT, anchor TEXT, title TEXT,                             -- spec sections and steps: "3.1.3.7", "IDTokenValidation"
+  parent_id INTEGER REFERENCES chunk(id),                           -- enclosing section of a section or step
+  strength TEXT,                                                    -- requirement keywords found, e.g. "MUST,SHOULD"
   text TEXT NOT NULL,
   terms TEXT NOT NULL                                               -- identifiers split for search
 );
@@ -166,9 +174,9 @@ BM25 over code-aware terms does most of the work; vectors and graph signals refi
 
 **Indexing pipeline**
 
-1. **Fetch:** `git clone --filter=blob:none` at the manifest's pinned commit, or read a local working tree.
+1. **Fetch:** `git clone --filter=blob:none` at the manifest's pinned commit, read a local working tree, or fetch a document by URL and check it against its pinned `sha256`. Fetched documents are cached outside the repo; changed bytes stop the run until the pin is updated on purpose.
 2. **Walk:** respect `.gitignore`, skip binaries by content sniffing, cap file size, apply the secrets deny-list.
-3. **Chunk:** tree-sitter splits at function and class boundaries with line ranges. Prose and unsupported languages fall back to heading sections or 60-line windows.
+3. **Chunk:** tree-sitter splits at function and class boundaries with line ranges. Prose and unsupported languages fall back to heading sections or 60-line windows. Spec documents split into numbered sections and the numbered steps inside them, each with its anchor and its uppercase requirement keywords (BCP 14: RFC 2119 and RFC 8174).
 4. **Terms:** split camelCase, snake_case and kebab-case identifiers and keep the original, so `validateToken` matches "validate token" and the exact name.
 5. **Write:** chunks, full-text rows and symbols for one document in a single transaction.
 6. **Providers:** SCIP, CodeGraph and Graphify run after the base pass and add symbols and edges.
@@ -208,12 +216,24 @@ url = "https://github.com/ramosbugs/openidconnect-rs"
 commit = "<40-character SHA>"
 license = "MIT OR Apache-2.0"
 use = "adapt"
+
+[[source]]
+kind = "document"                # git (default) | local | document
+name = "rfc9449"
+url = "https://www.rfc-editor.org/rfc/rfc9449.html"
+sha256 = "<64 hex characters>"
+license = "IETF Trust"
+use = "quote"
+current = true                   # several versions of one name may be pinned; one is current
 ```
+
+`kind = "local"` reads a working tree in place (`path = "~/repos/auth/identity-model"`); its results cite the checkout's HEAD and carry `dirty: true` for files with uncommitted changes. Document relations (`obsoleted_by`, `updated_by`) are written by hand in the manifest and never fetched. The first real corpus, `corpora/identity.toml`, is identity-model plus the OAuth and OpenID specs it cites; see `docs/superpowers/specs/2026-10-17-identity-corpus-design.md`.
 
 | Class | Typical licenses | What agents are told |
 | --- | --- | --- |
 | `adapt` | MIT, Apache-2.0, BSD, ISC | May adapt code; keep attribution and the license notice |
 | `approach_only` | GPL, AGPL, LGPL, unknown, source-available | Describe the approach in your own words; never copy code |
+| `quote` | Specs: IETF Trust, OpenID Foundation | Normative text: quote it exactly with its pinned citation, never paraphrase |
 | `excluded` | Anything the owner forbids or that holds secrets | Not indexed |
 
 - **Detection plus confirmation:** codecite identifies the license file with SPDX matching (the `askalono` crate), but the manifest's `license` and `use` fields are written by a person. A mismatch is a warning on every index run.
@@ -233,6 +253,7 @@ The CLI and the MCP server expose the same operations and return the same JSON, 
 | `codecite refs <symbol>` | Every reference to a symbol |
 | `codecite graph <callers\|callees\|impact\|path> ...` | Graph queries with `--min-confidence` |
 | `codecite read <citation>` | Print a cited span, capped in lines |
+| `codecite cite <citation> [--claim <text>]` | Check a spec citation and the claim beside it |
 | `codecite corpora` | List corpora with age, size and staleness |
 | `codecite mcp` | Run the stdio MCP server |
 
@@ -245,6 +266,7 @@ The CLI and the MCP server expose the same operations and return the same JSON, 
 | `impact` | `symbol`, `depth` (default 3), `min_confidence` (default 2) | Affected symbols, grouped by distance |
 | `path` | `from`, `to`, `max_depth` | Shortest connecting chain |
 | `read` | `citation`, `max_lines` (default 80) | Exact source text |
+| `cite` | `citation`, `claim?`, `corpus?` | `resolved`, `candidates`, `text`, `strength`, `superseded_by`, typed `findings` |
 | `corpora` | none | Available corpora and freshness |
 
 Every result has the same shape:
@@ -263,13 +285,15 @@ Every result has the same shape:
 ```
 
 - Snippets are capped at 40 lines; agents call `read` for more, which keeps token use predictable.
+- Code citations look like `repo@sha:path#L10-L42`; spec citations like `rfc9449@sha256:1a2b3c4d5e6f#section-4.3` and `openid-connect-core-1_0@sha256:…#section-3.1.3.7/step-13`. `read` and `cite` also accept the forms people write (`RFC 9449 §4.3`, `OIDC Core §3.1.3.7 step 13`, `Core 3.1.3.7(13)`, a spec URL with its anchor). A bare `§` resolves only when exactly one current document has that section and step.
+- `cite` findings: `no_such_section`, `no_such_step`, `anchor_label_mismatch`, `strength_mismatch`, `superseded_document`, `topic_mismatch` (only when exactly one sibling step or section holds the claim's protocol term) and `ambiguous_document`. codecite supplies facts; the agent judges meaning.
 - Errors are explicit: an unknown corpus, a stale index or an ambiguous symbol name returns a typed error with candidates, never an empty success.
 
 ## Security and privacy
 
 codecite has no network listener by default and makes no outbound calls except fetching pinned sources, which keeps its attack surface close to that of a grep binary.
 
-- **Network:** no telemetry. Outbound traffic is limited to `git` fetches listed in a manifest and a one-time embedding model download verified against a pinned hash.
+- **Network:** no telemetry. Outbound traffic is limited to `git` fetches and document downloads listed in a manifest, and a one-time embedding model download verified against a pinned hash.
 - **Transport:** MCP over stdio by default. A remote MCP endpoint comes later behind the OIDC gateway, following the MCP authorization spec (OAuth 2.1, protected-resource metadata per RFC 9728).
 - **Data boundary:** never index PHI, customer data or secrets. A deny-list skips `.env`, key and certificate files, and a secrets scan skips files with high-entropy credentials.
 - **Untrusted code:** language servers and some SCIP indexers execute project code (rust-analyzer runs build scripts and proc macros, for example). They run only on sources marked trusted, with timeouts. Third-party reference corpora default to tree-sitter only.
@@ -303,13 +327,13 @@ Ten milestones in order, each shippable on its own; the first four make codecite
 
 1. **Skeleton and CI:** Cargo workspace, `fmt`, `clippy -D warnings`, tests, `cargo-deny`, pinned toolchain.
    - Learn: workspace layout, lint discipline, error enums with `thiserror`.
-2. **Index and search:** tree-sitter chunking for Rust, Python, TypeScript, Go and C#; FTS5 with split identifiers; `index`, `search`, `read`. Publish `codecite` 0.0.1.
-   - Learn: `rusqlite`, transactions, tree-sitter queries.
-3. **MCP server:** `search`, `read`, `definition` and `corpora` over stdio; wired into Claude Code.
+2. **Index and search:** tree-sitter chunking for Rust, Python, TypeScript, Go and C#; FTS5 with split identifiers; `index`, `search`, `read`. The minimal manifest (`local`, `git` and `document` sources), document sources pinned by hash, spec section and step chunking, and `corpora/identity.toml`. Done when the identity corpus indexes cleanly and a fixed list of spec lookups returns the right sections. Publish `codecite` 0.0.1.
+   - Learn: `rusqlite`, transactions, tree-sitter queries, HTML parsing.
+3. **MCP server:** `search`, `read`, `definition`, `corpora` and `cite` over stdio; wired into Claude Code for identity-model work through the owner's user-level config.
    - Learn: `rmcp`, async `tokio`, JSON schemas.
-4. **Evaluation harness v1:** both benchmarks and the first published numbers. Validates the performance targets.
+4. **Evaluation harness v1:** both benchmarks, a citation benchmark rebuilt from identity-model's citation audit (with a citation extractor), and the first published numbers. Validates the performance targets.
    - Learn: benchmarking with `criterion`, honest measurement.
-5. **Manifests and licensing:** `add`, pinned fetches, SPDX detection, license classes on results.
+5. **Manifests and licensing:** `add`, SPDX detection, license-class enforcement, and `codecite cite check` for use in CI.
 6. **SCIP provider and graph tools:** precise symbols, `references`, `callers`, `callees`, `impact`, `path`.
    - Learn: protobuf decoding, graph traversal in SQL with recursive CTEs.
 7. **LSP live provider:** definition, references and call hierarchy against the working tree.
@@ -320,7 +344,7 @@ Ten milestones in order, each shippable on its own; the first four make codecite
 
 ## Decisions and open questions
 
-Eight decisions are made for v1; seven questions remain open. Each open question becomes a GitHub issue once its milestone starts; when one is settled, move the answer into the decisions table and delete the question.
+Nine decisions are made for v1; seven questions remain open. Each open question becomes a GitHub issue once its milestone starts; when one is settled, move the answer into the decisions table and delete the question.
 
 | Decision | Choice | Why | Revisit if |
 | --- | --- | --- | --- |
@@ -331,6 +355,7 @@ Eight decisions are made for v1; seven questions remain open. Each open question
 | Integrations | Read provider outputs, never link their code | No dependency or license entanglement | A provider offers a stable library API |
 | Corpus layout | One SQLite file per corpus | Portable, independently rebuildable | Cross-corpus queries become the common case |
 | MCP transport | stdio first | No network surface | Remote agents need it (milestone 10) |
+| Spec pinning | Fetched documents pinned by URL and `sha256`; changed bytes refused | Results must not change because a website changed | A spec publisher offers stable versioned archives |
 | License | Apache-2.0 | Matches py-identity-model and the wider ecosystem | Never |
 
 **Open questions**
