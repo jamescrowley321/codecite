@@ -3,10 +3,11 @@
 
 cli:
   backend: "claude"
-  timeout: 900  # 15 minutes per iteration
+  timeout: 1800  # 30 minutes per iteration; implement stops starting tasks at ~20
 
 event_loop:
   prompt_file: "PROMPT.md"
   completion_promise: "LOOP_COMPLETE"
-  max_iterations: 100
+  # About 9 phases per issue; 24 issues in M2 and M3 plus CI retries.
+  max_iterations: 400
   max_consecutive_failures: 5
