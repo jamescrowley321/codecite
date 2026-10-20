@@ -143,6 +143,16 @@ pub enum Error {
         candidates: Vec<String>,
     },
 
+    /// The section exists, but its number, like an appendix's `A.1`, has no
+    /// canonical citation form, so no citation could read it back.
+    #[error("{document} section {section} has no canonical citation form yet")]
+    UncitableSection {
+        /// The pinned document: `rfc9449@sha256:1a2b3c4d5e6f`.
+        document: String,
+        /// The section's number as the document writes it: `A.1`.
+        section: String,
+    },
+
     /// The section has no such step.
     #[error("{section} has no step {step}; {}", list_of("nearest", candidates))]
     NoSuchStep {
@@ -180,13 +190,27 @@ pub enum Error {
 }
 
 /// The end of an error message that lists candidates: `nearest: a, b`, or
-/// `no candidates`.
+/// `no candidates`. Candidates come from indexed text, such as file paths,
+/// so their control characters are escaped before they reach a terminal.
 fn list_of(label: &str, list: &[String]) -> String {
     if list.is_empty() {
-        "no candidates".into()
-    } else {
-        format!("{label}: {}", list.join(", "))
+        return "no candidates".into();
     }
+    let escaped: Vec<String> = list.iter().map(|c| escape_controls(c)).collect();
+    format!("{label}: {}", escaped.join(", "))
+}
+
+/// `text` with each control character but a tab written as `\u{..}`.
+fn escape_controls(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_control() && c != '\t' {
+                c.escape_unicode().to_string()
+            } else {
+                c.to_string()
+            }
+        })
+        .collect()
 }
 
 /// The message of an [`Error::AmbiguousDocument`].
@@ -332,6 +356,19 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "app@0123abc has no indexed file \"src/nope.rs\"; no candidates"
+        );
+    }
+
+    #[test]
+    fn candidates_have_their_control_characters_escaped() {
+        let err = Error::NoSuchFile {
+            repo: "app@0123abc".into(),
+            path: "src/lib.rs".into(),
+            candidates: vec!["src/\u{1b}]52;c;aGk=\u{7}/lib.rs".into()],
+        };
+        assert_eq!(
+            err.to_string(),
+            "app@0123abc has no indexed file \"src/lib.rs\"; candidates: src/\\u{1b}]52;c;aGk=\\u{7}/lib.rs"
         );
     }
 

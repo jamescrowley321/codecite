@@ -132,21 +132,23 @@ impl Store {
             text: text.into(),
             source,
         };
+        // A canonical citation is tried first: a code path may hold `§` or
+        // the word "section", which the written forms would claim.
+        let canonical = match text.parse() {
+            Ok(Citation::Code(c)) => return self.read_code(&c, options),
+            Ok(Citation::Spec(c)) => return self.read_spec(&c, options),
+            Err(e) => e,
+        };
         match SpecReference::parse(text, &self.aliases()?) {
-            Ok(Some(reference)) => return self.read_reference(text, &reference, options),
-            Ok(None) => {}
-            Err(CitationError::UnknownDocument { found }) => {
-                return Err(Error::UnknownSource {
-                    name: found,
-                    known: self.source_names(true)?,
-                });
-            }
-            Err(e) => return Err(bad(e)),
-        }
-        match text.parse() {
-            Ok(Citation::Code(c)) => self.read_code(&c, options),
-            Ok(Citation::Spec(c)) => self.read_spec(&c, options),
-            Err(CitationError::MissingAt) => Err(Error::NotACitation { text: text.into() }),
+            Ok(Some(reference)) => self.read_reference(text, &reference, options),
+            Ok(None) => match canonical {
+                CitationError::MissingAt => Err(Error::NotACitation { text: text.into() }),
+                e => Err(bad(e)),
+            },
+            Err(CitationError::UnknownDocument { found }) => Err(Error::UnknownSource {
+                name: found,
+                known: self.source_names(true)?,
+            }),
             Err(e) => Err(bad(e)),
         }
     }
@@ -311,6 +313,14 @@ impl Store {
                 candidates,
             });
         };
+        // An anchor can find a section, like an appendix, whose number no
+        // canonical citation can hold.
+        if section.number.parse::<SectionNumber>().is_err() {
+            return Err(Error::UncitableSection {
+                document,
+                section: section.number,
+            });
+        }
         let section_citation = format!("{document}#section-{}", section.number);
         let (chunk, citation) = match step {
             None => (section, section_citation),
@@ -579,10 +589,10 @@ fn pinned(source: &SourceRow) -> String {
 /// newline ending the last line rather than starting an empty one, and a
 /// `\r` before a `\n` dropped.
 fn file_lines(text: &str) -> Vec<&str> {
-    let text = text.strip_suffix('\n').unwrap_or(text);
     if text.is_empty() {
         return Vec::new();
     }
+    let text = text.strip_suffix('\n').unwrap_or(text);
     text.split('\n')
         .map(|line| line.strip_suffix('\r').unwrap_or(line))
         .collect()
@@ -710,6 +720,9 @@ mod tests {
         store
             .write_document(app, &code("tests/lib.rs", "fn t() {}\n"))
             .unwrap();
+        store
+            .write_document(app, &code("docs/§4 section.md", "# Four\n"))
+            .unwrap();
 
         let rfc = store
             .upsert_source(&source("rfc9449", "document", RFC9449, true))
@@ -727,6 +740,7 @@ mod tests {
                         step("12", 0, "12. The jti is unique."),
                         section("4.4", "section-4.4", "Signing", "4.4.  Signing"),
                         section("5", "section-5", "Protected Resources", "5.  Protected Resources"),
+                        section("A", "appendix-A", "Acknowledgements", "Appendix A.  Acknowledgements"),
                     ],
                 ),
             )
@@ -1121,7 +1135,30 @@ pub fn validate() {{
     }
 
     #[test]
+    fn a_canonical_code_citation_wins_over_written_forms() {
+        // `§` and the word "section" in a path are not a written spec form.
+        let r = fixture().ok("app@0123456:docs/§4 section.md#L1");
+        assert_eq!(r.citation, format!("app@{HEAD}:docs/§4 section.md#L1"));
+        assert_eq!(r.text, "# Four");
+    }
+
+    #[test]
+    fn a_section_without_a_canonical_citation_is_an_error() {
+        // Appendix numbers like `A` have no canonical citation form, so
+        // read never returns one it could not read back.
+        let err = fixture()
+            .read("https://www.rfc-editor.org/rfc/rfc9449#appendix-A")
+            .unwrap_err();
+        assert!(
+            matches!(&err, Error::UncitableSection { document, section }
+                if document == "rfc9449@sha256:1a2b3c4d5e6f" && section == "A"),
+            "{err:?}"
+        );
+    }
+
+    #[test]
     fn file_lines_count_as_the_chunker_does() {
+        assert_eq!(file_lines("\n"), [""]);
         assert_eq!(file_lines("a\r\nb\n"), ["a", "b"]);
         assert_eq!(file_lines("a\n\n"), ["a", ""]);
         assert_eq!(file_lines("a"), ["a"]);
