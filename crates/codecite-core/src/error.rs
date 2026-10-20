@@ -18,6 +18,25 @@ pub enum Error {
         /// Why it can't be used.
         reason: String,
     },
+
+    /// A SQLite call failed.
+    #[error("SQLite error")]
+    Sqlite(#[from] rusqlite::Error),
+
+    /// The corpus was written by a newer codecite, with a schema this one
+    /// doesn't know.
+    #[error(
+        "corpus at {} has schema version {found}, but this codecite supports up to {supported}; upgrade codecite",
+        path.display()
+    )]
+    SchemaTooNew {
+        /// Where the corpus is.
+        path: PathBuf,
+        /// The schema version stored in the corpus.
+        found: u32,
+        /// The newest schema version this build supports.
+        supported: u32,
+    },
 }
 
 /// `Result` with [`Error`] as the default error type.
@@ -60,6 +79,30 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "invalid corpus at /tmp/corpus: not a codecite store"
+        );
+        assert!(err.source().is_none());
+    }
+
+    #[test]
+    fn sqlite_error_converts_and_is_the_source() {
+        let inner = rusqlite::Error::InvalidQuery;
+        let msg = inner.to_string();
+        let err = Error::from(inner);
+        assert!(matches!(err, Error::Sqlite(_)));
+        assert_eq!(err.to_string(), "SQLite error");
+        assert_eq!(err.source().unwrap().to_string(), msg);
+    }
+
+    #[test]
+    fn schema_too_new_display_names_path_and_versions() {
+        let err = Error::SchemaTooNew {
+            path: "/tmp/corpus.db".into(),
+            found: 7,
+            supported: 1,
+        };
+        assert_eq!(
+            err.to_string(),
+            "corpus at /tmp/corpus.db has schema version 7, but this codecite supports up to 1; upgrade codecite"
         );
         assert!(err.source().is_none());
     }

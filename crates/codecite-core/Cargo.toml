@@ -11,4 +11,5 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+rusqlite.workspace = true
 thiserror.workspace = true
