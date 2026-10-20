@@ -33,6 +33,9 @@ mod test_repo;
 #[cfg(test)]
 mod test_server;
 
+mod spec;
+pub use spec::{SpecDocument, SpecError, SpecFormat, SpecSection, split_spec};
+
 mod walk;
 pub use walk::{
     DEFAULT_MAX_FILE_SIZE, LocalFile, LocalTree, SkipReason, SkippedFile, WalkError, WalkOptions,

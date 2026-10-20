@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en" class="RFC">
+<head>
+<meta charset="utf-8">
+<meta content="xml2rfc 3.18.2" name="generator">
+<title>RFC 9449: OAuth 2.0 Demonstrating Proof of Possession (DPoP)</title>
+<style>body { font-family: serif; }</style>
+</head>
+<body>
+<table class="ears"><tbody><tr><td class="left">RFC 9449</td><td class="center">OAuth DPoP</td></tr></tbody></table>
+<div id="external-metadata" class="document-information"></div>
+<h1 id="title">OAuth 2.0 Demonstrating Proof of Possession (DPoP)</h1>
+<section id="section-abstract">
+      <h2 id="abstract"><a href="#abstract" class="selfRef">Abstract</a></h2>
+<p id="section-abstract-1">This document describes a mechanism for sender-constraining OAuth 2.0 tokens.<a href="#section-abstract-1" class="pilcrow">¶</a></p>
+</section>
+<div id="toc">
+<section id="section-toc.1">
+        <h2 id="name-table-of-contents"><a href="#name-table-of-contents" class="selfRef">Table of Contents</a></h2>
+<nav class="toc"><ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.1"><p id="section-toc.1-1.1.1"><a href="#section-1" class="auto internal xref">1</a>.  <a href="#name-introduction" class="internal xref">Introduction</a></p></li>
+</ul></nav>
+</section>
+</div>
+<div id="introduction">
+<section id="section-1">
+      <h2 id="name-introduction">
+<a href="#section-1" class="section-number selfRef">1. </a><a href="#name-introduction" class="section-name selfRef">Introduction</a>
+      </h2>
+<p id="section-1-1">DPoP is an application-level mechanism for sender-constraining OAuth access tokens
+and refresh tokens.<a href="#section-1-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<section id="section-4">
+      <h2 id="name-dpop-proofs">
+<a href="#section-4" class="section-number selfRef">4. </a><a href="#name-dpop-proofs" class="section-name selfRef">DPoP Proofs</a>
+      </h2>
+<p id="section-4-1">A DPoP proof is a JWT.<a href="#section-4-1" class="pilcrow">¶</a></p>
+<div id="checking">
+<section id="section-4.3">
+        <h3 id="name-checking-dpop-proofs">
+<a href="#section-4.3" class="section-number selfRef">4.3. </a><a href="#name-checking-dpop-proofs" class="section-name selfRef">Checking DPoP Proofs</a>
+        </h3>
+<p id="section-4.3-1">To validate a DPoP proof, the receiving server <span class="bcp14">MUST</span> ensure the following:<a href="#section-4.3-1" class="pilcrow">¶</a></p>
+<ol start="1" type="1" class="compact type-1" id="section-4.3-2">
+<li id="section-4.3-2.1">There is not more than one <code>DPoP</code> HTTP request header field.<a href="#section-4.3-2.1" class="pilcrow">¶</a>
+</li>
+          <li id="section-4.3-2.2">The <code>typ</code> JOSE Header Parameter has the value <code>dpop+jwt</code>.<a href="#section-4.3-2.2" class="pilcrow">¶</a>
+</li>
+        </ol>
+<div class="lang-http-message sourcecode" id="section-4.3-3">
+<pre>DPoP: eyJ0eXAiOiJkcG9wK2p3dCJ9
+  .eyJqdGkiOiItQndDM0VTYzZhY2MybFRjIn0
+</pre><a href="#section-4.3-3" class="pilcrow">¶</a>
+</div>
+<section id="section-4.3.1">
+          <h4 id="name-nonces">
+<a href="#section-4.3.1" class="section-number selfRef">4.3.1. </a><a href="#name-nonces" class="section-name selfRef">Nonces</a>
+          </h4>
+<p id="section-4.3.1-1">A server <span class="bcp14">MAY</span> supply a nonce.<a href="#section-4.3.1-1" class="pilcrow">¶</a></p>
+</section>
+</section>
+</div>
+</section>
+<section id="section-13">
+      <h2 id="name-references">
+<a href="#section-13" class="section-number selfRef">13. </a><a href="#name-references" class="section-name selfRef">References</a>
+      </h2>
+<section id="section-13.1">
+        <h3 id="name-normative-references">
+<a href="#section-13.1" class="section-number selfRef">13.1. </a><a href="#name-normative-references" class="section-name selfRef">Normative References</a>
+        </h3>
+<dl class="references">
+<dt id="RFC2119">[RFC2119]</dt>
+        <dd><span class="refAuthor">Bradner, S.</span>, <span class="refTitle">"Key words for use in RFCs to Indicate Requirement Levels"</span>.</dd>
+</dl>
+</section>
+</section>
+<section id="appendix-A">
+      <h2 id="name-document-history">
+<a href="#appendix-A" class="section-number selfRef">Appendix A. </a><a href="#name-document-history" class="section-name selfRef">Document History</a>
+      </h2>
+<section id="appendix-A.1">
+        <h3 id="name-draft-01">
+<a href="#appendix-A.1" class="section-number selfRef">A.1. </a><a href="#name-draft-01" class="section-name selfRef">Draft 01</a>
+        </h3>
+<ul class="normal">
+<li class="normal" id="appendix-A.1-1.1">Added nonces.<a href="#appendix-A.1-1.1" class="pilcrow">¶</a></li>
+</ul>
+</section>
+</section>
+<section id="appendix-B">
+      <h2 id="name-acknowledgements">
+<a href="#name-acknowledgements" class="section-name selfRef">Acknowledgements</a>
+      </h2>
+<p id="appendix-B-1">We would like to thank everyone.<a href="#appendix-B-1" class="pilcrow">¶</a></p>
+</section>
+<div id="authors-addresses">
+<section id="appendix-C">
+      <h2 id="name-authors-addresses">
+<a href="#name-authors-addresses" class="section-name selfRef">Authors' Addresses</a>
+      </h2>
+<address class="vcard"><div dir="auto" class="left"><span class="fn nameRole">Daniel Fett</span></div></address>
+</section>
+</div>
+<script>var toc = document.getElementById("toc");</script>
+</body>
+</html>

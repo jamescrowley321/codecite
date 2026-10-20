@@ -31,6 +31,13 @@ exceptions = [
     # Mozilla's root certificates as data, via `ureq` -> `webpki-roots`. A
     # permissive data license; it asks only that the license text be kept.
     { crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
+    # Servo's CSS selector engine, via `scraper` (spec HTML). MPL-2.0 is
+    # file-level copyleft: using the crates unmodified places no terms on
+    # codecite's own files.
+    { crate = "cssparser", allow = ["MPL-2.0"] },
+    { crate = "cssparser-macros", allow = ["MPL-2.0"] },
+    { crate = "dtoa-short", allow = ["MPL-2.0"] },
+    { crate = "selectors", allow = ["MPL-2.0"] },
 ]
 
 [bans]
@@ -44,6 +51,7 @@ skip = [
     { crate = "getrandom@0.2.17", reason = "ring 0.17 (TLS for ureq, via rustls) still depends on getrandom 0.2; tempfile uses 0.4" },
     { crate = "windows-sys@0.52.0", reason = "ring 0.17 (TLS for ureq, via rustls) still depends on windows-sys 0.52; Windows only" },
     { crate = "hashbrown@0.16.1", reason = "rsqlite-vfs, via sqlite-wasm-rs (a wasm32-only dependency of rusqlite), still depends on hashbrown 0.16" },
+    { crate = "syn@2.0.119", reason = "derive_more-impl and phf_macros (proc macros for scraper's selectors and cssparser) still depend on syn 2" },
 ]
 
 [sources]
