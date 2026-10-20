@@ -11,6 +11,15 @@ pub enum Error {
     /// Reading or writing stdio failed.
     #[error("I/O error")]
     Io(#[from] std::io::Error),
+
+    /// The client's opening handshake failed. Boxed, since the error is
+    /// large and every `Result` here would otherwise carry its size.
+    #[error("MCP handshake failed")]
+    Initialize(#[from] Box<rmcp::service::ServerInitializeError>),
+
+    /// The task serving the client panicked or was cancelled.
+    #[error("the MCP server stopped unexpectedly")]
+    Stopped(#[from] tokio::task::JoinError),
 }
 
 /// `Result` with [`Error`] as the default error type.

@@ -2,3 +2,6 @@
 
 mod error;
 pub use error::{Error, Result};
+
+mod server;
+pub use server::{Server, serve_stdio};

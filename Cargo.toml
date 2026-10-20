@@ -50,3 +50,5 @@ scraper = { version = "0.27", default-features = false }
 ego-tree = "0.11"
 proptest = { version = "1", default-features = false, features = ["std"] }
 schemars = "1"
+rmcp = { version = "3.6", default-features = false, features = ["server", "macros", "transport-io"] }
+tokio = { version = "1", features = ["rt"] }

@@ -1,6 +1,7 @@
 //! The `codecite` command-line tool.
 
 use std::fs;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, bail};
@@ -72,6 +73,11 @@ enum Command {
         #[arg(long)]
         allow_stale: bool,
     },
+    /// List the corpora with their age, size, source count and staleness,
+    /// as JSON.
+    Corpora,
+    /// Run the MCP server on stdin and stdout.
+    Mcp,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -112,6 +118,8 @@ fn main() -> anyhow::Result<()> {
             };
             read(&corpus, &citation, &options, json)
         }
+        Command::Corpora => corpora(),
+        Command::Mcp => mcp(),
     }
 }
 
@@ -186,6 +194,32 @@ fn read(corpus: &str, citation: &str, options: &ReadOptions, json: bool) -> anyh
     let store = Store::open_corpus(dirs.data_dir(), corpus)?;
     let result = store.read(citation, options)?;
     to_stdout(|out| write_read(out, &result, json))
+}
+
+/// `codecite corpora`: prints the corpora as the MCP `corpora` tool returns
+/// them, byte for byte.
+fn corpora() -> anyhow::Result<()> {
+    let dirs = project_dirs()?;
+    let corpora = codecite_core::corpora(dirs.data_dir())?;
+    // rmcp writes a tool's text as `serde_json::Value::to_string`, which
+    // sorts the keys; going through a `Value` here prints the same bytes.
+    let json = serde_json::to_value(&corpora)?.to_string();
+    to_stdout(|out| writeln!(out, "{json}"))
+}
+
+/// `codecite mcp`: serves the corpora in the data directory to one MCP
+/// client over stdio until it closes stdin.
+fn mcp() -> anyhow::Result<()> {
+    let dirs = project_dirs()?;
+    let data_dir = dirs.data_dir().to_path_buf();
+    // stdout carries the protocol, so this note goes to stderr.
+    eprintln!(
+        "codecite {}: serving the corpora in {} over stdio",
+        env!("CARGO_PKG_VERSION"),
+        data_dir.display()
+    );
+    codecite_mcp::serve_stdio(data_dir)?;
+    Ok(())
 }
 
 /// Runs `write` on stdout. A reader that stops early, like `| head`, is
@@ -464,6 +498,16 @@ mod tests {
         assert!(json && allow_stale);
         let zero = ["codecite", "read", "identity", "§4.3", "--max-lines", "0"];
         assert!(Cli::try_parse_from(zero).is_err());
+    }
+
+    #[test]
+    fn corpora_and_mcp_take_no_arguments() {
+        let cli = Cli::try_parse_from(["codecite", "corpora"]).unwrap();
+        assert!(matches!(cli.command, Command::Corpora));
+        let cli = Cli::try_parse_from(["codecite", "mcp"]).unwrap();
+        assert!(matches!(cli.command, Command::Mcp));
+        assert!(Cli::try_parse_from(["codecite", "corpora", "identity"]).is_err());
+        assert!(Cli::try_parse_from(["codecite", "mcp", "--stdio"]).is_err());
     }
 
     #[test]
