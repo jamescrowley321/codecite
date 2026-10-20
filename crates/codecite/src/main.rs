@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, bail};
 use clap::{Parser, Subcommand};
 use codecite_core::Store;
-use codecite_index::{Manifest, WalkOptions, index_corpus};
+use codecite_index::{Fetcher, LicenseClass, Manifest, Source, WalkOptions, index_corpus};
 
 /// Command-line arguments.
 #[derive(Parser)]
@@ -26,18 +26,27 @@ enum Command {
         /// The manifest to read [default: corpora/<CORPUS>.toml].
         #[arg(long)]
         manifest: Option<PathBuf>,
+        /// Download each document source and print its sha256 without
+        /// checking it against the manifest or indexing anything.
+        #[arg(long)]
+        print_hashes: bool,
     },
 }
 
 fn main() -> anyhow::Result<()> {
     match Cli::parse().command {
-        Command::Index { corpus, manifest } => index(&corpus, manifest),
+        Command::Index {
+            corpus,
+            manifest,
+            print_hashes,
+        } => index(&corpus, manifest, print_hashes),
     }
 }
 
 /// `codecite index`: reads the manifest, indexes it into the corpus file in
-/// the user's data directory, and prints a summary.
-fn index(corpus: &str, manifest: Option<PathBuf>) -> anyhow::Result<()> {
+/// the user's data directory, and prints a summary. With `print_hashes`, it
+/// prints each document's hash instead.
+fn index(corpus: &str, manifest: Option<PathBuf>, print_hashes: bool) -> anyhow::Result<()> {
     check_corpus_name(corpus)?;
     let manifest_path =
         manifest.unwrap_or_else(|| Path::new("corpora").join(format!("{corpus}.toml")));
@@ -51,13 +60,19 @@ fn index(corpus: &str, manifest: Option<PathBuf>) -> anyhow::Result<()> {
         );
     }
 
-    let path = corpus_path(corpus)?;
+    let dirs = project_dirs()?;
+    let fetcher = Fetcher::new(dirs.cache_dir().join("documents"));
+    if print_hashes {
+        return print_document_hashes(&manifest, &fetcher);
+    }
+
+    let path = dirs.data_dir().join(format!("{corpus}.db"));
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
     let mut store = Store::open_read_write(&path)
         .with_context(|| format!("opening corpus file {}", path.display()))?;
-    let summary = index_corpus(&mut store, &manifest, &WalkOptions::default())
+    let summary = index_corpus(&mut store, &manifest, &WalkOptions::default(), &fetcher)
         .with_context(|| format!("indexing corpus `{corpus}`"))?;
     println!("indexed corpus `{corpus}` into {}", path.display());
     println!("{summary}");
@@ -76,12 +91,31 @@ fn check_corpus_name(corpus: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Where the corpus file lives: `<data dir>/codecite/<corpus>.db`, e.g.
-/// `~/.local/share/codecite/identity.db` on Linux. Never in the repository.
-fn corpus_path(corpus: &str) -> anyhow::Result<PathBuf> {
-    let dirs = directories::ProjectDirs::from("", "", "codecite")
-        .context("no home directory to keep corpus files in")?;
-    Ok(dirs.data_dir().join(format!("{corpus}.db")))
+/// `codecite index --print-hashes`: downloads each document source that is
+/// not `excluded` and prints `<sha256>  <name>  <url>`, plus `(pinned)` when
+/// the hash is the one the manifest pins, so the owner can pin a new or
+/// changed document on purpose.
+fn print_document_hashes(manifest: &Manifest, fetcher: &Fetcher) -> anyhow::Result<()> {
+    for source in &manifest.sources {
+        let Source::Document(doc) = source else {
+            continue;
+        };
+        if doc.license_class == LicenseClass::Excluded {
+            continue;
+        }
+        let hash = fetcher.fetch_hash(doc)?;
+        let pinned = if hash == doc.sha256 { "  (pinned)" } else { "" };
+        println!("{hash}  {}  {}{pinned}", doc.name, doc.url);
+    }
+    Ok(())
+}
+
+/// Where codecite keeps its files, never in a repository: corpus files in
+/// the data directory (`~/.local/share/codecite/<corpus>.db` on Linux) and
+/// fetched documents in the cache directory (`~/.cache/codecite/documents`).
+fn project_dirs() -> anyhow::Result<directories::ProjectDirs> {
+    directories::ProjectDirs::from("", "", "codecite")
+        .context("no home directory to keep corpus files in")
 }
 
 #[cfg(test)]
@@ -118,8 +152,16 @@ mod tests {
         assert!(Cli::try_parse_from(["codecite", "index"]).is_err());
         let cli =
             Cli::try_parse_from(["codecite", "index", "identity", "--manifest", "m.toml"]).unwrap();
-        let Command::Index { corpus, manifest } = cli.command;
+        let Command::Index {
+            corpus,
+            manifest,
+            print_hashes,
+        } = cli.command;
         assert_eq!(corpus, "identity");
         assert_eq!(manifest, Some(PathBuf::from("m.toml")));
+        assert!(!print_hashes);
+        let cli = Cli::try_parse_from(["codecite", "index", "identity", "--print-hashes"]).unwrap();
+        let Command::Index { print_hashes, .. } = cli.command;
+        assert!(print_hashes);
     }
 }

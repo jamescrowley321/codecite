@@ -4,8 +4,11 @@
 #![cfg(target_os = "linux")]
 
 use std::fs;
+use std::io::{BufRead, BufReader, Write};
+use std::net::TcpListener;
 use std::path::Path;
 use std::process::{Command, Output};
+use std::thread::JoinHandle;
 
 fn git(dir: &Path, args: &[&str]) {
     let status = Command::new("git")
@@ -33,6 +36,7 @@ fn codecite(cwd: &Path, home: &Path, args: &[&str]) -> Output {
         .current_dir(cwd)
         .env("HOME", home)
         .env("XDG_DATA_HOME", home.join("data"))
+        .env("XDG_CACHE_HOME", home.join("cache"))
         .args(args)
         .output()
         .unwrap()
@@ -108,4 +112,85 @@ fn index_errors_name_the_problem() {
     );
     assert!(!mismatch.status.success());
     assert!(String::from_utf8_lossy(&mismatch.stderr).contains("is for corpus `other`"));
+}
+
+/// Serves `body` on 127.0.0.1 for exactly `requests` requests, then stops,
+/// so any later download fails to connect. Returns the URL and the thread.
+fn serve(body: &'static [u8], requests: usize) -> (String, JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/rfc9449.html", listener.local_addr().unwrap());
+    let thread = std::thread::spawn(move || {
+        for stream in listener.incoming().take(requests) {
+            let mut stream = stream.unwrap();
+            let mut reader = BufReader::new(&stream);
+            let mut line = String::new();
+            while reader.read_line(&mut line).unwrap() > 0 && line != "\r\n" {
+                line.clear();
+            }
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            stream.write_all(head.as_bytes()).unwrap();
+            stream.write_all(body).unwrap();
+        }
+    });
+    (url, thread)
+}
+
+fn document_manifest(work: &Path, url: &str, sha256: &str) {
+    fs::create_dir_all(work.join("corpora")).unwrap();
+    fs::write(
+        work.join("corpora/specs.toml"),
+        format!(
+            "name = \"specs\"\n\n[[source]]\nkind = \"document\"\nname = \"rfc9449\"\n\
+             url = {url:?}\nsha256 = {sha256:?}\nuse = \"quote\"\ncurrent = true\n"
+        ),
+    )
+    .unwrap();
+}
+
+#[test]
+fn documents_are_pinned_by_hash_and_cached() {
+    const SPEC: &[u8] = b"<h1>RFC 9449</h1>\n";
+    const SPEC_SHA256: &str = "adcd06b613eb4e660e403fbec3d11011983dec4501489279e191b728e2fe6b2b";
+    let old_pin = "0".repeat(64);
+    let tmp = tempfile::tempdir().unwrap();
+    let work = tmp.path().join("work");
+    // Two downloads: --print-hashes, then the run that finds the mismatch.
+    let (url, server) = serve(SPEC, 2);
+    document_manifest(&work, &url, &old_pin);
+
+    let hashes = stdout(&codecite(
+        &work,
+        tmp.path(),
+        &["index", "specs", "--print-hashes"],
+    ));
+    assert_eq!(hashes, format!("{SPEC_SHA256}  rfc9449  {url}\n"));
+    assert!(!tmp.path().join("data/codecite/specs.db").exists());
+
+    let mismatch = codecite(&work, tmp.path(), &["index", "specs"]);
+    assert!(!mismatch.status.success());
+    let stderr = String::from_utf8_lossy(&mismatch.stderr);
+    assert!(stderr.contains("document `rfc9449`"), "{stderr}");
+    assert!(stderr.contains(&old_pin), "{stderr}");
+    assert!(stderr.contains(SPEC_SHA256), "{stderr}");
+    server.join().unwrap();
+
+    // Re-pinned: the bytes --print-hashes fetched are in the cache, so the
+    // run works with the server gone.
+    document_manifest(&work, &url, SPEC_SHA256);
+    let indexed = stdout(&codecite(&work, tmp.path(), &["index", "specs"]));
+    assert!(
+        indexed.contains("fetched: 0 downloaded, 1 from the cache"),
+        "{indexed}"
+    );
+    let pinned = stdout(&codecite(&work, tmp.path(), &["index", "specs"]));
+    assert!(pinned.contains("1 from the cache"), "{pinned}");
+    assert!(
+        tmp.path()
+            .join("cache/codecite/documents")
+            .join(SPEC_SHA256)
+            .is_file()
+    );
 }

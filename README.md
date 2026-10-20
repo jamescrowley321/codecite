@@ -12,7 +12,10 @@ from memory.
 
 Pre-alpha. `codecite index <corpus>` indexes the local git checkouts a corpus
 manifest (`corpora/<corpus>.toml`) lists into `~/.local/share/codecite/<corpus>.db`
-on Linux; searching it comes next.
+on Linux, and downloads the documents it lists, checking each against its
+pinned sha256 and caching it in `~/.cache/codecite/documents`, so later runs
+work offline. `codecite index <corpus> --print-hashes` prints each document's
+current hash, for pinning. Indexing documents and searching come next.
 
 ## Planned
 
