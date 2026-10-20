@@ -9,6 +9,9 @@ use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionB
 
 use crate::{Error, Result};
 
+mod corpora;
+pub use corpora::{Corpora, CorpusInfo, corpora};
+
 mod read;
 pub use read::{DEFAULT_MAX_LINES, ReadOptions, ReadResult};
 
