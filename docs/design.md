@@ -79,7 +79,7 @@ Each corpus is one SQLite file in WAL mode, holding sources, chunks, a full-text
 CREATE TABLE meta     (key TEXT PRIMARY KEY, value TEXT);          -- schema_version, indexed_at, manifest_hash
 
 CREATE TABLE source (
-  id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE,
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL,                       -- a document's versions share its name
   kind TEXT NOT NULL,                                               -- local | git | document
   url TEXT NOT NULL,                                                -- repo URL, local path or document URL
   revision TEXT NOT NULL,                                           -- commit SHA, or sha256 of a document
@@ -88,21 +88,23 @@ CREATE TABLE source (
   license_spdx TEXT, license_class TEXT NOT NULL,                   -- adapt | approach_only | quote | excluded
   indexed_at TEXT NOT NULL
 );
+CREATE UNIQUE INDEX source_name ON source(name) WHERE kind <> 'document';
+CREATE UNIQUE INDEX source_version ON source(name, revision) WHERE kind = 'document';
 
 CREATE TABLE document (
-  id INTEGER PRIMARY KEY, source_id INTEGER NOT NULL REFERENCES source(id),
+  id INTEGER PRIMARY KEY, source_id INTEGER NOT NULL REFERENCES source(id) ON DELETE CASCADE,
   path TEXT NOT NULL, language TEXT, content_hash BLOB NOT NULL, size_bytes INTEGER,  -- content_hash: sha256 of the bytes
   dirty INTEGER NOT NULL DEFAULT 0,                                 -- a local file that differed from HEAD
   UNIQUE (source_id, path)
 );
 
 CREATE TABLE chunk (
-  id INTEGER PRIMARY KEY, document_id INTEGER NOT NULL REFERENCES document(id),
+  id INTEGER PRIMARY KEY, document_id INTEGER NOT NULL REFERENCES document(id) ON DELETE CASCADE,
   start_line INTEGER NOT NULL, end_line INTEGER NOT NULL,
   kind TEXT NOT NULL,                                               -- function | class | section | step | window
-  symbol_id TEXT REFERENCES symbol(id),
-  number TEXT, anchor TEXT, title TEXT,                             -- spec sections and steps: "3.1.3.7", "IDTokenValidation"
-  parent_id INTEGER REFERENCES chunk(id),                           -- enclosing section of a section or step
+  symbol_id TEXT REFERENCES symbol(id) ON DELETE SET NULL,
+  number TEXT, anchor TEXT, title TEXT,                             -- a section's "3.1.3.7", "IDTokenValidation"; a step's "13"
+  parent_id INTEGER REFERENCES chunk(id) ON DELETE CASCADE,         -- enclosing section of a section or step
   strength TEXT,                                                    -- requirement keywords found, e.g. "MUST,SHOULD"
   text TEXT NOT NULL,
   terms TEXT NOT NULL                                               -- identifiers split for search
@@ -118,7 +120,7 @@ CREATE VIRTUAL TABLE chunk_vec USING vec0(chunk_id INTEGER PRIMARY KEY, embeddin
 CREATE TABLE symbol (
   id TEXT PRIMARY KEY,                                              -- SCIP symbol string
   display_name TEXT NOT NULL, kind TEXT,
-  document_id INTEGER REFERENCES document(id), start_line INTEGER, end_line INTEGER
+  document_id INTEGER REFERENCES document(id) ON DELETE CASCADE, start_line INTEGER, end_line INTEGER
 );
 
 CREATE TABLE edge (
@@ -126,15 +128,23 @@ CREATE TABLE edge (
   kind TEXT NOT NULL,                                               -- defines | references | calls | imports | inherits | documents
   provider TEXT NOT NULL,                                           -- treesitter | scip | lsp | codegraph | graphify
   confidence INTEGER NOT NULL,                                      -- 3 exact, 2 extracted, 1 inferred, 0 ambiguous
-  evidence_doc INTEGER REFERENCES document(id), evidence_line INTEGER,
+  evidence_doc INTEGER REFERENCES document(id) ON DELETE CASCADE, evidence_line INTEGER,
   PRIMARY KEY (src, dst, kind, provider)
 );
 CREATE INDEX edge_dst ON edge(dst, kind);
 CREATE INDEX symbol_name ON symbol(display_name);
-CREATE INDEX chunk_document ON chunk(document_id);                  -- re-indexing replaces a document's rows
+CREATE INDEX chunk_document ON chunk(document_id);                  -- every foreign key is indexed, so a cascade never scans
+CREATE INDEX chunk_parent ON chunk(parent_id);
+CREATE INDEX chunk_symbol ON chunk(symbol_id);
 CREATE INDEX symbol_document ON symbol(document_id);
 CREATE INDEX edge_evidence ON edge(evidence_doc);
+CREATE TRIGGER chunk_fts_delete AFTER DELETE ON chunk BEGIN
+  DELETE FROM chunk_fts WHERE rowid = old.id;                       -- a contentless FTS table can't be a foreign key's child
+END;
 ```
+
+- **Document versions** are separate sources: each pinned version of a document is its own `source` row, with the document's name, its `sha256` as `revision`, and `is_current`, `obsoleted_by` and `updated_by` from the manifest. A version is unique by name and revision, any other source by name. Results name a version as citations do, `rfc9449@sha256:1a2b3c4d5e6f`.
+- **Deletes cascade.** Every connection that writes turns `PRAGMA foreign_keys` on, so deleting a source deletes its documents, and deleting a document its chunks, symbols and the edges it is evidence for; the trigger takes each chunk's full-text row with it. Migrations run with the keys off, since rebuilding a table to change its keys drops the old one, and check every key (`PRAGMA foreign_key_check`) before they commit.
 
 - **Symbol IDs** are SCIP symbol strings, so precise indexers drop in without remapping. Symbols found only by tree-sitter get SCIP-shaped local IDs, `codecite . <source> . <path segments>/<descriptors>` (e.g. `` codecite . identity-model . src/`client.rs`/Client#validate(). ``), with a SCIP disambiguator on a later same-named function in the file (`new(+1).`); they are replaced when a SCIP index for the same source arrives.
 - **Edges from different providers are kept as separate rows.** Queries collapse them to the highest confidence and list every provider that agrees.
@@ -180,9 +190,9 @@ BM25 over code-aware terms does most of the work; vectors and graph signals refi
 
 1. **Fetch:** `git clone --filter=blob:none` at the manifest's pinned commit, read a local working tree, or fetch a document by URL and check it against its pinned `sha256`. Every document is fetched before anything is written, so changed bytes stop the run with an error naming the document and both hashes, and the store is untouched until the pin is updated on purpose. Fetched documents are cached outside the repo, in `<cache dir>/codecite/documents/<sha256>` (`~/.cache` on Linux): a document whose pinned hash is in the cache is never fetched again, so indexing works offline after the first run. A cache file whose bytes no longer match its name is deleted and fetched again. A download is plain HTTP(S) GET (`ureq`, rustls with Mozilla's roots, the standard proxy variables), capped at 16 MiB and 60 seconds; the hash, not the transport or an ETag, is what pins the bytes. A document marked `excluded` is never fetched.
 2. **Walk:** list the files git sees (`git ls-files`, so `.gitignore`, `.git/info/exclude` and the global excludes apply and tracked files are never ignored), apply the manifest's `include`/`exclude` globs, and skip deny-listed secrets, symlinks, files over 1 MiB and binaries (a NUL byte in the first 8000 bytes, git's rule; extensions are never trusted). Every skipped path is reported with its reason; an ignored directory counts once. A path under a symlinked directory is skipped as a symlink. The repository's config is not trusted, since it can name programs for git to run: the walk turns `core.fsmonitor` off, allows git no transport (an empty `GIT_ALLOW_PROTOCOL`, so a partial clone never fetches a missing object from its promisor remote), and never runs `git status`; `dirty` compares HEAD's tree, the index and `git hash-object --no-filters` of the kept files only.
-3. **Chunk:** the language comes from the file extension, then a `python`, `node` or `ts-node` shebang. tree-sitter splits Rust, Python, TypeScript, JavaScript, Go and C# at definitions, one query per language: functions and methods become `function` chunks; classes, structs, enums, traits, interfaces and Rust `impl` blocks become `class` chunks, nested ones included, and each definition but an `impl` block yields a symbol. A definition nested more than 32 deep stays inside its parent's chunk. A symbol's descriptor repeats its parents', so one longer than 512 bytes gives no symbol, to its definition or anything inside it, and a file holds at most 8 MiB of descriptors; past that, definitions keep their chunks without symbols. Together these bound a file's chunking memory by its size. Markdown splits into ATX heading sections, ignoring headings in fenced code. Every other line, and every file in another language, falls into windows of at most 60 lines that never start or end on a line without a letter or digit. Spec documents split into numbered sections and the numbered steps inside them, each with its anchor and its uppercase requirement keywords (BCP 14: RFC 2119 and RFC 8174). Spec HTML comes in three layouts: xml2rfc v3 RFCs (RFC 8650 and later), the older RFC HTML on rfc-editor.org, and the xml2rfc-generated OpenID pages. `scraper` parses it (html5ever repairs malformed HTML as a browser does), and one iterative walk renders it to plain text: a line per paragraph, list item or table row, `<pre>` kept as written, and page headers, footers and ¶ links dropped. A section runs from its heading to the next heading, numbered or not, so its line range holds its own text and not its subsections'. Front matter, the table of contents, the references and unnumbered parts such as the authors' addresses are not sections. A step is an item of a numbered `<ol>` that sits in no other list, or in an older RFC's plain text a paragraph numbered `1.`, `2.`, … at one indent; it keeps the number the document writes, lists nested in it stay part of its text, and a later list in the same section that reuses a number gives no step for it. Requirement keywords are found in core (`requirement_keywords`), so `cite` can scan a claim the same way: whole uppercase words only, with `MUST NOT`, `SHALL NOT`, `SHOULD NOT` and `NOT RECOMMENDED` read as one keyword across any whitespace. An RFC's "Obsoletes", "Updates", "Obsoleted by" and "Updated by" header fields are read from its HTML (the v3 identifiers block, or the older plain-text header) as `rfc<N>` names. html5ever's parse is quadratic in nesting depth, which is fine for the pinned pages the owner chose but slow for a hostile one.
+3. **Chunk:** the language comes from the file extension, then a `python`, `node` or `ts-node` shebang. tree-sitter splits Rust, Python, TypeScript, JavaScript, Go and C# at definitions, one query per language: functions and methods become `function` chunks; classes, structs, enums, traits, interfaces and Rust `impl` blocks become `class` chunks, nested ones included, and each definition but an `impl` block yields a symbol. A definition nested more than 32 deep stays inside its parent's chunk. A symbol's descriptor repeats its parents', so one longer than 512 bytes gives no symbol, to its definition or anything inside it, and a file holds at most 8 MiB of descriptors; past that, definitions keep their chunks without symbols. Together these bound a file's chunking memory by its size. Markdown splits into ATX heading sections, ignoring headings in fenced code. Every other line, and every file in another language, falls into windows of at most 60 lines that never start or end on a line without a letter or digit. Spec documents split into numbered sections and the numbered steps inside them, each with its anchor and its uppercase requirement keywords (BCP 14: RFC 2119 and RFC 8174). Spec HTML comes in three layouts: xml2rfc v3 RFCs (RFC 8650 and later), the older RFC HTML on rfc-editor.org, and the xml2rfc-generated OpenID pages. `scraper` parses it (html5ever repairs malformed HTML as a browser does), and one iterative walk renders it to plain text, whose lines a spec chunk's line range counts: a line per paragraph, list item or table row, `<pre>` kept as written, and page headers, footers and ¶ links dropped. A section runs from its heading to the next heading, numbered or not, so its line range holds its own text and not its subsections'. Front matter, the table of contents, the references and unnumbered parts such as the authors' addresses are not sections. A step is an item of a numbered `<ol>` that sits in no other list, or in an older RFC's plain text a paragraph numbered `1.`, `2.`, … at one indent; it keeps the number the document writes, lists nested in it stay part of its text, and a later list in the same section that reuses a number gives no step for it. Requirement keywords are found in core (`requirement_keywords`), so `cite` can scan a claim the same way: whole uppercase words only, with `MUST NOT`, `SHALL NOT`, `SHOULD NOT` and `NOT RECOMMENDED` read as one keyword across any whitespace. An RFC's "Obsoletes", "Updates", "Obsoleted by" and "Updated by" header fields are read from its HTML (the v3 identifiers block, or the older plain-text header) as `rfc<N>` names. html5ever's parse is quadratic in nesting depth, which is fine for the pinned pages the owner chose but slow for a hostile one.
 4. **Terms:** split camelCase, snake_case and kebab-case identifiers into lowercase parts and keep the original, so `validateToken` matches "validate token" and the exact name. Any character that is not a letter or digit separates parts, an acronym ends before the capital that starts the next word (`HTTPServer` → `http server`), and digits stay with the part before them (`sha256`, `rfc9449`).
-5. **Write:** chunks, full-text rows and symbols for one document in a single transaction. A document whose sha256 matches the stored one is not rewritten; only its `dirty` flag is updated. A stored document whose file is gone, or is now skipped, is deleted with everything stored for it, and so is every source the run did not index (one removed from the manifest, or marked `excluded`). A chunk's `terms` and its full-text `terms` column hold the identifier terms of every word in its text; the `symbol` column holds its symbol name's terms and the `path` column its path's. A local source without a `name` is named after its checkout directory, and two sources with one name are an error. The run ends with a summary: documents written, unchanged and removed, chunks written, skipped files by reason, and the elapsed time.
+5. **Write:** chunks, full-text rows and symbols for one document in a single transaction. A document whose sha256 matches the stored one is not rewritten; only its `dirty` flag is updated. A document source holds one document, stored under the source's name: a `section` chunk per section and a `step` chunk per step, each step after its section and naming it as its parent, and each with its number, the section's anchor and title, and its requirement keywords as `strength` (`MUST,SHOULD`). A version already stored is never split again, since its revision is its content's hash; a page that isn't UTF-8 or in a known layout stops the run with an error naming the document. A stored document whose file is gone, or is now skipped, is deleted with everything stored for it, and so is every source the run did not index (one removed from the manifest, or marked `excluded`). A chunk's `terms` and its full-text `terms` column hold the identifier terms of every word in its text; the `symbol` column holds its symbol name's terms and the `path` column its path's. A local source without a `name` is named after its checkout directory, and two sources with one name are an error, unless they are versions of one document; a manifest that pins one version twice is refused. The run ends with a summary: documents written, unchanged and removed, chunks written, skipped files by reason, and the elapsed time.
 6. **Providers:** SCIP, CodeGraph and Graphify run after the base pass and add symbols and edges.
 7. **Embed (optional):** a small local model through `fastembed`, 384 dimensions, CPU only.
 

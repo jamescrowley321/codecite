@@ -1,5 +1,6 @@
 //! Indexing a corpus: walk each local source, chunk the files whose content
-//! changed and write them into the store, one transaction per document.
+//! changed, split each new document version into its sections and steps,
+//! and write them into the store, one transaction per document.
 
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
@@ -11,8 +12,8 @@ use codecite_core::{ChunkRecord, DocumentRecord, SourceRecord, Store, SymbolReco
 use sha2::{Digest, Sha256};
 
 use crate::{
-    Chunker, Error, Fetcher, Language, LicenseClass, LocalSource, LocalTree, Manifest, Result,
-    SkipReason, Source, WalkOptions, walk_local,
+    Chunker, DocumentSource, Error, Fetcher, Language, LicenseClass, LocalSource, LocalTree,
+    Manifest, Result, SkipReason, Source, SpecDocument, WalkOptions, split_spec, walk_local,
 };
 
 /// What an index run did.
@@ -40,18 +41,19 @@ pub struct IndexSummary {
     pub elapsed: Duration,
 }
 
-/// Fetches every document source in `manifest` and indexes every local
-/// source into `store`.
+/// Fetches every document source in `manifest` and indexes it and every
+/// local source into `store`.
 ///
 /// Documents are fetched first, from `fetcher`'s cache when they are there,
 /// so a document whose bytes don't match its pinned `sha256` stops the run
-/// before anything is written. Documents are not indexed yet.
+/// before anything is written. Each pinned version of a document is its own
+/// source, split into section and step chunks when it is first indexed.
 ///
 /// A file whose content hash matches the stored one is not rewritten, and a
-/// stored file that is gone, or is now skipped, is deleted. Git and document
-/// sources are reported in [`IndexSummary::skipped_sources`], as are sources
-/// marked `excluded`. Every source the run did not index is then deleted
-/// from the store.
+/// stored file that is gone, or is now skipped, is deleted. Git sources are
+/// reported in [`IndexSummary::skipped_sources`], as are sources marked
+/// `excluded`. Every source the run did not index, a document version no
+/// longer pinned included, is then deleted from the store.
 pub fn index_corpus(
     store: &mut Store,
     manifest: &Manifest,
@@ -60,19 +62,23 @@ pub fn index_corpus(
 ) -> Result<IndexSummary> {
     let started = Instant::now();
     let mut summary = IndexSummary::default();
+    let mut documents = Vec::new();
     for source in &manifest.sources {
         if let Source::Document(doc) = source
             && doc.license_class != LicenseClass::Excluded
         {
-            if fetcher.fetch_pinned(doc)?.from_cache {
+            let fetched = fetcher.fetch_pinned(doc)?;
+            if fetched.from_cache {
                 summary.cached += 1;
             } else {
                 summary.downloaded += 1;
             }
+            documents.push((doc, fetched.bytes));
         }
     }
     let mut chunker = Chunker::new()?;
     let mut indexed: Vec<String> = Vec::new();
+    let mut keep: Vec<i64> = Vec::new();
     for source in &manifest.sources {
         let local = match source {
             Source::Local(local) if local.license_class != LicenseClass::Excluded => local,
@@ -92,12 +98,11 @@ pub fn index_corpus(
                 continue;
             }
             Source::Document(doc) => {
-                let reason = if doc.license_class == LicenseClass::Excluded {
-                    "use = \"excluded\""
-                } else {
-                    "document sources are fetched and checked, not indexed yet"
-                };
-                summary.skipped_sources.push((doc.name.clone(), reason));
+                if doc.license_class == LicenseClass::Excluded {
+                    summary
+                        .skipped_sources
+                        .push((doc.name.clone(), "use = \"excluded\""));
+                }
                 continue;
             }
         };
@@ -106,10 +111,25 @@ pub fn index_corpus(
         if indexed.contains(&name) {
             return Err(Error::DuplicateSource { name });
         }
-        index_local(store, &mut chunker, local, &name, &tree, &mut summary)?;
+        keep.push(index_local(
+            store,
+            &mut chunker,
+            local,
+            &name,
+            &tree,
+            &mut summary,
+        )?);
         indexed.push(name);
     }
-    let keep: Vec<&str> = indexed.iter().map(String::as_str).collect();
+    for (doc, bytes) in &documents {
+        // A document's versions share its name, but no other source may.
+        if indexed.contains(&doc.name) {
+            return Err(Error::DuplicateSource {
+                name: doc.name.clone(),
+            });
+        }
+        keep.push(index_document(store, doc, bytes, &mut summary)?);
+    }
     summary.removed_sources = store.delete_sources_except(&keep)?;
     store.set_indexed_at()?;
     summary.elapsed = started.elapsed();
@@ -125,7 +145,7 @@ fn source_name(local: &LocalSource, tree: &LocalTree) -> String {
     })
 }
 
-/// Writes one walked local source into the store.
+/// Writes one walked local source into the store and returns its ID.
 fn index_local(
     store: &mut Store,
     chunker: &mut Chunker,
@@ -133,7 +153,7 @@ fn index_local(
     name: &str,
     tree: &LocalTree,
     summary: &mut IndexSummary,
-) -> Result<()> {
+) -> Result<i64> {
     let url = tree.root.to_string_lossy();
     let source_id = store.upsert_source(&SourceRecord {
         name,
@@ -142,6 +162,9 @@ fn index_local(
         revision: &tree.head,
         license_spdx: local.license.as_deref(),
         license_class: local.license_class.as_str(),
+        is_current: true,
+        obsoleted_by: None,
+        updated_by: None,
     })?;
     for (reason, count) in tree.skip_counts() {
         *summary.skipped.entry(reason).or_default() += count;
@@ -193,7 +216,11 @@ fn index_local(
                     start_line: c.start_line,
                     end_line: c.end_line,
                     text: c.text,
+                    number: None,
+                    anchor: None,
                     title: c.title.as_deref(),
+                    parent: None,
+                    strength: &[],
                     symbol: c.symbol.as_ref().zip(id).map(|(s, id)| SymbolRecord {
                         id,
                         display_name: &s.name,
@@ -211,7 +238,111 @@ fn index_local(
         store.delete_document(source_id, path)?;
         summary.removed += 1;
     }
-    Ok(())
+    Ok(source_id)
+}
+
+/// Writes one pinned document version into the store and returns its
+/// source's ID.
+///
+/// The source row is updated on every run, since `current` and the
+/// relations live in the manifest. The document is split and written only
+/// when it isn't stored yet: its revision is its content's hash, so a
+/// stored version can't have changed.
+fn index_document(
+    store: &mut Store,
+    doc: &DocumentSource,
+    bytes: &[u8],
+    summary: &mut IndexSummary,
+) -> Result<i64> {
+    let source_id = store.upsert_source(&SourceRecord {
+        name: &doc.name,
+        kind: "document",
+        url: &doc.url,
+        revision: &doc.sha256,
+        license_spdx: doc.license.as_deref(),
+        license_class: doc.license_class.as_str(),
+        is_current: doc.current,
+        obsoleted_by: doc.obsoleted_by.as_deref(),
+        updated_by: doc.updated_by.as_deref(),
+    })?;
+    // A document source holds one document, stored under its name.
+    let path = doc.name.as_str();
+    let hash = Sha256::digest(bytes);
+    if store
+        .document_hashes(source_id)?
+        .get(path)
+        .is_some_and(|old| old[..] == hash[..])
+    {
+        summary.unchanged += 1;
+        return Ok(source_id);
+    }
+
+    let html = std::str::from_utf8(bytes).map_err(|_| Error::DocumentNotUtf8 {
+        name: doc.name.clone(),
+    })?;
+    let spec = split_spec(html).map_err(|source| Error::Spec {
+        name: doc.name.clone(),
+        source,
+    })?;
+    let step_numbers: Vec<Vec<String>> = spec
+        .sections
+        .iter()
+        .map(|s| s.steps.iter().map(|step| step.number.to_string()).collect())
+        .collect();
+    let document = DocumentRecord {
+        path,
+        language: None,
+        content_hash: hash.as_slice(),
+        size_bytes: bytes.len() as u64,
+        dirty: false,
+        chunks: spec_chunks(&spec, &step_numbers),
+    };
+    summary.chunks += store.write_document(source_id, &document)?;
+    summary.written += 1;
+    Ok(source_id)
+}
+
+/// Each section's chunk followed by its steps' chunks. A section names its
+/// enclosing section's chunk as its parent, and a step its section's.
+fn spec_chunks<'a>(
+    spec: &'a SpecDocument,
+    step_numbers: &'a [Vec<String>],
+) -> Vec<ChunkRecord<'a>> {
+    let mut chunks = Vec::new();
+    // The chunk index of each section, by section index. A parent comes
+    // before its subsections, so its index is always known here.
+    let mut section_chunks = Vec::with_capacity(spec.sections.len());
+    for (section, numbers) in spec.sections.iter().zip(step_numbers) {
+        let index = chunks.len();
+        section_chunks.push(index);
+        chunks.push(ChunkRecord {
+            kind: "section",
+            start_line: section.start_line,
+            end_line: section.end_line,
+            text: &section.text,
+            number: Some(&section.number),
+            anchor: Some(&section.anchor),
+            title: Some(&section.title),
+            parent: section.parent.and_then(|p| section_chunks.get(p).copied()),
+            strength: &section.strength,
+            symbol: None,
+        });
+        for (step, number) in section.steps.iter().zip(numbers) {
+            chunks.push(ChunkRecord {
+                kind: "step",
+                start_line: step.start_line,
+                end_line: step.end_line,
+                text: &step.text,
+                number: Some(number),
+                anchor: None,
+                title: None,
+                parent: Some(index),
+                strength: &step.strength,
+                symbol: None,
+            });
+        }
+    }
+    chunks
 }
 
 /// Reads a walked file, or `None` when it was deleted after the walk.
@@ -263,11 +394,19 @@ impl fmt::Display for IndexSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::DocumentSource;
     use crate::test_repo::Repo;
     use crate::test_server::Server;
     use rusqlite::Connection;
     use std::path::PathBuf;
+
+    /// A spec chunk as (kind, number, anchor, parent's number, strength).
+    type SpecRow = (
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    );
 
     fn local(repo: &Repo, name: Option<&str>) -> Source {
         Source::Local(LocalSource {
@@ -285,7 +424,7 @@ mod tests {
             name: "rfc9449".into(),
             url,
             sha256: sha256.into(),
-            license: None,
+            license: Some("IETF Trust".into()),
             license_class: LicenseClass::Quote,
             current: true,
             aliases: Vec::new(),
@@ -294,9 +433,25 @@ mod tests {
         })
     }
 
-    const SPEC: &str = "<h1>RFC 9449</h1>\n";
-    /// The sha256 of [`SPEC`].
-    const SPEC_SHA256: &str = "adcd06b613eb4e660e403fbec3d11011983dec4501489279e191b728e2fe6b2b";
+    /// An RFC page with sections 1, 4, 4.3 (two steps), 4.3.1, A and A.1.
+    const SPEC: &str = include_str!("../tests/fixtures/spec/rfc-v3.html");
+
+    fn sha256(text: &str) -> String {
+        crate::fetch::hex(&Sha256::digest(text))
+    }
+
+    /// An older version of [`SPEC`], served at `/old.html`, and the
+    /// manifest source pinning it, not current.
+    fn old_version(server: &Server) -> Source {
+        let old = SPEC.replace("is a JWT", "is a signed JWT");
+        server.set("/old.html", old.as_str());
+        let mut source = document(server.url("/old.html"), &sha256(&old));
+        if let Source::Document(d) = &mut source {
+            d.current = false;
+            d.obsoleted_by = Some("rfc9449bis".into());
+        }
+        source
+    }
 
     fn manifest(sources: Vec<Source>) -> Manifest {
         Manifest {
@@ -548,24 +703,199 @@ mod tests {
     }
 
     #[test]
-    fn documents_are_fetched_once_and_not_indexed_yet() {
+    fn a_document_is_indexed_as_sections_and_steps() {
         let server = Server::start();
         server.set("/rfc9449.html", SPEC);
         let corpus = Corpus::new();
-        let manifest = manifest(vec![document(server.url("/rfc9449.html"), SPEC_SHA256)]);
+        let manifest = manifest(vec![document(server.url("/rfc9449.html"), &sha256(SPEC))]);
 
-        let first = corpus.index(&manifest);
-        assert_eq!((first.downloaded, first.cached), (1, 0));
+        let summary = corpus.index(&manifest);
+        assert_eq!((summary.downloaded, summary.written), (1, 1));
+        // Six sections, and two steps in §4.3.
+        assert_eq!(summary.chunks, 8);
+        assert!(summary.skipped_sources.is_empty());
+        let source: (String, String, String, bool, String, Option<String>) = corpus
+            .sql()
+            .query_row(
+                "SELECT name, kind, revision, is_current, license_class, license_spdx FROM source",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
+            )
+            .unwrap();
         assert_eq!(
-            first.skipped_sources,
-            [(
+            source,
+            (
                 "rfc9449".to_owned(),
-                "document sources are fetched and checked, not indexed yet"
-            )]
+                "document".to_owned(),
+                sha256(SPEC),
+                true,
+                "quote".to_owned(),
+                Some("IETF Trust".to_owned())
+            )
         );
+
+        let chunks: Vec<SpecRow> = {
+            let conn = corpus.sql();
+            let mut stmt = conn
+                .prepare(
+                    "SELECT c.kind, c.number, c.anchor, p.number, c.strength
+                     FROM chunk c LEFT JOIN chunk p ON p.id = c.parent_id ORDER BY c.id",
+                )
+                .unwrap();
+            stmt.query_map([], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+        };
+        let row = |kind: &str,
+                   number: &str,
+                   anchor: Option<&str>,
+                   parent: Option<&str>,
+                   strength: Option<&str>| {
+            (
+                kind.to_owned(),
+                number.to_owned(),
+                anchor.map(str::to_owned),
+                parent.map(str::to_owned),
+                strength.map(str::to_owned),
+            )
+        };
+        assert_eq!(
+            chunks,
+            [
+                row("section", "1", Some("section-1"), None, None),
+                row("section", "4", Some("section-4"), None, None),
+                row(
+                    "section",
+                    "4.3",
+                    Some("section-4.3"),
+                    Some("4"),
+                    Some("MUST")
+                ),
+                row("step", "1", None, Some("4.3"), None),
+                row("step", "2", None, Some("4.3"), None),
+                row(
+                    "section",
+                    "4.3.1",
+                    Some("section-4.3.1"),
+                    Some("4.3"),
+                    Some("MAY")
+                ),
+                row("section", "A", Some("appendix-A"), None, None),
+                row("section", "A.1", Some("appendix-A.1"), Some("A"), None),
+            ]
+        );
+        // Spec text is searchable like code: §4.3 and its second step.
+        assert_eq!(corpus.matches("jose"), 2);
+        assert_eq!(corpus.matches("path:rfc9449"), 8);
+    }
+
+    #[test]
+    fn reindexing_an_unchanged_pin_is_a_no_op() {
+        let server = Server::start();
+        server.set("/rfc9449.html", SPEC);
+        let corpus = Corpus::new();
+        let manifest = manifest(vec![document(server.url("/rfc9449.html"), &sha256(SPEC))]);
+        corpus.index(&manifest);
+        let before = corpus.chunk_ids();
+
         let second = corpus.index(&manifest);
         assert_eq!((second.downloaded, second.cached), (0, 1));
+        assert_eq!((second.written, second.unchanged, second.chunks), (0, 1, 0));
+        assert!(second.removed_sources.is_empty());
+        assert_eq!(corpus.chunk_ids(), before);
         assert_eq!(server.requests(), 1);
+    }
+
+    #[test]
+    fn two_versions_of_one_document_are_both_indexed() {
+        let server = Server::start();
+        server.set("/rfc9449.html", SPEC);
+        let corpus = Corpus::new();
+        let current = document(server.url("/rfc9449.html"), &sha256(SPEC));
+        let old = old_version(&server);
+        let summary = corpus.index(&manifest(vec![current.clone(), old]));
+        assert_eq!((summary.written, summary.chunks), (2, 16));
+
+        let versions: Vec<(String, bool, Option<String>)> = {
+            let conn = corpus.sql();
+            let mut stmt = conn
+                .prepare(
+                    "SELECT revision, is_current, obsoleted_by FROM source
+                     WHERE name = 'rfc9449' ORDER BY is_current",
+                )
+                .unwrap();
+            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap()
+        };
+        let old_sha = sha256(&SPEC.replace("is a JWT", "is a signed JWT"));
+        assert_eq!(
+            versions,
+            [
+                (old_sha.clone(), false, Some("rfc9449bis".to_owned())),
+                (sha256(SPEC), true, None)
+            ]
+        );
+        assert_eq!(corpus.matches("signed"), 1);
+
+        // Unpinning the old version deletes it and everything stored for it.
+        let summary = corpus.index(&manifest(vec![current]));
+        assert_eq!(
+            summary.removed_sources,
+            [format!("rfc9449@sha256:{}", &old_sha[..12])]
+        );
+        assert_eq!(corpus.matches("signed"), 0);
+        assert_eq!(corpus.matches("jose"), 2);
+    }
+
+    #[test]
+    fn a_page_that_is_not_a_spec_is_an_error() {
+        let server = Server::start();
+        let page = "<h1>RFC 9449</h1>\n";
+        server.set("/rfc9449.html", page);
+        let corpus = Corpus::new();
+        let manifest = manifest(vec![document(server.url("/rfc9449.html"), &sha256(page))]);
+        let err = corpus.try_index(&manifest).unwrap_err();
+        assert!(
+            matches!(&err, Error::Spec { name, source: crate::SpecError::UnknownFormat } if name == "rfc9449"),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn a_local_source_may_not_share_a_document_name() {
+        let repo = fixture();
+        let server = Server::start();
+        server.set("/rfc9449.html", SPEC);
+        let corpus = Corpus::new();
+        let manifest = manifest(vec![
+            local(&repo, Some("rfc9449")),
+            document(server.url("/rfc9449.html"), &sha256(SPEC)),
+        ]);
+        let err = corpus.try_index(&manifest).unwrap_err();
+        assert!(
+            matches!(&err, Error::DuplicateSource { name } if name == "rfc9449"),
+            "{err:?}"
+        );
     }
 
     #[test]
@@ -576,7 +906,7 @@ mod tests {
         let corpus = Corpus::new();
         let manifest = manifest(vec![
             local(&repo, Some("app")),
-            document(server.url("/rfc9449.html"), SPEC_SHA256),
+            document(server.url("/rfc9449.html"), &sha256(SPEC)),
         ]);
 
         let err = corpus.try_index(&manifest).unwrap_err();
@@ -595,7 +925,7 @@ mod tests {
     fn excluded_documents_are_not_fetched() {
         let server = Server::start();
         let corpus = Corpus::new();
-        let mut doc = document(server.url("/rfc9449.html"), SPEC_SHA256);
+        let mut doc = document(server.url("/rfc9449.html"), &sha256(SPEC));
         if let Source::Document(d) = &mut doc {
             d.license_class = LicenseClass::Excluded;
         }
@@ -617,7 +947,7 @@ mod tests {
             downloaded: 1,
             cached: 2,
             skipped: BTreeMap::from([(SkipReason::Ignored, 3), (SkipReason::Binary, 1)]),
-            skipped_sources: vec![("rfc9449".into(), "document sources are not indexed yet")],
+            skipped_sources: vec![("client".into(), "git sources are not indexed yet")],
             removed_sources: vec!["old".into()],
             elapsed: Duration::from_millis(1250),
         };
@@ -627,7 +957,7 @@ mod tests {
              chunks: 9 written\n\
              fetched: 1 downloaded, 2 from the cache\n\
              skipped: 3 ignored, 1 binary\n\
-             source rfc9449 not indexed: document sources are not indexed yet\n\
+             source client not indexed: git sources are not indexed yet\n\
              source old removed: the run no longer indexes it\n\
              elapsed: 1.25s"
         );
