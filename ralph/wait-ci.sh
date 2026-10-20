@@ -8,7 +8,10 @@
 # read. Prints one line, then the failed jobs' logs on failure:
 #   PASS <run id>   exit 0
 #   FAIL <run id>   exit 1
-#   NO_RUN          exit 2   (no run appeared within 5 minutes of the sleep)
+#   NO_RUN          exit 2   (no run appeared within 3 minutes of the sleep)
+#
+# Run it in the foreground; with CI's few-minute jobs it fits inside one Bash
+# call (10-minute cap).
 set -euo pipefail
 
 branch="$1"
@@ -16,7 +19,7 @@ sha="${2:-$(git rev-parse HEAD)}"
 
 sleep 60
 
-deadline=$((SECONDS + 300))
+deadline=$((SECONDS + 180))
 while :; do
   id=$(gh run list --workflow ci.yml --branch "$branch" --commit "$sha" --limit 1 \
     --json databaseId --jq '.[0].databaseId // empty')
