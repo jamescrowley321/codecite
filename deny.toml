@@ -1,0 +1,39 @@
+# cargo-deny policy. `cargo deny check` reads this file locally and in CI.
+# Reference: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# Check dependencies behind optional features too.
+all-features = true
+
+[advisories]
+# RustSec advisories, the same database `cargo audit` uses.
+yanked = "deny"
+# Every entry needs an advisory id and a reason, e.g.
+# { id = "RUSTSEC-0000-0000", reason = "not reachable: we never call X" }
+ignore = []
+
+[licenses]
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+]
+# The BSD and ISC entries are allowed ahead of the crates that will need them.
+unused-allowed-license = "allow"
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+highlight = "all"
+# A duplicate that can't be removed gets an entry naming the crate, the
+# version, and the upstream reason, e.g.
+# { crate = "foo@0.1.0", reason = "bar still depends on foo 0.1" }
+skip = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
