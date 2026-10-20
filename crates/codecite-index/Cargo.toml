@@ -6,6 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme.workspace = true
+keywords = ["code-search", "tree-sitter", "indexing", "rfc", "citations"]
+categories = ["development-tools", "parser-implementations", "text-processing"]
 
 [lints]
 workspace = true

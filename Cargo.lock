@@ -185,7 +185,7 @@ checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
 name = "codecite"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -201,7 +201,7 @@ dependencies = [
 
 [[package]]
 name = "codecite-core"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "proptest",
  "rusqlite",
@@ -213,7 +213,7 @@ dependencies = [
 
 [[package]]
 name = "codecite-index"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "codecite-core",
  "ego-tree",
@@ -238,7 +238,7 @@ dependencies = [
 
 [[package]]
 name = "codecite-lsp"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "codecite-core",
  "thiserror",
@@ -246,7 +246,7 @@ dependencies = [
 
 [[package]]
 name = "codecite-mcp"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "codecite-core",
  "thiserror",
