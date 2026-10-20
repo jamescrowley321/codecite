@@ -13,6 +13,14 @@ use super::WalkError;
 /// run (`core.fsmonitor`, clean filters). The walk runs only commands that
 /// read the index, the object store and directory listings, never `status`
 /// or `diff`, and turns the file-system monitor off for each of them.
+///
+/// The walk never touches the network. A partial clone fetches missing
+/// objects from its promisor remote on demand, and the remote's config can
+/// name the command that serves them (`remote.<name>.uploadpack`,
+/// `core.sshCommand`, an `ext::` URL). An empty `GIT_ALLOW_PROTOCOL` allows
+/// no transport at all and overrides any `protocol.*.allow` in the config,
+/// so a missing object fails the command instead. `GIT_NO_LAZY_FETCH`
+/// says the same thing to git 2.44 and later.
 pub(super) fn run(root: &Path, args: &[&str]) -> Result<Vec<u8>, WalkError> {
     let output = Command::new("git")
         .arg("-C")
@@ -21,6 +29,8 @@ pub(super) fn run(root: &Path, args: &[&str]) -> Result<Vec<u8>, WalkError> {
         .args(args)
         // Read-only: don't let `status` refresh and rewrite the index.
         .env("GIT_OPTIONAL_LOCKS", "0")
+        .env("GIT_ALLOW_PROTOCOL", "")
+        .env("GIT_NO_LAZY_FETCH", "1")
         // `-C` picks the repository; an inherited GIT_DIR would override it.
         .env_remove("GIT_DIR")
         .env_remove("GIT_WORK_TREE")

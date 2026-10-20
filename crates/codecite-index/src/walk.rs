@@ -677,6 +677,55 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn walk_never_fetches_missing_objects_from_a_promisor_remote() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let origin = Repo::new();
+        origin.write("a.rs", "a\n");
+        origin.commit_all(&["."]);
+        origin.git(&["config", "uploadpack.allowFilter", "true"]);
+
+        // A treeless partial clone: HEAD's commit is here, its tree is not.
+        let clone = tempfile::tempdir().unwrap();
+        let clone_path = clone.path().join("clone");
+        let clone_str = clone_path.to_str().unwrap();
+        let url = format!("file://{}", origin.path().display());
+        origin.git(&[
+            "clone",
+            "-q",
+            "--no-checkout",
+            "--filter=tree:0",
+            &url,
+            clone_str,
+        ]);
+
+        let marker = clone.path().join("ran");
+        let probe = clone.path().join("probe.sh");
+        std::fs::write(
+            &probe,
+            format!(
+                "#!/bin/sh\ntouch '{}'\nexec git-upload-pack \"$@\"\n",
+                marker.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&probe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let probe = probe.to_str().unwrap();
+        origin.git(&["-C", clone_str, "config", "remote.origin.uploadpack", probe]);
+        origin.git(&["-C", clone_str, "config", "protocol.allow", "always"]);
+
+        let mut source = local(&origin);
+        source.path = clone_path;
+        let err = walk_local(&source, &WalkOptions::default()).unwrap_err();
+        assert!(matches!(err, WalkError::Git { .. }), "{err:?}");
+        assert!(
+            !marker.exists(),
+            "git fetched from the promisor remote and ran its upload-pack"
+        );
+    }
+
     #[test]
     fn walk_marks_staged_and_reverted_files_dirty() {
         let repo = Repo::new();

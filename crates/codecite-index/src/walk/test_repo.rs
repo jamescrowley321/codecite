@@ -36,6 +36,10 @@ impl Repo {
             ])
             .args(["-c", "commit.gpgsign=false"])
             .args(args)
+            // Under a git hook these point at the developer's own repository.
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_INDEX_FILE")
             .output()
             .unwrap();
         assert!(
