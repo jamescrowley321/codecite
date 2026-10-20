@@ -6,3 +6,4 @@
   name: (identifier) @name
   value: [(arrow_function) (function_expression)]) @function
 (class_declaration name: (_) @name) @type
+(class name: (_) @name) @type

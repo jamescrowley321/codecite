@@ -33,6 +33,12 @@ pub enum ChunkerError {
     },
 }
 
+/// The deepest a definition can sit inside other captured definitions and
+/// still get its own chunk. Each nested chunk repeats its parents' lines and
+/// descriptors, so without a limit a file of nested functions costs memory
+/// quadratic in its depth; deeper definitions stay in their parent's chunk.
+pub(super) const MAX_DEPTH: usize = 32;
+
 /// Loads a grammar from its crate.
 type Grammar = fn() -> tree_sitter::Language;
 
@@ -128,7 +134,7 @@ impl CodeChunker {
         let mut seen: HashMap<String, u32> = HashMap::new();
         let mut out = Vec::new();
         for def in &defs {
-            let parent = def.parents.last().map(|&p| (&full[p], defs[p].kind));
+            let parent = def.parent.map(|p| (&full[p], defs[p].kind));
             let mut prefix = parent.map_or_else(String::new, |(d, _)| d.clone());
             if let Some(receiver) = &def.receiver {
                 prefix.push_str(&escape_name(receiver));
@@ -201,8 +207,8 @@ struct Definition {
     receiver: Option<String>,
     start_line: u32,
     end_line: u32,
-    /// Indices of the enclosing definitions and scopes, outermost first.
-    parents: Vec<usize>,
+    /// The index of the innermost enclosing definition or scope.
+    parent: Option<usize>,
 }
 
 impl Definition {
@@ -225,6 +231,9 @@ fn definitions(query: &Query, root: Node<'_>, source: &[u8], last: u32) -> Vec<D
     let mut cursor = QueryCursor::new();
     let mut matches = cursor.matches(query, root, source);
     let mut found: Vec<(Node<'_>, Definition)> = Vec::new();
+    // A Python decorator belongs to the definition it decorates: each
+    // decorated definition's node id, mapped to the decorated span.
+    let mut decorated: HashMap<usize, Node<'_>> = HashMap::new();
     while let Some(m) = matches.next() {
         let mut node = None;
         let mut is_scope = false;
@@ -239,6 +248,11 @@ fn definitions(query: &Query, root: Node<'_>, source: &[u8], last: u32) -> Vec<D
                 }
                 "name" => name = Some(capture.node),
                 "receiver" => receiver = Some(capture.node),
+                "decorated" => {
+                    if let Some(d) = capture.node.child_by_field_name("definition") {
+                        decorated.insert(d.id(), capture.node);
+                    }
+                }
                 _ => {}
             }
         }
@@ -247,12 +261,6 @@ fn definitions(query: &Query, root: Node<'_>, source: &[u8], last: u32) -> Vec<D
         };
         let text = |n: Node<'_>| n.utf8_text(source).unwrap_or_default().to_string();
         let name = if is_scope { type_name(name) } else { name };
-        // A Python decorator belongs to the definition it decorates.
-        let span = match node.parent() {
-            Some(p) if p.kind() == "decorated_definition" => p,
-            _ => node,
-        };
-        let (start_line, end_line) = line_range(span, last);
         found.push((
             node,
             Definition {
@@ -263,33 +271,39 @@ fn definitions(query: &Query, root: Node<'_>, source: &[u8], last: u32) -> Vec<D
                 },
                 name: text(name),
                 receiver: receiver.map(text),
-                start_line,
-                end_line,
-                parents: Vec::new(),
+                start_line: 0,
+                end_line: 0,
+                parent: None,
             },
         ));
     }
+    for (node, def) in &mut found {
+        let span = decorated.get(&node.id()).unwrap_or(node);
+        (def.start_line, def.end_line) = line_range(*span, last);
+    }
     // Sort by position so every parent comes before what it encloses.
     found.sort_by_key(|(n, _)| (n.start_byte(), std::cmp::Reverse(n.end_byte())));
-    let ids: HashMap<usize, usize> = found
-        .iter()
-        .enumerate()
-        .map(|(i, (n, _))| (n.id(), i))
-        .collect();
+    // Each found definition's depth and, if kept, its index in `defs`.
+    let mut kept: Vec<(usize, Option<usize>)> = Vec::with_capacity(found.len());
+    // The enclosing definitions of the current one, as (end byte, index in
+    // `found`), innermost last. A stack over the sorted spans, because
+    // `Node::parent` walks down from the root and costs the node's depth.
+    let mut open: Vec<(usize, usize)> = Vec::new();
     let mut defs = Vec::with_capacity(found.len());
     for (index, (node, mut def)) in found.into_iter().enumerate() {
-        let mut parent = node.parent();
-        while let Some(p) = parent {
-            // `i < index` holds for every real parent; checking it keeps a
-            // parent and child with the same span from pointing forwards.
-            if let Some(&i) = ids.get(&p.id())
-                && i < index
-            {
-                def.parents.push(i);
-            }
-            parent = p.parent();
+        while open.last().is_some_and(|&(end, _)| end < node.end_byte()) {
+            open.pop();
         }
-        def.parents.reverse();
+        let parent = open.last().map(|&(_, i)| i);
+        open.push((node.end_byte(), index));
+        let depth = parent.map_or(1, |i| kept[i].0 + 1);
+        if depth > MAX_DEPTH {
+            kept.push((depth, None));
+            continue;
+        }
+        // A kept definition's parent is shallower, so it was kept too.
+        def.parent = parent.and_then(|i| kept[i].1);
+        kept.push((depth, Some(defs.len())));
         defs.push(def);
     }
     defs
@@ -301,6 +315,8 @@ fn symbol_kind(node: Node<'_>) -> SymbolKind {
         "method_definition"
         | "method_declaration"
         | "abstract_method_signature"
+        | "method_signature"
+        | "method_elem"
         | "constructor_declaration" => SymbolKind::Method,
         "struct_item" | "union_item" | "struct_declaration" => SymbolKind::Struct,
         "enum_item" | "enum_declaration" => SymbolKind::Enum,
@@ -308,6 +324,7 @@ fn symbol_kind(node: Node<'_>) -> SymbolKind {
         "interface_declaration" => SymbolKind::Interface,
         "class_definition"
         | "class_declaration"
+        | "class"
         | "abstract_class_declaration"
         | "record_declaration" => SymbolKind::Class,
         // Go: `type Foo struct {...}` or `type Foo interface {...}`.

@@ -109,7 +109,10 @@ pub(super) fn sections<'a>(lines: &Lines<'a>) -> Vec<Chunk<'a>> {
         }
         if let Some(marker @ ('`' | '~')) = body.chars().next() {
             let run = body.chars().take_while(|&c| c == marker).count();
-            if run >= 3 {
+            // A backtick run with a backtick after it is inline code, not a
+            // fence (CommonMark forbids backticks in a fence's info string).
+            let inline = marker == '`' && fence.is_none() && body[run..].contains('`');
+            if run >= 3 && !inline {
                 match fence {
                     None => fence = Some((marker, run)),
                     Some((open, len))

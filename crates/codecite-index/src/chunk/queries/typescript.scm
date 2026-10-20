@@ -4,10 +4,12 @@
 (function_signature name: (identifier) @name) @function
 (method_definition name: (_) @name) @function
 (abstract_method_signature name: (_) @name) @function
+(method_signature name: (_) @name) @function
 (variable_declarator
   name: (identifier) @name
   value: [(arrow_function) (function_expression)]) @function
 (class_declaration name: (_) @name) @type
+(class name: (_) @name) @type
 (abstract_class_declaration name: (_) @name) @type
 (interface_declaration name: (_) @name) @type
 (enum_declaration name: (_) @name) @type

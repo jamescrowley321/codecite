@@ -9,4 +9,5 @@
              (generic_type type: (type_identifier) @receiver)
              (pointer_type (generic_type type: (type_identifier) @receiver))]))
   name: (field_identifier) @name) @function
+(method_elem name: (field_identifier) @name) @function
 (type_spec name: (type_identifier) @name type: [(struct_type) (interface_type)]) @type

@@ -281,6 +281,7 @@ mod tests {
                 ("window", 1, 5, ""),
                 ("class", 6, 8, "Client#"),
                 ("class", 10, 12, "Verifier#"),
+                ("function", 11, 11, "Verifier#Verify()."),
                 ("function", 14, 16, "NewClient()."),
                 ("function", 18, 20, "Client#Validate()."),
             ])
@@ -319,6 +320,7 @@ mod tests {
             [
                 ("Client".to_string(), SymbolKind::Struct),
                 ("Verifier".to_string(), SymbolKind::Interface),
+                ("Verify".to_string(), SymbolKind::Method),
                 ("NewClient".to_string(), SymbolKind::Function),
                 ("Validate".to_string(), SymbolKind::Method),
             ]
@@ -353,6 +355,54 @@ mod tests {
                 ("class", 7, 7, ""),
                 ("function", 7, 7, "Path#new()."),
             ])
+        );
+    }
+
+    #[test]
+    fn deep_nesting_stops_at_the_depth_limit() {
+        // 20,000 nested functions, 180 KB: quadratic memory would need gigabytes.
+        let depth = 20_000;
+        let text = "fn f() {\n".repeat(depth) + &"}\n".repeat(depth);
+        let mut chunker = Chunker::new().unwrap();
+        let chunks = chunker.chunk("deep.rs", &text);
+        assert_eq!(chunks.len(), code::MAX_DEPTH);
+        let deepest = chunks.last().unwrap().symbol.as_ref().unwrap();
+        assert_eq!(deepest.descriptor, "f().".repeat(code::MAX_DEPTH));
+    }
+
+    #[test]
+    fn interface_methods_without_bodies() {
+        assert_eq!(
+            outline("i.ts", "interface I {\n  run(): void;\n}\n"),
+            expect(&[("class", 1, 3, "I#"), ("function", 2, 2, "I#run().")])
+        );
+        assert_eq!(
+            outline("i.go", "package p\n\ntype I interface {\n\tRun() bool\n}\n"),
+            expect(&[
+                ("window", 1, 1, ""),
+                ("class", 3, 5, "I#"),
+                ("function", 4, 4, "I#Run()."),
+            ])
+        );
+    }
+
+    #[test]
+    fn named_class_expressions() {
+        let text = "const C = class Client {\n  validate() {}\n};\n";
+        let want = expect(&[
+            ("class", 1, 3, "Client#"),
+            ("function", 2, 2, "Client#validate()."),
+        ]);
+        assert_eq!(outline("c.js", text), want);
+        assert_eq!(outline("c.ts", text), want);
+    }
+
+    #[test]
+    fn markdown_inline_code_is_not_a_fence() {
+        let text = "```inline```\n# Real\ntext\n";
+        assert_eq!(
+            outline("a.md", text),
+            expect(&[("window", 1, 1, ""), ("section", 2, 3, "Real")])
         );
     }
 
