@@ -89,6 +89,83 @@ fn index_writes_the_corpus_file_and_reindexes_incrementally() {
     );
 }
 
+/// The stdout of `git -C <dir> <args>`, trimmed.
+fn git_out(dir: &Path, args: &[&str]) -> String {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "git {args:?}");
+    String::from_utf8(output.stdout)
+        .unwrap()
+        .trim_end()
+        .to_owned()
+}
+
+#[test]
+fn a_git_source_is_cloned_once_and_cited_at_its_commit() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("app");
+    fs::create_dir_all(repo.join("src")).unwrap();
+    git(&repo, &["init", "-q"]);
+    fs::write(repo.join("src/lib.rs"), "pub fn validate_token() {}\n").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-q", "-m", "init"]);
+    // A bare remote served over file://, so the clone is a partial one.
+    let remote = tmp.path().join("remote/app.git");
+    fs::create_dir_all(&remote).unwrap();
+    git(&remote, &["init", "-q", "--bare"]);
+    git(&remote, &["config", "uploadpack.allowFilter", "true"]);
+    let url = format!("file://{}", remote.display());
+    git(&repo, &["push", "-q", &url, "HEAD:refs/heads/main"]);
+    let commit = git_out(&repo, &["rev-parse", "HEAD"]);
+
+    let work = tmp.path().join("work");
+    fs::create_dir_all(work.join("corpora")).unwrap();
+    let pin = |commit: &str| {
+        fs::write(
+            work.join("corpora/demo.toml"),
+            format!(
+                "name = \"demo\"\n\n[[source]]\nurl = {url:?}\ncommit = {commit:?}\nuse = \"adapt\"\n"
+            ),
+        )
+        .unwrap();
+    };
+    pin(&commit);
+    let first = stdout(&codecite(&work, tmp.path(), &["index", "demo"]));
+    assert!(
+        first.contains("documents: 1 written, 0 unchanged, 0 removed"),
+        "{first}"
+    );
+    let repos = tmp.path().join("cache/codecite/repos");
+    assert_eq!(fs::read_dir(&repos).unwrap().count(), 1);
+
+    let citation = format!("app@{}:src/lib.rs#L1", &commit[..7]);
+    let read = stdout(&codecite(&work, tmp.path(), &["read", "demo", &citation]));
+    assert!(read.contains("validate_token"), "{read}");
+
+    // A commit the remote doesn't have is an error naming it.
+    pin(&"0".repeat(40));
+    let missing = codecite(&work, tmp.path(), &["index", "demo"]);
+    assert!(!missing.status.success());
+    let stderr = String::from_utf8_lossy(&missing.stderr);
+    assert!(
+        stderr.contains(&format!("has no commit {}", "0".repeat(40))),
+        "{stderr}"
+    );
+
+    // With the remote gone, the clone still has the pinned commit.
+    fs::remove_dir_all(tmp.path().join("remote")).unwrap();
+    pin(&commit);
+    let offline = stdout(&codecite(&work, tmp.path(), &["index", "demo"]));
+    assert!(
+        offline.contains("documents: 0 written, 1 unchanged, 0 removed"),
+        "{offline}"
+    );
+}
+
 #[test]
 fn index_errors_name_the_problem() {
     let tmp = tempfile::tempdir().unwrap();
