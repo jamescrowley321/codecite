@@ -14,6 +14,9 @@ pub use chunk::{
     Chunk, ChunkKind, Chunker, ChunkerError, Language, Symbol, SymbolKind, WINDOW_LINES,
 };
 
+mod clone;
+pub use clone::{CloneError, Clones};
+
 mod error;
 pub use error::{Error, Result};
 

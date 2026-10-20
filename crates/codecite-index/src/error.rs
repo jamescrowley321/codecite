@@ -29,6 +29,11 @@ pub enum Error {
     #[error(transparent)]
     Fetch(#[from] crate::FetchError),
 
+    /// A git source could not be cloned, fetched or checked out, or its
+    /// repository has no commit with the pinned id.
+    #[error(transparent)]
+    Clone(#[from] crate::CloneError),
+
     /// A walked file could not be read.
     #[error("reading {}", path.display())]
     ReadFile {

@@ -1,4 +1,5 @@
-//! A throwaway git repository for the walk's and the index's tests.
+//! Throwaway git repositories for the walk's, the clone cache's and the
+//! index's tests: a work tree to commit in and a bare remote to push to.
 
 use std::fs;
 use std::path::Path;
@@ -62,5 +63,49 @@ impl Repo {
         args.extend_from_slice(paths);
         self.git(&args);
         self.git(&["commit", "-q", "-m", "test"]);
+    }
+
+    /// Pushes HEAD to `branch` on `remote` and returns HEAD's commit.
+    pub(crate) fn push(&self, remote: &Remote, branch: &str) -> String {
+        self.git(&[
+            "push",
+            "-q",
+            &remote.url(),
+            &format!("HEAD:refs/heads/{branch}"),
+        ]);
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(self.path())
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .unwrap();
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .trim_end()
+            .to_owned()
+    }
+}
+
+/// A bare repository in a temporary directory, served to clones over
+/// `file://` so they behave as they would over the network: a plain path
+/// would make a local clone, which ignores `--filter`.
+pub(crate) struct Remote {
+    repo: Repo,
+}
+
+impl Remote {
+    /// `git init --bare`, allowing partial clones.
+    pub(crate) fn new() -> Self {
+        let repo = Repo {
+            dir: tempfile::tempdir().unwrap(),
+        };
+        repo.git(&["init", "-q", "--bare"]);
+        repo.git(&["config", "uploadpack.allowFilter", "true"]);
+        Remote { repo }
+    }
+
+    /// The remote's `file://` URL.
+    pub(crate) fn url(&self) -> String {
+        format!("file://{}", self.repo.path().display())
     }
 }
