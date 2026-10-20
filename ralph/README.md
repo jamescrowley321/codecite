@@ -6,6 +6,7 @@
 - `phases/`: `restack → setup → plan → implement → pr → ci → review → review-fix → complete`. Planning and TDD use the superpowers skills.
 - Review runs in CI: `.github/workflows/claude.yml` reviews each PR when it opens. The loop waits for that verdict, answers each round in a PR comment, and asks `@claude review this PR` after its fixes, for up to two re-reviews. If CI doesn't review, the loop runs `blind-peer-review:check` locally and posts the result. The plugin chooses the lenses, so tuning the review means changing the plugin pin in `claude.yml`.
 - `run.sh`: launches or resumes the loop from the runner worktree `~/repos/codecite-worktrees/ralph-loop`.
+- `wait-ci.sh` and `wait-review.sh`: after each push, sleep a minute, then wait for that commit's CI run or for the review comment. `ci` fixes failures from the log the script prints and pushes again (up to 3 attempts).
 
 ## Run
 
