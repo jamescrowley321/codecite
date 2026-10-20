@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, bail};
 use clap::{Parser, Subcommand};
-use codecite_core::{SearchQuery, SearchResult, Store, is_corpus_name};
+use codecite_core::{
+    DEFAULT_MAX_LINES, ReadOptions, ReadResult, SearchQuery, SearchResult, Store, is_corpus_name,
+};
 use codecite_index::{Fetcher, LicenseClass, Manifest, Source, WalkOptions, index_corpus};
 
 /// Command-line arguments.
@@ -53,6 +55,23 @@ enum Command {
         #[arg(long)]
         allow_stale: bool,
     },
+    /// Print the exact text a citation points at, with its pinned citation.
+    Read {
+        /// The corpus to read from.
+        corpus: String,
+        /// A code or spec citation, as search prints it, as a spec URL, or
+        /// as people write it: `RFC 9449 §4.3`, `OIDC Core §3.1.3.7 step 13`.
+        citation: String,
+        /// The most lines of text to print.
+        #[arg(long, default_value_t = DEFAULT_MAX_LINES, value_parser = clap::value_parser!(u32).range(1..))]
+        max_lines: u32,
+        /// Print the result as a JSON object.
+        #[arg(long)]
+        json: bool,
+        /// Read an index older than its manifest's `max_age_days`.
+        #[arg(long)]
+        allow_stale: bool,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -79,6 +98,19 @@ fn main() -> anyhow::Result<()> {
                 allow_stale,
             };
             search(&corpus, &query, json)
+        }
+        Command::Read {
+            corpus,
+            citation,
+            max_lines,
+            json,
+            allow_stale,
+        } => {
+            let options = ReadOptions {
+                max_lines,
+                allow_stale,
+            };
+            read(&corpus, &citation, &options, json)
         }
     }
 }
@@ -137,11 +169,45 @@ fn search(corpus: &str, query: &SearchQuery<'_>, json: bool) -> anyhow::Result<(
     let dirs = project_dirs()?;
     let store = Store::open_corpus(dirs.data_dir(), corpus)?;
     let results = store.search(query)?;
-    match write_results(&mut std::io::stdout().lock(), &results, json) {
-        // A reader that stops early, like `| head`, is not a failure.
+    to_stdout(|out| write_results(out, &results, json))
+}
+
+/// `codecite read`: opens the corpus read-only and prints the cited text,
+/// as JSON or in its human form.
+fn read(corpus: &str, citation: &str, options: &ReadOptions, json: bool) -> anyhow::Result<()> {
+    let dirs = project_dirs()?;
+    let store = Store::open_corpus(dirs.data_dir(), corpus)?;
+    let result = store.read(citation, options)?;
+    to_stdout(|out| write_read(out, &result, json))
+}
+
+/// Runs `write` on stdout. A reader that stops early, like `| head`, is
+/// not a failure.
+fn to_stdout(
+    write: impl FnOnce(&mut std::io::StdoutLock<'static>) -> std::io::Result<()>,
+) -> anyhow::Result<()> {
+    match write(&mut std::io::stdout().lock()) {
         Err(err) if err.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
-        written => written.context("writing the results"),
+        written => written.context("writing to stdout"),
     }
+}
+
+/// Writes a read result to `out`: as JSON, or its `Display` form with
+/// control characters escaped line by line.
+fn write_read(
+    out: &mut impl std::io::Write,
+    result: &ReadResult,
+    json: bool,
+) -> std::io::Result<()> {
+    if json {
+        serde_json::to_writer_pretty(&mut *out, result)?;
+        writeln!(out)?;
+    } else {
+        for line in result.to_string().lines() {
+            writeln!(out, "{}", escape_controls(line))?;
+        }
+    }
+    out.flush()
 }
 
 /// Writes the results to `out`. Unlike `println!`, which panics when stdout
@@ -344,6 +410,80 @@ mod tests {
         assert!(json && allow_stale);
         let zero = ["codecite", "search", "identity", "jti", "--limit", "0"];
         assert!(Cli::try_parse_from(zero).is_err());
+    }
+
+    #[test]
+    fn read_takes_a_corpus_a_citation_and_a_line_cap() {
+        assert!(Cli::try_parse_from(["codecite", "read", "identity"]).is_err());
+        let cli = Cli::try_parse_from(["codecite", "read", "identity", "RFC 9449 §4.3"]).unwrap();
+        let Command::Read {
+            corpus,
+            citation,
+            max_lines,
+            json,
+            allow_stale,
+        } = cli.command
+        else {
+            panic!("not read");
+        };
+        assert_eq!(
+            (corpus.as_str(), citation.as_str()),
+            ("identity", "RFC 9449 §4.3")
+        );
+        assert_eq!(max_lines, 80);
+        assert!(!json && !allow_stale);
+        let cli = Cli::try_parse_from([
+            "codecite",
+            "read",
+            "identity",
+            "§4.3",
+            "--max-lines",
+            "5",
+            "--json",
+            "--allow-stale",
+        ])
+        .unwrap();
+        let Command::Read {
+            max_lines,
+            json,
+            allow_stale,
+            ..
+        } = cli.command
+        else {
+            panic!("not read");
+        };
+        assert_eq!(max_lines, 5);
+        assert!(json && allow_stale);
+        let zero = ["codecite", "read", "identity", "§4.3", "--max-lines", "0"];
+        assert!(Cli::try_parse_from(zero).is_err());
+    }
+
+    #[test]
+    fn the_read_form_escapes_control_characters() {
+        let result = ReadResult {
+            citation: "app@0123456:a.md#L1-L2".into(),
+            kind: "code".into(),
+            title: None,
+            strength: None,
+            license_class: "adapt".into(),
+            indexed_at: "2026-10-20T06:00:00Z".into(),
+            dirty: Some(false),
+            text: "# Title\u{1b}]52;c;ZWNobyBoaQ==\u{7}\n\tend".into(),
+            truncated: false,
+        };
+        let mut out = Vec::new();
+        write_read(&mut out, &result, false).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "app@0123456:a.md#L1-L2
+code · adapt · indexed 2026-10-20T06:00:00Z
+
+# Title\\u{1b}]52;c;ZWNobyBoaQ==\\u{7}
+\tend
+"
+        );
+        let err = write_read(&mut ClosedPipe, &result, true).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::BrokenPipe);
     }
 
     #[test]

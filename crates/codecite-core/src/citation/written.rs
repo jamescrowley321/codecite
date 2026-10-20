@@ -30,6 +30,14 @@ impl SpecAliases {
     pub fn get(&self, alias: &str) -> Option<&str> {
         self.0.get(&normalize(alias)).map(String::as_str)
     }
+
+    /// Each alias, as lookups normalize it, with the document it names, in
+    /// no particular order.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.0
+            .iter()
+            .map(|(alias, doc)| (alias.as_str(), doc.as_str()))
+    }
 }
 
 impl<'a> FromIterator<(&'a str, &'a str)> for SpecAliases {
@@ -339,6 +347,17 @@ mod tests {
         check("rfc9449 section 4.3", Some("rfc9449"), &[4, 3], None);
         check("Core §3.1.3.7 Step 13", core, &[3, 1, 3, 7], Some(13));
         check("Core §3.1.3.7(13)", core, &[3, 1, 3, 7], Some(13));
+    }
+
+    #[test]
+    fn iter_yields_normalized_aliases() {
+        let a: SpecAliases = [("OIDC  Core", "openid-connect-core-1_0")]
+            .into_iter()
+            .collect();
+        let pairs: Vec<(&str, &str)> = a.iter().collect();
+        assert_eq!(pairs, [("oidc core", "openid-connect-core-1_0")]);
+        let again: SpecAliases = a.iter().collect();
+        assert_eq!(again, a);
     }
 
     #[test]

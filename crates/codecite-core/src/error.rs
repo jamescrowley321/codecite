@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+use crate::CitationError;
+
 /// An error from `codecite-core`.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -73,6 +75,154 @@ pub enum Error {
     /// The query has no letter or digit to search for.
     #[error("the query has no words to search for")]
     EmptyQuery,
+
+    /// The text matches none of the citation forms `read` accepts.
+    #[error(
+        "{text:?} is not a citation; write repo@sha:path#L10-L42, doc@sha256:<hash>#section-4.3, a spec URL, or a form like RFC 9449 §4.3"
+    )]
+    NotACitation {
+        /// The text as given.
+        text: String,
+    },
+
+    /// The text has the shape of a citation but is malformed.
+    #[error("invalid citation {text:?}")]
+    BadCitation {
+        /// The text as given.
+        text: String,
+        /// What is wrong with it.
+        #[source]
+        source: CitationError,
+    },
+
+    /// The corpus has no source or document with this name.
+    #[error(
+        "the corpus has no source or document `{name}`; {}",
+        list_of("known", known)
+    )]
+    UnknownSource {
+        /// The name the citation gives.
+        name: String,
+        /// The names the corpus does have, of the same kind, sorted.
+        known: Vec<String>,
+    },
+
+    /// The source or document is in the corpus, but not at the version the
+    /// citation names.
+    #[error("`{name}` is not indexed at {version}; {}", list_of("indexed", known))]
+    UnknownVersion {
+        /// The source or document.
+        name: String,
+        /// The version the citation names: a commit, or `sha256:<hash>`.
+        version: String,
+        /// The versions that are indexed, as citations name them.
+        known: Vec<String>,
+    },
+
+    /// A spec citation that names no document, like `§3.1.3.7`, is not in
+    /// exactly one current document.
+    #[error("{}", ambiguous(reference, candidates))]
+    AmbiguousDocument {
+        /// The citation as given.
+        reference: String,
+        /// The pinned citations of each current document that has it.
+        candidates: Vec<String>,
+    },
+
+    /// The document version has no such section.
+    #[error(
+        "{document} has no section {section}; {}",
+        list_of("nearest", candidates)
+    )]
+    NoSuchSection {
+        /// The pinned document: `rfc9449@sha256:1a2b3c4d5e6f`.
+        document: String,
+        /// The section as cited: `4.9`, or `#anchor` for a URL's anchor.
+        section: String,
+        /// The nearest sections that do exist, as pinned citations.
+        candidates: Vec<String>,
+    },
+
+    /// The section exists, but its number, like an appendix's `A.1`, has no
+    /// canonical citation form, so no citation could read it back.
+    #[error("{document} section {section} has no canonical citation form yet")]
+    UncitableSection {
+        /// The pinned document: `rfc9449@sha256:1a2b3c4d5e6f`.
+        document: String,
+        /// The section's number as the document writes it: `A.1`.
+        section: String,
+    },
+
+    /// The section has no such step.
+    #[error("{section} has no step {step}; {}", list_of("nearest", candidates))]
+    NoSuchStep {
+        /// The section, as a pinned citation.
+        section: String,
+        /// The step asked for.
+        step: u32,
+        /// The nearest steps that do exist, or the section itself when it
+        /// has none, as pinned citations.
+        candidates: Vec<String>,
+    },
+
+    /// The source has no indexed file at this path.
+    #[error(
+        "{repo} has no indexed file {path:?}; {}",
+        list_of("candidates", candidates)
+    )]
+    NoSuchFile {
+        /// The source at its commit: `app@0123abc`.
+        repo: String,
+        /// The path asked for.
+        path: String,
+        /// Indexed files with the same file name.
+        candidates: Vec<String>,
+    },
+
+    /// A code citation runs past the end of its file.
+    #[error("{citation} runs past the end of the file, which has {lines} lines")]
+    LinesPastEnd {
+        /// The citation, with the source's full commit.
+        citation: String,
+        /// How many lines the file has.
+        lines: u32,
+    },
+}
+
+/// The end of an error message that lists candidates: `nearest: a, b`, or
+/// `no candidates`. Candidates come from indexed text, such as file paths,
+/// so their control characters are escaped before they reach a terminal.
+fn list_of(label: &str, list: &[String]) -> String {
+    if list.is_empty() {
+        return "no candidates".into();
+    }
+    let escaped: Vec<String> = list.iter().map(|c| escape_controls(c)).collect();
+    format!("{label}: {}", escaped.join(", "))
+}
+
+/// `text` with each control character but a tab written as `\u{..}`.
+fn escape_controls(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_control() && c != '\t' {
+                c.escape_unicode().to_string()
+            } else {
+                c.to_string()
+            }
+        })
+        .collect()
+}
+
+/// The message of an [`Error::AmbiguousDocument`].
+fn ambiguous(reference: &str, list: &[String]) -> String {
+    if list.is_empty() {
+        format!("no current document has {reference}")
+    } else {
+        format!(
+            "{reference} names no document and is not in exactly one current document; name one: {}",
+            list.join(", ")
+        )
+    }
 }
 
 /// The end of an [`Error::UnknownCorpus`] message.
@@ -168,6 +318,72 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "corpus `identity` was indexed at 2026-09-01T00:00:00Z, more than 30 days ago; re-run codecite index, or allow a stale index"
+        );
+    }
+
+    #[test]
+    fn read_errors_list_their_candidates() {
+        let err = Error::AmbiguousDocument {
+            reference: "§4.3".into(),
+            candidates: vec![
+                "rfc9449@sha256:1a2b3c4d5e6f#section-4.3".into(),
+                "rfc6749@sha256:abcdefabcdef#section-4.3".into(),
+            ],
+        };
+        assert_eq!(
+            err.to_string(),
+            "§4.3 names no document and is not in exactly one current document; name one: rfc9449@sha256:1a2b3c4d5e6f#section-4.3, rfc6749@sha256:abcdefabcdef#section-4.3"
+        );
+        let err = Error::AmbiguousDocument {
+            reference: "§99".into(),
+            candidates: vec![],
+        };
+        assert_eq!(err.to_string(), "no current document has §99");
+        let err = Error::NoSuchStep {
+            section: "rfc9449@sha256:1a2b3c4d5e6f#section-4.3".into(),
+            step: 14,
+            candidates: vec!["rfc9449@sha256:1a2b3c4d5e6f#section-4.3/step-12".into()],
+        };
+        assert_eq!(
+            err.to_string(),
+            "rfc9449@sha256:1a2b3c4d5e6f#section-4.3 has no step 14; nearest: rfc9449@sha256:1a2b3c4d5e6f#section-4.3/step-12"
+        );
+        let err = Error::NoSuchFile {
+            repo: "app@0123abc".into(),
+            path: "src/nope.rs".into(),
+            candidates: vec![],
+        };
+        assert_eq!(
+            err.to_string(),
+            "app@0123abc has no indexed file \"src/nope.rs\"; no candidates"
+        );
+    }
+
+    #[test]
+    fn candidates_have_their_control_characters_escaped() {
+        let err = Error::NoSuchFile {
+            repo: "app@0123abc".into(),
+            path: "src/lib.rs".into(),
+            candidates: vec!["src/\u{1b}]52;c;aGk=\u{7}/lib.rs".into()],
+        };
+        assert_eq!(
+            err.to_string(),
+            "app@0123abc has no indexed file \"src/lib.rs\"; candidates: src/\\u{1b}]52;c;aGk=\\u{7}/lib.rs"
+        );
+    }
+
+    #[test]
+    fn a_bad_citation_keeps_the_parse_error_as_its_source() {
+        let err = Error::BadCitation {
+            text: "§04.3".into(),
+            source: CitationError::BadSection {
+                found: "04.3".into(),
+            },
+        };
+        assert_eq!(err.to_string(), "invalid citation \"§04.3\"");
+        assert_eq!(
+            err.source().unwrap().to_string(),
+            "section \"04.3\" is not dot-separated numbers like 3.1.3.7"
         );
     }
 

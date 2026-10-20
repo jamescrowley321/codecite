@@ -9,6 +9,9 @@ use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionB
 
 use crate::{Error, Result};
 
+mod read;
+pub use read::{DEFAULT_MAX_LINES, ReadOptions, ReadResult};
+
 mod search;
 pub use search::{DEFAULT_MAX_AGE_DAYS, Freshness, MAX_SNIPPET_LINES, SearchQuery, SearchResult};
 
@@ -22,6 +25,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0001_initial.sql"),
     include_str!("../migrations/0002_incremental_index.sql"),
     include_str!("../migrations/0003_document_versions.sql"),
+    include_str!("../migrations/0004_read.sql"),
 ];
 
 /// The schema version this build creates and reads.
@@ -653,6 +657,50 @@ mod tests {
             assert_eq!(rows, 0, "{table}");
         }
         assert_eq!(fts(&store.conn), 0);
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn version_4_makes_the_next_run_rewrite_code_files() {
+        let dir = scratch("v3");
+        let path = dir.join("corpus.db");
+        // A version 3 corpus with a code file and a spec version.
+        raw(&path)
+            .execute_batch(&format!(
+                "{}
+                 {}
+                 {}
+                 INSERT INTO meta (key, value) VALUES ('schema_version', '3');
+                 INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
+                   VALUES (1, 'app', 'local', '/src/app', 'abc', 'adapt', 'then'),
+                          (2, 'rfc9449', 'document', 'https://x', 'def', 'quote', 'then');
+                 INSERT INTO document (id, source_id, path, content_hash)
+                   VALUES (1, 1, 'src/lib.rs', x'01'), (2, 2, 'rfc9449', x'02');",
+                MIGRATIONS[0], MIGRATIONS[1], MIGRATIONS[2]
+            ))
+            .unwrap();
+
+        let store = Store::open_read_write(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+        let rows: Vec<(String, Vec<u8>, Option<String>)> = {
+            let mut stmt = store
+                .conn
+                .prepare("SELECT path, content_hash, text FROM document ORDER BY id")
+                .unwrap();
+            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap()
+        };
+        assert_eq!(
+            rows,
+            [
+                ("src/lib.rs".to_owned(), vec![], None),
+                ("rfc9449".to_owned(), vec![2], None)
+            ]
+        );
+        assert!(table_names(&store.conn).iter().any(|t| t == "alias"));
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }
