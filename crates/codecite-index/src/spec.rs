@@ -1,10 +1,18 @@
-//! Spec documents: splits RFC and OpenID HTML into numbered sections over a
-//! plain-text rendering of the page. This module only parses: the caller
-//! fetches the bytes (see [`Fetcher`](crate::Fetcher)) and passes the HTML in.
+//! Spec documents: splits RFC and OpenID HTML into numbered sections and
+//! the numbered steps inside them, over a plain-text rendering of the page,
+//! and reads an RFC's relations to other RFCs from its header. This module
+//! only parses: the caller fetches the bytes (see [`Fetcher`](crate::Fetcher))
+//! and passes the HTML in.
 
+mod relations;
 mod render;
 
+use std::collections::HashSet;
+
+use codecite_core::{Keyword, requirement_keywords};
 use scraper::Html;
+
+use crate::DocumentSource;
 
 /// The HTML layouts [`split_spec`] reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -40,6 +48,67 @@ pub struct SpecSection {
     pub end_line: u32,
     /// Lines `start_line..=end_line` of [`SpecDocument::text`].
     pub text: String,
+    /// The requirement keywords in [`SpecSection::text`], steps included.
+    pub strength: Vec<Keyword>,
+    /// The items of the section's numbered lists, in order.
+    pub steps: Vec<SpecStep>,
+}
+
+impl SpecSection {
+    /// The step numbered `number`, as `section-<n>/step-<k>` cites it.
+    pub fn step(&self, number: u32) -> Option<&SpecStep> {
+        self.steps.iter().find(|s| s.number == number)
+    }
+}
+
+/// One item of a numbered list inside a section: step 13 of Core
+/// §3.1.3.7.
+///
+/// The items of an `<ol>` are steps, and so, in an older RFC's plain text,
+/// are paragraphs numbered `1.`, `2.`, … at one indent. Lists nested in a
+/// step stay part of its text. Step numbers are unique within a section: a
+/// later list that numbers an item again gives no step for it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpecStep {
+    /// The number the document writes before the step.
+    pub number: u32,
+    /// The step's first line in [`SpecDocument::text`], counting from 1.
+    pub start_line: u32,
+    /// The step's last line, inclusive.
+    pub end_line: u32,
+    /// Lines `start_line..=end_line` of [`SpecDocument::text`], starting
+    /// with the number: `13. If the auth_time Claim was requested, …`.
+    pub text: String,
+    /// The requirement keywords in [`SpecStep::text`].
+    pub strength: Vec<Keyword>,
+}
+
+/// How a document relates to other documents, by name: `rfc6749`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SpecRelations {
+    /// The documents this one replaces.
+    pub obsoletes: Vec<String>,
+    /// The documents this one amends.
+    pub updates: Vec<String>,
+    /// The documents that replace this one.
+    pub obsoleted_by: Vec<String>,
+    /// The documents that amend this one.
+    pub updated_by: Vec<String>,
+}
+
+impl SpecRelations {
+    /// These relations with the manifest's hand-written ones in place of
+    /// what the document says: a document published before its successor
+    /// can't name it, and the manifest names documents as the corpus does.
+    pub fn with_manifest(mut self, source: &DocumentSource) -> Self {
+        if let Some(name) = &source.obsoleted_by {
+            self.obsoleted_by = vec![name.clone()];
+        }
+        if let Some(name) = &source.updated_by {
+            self.updated_by = vec![name.clone()];
+        }
+        self
+    }
 }
 
 /// A spec page split into sections.
@@ -53,6 +122,10 @@ pub struct SpecDocument {
     /// Every numbered section in document order. Front matter, the table
     /// of contents, unnumbered sections and the references are not here.
     pub sections: Vec<SpecSection>,
+    /// The relations the page's header lists: the "Obsoletes", "Updates",
+    /// "Obsoleted by" and "Updated by" fields of an RFC. Empty for an
+    /// OpenID spec. See [`SpecRelations::with_manifest`].
+    pub relations: SpecRelations,
 }
 
 impl SpecDocument {
@@ -71,7 +144,8 @@ pub enum SpecError {
     UnknownFormat,
 }
 
-/// Splits a spec page's HTML into its numbered sections.
+/// Splits a spec page's HTML into its numbered sections and steps, and
+/// reads its relations.
 ///
 /// Parsing never fails on malformed HTML: `html5ever` repairs it the way a
 /// browser does. The only error is a page in none of the [`SpecFormat`]s.
@@ -79,7 +153,9 @@ pub fn split_spec(html: &str) -> Result<SpecDocument, SpecError> {
     let html = Html::parse_document(html);
     let format = render::detect(&html).ok_or(SpecError::UnknownFormat)?;
     let rendered = render::render(&html, format);
-    Ok(split(format, rendered))
+    let mut doc = split(format, rendered);
+    doc.relations = relations::relations(&html, format);
+    Ok(doc)
 }
 
 /// Section titles that start the references, which are not sections.
@@ -93,7 +169,11 @@ const REFERENCES: [&str; 3] = [
 /// the section before it, numbered or not, so an unnumbered heading such as
 /// "Authors' Addresses" keeps its text out of the last section.
 fn split(format: SpecFormat, rendered: render::Rendered) -> SpecDocument {
-    let render::Rendered { lines, headings } = rendered;
+    let render::Rendered {
+        lines,
+        headings,
+        items,
+    } = rendered;
     let mut sections: Vec<SpecSection> = Vec::new();
     let mut excluded: Vec<String> = Vec::new();
     for (i, heading) in headings.iter().enumerate() {
@@ -129,6 +209,11 @@ fn split(format: SpecFormat, rendered: render::Rendered) -> SpecDocument {
         let parent = number
             .rsplit_once('.')
             .and_then(|(up, _)| sections.iter().rposition(|s| s.number == up));
+        let spans = match format {
+            SpecFormat::RfcText => text_steps(&lines[..end], start + 1),
+            SpecFormat::RfcV3 | SpecFormat::OpenId => item_steps(&items, start, end),
+        };
+        let text = lines[start..end].join("\n");
         sections.push(SpecSection {
             number: number.clone(),
             title: numbered.title.clone(),
@@ -136,7 +221,9 @@ fn split(format: SpecFormat, rendered: render::Rendered) -> SpecDocument {
             parent,
             start_line: line_number(start + 1),
             end_line: line_number(end),
-            text: lines[start..end].join("\n"),
+            strength: requirement_keywords(&text),
+            text,
+            steps: steps(&lines, spans),
         });
     }
     let mut text = lines.join("\n");
@@ -145,7 +232,115 @@ fn split(format: SpecFormat, rendered: render::Rendered) -> SpecDocument {
         format,
         text,
         sections,
+        relations: SpecRelations::default(),
     }
+}
+
+/// A step's number and line range, `start..end` in the rendered lines,
+/// before blank lines are trimmed from either end.
+type StepSpan = (u64, usize, usize);
+
+/// The list items that start between lines `start` and `end`, cut off at
+/// `end`. `items` is in document order, so a binary search finds them.
+fn item_steps(items: &[render::Item], start: usize, end: usize) -> Vec<StepSpan> {
+    let first = items.partition_point(|item| item.start < start);
+    items[first..]
+        .iter()
+        .take_while(|item| item.start < end)
+        .map(|item| (item.number, item.start, item.end.min(end)))
+        .collect()
+}
+
+/// The numbered paragraphs in `lines[from..]`, a section of an older RFC
+/// after its heading:
+///
+/// ```text
+///    1.  Support private-use URI scheme redirect URIs.  This is required
+///        to support mobile operating systems.  See Section 7.1.
+///
+///    2.  Support "https" scheme redirect URIs …
+/// ```
+///
+/// A list starts at a `1.` and goes on with each next number at the same
+/// indent. A step runs to the next step, or to the first line that is not
+/// indented past the step's number, which ends the list.
+fn text_steps(lines: &[String], from: usize) -> Vec<StepSpan> {
+    let mut steps = Vec::new();
+    // The open list's indent and next number, and the open step.
+    let mut list: Option<(usize, u64)> = None;
+    let mut open: Option<(u64, usize)> = None;
+    for (n, line) in lines.iter().enumerate().skip(from) {
+        if line.is_empty() {
+            continue;
+        }
+        let numbered = numbered_paragraph(line);
+        let next_step = match (list, numbered) {
+            (None, Some((_, 1))) => numbered,
+            (Some((indent, next)), Some(found)) if found == (indent, next) => numbered,
+            _ => None,
+        };
+        if let Some((indent, number)) = next_step {
+            steps.extend(open.map(|(k, start)| (k, start, n)));
+            open = Some((number, n));
+            list = Some((indent, number + 1));
+        } else if let Some((indent, _)) = list
+            && indent_of(line) <= indent
+        {
+            steps.extend(open.take().map(|(k, start)| (k, start, n)));
+            list = None;
+        }
+    }
+    steps.extend(open.map(|(k, start)| (k, start, lines.len())));
+    steps
+}
+
+/// `Some((3, 2))` for `   2.  Support …`: the indent and the number of a
+/// line that starts with a number, a dot and a space, then text.
+fn numbered_paragraph(line: &str) -> Option<(usize, u64)> {
+    let indent = indent_of(line);
+    let rest = &line[indent..];
+    let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+    let after = rest[digits..].strip_prefix(". ")?;
+    if digits == 0 || after.trim_start().is_empty() || rest.starts_with('0') {
+        return None;
+    }
+    Some((indent, rest[..digits].parse().ok()?))
+}
+
+/// The number of spaces a line starts with.
+fn indent_of(line: &str) -> usize {
+    line.len() - line.trim_start_matches(' ').len()
+}
+
+/// Builds the steps from their spans: trims blank lines from each end, and
+/// drops a span left empty, numbered past `u32::MAX`, or numbered like an
+/// earlier step.
+fn steps(lines: &[String], spans: Vec<StepSpan>) -> Vec<SpecStep> {
+    let mut steps = Vec::new();
+    let mut taken = HashSet::new();
+    for (number, mut start, mut end) in spans {
+        while start < end && lines[start].is_empty() {
+            start += 1;
+        }
+        while end > start && lines[end - 1].is_empty() {
+            end -= 1;
+        }
+        let Ok(number) = u32::try_from(number) else {
+            continue;
+        };
+        if start == end || !taken.insert(number) {
+            continue;
+        }
+        let text = lines[start..end].join("\n");
+        steps.push(SpecStep {
+            number,
+            start_line: line_number(start + 1),
+            end_line: line_number(end),
+            strength: requirement_keywords(&text),
+            text,
+        });
+    }
+    steps
 }
 
 /// A line count as the `u32` that chunks store. A page under the 16 MiB
@@ -157,6 +352,7 @@ fn line_number(n: usize) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use Keyword::*;
 
     /// Each section as (number, title, anchor, parent number).
     fn outline(doc: &SpecDocument) -> Vec<(&str, &str, &str, Option<&str>)> {
@@ -174,13 +370,35 @@ mod tests {
             .collect()
     }
 
-    /// Every section's text is its own line range of the document text.
+    /// Every section's and step's text is its own line range of the
+    /// document text, and a step's lines are inside its section's.
     fn assert_ranges_match(doc: &SpecDocument) {
         let lines: Vec<&str> = doc.text.lines().collect();
         for s in &doc.sections {
             let range = &lines[s.start_line as usize - 1..s.end_line as usize];
             assert_eq!(range.join("\n"), s.text, "§{}", s.number);
+            for step in &s.steps {
+                let range = &lines[step.start_line as usize - 1..step.end_line as usize];
+                assert_eq!(
+                    range.join("\n"),
+                    step.text,
+                    "§{} step {}",
+                    s.number,
+                    step.number
+                );
+                assert!(s.start_line < step.start_line && step.end_line <= s.end_line);
+            }
         }
+    }
+
+    /// Each step of `section` as (number, text).
+    fn steps<'a>(doc: &'a SpecDocument, section: &str) -> Vec<(u32, &'a str)> {
+        doc.section(section)
+            .unwrap()
+            .steps
+            .iter()
+            .map(|s| (s.number, s.text.as_str()))
+            .collect()
     }
 
     #[test]
@@ -364,22 +582,191 @@ mod tests {
         assert_ranges_match(&doc);
     }
 
-    /// A real spec page, fetched through the pinned cache in the temp
-    /// directory, so only the first run downloads it.
-    fn fetch_real(name: &str, url: &str, sha256: &str) -> String {
-        use crate::{DocumentSource, Fetcher, LicenseClass};
-        let doc = DocumentSource {
+    #[test]
+    fn list_items_are_steps() {
+        let v3 = split_spec(include_str!("../tests/fixtures/spec/rfc-v3.html")).unwrap();
+        assert_eq!(
+            steps(&v3, "4.3"),
+            [
+                (
+                    1,
+                    "1. There is not more than one DPoP HTTP request header field."
+                ),
+                (
+                    2,
+                    "2. The typ JOSE Header Parameter has the value dpop+jwt."
+                ),
+            ]
+        );
+        assert_eq!(v3.section("4.3").unwrap().strength, [Must]);
+        assert!(v3.section("4.3.1").unwrap().steps.is_empty());
+
+        let openid = split_spec(include_str!("../tests/fixtures/spec/openid.html")).unwrap();
+        let s = openid.section("3.1.3.7").unwrap();
+        assert_eq!(s.steps.len(), 2);
+        assert_eq!(s.strength, [Must]);
+        assert_eq!(s.step(1).unwrap().strength, []);
+        assert_eq!(s.step(2).unwrap().strength, [Must]);
+        assert!(
+            s.step(2)
+                .unwrap()
+                .text
+                .starts_with("2. The Issuer Identifier")
+        );
+        assert_eq!(s.step(3), None);
+    }
+
+    #[test]
+    fn nested_lettered_and_renumbered_lists() {
+        let html = "<section id=\"section-1\"><h2><a class=\"section-number\">1. </a>Steps</h2>\
+                    <ol><li>One MUST.<ul><li>inner</li></ul></li>\
+                    <li><p>Two starts with a paragraph.</p><p>And SHOULD go on.</p>\
+                    <ol><li>nested</li></ol></li></ol>\
+                    <p>Between the lists.</p>\
+                    <ol type=\"a\"><li>lettered</li></ol>\
+                    <ul><li>bulleted</li></ul>\
+                    <ol><li>restarted at one</li></ol>\
+                    <ol start=\"3\"><li>three</li><li></li></ol>\
+                    <ol start=\"4294967296\"><li>too big</li></ol>\
+                    </section>";
+        let doc = split_spec(html).unwrap();
+        assert_ranges_match(&doc);
+        assert_eq!(
+            steps(&doc, "1"),
+            [
+                (1, "1. One MUST.\n\n- inner"),
+                (
+                    2,
+                    "2. Two starts with a paragraph.\n\nAnd SHOULD go on.\n\n1. nested"
+                ),
+                (3, "3. three"),
+            ]
+        );
+        let s = doc.section("1").unwrap();
+        assert_eq!(s.step(1).unwrap().strength, [Must]);
+        assert_eq!(s.step(2).unwrap().strength, [Should]);
+        assert_eq!(s.strength, [Must, Should]);
+    }
+
+    #[test]
+    fn a_step_belongs_to_the_section_it_is_in() {
+        let html = "<section id=\"section-1\"><h2><a class=\"section-number\">1. </a>One</h2>\
+                    <ol><li>first</li></ol>\
+                    <section id=\"section-1.1\"><h3><a class=\"section-number\">1.1. </a>Sub</h3>\
+                    <ol><li>sub first</li><li>sub second</li></ol></section></section>";
+        let doc = split_spec(html).unwrap();
+        assert_ranges_match(&doc);
+        assert_eq!(steps(&doc, "1"), [(1, "1. first")]);
+        assert_eq!(
+            steps(&doc, "1.1"),
+            [(1, "1. sub first"), (2, "2. sub second")]
+        );
+    }
+
+    #[test]
+    fn numbered_paragraphs_are_steps_in_older_rfcs() {
+        let html = "<pre><span class=\"h2\"><a class=\"selflink\" id=\"section-1\">1</a>.  Checks</span>\n\
+                    \n   Servers MUST:\n\
+                    \n   1.  Support private-use URI scheme redirect URIs.  This is\n\
+                    \x20      required.\n\
+                    \n       Still step one.\n\
+                    \n   2.  Support PKCE.  It SHOULD be used.\n\
+                    \n   Body text ends the list.\n\
+                    \n   3.  Not a step: its list does not start at 1.\n\
+                    \n<span class=\"h2\"><a class=\"selflink\" id=\"section-2\">2</a>.  Next</span>\n\
+                    \n   1.  Last step.\n\
+                    \x20  2. One space after the dot is enough.\n\
+                    \x20  10.  Not next in order.\n</pre>";
+        let doc = split_spec(html).unwrap();
+        assert_eq!(doc.format, SpecFormat::RfcText);
+        assert_ranges_match(&doc);
+        assert_eq!(
+            steps(&doc, "1"),
+            [
+                (
+                    1,
+                    "   1.  Support private-use URI scheme redirect URIs.  This is\n       required.\n\n       Still step one."
+                ),
+                (2, "   2.  Support PKCE.  It SHOULD be used."),
+            ]
+        );
+        assert_eq!(
+            doc.section("1").unwrap().step(2).unwrap().strength,
+            [Should]
+        );
+        assert_eq!(
+            steps(&doc, "2"),
+            [
+                (1, "   1.  Last step."),
+                // `10.` is at the list's indent but not next, so it ends
+                // the list.
+                (2, "   2. One space after the dot is enough."),
+            ]
+        );
+    }
+
+    #[test]
+    fn numbered_paragraph_lines() {
+        let line = |s: &str| numbered_paragraph(s);
+        assert_eq!(line("   2.  Support"), Some((3, 2)));
+        assert_eq!(line("1. x"), Some((0, 1)));
+        assert_eq!(line("   2.Support"), None);
+        assert_eq!(line("   2.  "), None);
+        assert_eq!(line("   02.  x"), None);
+        assert_eq!(line("   .  x"), None);
+        assert_eq!(line("   4.3.  x"), None);
+        assert_eq!(line("   99999999999999999999999.  x"), None);
+    }
+
+    #[test]
+    fn relations_from_the_header_and_the_manifest() {
+        let doc = split_spec(include_str!("../tests/fixtures/spec/rfc-text.html")).unwrap();
+        let header = SpecRelations {
+            obsoletes: vec!["rfc5849".into()],
+            ..SpecRelations::default()
+        };
+        assert_eq!(doc.relations, header);
+        let mut source = test_source("rfc6749");
+        assert_eq!(doc.relations.clone().with_manifest(&source), header);
+        source.obsoleted_by = Some("rfc9999".into());
+        source.updated_by = Some("rfc8252".into());
+        assert_eq!(
+            doc.relations.clone().with_manifest(&source),
+            SpecRelations {
+                obsoletes: vec!["rfc5849".into()],
+                updates: Vec::new(),
+                obsoleted_by: vec!["rfc9999".into()],
+                updated_by: vec!["rfc8252".into()],
+            }
+        );
+        let openid = split_spec(include_str!("../tests/fixtures/spec/openid.html")).unwrap();
+        assert_eq!(openid.relations, SpecRelations::default());
+    }
+
+    /// A document source with no relations.
+    fn test_source(name: &str) -> DocumentSource {
+        DocumentSource {
             name: name.into(),
-            url: url.into(),
-            sha256: sha256.into(),
+            url: format!("https://www.rfc-editor.org/rfc/{name}.html"),
+            sha256: "0".repeat(64),
             license: None,
-            license_class: LicenseClass::Quote,
+            license_class: crate::LicenseClass::Quote,
             current: true,
             aliases: Vec::new(),
             obsoleted_by: None,
             updated_by: None,
+        }
+    }
+
+    /// A real spec page, fetched through the pinned cache in the temp
+    /// directory, so only the first run downloads it.
+    fn fetch_real(name: &str, url: &str, sha256: &str) -> String {
+        let doc = DocumentSource {
+            url: url.into(),
+            sha256: sha256.into(),
+            ..test_source(name)
         };
-        let fetcher = Fetcher::new(std::env::temp_dir().join("codecite-documents"));
+        let fetcher = crate::Fetcher::new(std::env::temp_dir().join("codecite-documents"));
         String::from_utf8(fetcher.fetch_pinned(&doc).unwrap().bytes).unwrap()
     }
 
@@ -407,7 +794,11 @@ mod tests {
         );
         assert!(doc.section("13").is_none(), "References");
         assert!(doc.sections.iter().all(|s| s.number != "13.1"));
-        println!("RFC 9449: {} sections", doc.sections.len());
+        assert_eq!(s.steps.len(), 12);
+        assert!(s.step(12).unwrap().text.starts_with("12. If presented"));
+        assert_eq!(s.strength, [Must, Should]);
+        assert_eq!(doc.relations, SpecRelations::default());
+        report("RFC 9449", &doc);
     }
 
     #[test]
@@ -430,7 +821,14 @@ mod tests {
         assert!(!doc.text.contains("[Page "), "page footers are dropped");
         assert!(doc.section("12").is_none(), "References");
         assert!(!doc.sections.last().unwrap().text.contains("Hardt (editor)"));
-        println!("RFC 6749: {} sections", doc.sections.len());
+        assert_eq!(
+            doc.relations,
+            SpecRelations {
+                obsoletes: vec!["rfc5849".into()],
+                ..SpecRelations::default()
+            }
+        );
+        report("RFC 6749", &doc);
     }
 
     #[test]
@@ -457,7 +855,105 @@ mod tests {
         );
         assert!(!doc.text.contains("TOC"), "the TOC link boxes are dropped");
         assert!(doc.section("19").is_none(), "References");
-        println!("Core: {} sections", doc.sections.len());
+        assert_eq!(s.steps.len(), 13);
+        let step = s.step(13).unwrap();
+        assert!(step.text.contains("auth_time"), "{}", step.text);
+        assert_eq!(step.strength, [Should]);
+        assert!(s.steps[..12].iter().all(|s| !s.text.contains("auth_time")));
+        assert_eq!(doc.relations, SpecRelations::default());
+        report("Core", &doc);
+    }
+
+    #[test]
+    #[ignore = "downloads OpenID Connect Back-Channel Logout 1.0; run with `cargo test -- --ignored`"]
+    fn real_openid_connect_backchannel_logout() {
+        let html = fetch_real(
+            "openid-connect-backchannel-1_0",
+            "https://openid.net/specs/openid-connect-backchannel-1_0.html",
+            "3b5c933d5269047b39a65166d5c4d8ff6852b06451f54ed2531b8f97299fdc50",
+        );
+        let doc = split_spec(&html).unwrap();
+        assert_eq!(doc.format, SpecFormat::OpenId);
+        assert_ranges_match(&doc);
+        let s = doc.section("2.6").unwrap();
+        assert_eq!(s.title, "Logout Token Validation");
+        // Validation steps 1 to 11, the last three optional checks.
+        assert_eq!(s.steps.len(), 11);
+        assert!(
+            s.step(7)
+                .unwrap()
+                .text
+                .contains("does not contain a nonce Claim")
+        );
+        assert!(s.step(11).unwrap().text.contains("sid"));
+        assert_eq!(s.step(3).unwrap().strength, [MustNot, Should]);
+        report("Back-Channel Logout", &doc);
+    }
+
+    #[test]
+    #[ignore = "downloads RFC 8252; run with `cargo test -- --ignored`"]
+    fn real_rfc8252() {
+        let html = fetch_real(
+            "rfc8252",
+            "https://www.rfc-editor.org/rfc/rfc8252.html",
+            "fdda8f9e27f3bb4bb119742f4752df5bdfa9f8d9d3a6595ea0c3f581e13bfc79",
+        );
+        let doc = split_spec(&html).unwrap();
+        assert_eq!(doc.format, SpecFormat::RfcText);
+        assert_ranges_match(&doc);
+        // Appendix A, "Server Support Checklist", numbers its paragraphs.
+        let s = doc.section("A").unwrap();
+        assert_eq!(s.steps.len(), 5);
+        assert!(s.step(5).unwrap().text.contains("Support PKCE [RFC7636]."));
+        assert!(s.step(5).unwrap().text.ends_with("See Section 8.1"));
+        assert_eq!(
+            doc.relations,
+            SpecRelations {
+                updates: vec!["rfc6749".into()],
+                ..SpecRelations::default()
+            }
+        );
+        report("RFC 8252", &doc);
+    }
+
+    #[test]
+    #[ignore = "downloads RFC 9700; run with `cargo test -- --ignored`"]
+    fn real_rfc9700() {
+        let html = fetch_real(
+            "rfc9700",
+            "https://www.rfc-editor.org/rfc/rfc9700.html",
+            "c00e2234fcd79581bc29669c60d693afaa42f67d9205bddee848f757ae975419",
+        );
+        let doc = split_spec(&html).unwrap();
+        assert_eq!(doc.format, SpecFormat::RfcV3);
+        assert_ranges_match(&doc);
+        assert_eq!(
+            doc.relations,
+            SpecRelations {
+                updates: vec!["rfc6749".into(), "rfc6750".into(), "rfc6819".into()],
+                ..SpecRelations::default()
+            }
+        );
+        report("RFC 9700", &doc);
+    }
+
+    /// Prints how many sections and steps a real document has, and the
+    /// sections with the most steps, for the PR description.
+    fn report(name: &str, doc: &SpecDocument) {
+        let steps: usize = doc.sections.iter().map(|s| s.steps.len()).sum();
+        let mut most: Vec<_> = doc
+            .sections
+            .iter()
+            .filter(|s| !s.steps.is_empty())
+            .map(|s| (s.steps.len(), s.number.as_str()))
+            .collect();
+        most.sort_by(|a, b| b.cmp(a));
+        most.truncate(5);
+        println!(
+            "{name}: {} sections, {steps} steps; most steps: {most:?}; relations: {:?}",
+            doc.sections.len(),
+            doc.relations
+        );
     }
 
     #[test]
