@@ -5,7 +5,7 @@
 //! it skips.
 
 mod chunk;
-pub use chunk::Language;
+pub use chunk::{Chunk, ChunkKind, Chunker, Language, Symbol, SymbolKind, WINDOW_LINES};
 
 mod error;
 pub use error::{Error, Result};
