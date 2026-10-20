@@ -1,6 +1,6 @@
 //! The `git` commands the walk runs against a local checkout.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -8,10 +8,16 @@ use std::process::Command;
 use super::WalkError;
 
 /// Runs `git -C <root> <args>` and returns its stdout.
+///
+/// The repository's config is not trusted: it can name programs for git to
+/// run (`core.fsmonitor`, clean filters). The walk runs only commands that
+/// read the index, the object store and directory listings, never `status`
+/// or `diff`, and turns the file-system monitor off for each of them.
 pub(super) fn run(root: &Path, args: &[&str]) -> Result<Vec<u8>, WalkError> {
     let output = Command::new("git")
         .arg("-C")
         .arg(root)
+        .args(["-c", "core.fsmonitor=false"])
         .args(args)
         // Read-only: don't let `status` refresh and rewrite the index.
         .env("GIT_OPTIONAL_LOCKS", "0")
@@ -102,23 +108,51 @@ pub(super) fn ignored(root: &Path) -> Result<Vec<Result<String, String>>, WalkEr
     Ok(paths)
 }
 
-/// Paths that differ from HEAD: modified, staged, deleted or untracked.
-pub(super) fn dirty(root: &Path) -> Result<HashSet<String>, WalkError> {
-    let out = run(
-        root,
-        &[
-            "status",
-            "--porcelain=v1",
-            "-z",
-            "--untracked-files=all",
-            "--no-renames",
-        ],
-    )?;
-    // Each record is `XY <path>`; a non-UTF-8 path is skipped by the walk anyway.
+/// Each file in HEAD's tree with its blob id.
+pub(super) fn head_blobs(root: &Path) -> Result<HashMap<String, String>, WalkError> {
+    let out = run(root, &["ls-tree", "-r", "-z", "--full-tree", "HEAD"])?;
+    // Each record is `<mode> <type> <id>\t<path>`.
     Ok(split_paths(&out)
         .filter_map(Result::ok)
-        .filter_map(|record| record.get(3..).map(str::to_owned))
+        .filter_map(|record| {
+            let (meta, path) = record.split_once('\t')?;
+            let id = meta.rsplit(' ').next()?;
+            Some((path.to_owned(), id.to_owned()))
+        })
         .collect())
+}
+
+/// Each path staged in the index with its blob id. A path with a merge
+/// conflict has no stage-0 entry, so it is absent.
+pub(super) fn index_blobs(root: &Path) -> Result<HashMap<String, String>, WalkError> {
+    let out = run(root, &["ls-files", "-z", "--stage"])?;
+    // Each record is `<mode> <id> <stage>\t<path>`.
+    Ok(split_paths(&out)
+        .filter_map(Result::ok)
+        .filter_map(|record| {
+            let (meta, path) = record.split_once('\t')?;
+            let mut fields = meta.split(' ');
+            let id = fields.nth(1)?;
+            (fields.next()? == "0").then(|| (path.to_owned(), id.to_owned()))
+        })
+        .collect())
+}
+
+/// How many paths go on one `hash-object` command line.
+const HASH_BATCH: usize = 500;
+
+/// The blob id of each work-tree file in `paths`, in order, hashed as stored
+/// on disk (`--no-filters`, so no clean filter runs). Only these paths are
+/// opened.
+pub(super) fn hash_files(root: &Path, paths: &[&str]) -> Result<Vec<String>, WalkError> {
+    let mut ids = Vec::with_capacity(paths.len());
+    for batch in paths.chunks(HASH_BATCH) {
+        let mut args = vec!["hash-object", "--no-filters", "--"];
+        args.extend_from_slice(batch);
+        let out = run(root, &args)?;
+        ids.extend(String::from_utf8_lossy(&out).lines().map(str::to_owned));
+    }
+    Ok(ids)
 }
 
 /// Splits NUL-separated `git -z` output into paths. A path that isn't UTF-8
@@ -207,19 +241,29 @@ mod tests {
     }
 
     #[test]
-    fn dirty_lists_paths_that_differ_from_head() {
+    fn blob_ids_from_head_the_index_and_the_work_tree() {
         let repo = Repo::new();
-        repo.write("clean.rs", "c\n");
-        repo.write("modified.rs", "m\n");
-        repo.write("staged.rs", "s\n");
-        repo.commit_all(&["clean.rs", "modified.rs", "staged.rs"]);
-        repo.write("modified.rs", "m2\n");
-        repo.write("staged.rs", "s2\n");
-        repo.git(&["add", "staged.rs"]);
-        repo.write("src/untracked.rs", "u\n");
+        repo.write("a.rs", "a\n");
+        repo.write("dir/b.rs", "b\n");
+        repo.commit_all(&["."]);
+        repo.write("a.rs", "a2\n");
+        repo.git(&["add", "a.rs"]);
+        repo.write("a.rs", "a3\n");
 
-        let mut dirty: Vec<_> = dirty(repo.path()).unwrap().into_iter().collect();
-        dirty.sort();
-        assert_eq!(dirty, ["modified.rs", "src/untracked.rs", "staged.rs"]);
+        let head = head_blobs(repo.path()).unwrap();
+        let index = index_blobs(repo.path()).unwrap();
+        let work = hash_files(repo.path(), &["a.rs", "dir/b.rs"]).unwrap();
+        let id = |rev: &str| {
+            let out = run(repo.path(), &["rev-parse", rev]).unwrap();
+            String::from_utf8(out).unwrap().trim_end().to_owned()
+        };
+        assert_eq!(head.len(), 2);
+        assert_eq!(head["a.rs"], id("HEAD:a.rs"));
+        assert_eq!(head["dir/b.rs"], id("HEAD:dir/b.rs"));
+        assert_eq!(index["a.rs"], id(":a.rs"));
+        assert_ne!(index["a.rs"], head["a.rs"]);
+        assert_eq!(work.len(), 2);
+        assert!(work[0] != index["a.rs"] && work[0] != head["a.rs"]);
+        assert_eq!(work[1], head["dir/b.rs"]);
     }
 }

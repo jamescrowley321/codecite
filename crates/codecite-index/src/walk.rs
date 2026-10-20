@@ -5,7 +5,7 @@ mod git;
 #[cfg(test)]
 mod test_repo;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fs::{self, File};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -254,9 +254,9 @@ pub fn walk_local(source: &LocalSource, options: &WalkOptions) -> Result<LocalTr
     let filter = PathFilter::new(&source.include, &source.exclude)?;
     let root = git::canonical(&source.path)?;
     let head = git::head(&root)?;
-    let dirty = git::dirty(&root)?;
     let mut files = Vec::new();
     let mut skipped = Vec::new();
+    let mut real_dirs = HashSet::new();
     for path in git::files(&root)? {
         let path = match path {
             Ok(path) => path,
@@ -268,14 +268,16 @@ pub fn walk_local(source: &LocalSource, options: &WalkOptions) -> Result<LocalTr
                 continue;
             }
         };
-        match check(&root, &path, &filter, options)? {
-            Check::Keep { size } => {
-                let dirty = dirty.contains(&path);
-                files.push(LocalFile { path, size, dirty });
-            }
+        match check(&root, &path, &filter, options, &mut real_dirs)? {
+            Check::Keep { size } => files.push(LocalFile {
+                path,
+                size,
+                dirty: true,
+            }),
             Check::Skip(reason) => skipped.push(SkippedFile { path, reason }),
         }
     }
+    mark_dirty(&root, &mut files)?;
     for path in git::ignored(&root)? {
         let path = path.unwrap_or_else(|lossy| lossy);
         skipped.push(SkippedFile {
@@ -291,6 +293,22 @@ pub fn walk_local(source: &LocalSource, options: &WalkOptions) -> Result<LocalTr
     })
 }
 
+/// Sets `dirty` on each kept file: false only when HEAD has the file and both
+/// the index and the work tree hold HEAD's blob. Only kept files are hashed,
+/// so git never opens a deny-listed one.
+fn mark_dirty(root: &Path, files: &mut [LocalFile]) -> Result<(), WalkError> {
+    let head = git::head_blobs(root)?;
+    let index = git::index_blobs(root)?;
+    let paths: Vec<&str> = files.iter().map(|file| file.path.as_str()).collect();
+    let work = git::hash_files(root, &paths)?;
+    // A file git printed no id for keeps `dirty: true`.
+    for (file, work) in files.iter_mut().zip(&work) {
+        let committed = head.get(&file.path);
+        file.dirty = committed != Some(work) || index.get(&file.path) != committed;
+    }
+    Ok(())
+}
+
 /// What [`check`] decided for one path.
 enum Check {
     Keep { size: u64 },
@@ -303,6 +321,7 @@ fn check(
     path: &str,
     filter: &PathFilter,
     options: &WalkOptions,
+    real_dirs: &mut HashSet<String>,
 ) -> Result<Check, WalkError> {
     if !filter.allows(path) {
         return Ok(Check::Skip(SkipReason::Excluded));
@@ -310,6 +329,9 @@ fn check(
     let name = path.rsplit('/').next().unwrap_or(path);
     if is_deny_listed(name) {
         return Ok(Check::Skip(SkipReason::DenyListed));
+    }
+    if let Some(reason) = check_ancestors(root, path, real_dirs)? {
+        return Ok(Check::Skip(reason));
     }
     let full = root.join(path);
     let io_error = |source| WalkError::Io {
@@ -343,6 +365,39 @@ fn check(
         return Ok(Check::Skip(SkipReason::Binary));
     }
     Ok(Check::Keep { size: meta.len() })
+}
+
+/// Checks each directory above `path`, so a tracked directory swapped for a
+/// symlink can't lead the walk out of the checkout. `real_dirs` holds the
+/// directories already found to be real ones.
+fn check_ancestors(
+    root: &Path,
+    path: &str,
+    real_dirs: &mut HashSet<String>,
+) -> Result<Option<SkipReason>, WalkError> {
+    for (end, _) in path.match_indices('/') {
+        let dir = &path[..end];
+        if real_dirs.contains(dir) {
+            continue;
+        }
+        let full = root.join(dir);
+        let meta = match fs::symlink_metadata(&full) {
+            Ok(meta) => meta,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                return Ok(Some(SkipReason::Deleted));
+            }
+            Err(source) => return Err(WalkError::Io { path: full, source }),
+        };
+        if meta.file_type().is_symlink() {
+            return Ok(Some(SkipReason::Symlink));
+        }
+        if !meta.is_dir() {
+            // The directory was replaced by a file, so `path` is gone.
+            return Ok(Some(SkipReason::Deleted));
+        }
+        real_dirs.insert(dir.to_owned());
+    }
+    Ok(None)
 }
 
 #[cfg(test)]
@@ -553,6 +608,95 @@ mod tests {
                     path: "medium.rs".into(),
                     reason: SkipReason::Oversized
                 },
+            ]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn walk_skips_paths_under_a_symlinked_directory() {
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("credentials"), "secret\n").unwrap();
+        let repo = Repo::new();
+        repo.write("src/credentials", "tracked\n");
+        repo.write("src/lib.rs", "lib\n");
+        repo.commit_all(&["."]);
+        // The tracked directory is swapped for a link that leaves the checkout.
+        std::fs::remove_dir_all(repo.path().join("src")).unwrap();
+        std::os::unix::fs::symlink(outside.path(), repo.path().join("src")).unwrap();
+
+        let tree = walk_local(&local(&repo), &WalkOptions::default()).unwrap();
+        assert_eq!(paths(&tree), []);
+        // The two tracked paths under the link, and the untracked link itself.
+        let skipped: Vec<_> = tree
+            .skipped
+            .iter()
+            .map(|s| (s.path.as_str(), s.reason))
+            .collect();
+        assert_eq!(
+            skipped,
+            [
+                ("src", SkipReason::Symlink),
+                ("src/credentials", SkipReason::Symlink),
+                ("src/lib.rs", SkipReason::Symlink),
+            ]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn walk_never_runs_commands_from_the_repository_config() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let repo = Repo::new();
+        repo.write(".gitattributes", "* filter=probe\n");
+        repo.write("a.rs", "a\n");
+        repo.write(".env", "SECRET=1\n");
+        repo.commit_all(&["."]);
+
+        let marker = repo.path().join(".git/ran");
+        let hook = repo.path().join(".git/probe.sh");
+        std::fs::write(
+            &hook,
+            format!("#!/bin/sh\ntouch '{}'\ncat\n", marker.display()),
+        )
+        .unwrap();
+        std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let hook = hook.to_str().unwrap();
+        repo.git(&["config", "core.fsmonitor", hook]);
+        repo.git(&["config", "filter.probe.clean", hook]);
+        // New contents and sizes, so git must look inside to tell them apart.
+        repo.write("a.rs", "changed\n");
+        repo.write(".env", "SECRET=2\n");
+
+        let tree = walk_local(&local(&repo), &WalkOptions::default()).unwrap();
+        assert_eq!(paths(&tree), [(".gitattributes", false), ("a.rs", true)]);
+        assert!(
+            !marker.exists(),
+            "git ran a command from the repository's config"
+        );
+    }
+
+    #[test]
+    fn walk_marks_staged_and_reverted_files_dirty() {
+        let repo = Repo::new();
+        repo.write("clean.rs", "c\n");
+        repo.write("staged.rs", "s\n");
+        repo.write("reverted.rs", "r\n");
+        repo.commit_all(&["."]);
+        repo.write("staged.rs", "s2\n");
+        repo.write("reverted.rs", "r2\n");
+        repo.git(&["add", "staged.rs", "reverted.rs"]);
+        // Staged a change, then put HEAD's contents back in the work tree.
+        repo.write("reverted.rs", "r\n");
+
+        let tree = walk_local(&local(&repo), &WalkOptions::default()).unwrap();
+        assert_eq!(
+            paths(&tree),
+            [
+                ("clean.rs", false),
+                ("reverted.rs", true),
+                ("staged.rs", true)
             ]
         );
     }
