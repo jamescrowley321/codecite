@@ -53,6 +53,26 @@ pub fn identifier_terms(identifier: &str) -> String {
     terms
 }
 
+/// Returns the search terms for a run of text: the [`identifier_terms`] of
+/// each word in it, separated by spaces.
+///
+/// A word is a run of letters, digits and underscores that holds at least
+/// one letter or digit. Hyphens and every other character separate words, so
+/// `back-channel` gives the terms of `back` and `channel`.
+pub fn text_terms(text: &str) -> String {
+    let mut terms = String::new();
+    let words = text
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .filter(|word| word.chars().any(char::is_alphanumeric));
+    for word in words {
+        if !terms.is_empty() {
+            terms.push(' ');
+        }
+        terms.push_str(&identifier_terms(word));
+    }
+    terms
+}
+
 /// Moves a finished part, lowercased, into `parts`.
 fn flush(current: &mut String, parts: &mut Vec<String>) {
     if !current.is_empty() {
@@ -154,5 +174,22 @@ mod tests {
     fn empty_input_gives_no_terms() {
         assert_eq!(identifier_terms(""), "");
         assert_eq!(identifier_terms("__"), "__");
+    }
+
+    #[test]
+    fn text_terms_split_each_word() {
+        assert_eq!(
+            text_terms("fn validateToken(id_token: &str) -> bool {"),
+            "fn validate token validateToken id token id_token str bool"
+        );
+        assert_eq!(text_terms("back-channel"), "back channel");
+        assert_eq!(text_terms("src/client.rs"), "src client rs");
+    }
+
+    #[test]
+    fn text_terms_skip_punctuation_only_words() {
+        assert_eq!(text_terms(""), "");
+        assert_eq!(text_terms("__ -> {}"), "");
+        assert_eq!(text_terms("__init__()"), "init __init__");
     }
 }

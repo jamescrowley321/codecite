@@ -1,4 +1,4 @@
-//! A throwaway git repository for the walk's tests.
+//! A throwaway git repository for the walk's and the index's tests.
 
 use std::fs;
 use std::path::Path;

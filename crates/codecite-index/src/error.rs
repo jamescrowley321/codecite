@@ -23,6 +23,22 @@ pub enum Error {
     /// A bundled tree-sitter grammar or query failed to load.
     #[error(transparent)]
     Chunker(#[from] crate::ChunkerError),
+
+    /// A walked file could not be read.
+    #[error("reading {}", path.display())]
+    ReadFile {
+        /// The file's full path.
+        path: std::path::PathBuf,
+        /// Why reading failed.
+        source: std::io::Error,
+    },
+
+    /// Two local sources in the manifest have the same name.
+    #[error("two sources are named `{name}`; give one of them a different `name`")]
+    DuplicateSource {
+        /// The shared name.
+        name: String,
+    },
 }
 
 /// `Result` with [`Error`] as the default error type.

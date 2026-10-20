@@ -114,6 +114,18 @@ pub enum LicenseClass {
     Excluded,
 }
 
+impl LicenseClass {
+    /// The value written in the manifest and stored in `source.license_class`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Adapt => "adapt",
+            Self::ApproachOnly => "approach_only",
+            Self::Quote => "quote",
+            Self::Excluded => "excluded",
+        }
+    }
+}
+
 impl Source {
     /// The source's name, when the manifest gives one.
     pub fn name(&self) -> Option<&str> {

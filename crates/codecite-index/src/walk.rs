@@ -2,8 +2,6 @@
 //! skip what must not be indexed, and report every skip with its reason.
 
 mod git;
-#[cfg(test)]
-mod test_repo;
 
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{self, File};
@@ -234,6 +232,27 @@ pub enum SkipReason {
     Binary,
     /// The path is not valid UTF-8, so no citation can name it.
     NonUtf8Path,
+    /// The contents are not valid UTF-8. Found when indexing reads the
+    /// whole file, never by the walk.
+    NonUtf8Content,
+}
+
+impl SkipReason {
+    /// A short label for summaries, e.g. `deny-listed`.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Ignored => "ignored",
+            Self::Excluded => "excluded",
+            Self::DenyListed => "deny-listed",
+            Self::Deleted => "deleted",
+            Self::Symlink => "symlink",
+            Self::NotAFile => "not a file",
+            Self::Oversized => "oversized",
+            Self::Binary => "binary",
+            Self::NonUtf8Path => "non-UTF-8 path",
+            Self::NonUtf8Content => "non-UTF-8 content",
+        }
+    }
 }
 
 impl LocalTree {
@@ -480,7 +499,7 @@ mod tests {
         assert_eq!(err.to_string(), "invalid glob \"src/[\"");
     }
 
-    use crate::walk::test_repo::Repo;
+    use crate::test_repo::Repo;
     use crate::{LicenseClass, LocalSource};
     use std::collections::BTreeMap;
 

@@ -28,10 +28,12 @@ codecite-mcp = { path = "crates/codecite-mcp", version = "0.0.0" }
 clap = { version = "4", features = ["derive"] }
 thiserror = "2"
 anyhow = "1"
+directories = "6"
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 toml = "1"
 globset = "0.4"
+sha2 = "0.11"
 tree-sitter = "0.27"
 tree-sitter-rust = "0.24"
 tree-sitter-python = "0.25"

@@ -26,6 +26,7 @@ allow = [
 ]
 # The BSD and ISC entries are allowed ahead of the crates that will need them.
 unused-allowed-license = "allow"
+exceptions = [{ crate = "option-ext", allow = ["MPL-2.0"] }]
 
 [bans]
 multiple-versions = "deny"
