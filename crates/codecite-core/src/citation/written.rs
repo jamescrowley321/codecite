@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 
+use super::spec::is_doc_name;
 use super::{CitationError, SectionNumber, parse_number};
 
 /// The names people write for spec documents, such as `OIDC Core` for
@@ -93,6 +94,14 @@ impl SpecReference {
     /// shaped like one but malformed.
     pub fn parse(s: &str, aliases: &SpecAliases) -> Result<Option<Self>, CitationError> {
         let s = s.trim();
+        // The URL branch owns every string with a scheme, even one with a
+        // space or `§` in its anchor.
+        if let Some(rest) = s
+            .strip_prefix("https://")
+            .or_else(|| s.strip_prefix("http://"))
+        {
+            return Self::url(s, rest);
+        }
         if let Some((doc, locator)) = s.split_once('§') {
             return Self::written(resolve_doc(doc, aliases)?, locator.trim_start()).map(Some);
         }
@@ -102,6 +111,47 @@ impl SpecReference {
             return Self::written(doc, &words[i + 1..].join(" ")).map(Some);
         }
         Self::bare(s, aliases)
+    }
+
+    /// An RFC Editor or OpenID spec URL with an anchor; `rest` is `url`
+    /// without its scheme. Any other URL is no match.
+    fn url(url: &str, rest: &str) -> Result<Option<Self>, CitationError> {
+        let rest = rest.strip_prefix("www.").unwrap_or(rest);
+        let (path, anchor) = match rest.split_once('#') {
+            Some((path, anchor)) => (path, Some(anchor)),
+            None => (rest, None),
+        };
+        if let Some(name) = path.strip_prefix("rfc-editor.org/rfc/") {
+            let name = name.strip_suffix(".html").unwrap_or(name);
+            let Some(n) = name
+                .strip_prefix("rfc")
+                .filter(|n| n.starts_with(|c: char| c.is_ascii_digit()))
+            else {
+                return Ok(None);
+            };
+            let doc = format!("rfc{}", parse_number(n, "RFC")?);
+            let anchor = need_anchor(url, anchor)?;
+            let target = match anchor.strip_prefix("section-") {
+                Some(section) => SpecTarget::Section(section.parse()?),
+                None => SpecTarget::Anchor(anchor.into()),
+            };
+            return Ok(Some(Self {
+                doc: Some(doc),
+                target,
+                step: None,
+            }));
+        }
+        if let Some(file) = path.strip_prefix("openid.net/specs/") {
+            let Some(name) = file.strip_suffix(".html").filter(|n| is_doc_name(n)) else {
+                return Ok(None);
+            };
+            return Ok(Some(Self {
+                doc: Some(name.into()),
+                target: SpecTarget::Anchor(need_anchor(url, anchor)?.into()),
+                step: None,
+            }));
+        }
+        Ok(None)
     }
 
     /// Builds a reference from a document and the text after `§` or
@@ -150,6 +200,18 @@ fn resolve_doc(text: &str, aliases: &SpecAliases) -> Result<Option<String>, Cita
         return Ok(Some(format!("rfc{}", parse_number(n.trim(), "RFC")?)));
     }
     Err(CitationError::UnknownDocument { found: text.into() })
+}
+
+/// The anchor of a recognized spec URL, which must be present, non-empty
+/// and free of whitespace.
+fn need_anchor<'a>(url: &str, anchor: Option<&'a str>) -> Result<&'a str, CitationError> {
+    match anchor {
+        None | Some("") => Err(CitationError::UrlWithoutAnchor { url: url.into() }),
+        Some(a) if a.contains(char::is_whitespace) => {
+            Err(CitationError::BadAnchor { found: a.into() })
+        }
+        Some(a) => Ok(a),
+    }
 }
 
 /// Parses `<section>`, `<section>(<step>)` or `<section> step <step>`.
@@ -345,6 +407,119 @@ mod tests {
     fn multibyte_input_is_not_a_panic() {
         for s in ["§3.1é", "§é", "Coreé 3.1(2)", "Core 3.1(2é)", "é Section 1"] {
             let _ = SpecReference::parse(s, &aliases());
+        }
+    }
+
+    /// Parses a URL and checks the document and target.
+    fn check_url(s: &str, doc: &str, target: SpecTarget) {
+        let r = SpecReference::parse(s, &aliases())
+            .unwrap_or_else(|e| panic!("{s}: {e}"))
+            .unwrap_or_else(|| panic!("{s}: no match"));
+        assert_eq!(r.doc(), Some(doc), "{s}");
+        assert_eq!(r.target(), &target, "{s}");
+        assert_eq!(r.step(), None, "{s}");
+    }
+
+    fn section(s: &str) -> SpecTarget {
+        SpecTarget::Section(s.parse().unwrap())
+    }
+
+    fn anchor(s: &str) -> SpecTarget {
+        SpecTarget::Anchor(s.into())
+    }
+
+    #[test]
+    fn urls_from_the_issue() {
+        check_url(
+            "https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation",
+            "openid-connect-core-1_0",
+            anchor("IDTokenValidation"),
+        );
+        check_url(
+            "https://www.rfc-editor.org/rfc/rfc9449.html#section-4.3",
+            "rfc9449",
+            section("4.3"),
+        );
+    }
+
+    /// URL shapes found in ~/repos/auth/identity-model at 9458d60
+    /// (grep for `openid.net/specs` and `rfc-editor.org`).
+    #[test]
+    fn urls_from_identity_model() {
+        check_url(
+            "https://www.rfc-editor.org/rfc/rfc6749#section-5.2",
+            "rfc6749",
+            section("5.2"),
+        );
+        check_url(
+            "https://www.rfc-editor.org/rfc/rfc8693#section-2.2.1",
+            "rfc8693",
+            section("2.2.1"),
+        );
+        check_url(
+            "https://www.rfc-editor.org/rfc/rfc7636#appendix-B",
+            "rfc7636",
+            anchor("appendix-B"),
+        );
+        check_url(
+            "https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata",
+            "openid-connect-discovery-1_0",
+            anchor("ProviderMetadata"),
+        );
+        check_url(
+            "http://openid.net/specs/openid-connect-basic-1_0-32.html#ClaimStability",
+            "openid-connect-basic-1_0-32",
+            anchor("ClaimStability"),
+        );
+        check_url(
+            "https://rfc-editor.org/rfc/rfc9449#section-8",
+            "rfc9449",
+            section("8"),
+        );
+    }
+
+    #[test]
+    fn other_urls_are_none() {
+        for s in [
+            "https://example.com/rfc9449#section-4.3",
+            "https://www.rfc-editor.org/info/rfc9449",
+            "https://www.rfc-editor.org/rfc/",
+            "https://openid.net/specs/",
+            "https://openid.net/specs/a/b.html#x",
+            "https://openid.net/foundation/",
+        ] {
+            assert_eq!(SpecReference::parse(s, &aliases()), Ok(None), "{s}");
+        }
+    }
+
+    #[test]
+    fn malformed_urls_are_errors() {
+        use CitationError::*;
+        let cases: &[(&str, ErrorCheck)] = &[
+            ("https://www.rfc-editor.org/rfc/rfc9449", |e| {
+                matches!(e, UrlWithoutAnchor { .. })
+            }),
+            ("https://www.rfc-editor.org/rfc/rfc9449#", |e| {
+                matches!(e, UrlWithoutAnchor { .. })
+            }),
+            (
+                "https://openid.net/specs/openid-connect-discovery-1_0.html",
+                |e| matches!(e, UrlWithoutAnchor { .. }),
+            ),
+            ("https://www.rfc-editor.org/rfc/rfc9449#section-04.3", |e| {
+                matches!(e, BadSection { .. })
+            }),
+            ("https://www.rfc-editor.org/rfc/rfc09449#section-1", |e| {
+                matches!(e, BadNumber { what: "RFC", .. })
+            }),
+            (
+                "https://openid.net/specs/openid-connect-core-1_0.html#ID Token",
+                |e| matches!(e, BadAnchor { .. }),
+            ),
+        ];
+        for (s, want) in cases {
+            let got = SpecReference::parse(s, &aliases());
+            assert!(matches!(&got, Err(e) if want(e)), "{s}: {got:?}");
         }
     }
 }
