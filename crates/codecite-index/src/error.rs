@@ -15,6 +15,10 @@ pub enum Error {
     /// A corpus manifest is invalid.
     #[error(transparent)]
     Manifest(#[from] crate::ManifestError),
+
+    /// A local source could not be walked.
+    #[error(transparent)]
+    Walk(#[from] crate::WalkError),
 }
 
 /// `Result` with [`Error`] as the default error type.
