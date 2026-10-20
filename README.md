@@ -26,6 +26,64 @@ and the spec forms people write (`RFC 9449 §4.3`, `OIDC Core §3.1.3.7 step 13`
 a spec URL). `corpora/identity.toml` is the first real corpus: identity-model and
 the OAuth and OpenID specs it cites. The MCP server comes next.
 
+## Install
+
+```sh
+cargo install codecite --locked
+```
+
+This builds the `codecite` binary from crates.io with the pinned dependency
+versions. It needs Rust 1.99.1 or newer and a C compiler, since the
+tree-sitter grammars and SQLite are compiled from C. Git sources also need
+`git` on `PATH`.
+
+## Quick start
+
+Corpus manifests live in this repository, under `corpora/`. `codecite index
+<corpus>` reads `corpora/<corpus>.toml` from the current directory, so run it
+from a checkout, or pass `--manifest <file>`. The identity corpus indexes
+identity-model from `~/repos/auth/identity-model`, so clone it there first.
+
+```console
+$ git clone https://github.com/jamescrowley321/codecite && cd codecite
+$ codecite index identity
+indexed corpus `identity` into ~/.local/share/codecite/identity.db
+documents: 865 written, 0 unchanged, 0 removed
+chunks: 12187 written
+fetched: 0 downloaded, 39 from the cache
+skipped: 39 ignored, 7 deny-listed, 4 symlink, 1 binary
+elapsed: 6.16s
+```
+
+The first run downloads the 39 pinned specs (`fetched: 39 downloaded`); later
+runs read them from the cache. `codecite search` ranks chunks by BM25 and
+cites each one:
+
+```console
+$ codecite search identity "validate DPoP proof jti" --limit 2
+1. identity-model@9458d60f4f2f20227bddf2594fd7d10cba66ea0a:rust/src/dpop/proof.rs#L207-L212
+   function new_jti · score 32.68 · adapt · indexed 2026-10-20T20:34:15Z
+     fn new_jti() -> Result<String> {
+         let mut bytes = [0u8; JTI_BYTES];
+         getrandom::fill(&mut bytes)
+2. identity-model@9458d60f4f2f20227bddf2594fd7d10cba66ea0a:go/internal/conformance/dpop_test.go#L23-L87
+   function runDPoPVector · score 32.20 · adapt · indexed 2026-10-20T20:34:15Z
+     func runDPoPVector(t *testing.T, label, base string, v HTTPVector) {
+     	t.Helper()
+     	if v.Expect.Outcome != OutcomeAccept {
+```
+
+`codecite read` prints the text a citation points at, for the citations
+search prints and the forms people write:
+
+```console
+$ codecite read identity "OIDC Core §3.1.3.7 step 13"
+openid-connect-core-1_0@sha256:4d016752a645#section-3.1.3.7/step-13
+step · ID Token Validation · SHOULD · quote · indexed 2026-10-20T20:34:20Z
+
+13. If the auth_time Claim was requested, either through a specific request for this Claim or by using the max_age parameter, the Client SHOULD check the auth_time Claim value and request re-authentication if it determines too much time has elapsed since the last End-User authentication.
+```
+
 ## Planned
 
 - Code-aware full-text search (BM25 over split identifiers), with optional
