@@ -95,8 +95,11 @@ CREATE TABLE document (
   id INTEGER PRIMARY KEY, source_id INTEGER NOT NULL REFERENCES source(id) ON DELETE CASCADE,
   path TEXT NOT NULL, language TEXT, content_hash BLOB NOT NULL, size_bytes INTEGER,  -- content_hash: sha256 of the bytes
   dirty INTEGER NOT NULL DEFAULT 0,                                 -- a local file that differed from HEAD
+  text TEXT,                                                        -- a code file's text, which read cites lines of; NULL for a spec
   UNIQUE (source_id, path)
 );
+
+CREATE TABLE alias (alias TEXT PRIMARY KEY, name TEXT NOT NULL);    -- "oidc core" -> openid-connect-core-1_0, from the manifest
 
 CREATE TABLE chunk (
   id INTEGER PRIMARY KEY, document_id INTEGER NOT NULL REFERENCES document(id) ON DELETE CASCADE,
@@ -144,6 +147,7 @@ END;
 ```
 
 - **Document versions** are separate sources: each pinned version of a document is its own `source` row, with the document's name, its `sha256` as `revision`, and `is_current`, `obsoleted_by` and `updated_by` from the manifest. A version is unique by name and revision, any other source by name. Results name a version as citations do, `rfc9449@sha256:1a2b3c4d5e6f`.
+- **A query needs no manifest.** An index run stores what queries need from the manifest in the corpus: `max_age_days` in `meta`, and each document's `aliases` in `alias`, normalized (ASCII lowercase, whitespace collapsed) and replaced on every run. One alias naming two documents stops the run before anything is written. A code file's whole text is kept in `document.text`, because chunks leave out the lines with no letter or digit between definitions and `read` must return the exact lines cited.
 - **Deletes cascade.** Every connection that writes turns `PRAGMA foreign_keys` on, so deleting a source deletes its documents, and deleting a document its chunks, symbols and the edges it is evidence for; the trigger takes each chunk's full-text row with it. Migrations run with the keys off, since rebuilding a table to change its keys drops the old one, and check every key (`PRAGMA foreign_key_check`) before they commit.
 
 - **Symbol IDs** are SCIP symbol strings, so precise indexers drop in without remapping. Symbols found only by tree-sitter get SCIP-shaped local IDs, `codecite . <source> . <path segments>/<descriptors>` (e.g. `` codecite . identity-model . src/`client.rs`/Client#validate(). ``), with a SCIP disambiguator on a later same-named function in the file (`new(+1).`); they are replaced when a SCIP index for the same source arrives.
@@ -270,7 +274,7 @@ The CLI and the MCP server expose the same operations and return the same JSON, 
 | `codecite def <symbol>` | Where a symbol is defined |
 | `codecite refs <symbol>` | Every reference to a symbol |
 | `codecite graph <callers\|callees\|impact\|path> ...` | Graph queries with `--min-confidence` |
-| `codecite read <citation>` | Print a cited span, capped in lines |
+| `codecite read <corpus> <citation> [--max-lines <n>] [--json] [--allow-stale]` | The exact text a citation points at, at most `--max-lines` lines (default 80), under its pinned citation. `--json` prints the result object; otherwise the citation, a line naming its kind, title, strength, license class and `indexed_at`, a blank line and the text |
 | `codecite cite <citation> [--claim <text>]` | Check a spec citation and the claim beside it |
 | `codecite corpora` | List corpora with age, size and staleness |
 | `codecite mcp` | Run the stdio MCP server |
@@ -305,8 +309,9 @@ Every result has the same shape:
 - Search results also carry the chunk's `kind`; a code result carries `dirty`, and a spec result its pinned spec citation and no `symbol`. Fields with no value are left out, and graph fields (`providers`, `confidence`) appear only on graph results.
 - Snippets are capped at 40 lines; agents call `read` for more, which keeps token use predictable.
 - Code citations look like `repo@sha:path#L10-L42`; spec citations like `rfc9449@sha256:1a2b3c4d5e6f#section-4.3` and `openid-connect-core-1_0@sha256:…#section-3.1.3.7/step-13`. The canonical forms parse strictly, so that each span has exactly one spelling: a commit is 7 to 64 lowercase hex digits, a spec hash is 12, numbers have no leading zeros, and one line is `#L10`, not `#L10-L10`. `read` and `cite` also accept the forms people write (`RFC 9449 §4.3`, `OIDC Core §3.1.3.7 step 13`, `Core 3.1.3.7(13)`, a spec URL with its anchor). These parse to an unresolved reference (a document or none, a section number or the document's own anchor, and an optional step), with document aliases taken from the manifest. A string that matches no form is no match rather than an error, and one string holds one citation: step ranges such as `steps 4-6` and lists such as `§2 / §3.1.3.7` are errors. A bare `§` resolves only when exactly one current document has that section and step.
+- `read` returns `citation`, `kind` (`code`, `section` or `step`), `text`, `truncated`, `license_class` and `indexed_at`; a spec result adds `title` and `strength` (a list of keywords), a code result `dirty`. Its citation always names the pinned version: a spec citation without one reads the current version, and a code citation's commit, which may be abbreviated, comes back in full. A step has its section's title. A code citation reads lines of the file's stored text, counted as the chunker counts them, and one that runs past the end of the file is an error naming its length. A citation that is not in the corpus is a typed error (`codecite_core::Error`) with candidates, as pinned citations, never the nearest guess: `UnknownSource` (the corpus's sources or documents), `UnknownVersion` (the versions indexed), `AmbiguousDocument` (each current document with the bare §, and when none has its step but one has the section, the missing step is reported in that one), `NoSuchSection` (the sections sharing the most leading numbers with it, then the closest), `NoSuchStep` (the closest step numbers, or the section when it has none) and `NoSuchFile` (indexed files with the same file name). Text that matches no citation form is `NotACitation`, and a malformed one is `BadCitation` with the parse error. `read` refuses a stale index as `search` does.
 - `cite` findings: `no_such_section`, `no_such_step`, `anchor_label_mismatch`, `strength_mismatch`, `superseded_document`, `topic_mismatch` (only when exactly one sibling step or section holds the claim's protocol term) and `ambiguous_document`. codecite supplies facts; the agent judges meaning.
-- Errors are explicit: an unknown corpus (with the corpora that exist), a stale index, an empty query or an ambiguous symbol name returns a typed error with candidates, never an empty success. A search that matches nothing is an empty list.
+- Errors are explicit: an unknown corpus (with the corpora that exist), a stale index, an empty query, a citation that is not in the corpus or an ambiguous symbol name returns a typed error with candidates, never an empty success. A search that matches nothing is an empty list.
 
 ## Security and privacy
 

@@ -19,7 +19,10 @@ work offline, then indexes their sections and numbered steps.
 for pinning. `codecite search <corpus> "<query>"` prints ranked, cited results
 (`--json` for JSON; `--language`, `--path <glob>` and `--limit` filter them),
 and refuses an index older than the manifest's `max_age_days` unless
-`--allow-stale`. The MCP server comes next.
+`--allow-stale`. `codecite read <corpus> <citation>` prints the exact text a
+citation points at under its pinned citation, for the citations search prints
+and the spec forms people write (`RFC 9449 §4.3`, `OIDC Core §3.1.3.7 step 13`,
+a spec URL). The MCP server comes next.
 
 ## Planned
 
