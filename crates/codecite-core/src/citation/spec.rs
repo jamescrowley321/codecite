@@ -5,6 +5,14 @@ use std::str::FromStr;
 
 use super::{CitationError, parse_number};
 
+/// Whether `s` is a spec document name: non-empty ASCII letters, digits,
+/// `-`, `_` and `.`.
+pub(super) fn is_doc_name(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+}
+
 /// The first 12 lowercase hex digits of a spec document's SHA-256.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ContentHash(String);
@@ -111,10 +119,7 @@ impl FromStr for SpecCitation {
         if doc.is_empty() {
             return Err(CitationError::EmptyName);
         }
-        if !doc
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
-        {
+        if !is_doc_name(doc) {
             return Err(CitationError::BadName { found: doc.into() });
         }
         let rest = rest

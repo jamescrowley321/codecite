@@ -2,7 +2,9 @@
 //! span of code or a spec section.
 //!
 //! Parsing is strict. Every string the parser accepts formats back to exactly
-//! the same string, so each span has one spelling.
+//! the same string, so each span has one spelling. The `written` submodule
+//! parses the lenient spec citation forms people write, which have no round
+//! trip.
 
 use std::fmt;
 use std::str::FromStr;
@@ -12,6 +14,9 @@ pub use code::{CodeCitation, CommitSha, LineRange};
 
 mod spec;
 pub use spec::{ContentHash, SectionNumber, SpecCitation};
+
+mod written;
+pub use written::{SpecAliases, SpecReference, SpecTarget};
 
 /// A canonical citation of either form.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -87,7 +92,7 @@ pub enum CitationError {
     /// A number is empty, not decimal, zero, too big or has a leading zero.
     #[error("{what} {found:?} is not a number from 1 without leading zeros")]
     BadNumber {
-        /// Which number: `line`, `section` or `step`.
+        /// Which number: `line`, `section`, `step` or `RFC`.
         what: &'static str,
         /// The number as written.
         found: String,
@@ -128,6 +133,35 @@ pub enum CitationError {
     #[error("section {found:?} is not dot-separated numbers like 3.1.3.7")]
     BadSection {
         /// The section as written.
+        found: String,
+    },
+
+    /// A written citation names a document that is neither an RFC nor a
+    /// known alias.
+    #[error("no document is called {found:?}")]
+    UnknownDocument {
+        /// The document as written.
+        found: String,
+    },
+
+    /// A written citation has text after it that is not a step.
+    #[error("unexpected {found:?} after the citation")]
+    TrailingText {
+        /// The text after the citation, trimmed.
+        found: String,
+    },
+
+    /// A spec URL has no `#` anchor naming a section.
+    #[error("spec URL {url:?} has no #anchor naming a section")]
+    UrlWithoutAnchor {
+        /// The URL as written.
+        url: String,
+    },
+
+    /// A spec URL's anchor has whitespace in it.
+    #[error("anchor {found:?} has whitespace in it")]
+    BadAnchor {
+        /// The anchor as written, without `#`.
         found: String,
     },
 }
