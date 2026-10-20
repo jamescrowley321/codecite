@@ -1,6 +1,7 @@
 //! Corpus manifests: the committed TOML file that says what a corpus indexes,
 //! at which commit or hash, and how agents may use each source.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -157,6 +158,35 @@ pub enum ManifestError {
         /// The source's label: its name, URL or path, else its position.
         source_name: String,
     },
+
+    /// A field has a value of the right type but the wrong form.
+    #[error("source {source_name}: `{field}` must be {expected}, got {value:?}")]
+    Field {
+        /// The source's label: its name, URL or path, else its position.
+        source_name: String,
+        /// The manifest key.
+        field: &'static str,
+        /// The form the value must take.
+        expected: &'static str,
+        /// The value as written.
+        value: String,
+    },
+
+    /// Several versions of one document are marked current.
+    #[error("document `{name}`: {count} versions have `current = true`; mark exactly one")]
+    SeveralCurrent {
+        /// The document's name.
+        name: String,
+        /// How many versions are marked current.
+        count: usize,
+    },
+
+    /// No version of a document is marked current.
+    #[error("document `{name}`: no version has `current = true`; mark exactly one")]
+    NoCurrent {
+        /// The document's name.
+        name: String,
+    },
 }
 
 /// The top level before each source is parsed on its own.
@@ -185,6 +215,7 @@ impl Manifest {
             .enumerate()
             .map(|(i, table)| parse_source(i, table, home.as_deref()))
             .collect::<Result<Vec<_>, _>>()?;
+        check_current(&sources)?;
         Ok(Manifest {
             name: raw.name,
             max_age_days: raw.max_age_days,
@@ -198,7 +229,8 @@ impl Manifest {
     }
 }
 
-/// Parses the source at `index` (0-based), defaulting its `kind` to `git`.
+/// Parses the source at `index` (0-based), defaulting its `kind` to `git`,
+/// and checks its pinned commit or hash.
 fn parse_source(
     index: usize,
     mut table: toml::Table,
@@ -211,12 +243,62 @@ fn parse_source(
         // toml ends its message with a newline and puts the key on its own line.
         message: e.to_string().trim_end().replace('\n', " "),
     })?;
-    if let Source::Local(local) = &mut source
-        && let Some(path) = local.path.to_str()
-    {
-        local.path = expand_home(path, home).ok_or(ManifestError::NoHome { source_name })?;
+    let bad_field = |field, expected, value: &str| ManifestError::Field {
+        source_name: source_name.clone(),
+        field,
+        expected,
+        value: value.to_owned(),
+    };
+    match &mut source {
+        Source::Git(git) if !is_lower_hex(&git.commit, 40) => {
+            return Err(bad_field("commit", "40 lowercase hex digits", &git.commit));
+        }
+        Source::Document(doc) if !is_lower_hex(&doc.sha256, 64) => {
+            return Err(bad_field("sha256", "64 lowercase hex digits", &doc.sha256));
+        }
+        Source::Local(local) => {
+            if let Some(path) = local.path.to_str() {
+                local.path = expand_home(path, home).ok_or_else(|| ManifestError::NoHome {
+                    source_name: source_name.clone(),
+                })?;
+            }
+        }
+        _ => {}
     }
     Ok(source)
+}
+
+/// Whether `s` is exactly `len` digits of lowercase hex.
+fn is_lower_hex(s: &str, len: usize) -> bool {
+    s.len() == len && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// Checks that each document name has exactly one version with
+/// `current = true`. Names are checked in order, so the first error is stable.
+fn check_current(sources: &[Source]) -> Result<(), ManifestError> {
+    let mut current: BTreeMap<&str, usize> = BTreeMap::new();
+    for source in sources {
+        if let Source::Document(doc) = source {
+            *current.entry(&doc.name).or_default() += usize::from(doc.current);
+        }
+    }
+    for (name, count) in current {
+        match count {
+            1 => {}
+            0 => {
+                return Err(ManifestError::NoCurrent {
+                    name: name.to_owned(),
+                });
+            }
+            count => {
+                return Err(ManifestError::SeveralCurrent {
+                    name: name.to_owned(),
+                    count,
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Names a source in errors: `` `name` ``, `` `url` `` or `` `path` ``, the
@@ -422,5 +504,99 @@ updated_by = "openid-connect-core-1_0-errata2"
 
         let err = Manifest::load(Path::new("/nonexistent/codecite.toml")).unwrap_err();
         assert!(matches!(err, crate::Error::Io(_)), "{err:?}");
+    }
+
+    fn git(commit: &str) -> String {
+        manifest(&format!(
+            "[[source]]\nname = \"client\"\nurl = \"u\"\ncommit = \"{commit}\"\nuse = \"adapt\"\n"
+        ))
+    }
+
+    fn document(name: &str, sha256: &str, current: Option<bool>) -> String {
+        let current = current
+            .map(|c| format!("current = {c}\n"))
+            .unwrap_or_default();
+        format!(
+            "[[source]]\nkind = \"document\"\nname = \"{name}\"\nurl = \"u\"\n\
+             sha256 = \"{sha256}\"\nuse = \"quote\"\n{current}"
+        )
+    }
+
+    #[test]
+    fn bad_commits_are_errors() {
+        for commit in [
+            &COMMIT[..39],
+            &format!("{COMMIT}0"),
+            &COMMIT.to_uppercase(),
+            &format!("{}g", &COMMIT[..39]),
+            "main",
+        ] {
+            let err = Manifest::parse(&git(commit)).unwrap_err();
+            assert_eq!(
+                err.to_string(),
+                format!(
+                    "source `client`: `commit` must be 40 lowercase hex digits, got {commit:?}"
+                )
+            );
+        }
+        assert!(Manifest::parse(&git(COMMIT)).is_ok());
+    }
+
+    #[test]
+    fn bad_sha256_is_an_error() {
+        for sha in [&SHA256[..63], &SHA256.to_uppercase(), "sha256:abc"] {
+            let err =
+                Manifest::parse(&manifest(&document("rfc9449", sha, Some(true)))).unwrap_err();
+            assert_eq!(
+                err.to_string(),
+                format!("source `rfc9449`: `sha256` must be 64 lowercase hex digits, got {sha:?}")
+            );
+        }
+    }
+
+    #[test]
+    fn several_current_versions_are_an_error() {
+        let other = SHA256.replace('0', "f");
+        let text = manifest(&format!(
+            "{}{}",
+            document("rfc7234", SHA256, Some(true)),
+            document("rfc7234", &other, Some(true)),
+        ));
+        let err = Manifest::parse(&text).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "document `rfc7234`: 2 versions have `current = true`; mark exactly one"
+        );
+    }
+
+    #[test]
+    fn no_current_version_is_an_error() {
+        let other = SHA256.replace('0', "f");
+        for text in [
+            manifest(&document("core", SHA256, None)),
+            manifest(&format!(
+                "{}{}",
+                document("core", SHA256, Some(false)),
+                document("core", &other, None)
+            )),
+        ] {
+            let err = Manifest::parse(&text).unwrap_err();
+            assert_eq!(
+                err.to_string(),
+                "document `core`: no version has `current = true`; mark exactly one"
+            );
+        }
+    }
+
+    #[test]
+    fn one_current_version_among_several_is_valid() {
+        let other = SHA256.replace('0', "f");
+        let m = Manifest::parse(&manifest(&format!(
+            "{}{}",
+            document("core", SHA256, Some(false)),
+            document("core", &other, Some(true)),
+        )))
+        .unwrap();
+        assert_eq!(m.sources.len(), 2);
     }
 }
