@@ -6,12 +6,14 @@ use std::collections::HashMap;
 use rusqlite::{Transaction, params};
 
 use super::Store;
-use crate::{Result, identifier_terms, text_terms};
+use crate::{Keyword, Result, identifier_terms, text_terms};
 
-/// A source to create or update, matched by name.
+/// A source to create or update. A document is matched by its name and
+/// revision, since each pinned version is its own source; any other source
+/// by its name alone.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceRecord<'a> {
-    /// The name results cite; unique in the corpus.
+    /// The name results cite. A document's versions share it.
     pub name: &'a str,
     /// `local`, `git` or `document`.
     pub kind: &'a str,
@@ -23,6 +25,13 @@ pub struct SourceRecord<'a> {
     pub license_spdx: Option<&'a str>,
     /// `adapt`, `approach_only`, `quote` or `excluded`.
     pub license_class: &'a str,
+    /// Whether this is the version of a document that queries cite by
+    /// default. Always true for a source that isn't a document.
+    pub is_current: bool,
+    /// The document that replaces this one, as the manifest names it.
+    pub obsoleted_by: Option<&'a str>,
+    /// A document that amends this one, as the manifest names it.
+    pub updated_by: Option<&'a str>,
 }
 
 /// A document and every chunk in it.
@@ -53,8 +62,18 @@ pub struct ChunkRecord<'a> {
     pub end_line: u32,
     /// The chunk's text.
     pub text: &'a str,
+    /// A spec section's number (`3.1.3.7`), or a step's (`13`).
+    pub number: Option<&'a str>,
+    /// A spec section's own anchor, without the `#`: `IDTokenValidation`.
+    pub anchor: Option<&'a str>,
     /// A section's heading.
     pub title: Option<&'a str>,
+    /// The index, in [`DocumentRecord::chunks`], of the enclosing section
+    /// of a spec section or step. It must be an earlier chunk.
+    pub parent: Option<usize>,
+    /// The requirement keywords in a spec section or step, stored as
+    /// `MUST,SHOULD`. Empty for code.
+    pub strength: &'a [Keyword],
     /// The definition the chunk holds.
     pub symbol: Option<SymbolRecord<'a>>,
 }
@@ -71,22 +90,38 @@ pub struct SymbolRecord<'a> {
 }
 
 impl Store {
-    /// Creates the source named `source.name`, or updates its other fields
-    /// and `indexed_at`, and returns its ID.
+    /// Creates the source, or updates the stored one's other fields and
+    /// `indexed_at`, and returns its ID. A document version is the stored
+    /// document with the same name and revision; any other source is the
+    /// stored one with the same name that isn't a document.
     pub fn upsert_source(&mut self, source: &SourceRecord<'_>) -> Result<i64> {
+        // An upsert names the unique index it conflicts on, and a partial
+        // index is named by its columns plus its `WHERE`.
+        let conflict = if source.kind == "document" {
+            "(name, revision) WHERE kind = 'document'"
+        } else {
+            "(name) WHERE kind <> 'document'"
+        };
         let id = self.conn.query_row(
-            "INSERT INTO source (name, kind, url, revision, license_spdx, license_class, indexed_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-             ON CONFLICT (name) DO UPDATE SET
-               kind = excluded.kind, url = excluded.url, revision = excluded.revision,
-               license_spdx = excluded.license_spdx, license_class = excluded.license_class,
-               indexed_at = excluded.indexed_at
-             RETURNING id",
+            &format!(
+                "INSERT INTO source (name, kind, url, revision, is_current, obsoleted_by,
+                   updated_by, license_spdx, license_class, indexed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+                 ON CONFLICT {conflict} DO UPDATE SET
+                   kind = excluded.kind, url = excluded.url, revision = excluded.revision,
+                   is_current = excluded.is_current, obsoleted_by = excluded.obsoleted_by,
+                   updated_by = excluded.updated_by, license_spdx = excluded.license_spdx,
+                   license_class = excluded.license_class, indexed_at = excluded.indexed_at
+                 RETURNING id"
+            ),
             params![
                 source.name,
                 source.kind,
                 source.url,
                 source.revision,
+                source.is_current,
+                source.obsoleted_by,
+                source.updated_by,
                 source.license_spdx,
                 source.license_class,
             ],
@@ -146,38 +181,42 @@ impl Store {
         Ok(())
     }
 
-    /// Deletes the document at `path` in the source, with everything stored
-    /// for it, in one transaction.
+    /// Deletes the document at `path` in the source. Its chunks, their
+    /// full-text rows, its symbols and the edges it is evidence for go with
+    /// it, in the same statement.
     pub fn delete_document(&mut self, source_id: i64, path: &str) -> Result<()> {
-        let tx = self.conn.transaction()?;
-        let ids = document_ids(
-            &tx,
-            "source_id = ?1 AND path = ?2",
+        self.conn.execute(
+            "DELETE FROM document WHERE source_id = ?1 AND path = ?2",
             params![source_id, path],
         )?;
-        delete_documents(&tx, &ids)?;
-        tx.commit()?;
         Ok(())
     }
 
-    /// Deletes every source whose name is not in `keep`, with all its
-    /// documents, in one transaction. Returns the deleted sources' names,
-    /// sorted.
-    pub fn delete_sources_except(&mut self, keep: &[&str]) -> Result<Vec<String>> {
+    /// Deletes every source whose ID is not in `keep`, with everything
+    /// stored for it, in one transaction. Returns the deleted sources as
+    /// citations name them, sorted: `app`, or `rfc9449@sha256:1a2b3c4d5e6f`
+    /// for a document version.
+    pub fn delete_sources_except(&mut self, keep: &[i64]) -> Result<Vec<String>> {
         let tx = self.conn.transaction()?;
-        let mut names: Vec<(i64, String)> = {
-            let mut stmt = tx.prepare("SELECT id, name FROM source ORDER BY name")?;
+        let mut sources: Vec<(i64, String)> = {
+            let mut stmt = tx.prepare(
+                "SELECT id, CASE kind WHEN 'document' THEN name || '@sha256:' || substr(revision, 1, 12)
+                   ELSE name END AS label
+                 FROM source ORDER BY label",
+            )?;
             let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
             rows.collect::<rusqlite::Result<_>>()?
         };
-        names.retain(|(_, name)| !keep.contains(&name.as_str()));
-        for (id, _) in &names {
-            let ids = document_ids(&tx, "source_id = ?1", params![id])?;
-            delete_documents(&tx, &ids)?;
-            tx.execute("DELETE FROM source WHERE id = ?1", [id])?;
+        sources.retain(|(id, _)| !keep.contains(id));
+        let mut delete = tx.prepare("DELETE FROM source WHERE id = ?1")?;
+        for (id, _) in &sources {
+            // `ON DELETE CASCADE` takes the documents, and they take
+            // their chunks, symbols and edges.
+            delete.execute([id])?;
         }
+        drop(delete);
         tx.commit()?;
-        Ok(names.into_iter().map(|(_, name)| name).collect())
+        Ok(sources.into_iter().map(|(_, label)| label).collect())
     }
 
     /// Records when the corpus was last indexed, in `meta.indexed_at`.
@@ -192,37 +231,10 @@ impl Store {
     }
 }
 
-/// The IDs of the documents matching `filter`, a `WHERE` clause.
-fn document_ids(
-    tx: &Transaction<'_>,
-    filter: &str,
-    params: impl rusqlite::Params,
-) -> Result<Vec<i64>> {
-    let mut stmt = tx.prepare(&format!("SELECT id FROM document WHERE {filter}"))?;
-    let ids = stmt.query_map(params, |row| row.get(0))?;
-    Ok(ids.collect::<rusqlite::Result<_>>()?)
-}
-
-/// Deletes each document and everything stored for it.
-fn delete_documents(tx: &Transaction<'_>, ids: &[i64]) -> Result<()> {
-    let mut delete = tx.prepare_cached("DELETE FROM document WHERE id = ?1")?;
-    for &id in ids {
-        clear_document(tx, id)?;
-        delete.execute([id])?;
-    }
-    Ok(())
-}
-
 /// Deletes a document's chunks, their full-text rows, its symbols and the
 /// edges it is evidence for, keeping the document row.
 fn clear_document(tx: &Transaction<'_>, document_id: i64) -> Result<()> {
-    // A contentless table deletes by rowid, one row at a time.
-    let mut chunk_ids = tx.prepare_cached("SELECT id FROM chunk WHERE document_id = ?1")?;
-    let mut delete_fts = tx.prepare_cached("DELETE FROM chunk_fts WHERE rowid = ?1")?;
-    let ids = chunk_ids.query_map([document_id], |row| row.get::<_, i64>(0))?;
-    for id in ids {
-        delete_fts.execute([id?])?;
-    }
+    // The `chunk_fts_delete` trigger deletes each chunk's full-text row.
     for table_filter in [
         "chunk WHERE document_id = ?1",
         "symbol WHERE document_id = ?1",
@@ -245,13 +257,16 @@ fn insert_chunks(
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
     )?;
     let mut chunk = tx.prepare_cached(
-        "INSERT INTO chunk (document_id, start_line, end_line, kind, symbol_id, title, text, terms)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        "INSERT INTO chunk (document_id, start_line, end_line, kind, symbol_id, number, anchor,
+           title, parent_id, strength, text, terms)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
     )?;
     let mut fts = tx.prepare_cached(
         "INSERT INTO chunk_fts (rowid, symbol, path, terms) VALUES (?1, ?2, ?3, ?4)",
     )?;
     let path_terms = text_terms(document.path);
+    // Chunk IDs as they are assigned, so a later chunk can name its parent.
+    let mut ids: Vec<i64> = Vec::with_capacity(document.chunks.len());
     for c in &document.chunks {
         if let Some(s) = &c.symbol {
             symbol.execute(params![
@@ -264,16 +279,27 @@ fn insert_chunks(
             ])?;
         }
         let terms = text_terms(c.text);
+        debug_assert!(c.parent.is_none_or(|p| p < ids.len()), "parent after child");
+        let parent_id = c.parent.and_then(|p| ids.get(p).copied());
+        let strength = (!c.strength.is_empty()).then(|| {
+            let words: Vec<&str> = c.strength.iter().map(|k| k.as_str()).collect();
+            words.join(",")
+        });
         let chunk_id = chunk.insert(params![
             document_id,
             c.start_line,
             c.end_line,
             c.kind,
             c.symbol.as_ref().map(|s| &s.id),
+            c.number,
+            c.anchor,
             c.title,
+            parent_id,
+            strength,
             c.text,
             terms,
         ])?;
+        ids.push(chunk_id);
         let symbol_terms = c
             .symbol
             .as_ref()
@@ -288,6 +314,15 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::PathBuf;
+
+    /// A spec chunk as (kind, number, anchor, parent's number, strength).
+    type SpecRow = (
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    );
 
     /// A fresh store in its own scratch directory.
     fn store(name: &str) -> (Store, PathBuf) {
@@ -306,6 +341,24 @@ mod tests {
             revision: "0123456789abcdef0123456789abcdef01234567",
             license_spdx: Some("MIT"),
             license_class: "adapt",
+            is_current: true,
+            obsoleted_by: None,
+            updated_by: None,
+        }
+    }
+
+    /// One pinned version of the document `name`.
+    fn version<'a>(name: &'a str, sha256: &'a str, is_current: bool) -> SourceRecord<'a> {
+        SourceRecord {
+            name,
+            kind: "document",
+            url: "https://www.rfc-editor.org/rfc/rfc9449.html",
+            revision: sha256,
+            license_spdx: Some("IETF Trust"),
+            license_class: "quote",
+            is_current,
+            obsoleted_by: None,
+            updated_by: None,
         }
     }
 
@@ -321,7 +374,11 @@ mod tests {
                 start_line: 1,
                 end_line: 1,
                 text,
+                number: None,
+                anchor: None,
                 title: None,
+                parent: None,
+                strength: &[],
                 symbol: Some(SymbolRecord {
                     id: format!("codecite . app . {path}/validateToken()."),
                     display_name: "validateToken",
@@ -460,11 +517,14 @@ mod tests {
                 )
                 .unwrap();
         }
-        assert_eq!(store.delete_sources_except(&["app"]).unwrap(), ["old"]);
+        let app = store.upsert_source(&source("app")).unwrap();
+        assert_eq!(store.delete_sources_except(&[app]).unwrap(), ["old"]);
         assert_eq!(count(&store, "SELECT count(*) FROM source"), 1);
+        assert_eq!(count(&store, "SELECT count(*) FROM document"), 1);
         assert_eq!(count(&store, "SELECT count(*) FROM chunk"), 1);
+        assert_eq!(count(&store, "SELECT count(*) FROM symbol"), 1);
         assert_eq!(matches(&store, "path:old"), 0);
-        assert!(store.delete_sources_except(&["app"]).unwrap().is_empty());
+        assert!(store.delete_sources_except(&[app]).unwrap().is_empty());
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -505,6 +565,13 @@ mod tests {
                 "symbol_document",
             ),
             ("DELETE FROM edge WHERE evidence_doc = 1", "edge_evidence"),
+            // The lookups `ON DELETE` runs for each deleted chunk and symbol.
+            ("SELECT id FROM chunk WHERE parent_id = 1", "chunk_parent"),
+            ("SELECT id FROM chunk WHERE symbol_id = 'x'", "chunk_symbol"),
+            (
+                "SELECT id FROM document WHERE source_id = 1",
+                "sqlite_autoindex_document_1",
+            ),
         ] {
             let plan: Vec<String> = store
                 .conn
@@ -519,6 +586,144 @@ mod tests {
                 "{sql}: {plan:?}"
             );
         }
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn each_document_version_is_its_own_source() {
+        let (mut store, dir) = store("versions");
+        let old = "1".repeat(64);
+        let new = "2".repeat(64);
+        let first = store
+            .upsert_source(&version("rfc9449", &old, false))
+            .unwrap();
+        let second = store
+            .upsert_source(&version("rfc9449", &new, true))
+            .unwrap();
+        assert_ne!(first, second);
+        // The same version again is the same row, with its fields updated.
+        let mut obsoleted = version("rfc9449", &old, false);
+        obsoleted.obsoleted_by = Some("rfc9999");
+        assert_eq!(store.upsert_source(&obsoleted).unwrap(), first);
+        let rows: Vec<(String, bool, Option<String>)> = {
+            let mut stmt = store
+                .conn
+                .prepare("SELECT revision, is_current, obsoleted_by FROM source ORDER BY id")
+                .unwrap();
+            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap()
+        };
+        assert_eq!(
+            rows,
+            [
+                (old.clone(), false, Some("rfc9999".to_owned())),
+                (new.clone(), true, None)
+            ]
+        );
+
+        // A local source keeps its row when its revision moves.
+        let app = store.upsert_source(&source("app")).unwrap();
+        let mut moved = source("app");
+        moved.revision = "fedcba9876543210fedcba9876543210fedcba98";
+        assert_eq!(store.upsert_source(&moved).unwrap(), app);
+
+        assert_eq!(
+            store.delete_sources_except(&[second]).unwrap(),
+            ["app".to_owned(), format!("rfc9449@sha256:{}", &old[..12])]
+        );
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn spec_chunks_store_their_number_parent_and_strength() {
+        let (mut store, dir) = store("spec");
+        let sha = "1".repeat(64);
+        let id = store
+            .upsert_source(&version("rfc9449", &sha, true))
+            .unwrap();
+        let chunk = |kind, number, parent, text, strength| ChunkRecord {
+            kind,
+            start_line: 1,
+            end_line: 1,
+            text,
+            number: Some(number),
+            anchor: (kind == "section").then_some("section-4.3"),
+            title: (kind == "section").then_some("Checking DPoP Proofs"),
+            parent,
+            strength,
+            symbol: None,
+        };
+        let doc = DocumentRecord {
+            path: "rfc9449",
+            language: None,
+            content_hash: sha.as_bytes(),
+            size_bytes: 10,
+            dirty: false,
+            chunks: vec![
+                chunk(
+                    "section",
+                    "4.3",
+                    None,
+                    "4.3. Checking DPoP Proofs",
+                    &[Keyword::Must, Keyword::May],
+                ),
+                chunk("step", "1", Some(0), "1. One DPoP header.", &[]),
+            ],
+        };
+        assert_eq!(store.write_document(id, &doc).unwrap(), 2);
+
+        let rows: Vec<SpecRow> = {
+            let mut stmt = store
+                .conn
+                .prepare(
+                    "SELECT c.kind, c.number, c.anchor, p.number, c.strength
+                     FROM chunk c LEFT JOIN chunk p ON p.id = c.parent_id ORDER BY c.id",
+                )
+                .unwrap();
+            stmt.query_map([], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+        };
+        assert_eq!(
+            rows,
+            [
+                (
+                    "section".to_owned(),
+                    "4.3".to_owned(),
+                    Some("section-4.3".to_owned()),
+                    None,
+                    Some("MUST,MAY".to_owned())
+                ),
+                (
+                    "step".to_owned(),
+                    "1".to_owned(),
+                    None,
+                    Some("4.3".to_owned()),
+                    None
+                ),
+            ]
+        );
+        assert_eq!(matches(&store, "dpop"), 2);
+
+        // Deleting the source takes the document, both chunks and their
+        // full-text rows with it.
+        assert_eq!(store.delete_sources_except(&[]).unwrap().len(), 1);
+        assert_eq!(count(&store, "SELECT count(*) FROM document"), 0);
+        assert_eq!(count(&store, "SELECT count(*) FROM chunk"), 0);
+        assert_eq!(matches(&store, "dpop"), 0);
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }

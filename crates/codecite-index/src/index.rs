@@ -73,6 +73,7 @@ pub fn index_corpus(
     }
     let mut chunker = Chunker::new()?;
     let mut indexed: Vec<String> = Vec::new();
+    let mut keep: Vec<i64> = Vec::new();
     for source in &manifest.sources {
         let local = match source {
             Source::Local(local) if local.license_class != LicenseClass::Excluded => local,
@@ -106,10 +107,16 @@ pub fn index_corpus(
         if indexed.contains(&name) {
             return Err(Error::DuplicateSource { name });
         }
-        index_local(store, &mut chunker, local, &name, &tree, &mut summary)?;
+        keep.push(index_local(
+            store,
+            &mut chunker,
+            local,
+            &name,
+            &tree,
+            &mut summary,
+        )?);
         indexed.push(name);
     }
-    let keep: Vec<&str> = indexed.iter().map(String::as_str).collect();
     summary.removed_sources = store.delete_sources_except(&keep)?;
     store.set_indexed_at()?;
     summary.elapsed = started.elapsed();
@@ -125,7 +132,7 @@ fn source_name(local: &LocalSource, tree: &LocalTree) -> String {
     })
 }
 
-/// Writes one walked local source into the store.
+/// Writes one walked local source into the store and returns its ID.
 fn index_local(
     store: &mut Store,
     chunker: &mut Chunker,
@@ -133,7 +140,7 @@ fn index_local(
     name: &str,
     tree: &LocalTree,
     summary: &mut IndexSummary,
-) -> Result<()> {
+) -> Result<i64> {
     let url = tree.root.to_string_lossy();
     let source_id = store.upsert_source(&SourceRecord {
         name,
@@ -142,6 +149,9 @@ fn index_local(
         revision: &tree.head,
         license_spdx: local.license.as_deref(),
         license_class: local.license_class.as_str(),
+        is_current: true,
+        obsoleted_by: None,
+        updated_by: None,
     })?;
     for (reason, count) in tree.skip_counts() {
         *summary.skipped.entry(reason).or_default() += count;
@@ -193,7 +203,11 @@ fn index_local(
                     start_line: c.start_line,
                     end_line: c.end_line,
                     text: c.text,
+                    number: None,
+                    anchor: None,
                     title: c.title.as_deref(),
+                    parent: None,
+                    strength: &[],
                     symbol: c.symbol.as_ref().zip(id).map(|(s, id)| SymbolRecord {
                         id,
                         display_name: &s.name,
@@ -211,7 +225,7 @@ fn index_local(
         store.delete_document(source_id, path)?;
         summary.removed += 1;
     }
-    Ok(())
+    Ok(source_id)
 }
 
 /// Reads a walked file, or `None` when it was deleted after the walk.

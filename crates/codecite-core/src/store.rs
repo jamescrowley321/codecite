@@ -18,6 +18,7 @@ pub use write::{ChunkRecord, DocumentRecord, SourceRecord, SymbolRecord};
 const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0001_initial.sql"),
     include_str!("../migrations/0002_incremental_index.sql"),
+    include_str!("../migrations/0003_document_versions.sql"),
 ];
 
 /// The schema version this build creates and reads.
@@ -45,6 +46,11 @@ impl Store {
         // left into the main file. Hold that off until the file is accepted,
         // so a refused one stays as it was.
         conn.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, true)?;
+        // A migration that rebuilds a table drops the old one, and with
+        // foreign keys on, dropping a table first deletes its rows, which
+        // its children's keys refuse. The bundled SQLite turns them on by
+        // default, and the pragma can't change inside a transaction.
+        conn.pragma_update(None, "foreign_keys", false)?;
 
         // `BEGIN IMMEDIATE` takes the write lock before reading the version,
         // so two indexers racing on a fresh file migrate it one after the
@@ -66,8 +72,22 @@ impl Store {
                 [version.to_string()],
             )?;
         }
+        // With the keys off, nothing checked the rebuilt tables' rows.
+        let orphans: i64 =
+            tx.query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get(0)
+            })?;
+        if orphans > 0 {
+            return Err(Error::InvalidCorpus {
+                path: path.to_path_buf(),
+                reason: format!("{orphans} rows refer to rows that don't exist"),
+            });
+        }
         tx.commit()?;
         conn.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, false)?;
+        // Every write from here on checks foreign keys and runs their
+        // `ON DELETE CASCADE`.
+        conn.pragma_update(None, "foreign_keys", true)?;
 
         // Switching to WAL can't run inside a transaction, and doing it only
         // now leaves a refused file's header untouched.
@@ -519,6 +539,112 @@ mod tests {
             .execute("DELETE FROM chunk_fts WHERE rowid = 1", [])
             .unwrap();
         assert_eq!(matches(), 0);
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn version_3_keeps_the_rows_and_cascades_deletes() {
+        let dir = scratch("v2");
+        let path = dir.join("corpus.db");
+        // A version 2 corpus with one source, document, symbol and chunk.
+        raw(&path)
+            .execute_batch(&format!(
+                "{}
+                 {}
+                 INSERT INTO meta (key, value) VALUES ('schema_version', '2');
+                 INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
+                   VALUES (1, 'app', 'local', '/src/app', 'abc', 'adapt', 'then');
+                 INSERT INTO document (id, source_id, path, content_hash, dirty)
+                   VALUES (1, 1, 'src/lib.rs', x'00', 1);
+                 INSERT INTO symbol (id, display_name, document_id) VALUES ('s', 'validate', 1);
+                 INSERT INTO chunk (id, document_id, start_line, end_line, kind, symbol_id, text, terms)
+                   VALUES (7, 1, 1, 1, 'function', 's', 'fn validate() {{}}', 'validate');
+                 INSERT INTO chunk_fts (rowid, symbol, path, terms) VALUES (7, 'validate', 'lib', 'validate');",
+                MIGRATIONS[0], MIGRATIONS[1]
+            ))
+            .unwrap();
+
+        let store = Store::open_read_write(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+        let (chunk, dirty): (i64, bool) = store
+            .conn
+            .query_row(
+                "SELECT c.id, d.dirty FROM chunk c JOIN document d ON d.id = c.document_id
+                 JOIN symbol s ON s.id = c.symbol_id JOIN source ON source.id = d.source_id",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((chunk, dirty), (7, true));
+        let fts = |conn: &Connection| -> i64 {
+            conn.query_row(
+                "SELECT count(*) FROM chunk_fts WHERE chunk_fts MATCH 'validate'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(fts(&store.conn), 1);
+
+        store.conn.execute("DELETE FROM source", []).unwrap();
+        for table in ["document", "symbol", "chunk"] {
+            let rows: i64 = store
+                .conn
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(rows, 0, "{table}");
+        }
+        assert_eq!(fts(&store.conn), 0);
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_migration_that_leaves_orphans_is_refused_unchanged() {
+        let dir = scratch("orphans");
+        let path = dir.join("corpus.db");
+        raw(&path)
+            .execute_batch(&format!(
+                "PRAGMA foreign_keys = OFF;
+                 {}
+                 {}
+                 INSERT INTO meta (key, value) VALUES ('schema_version', '2');
+                 INSERT INTO document (id, source_id, path, content_hash) VALUES (1, 99, 'a', x'00');",
+                MIGRATIONS[0], MIGRATIONS[1]
+            ))
+            .unwrap();
+        let before = fs::read(&path).unwrap();
+
+        let err = Store::open_read_write(&path).err().unwrap();
+        assert!(
+            matches!(&err, Error::InvalidCorpus { reason, .. } if reason.contains("1 rows")),
+            "{err:?}"
+        );
+        assert_eq!(fs::read(&path).unwrap(), before);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn foreign_keys_are_enforced() {
+        let dir = scratch("fk");
+        let store = Store::open_read_write(&dir.join("corpus.db")).unwrap();
+        let err = store
+            .conn
+            .execute(
+                "INSERT INTO document (source_id, path, content_hash) VALUES (99, 'a', x'00')",
+                [],
+            )
+            .unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                rusqlite::Error::SqliteFailure(e, _) if e.code == ErrorCode::ConstraintViolation
+            ),
+            "{err:?}"
+        );
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }
