@@ -23,8 +23,11 @@ and refuses an index older than the manifest's `max_age_days` unless
 `--allow-stale`. `codecite read <corpus> <citation>` prints the exact text a
 citation points at under its pinned citation, for the citations search prints
 and the spec forms people write (`RFC 9449 §4.3`, `OIDC Core §3.1.3.7 step 13`,
-a spec URL). `corpora/identity.toml` is the first real corpus: identity-model and
-the OAuth and OpenID specs it cites. The MCP server comes next.
+a spec URL). `codecite corpora` lists the indexed corpora as JSON, with each
+one's age, size, source count and staleness. `codecite mcp` runs the MCP server
+over stdio; its one tool so far, `corpora`, returns the same JSON.
+`corpora/identity.toml` is the first real corpus: identity-model and the OAuth
+and OpenID specs it cites.
 
 ## Install
 
@@ -82,6 +85,13 @@ openid-connect-core-1_0@sha256:4d016752a645#section-3.1.3.7/step-13
 step · ID Token Validation · SHOULD · quote · indexed 2026-10-20T20:34:20Z
 
 13. If the auth_time Claim was requested, either through a specific request for this Claim or by using the max_age parameter, the Client SHOULD check the auth_time Claim value and request re-authentication if it determines too much time has elapsed since the last End-User authentication.
+```
+
+`codecite corpora` lists what is indexed, as the MCP `corpora` tool returns it:
+
+```console
+$ codecite corpora
+{"corpora":[{"age_days":0.0,"corpus":"self","indexed_at":"2026-10-20T20:49:36Z","max_age_days":30,"size_bytes":7655424,"sources":1,"stale":false}]}
 ```
 
 ## Planned
