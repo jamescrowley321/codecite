@@ -76,7 +76,7 @@ The workspace has five crates: `codecite-core` (schema and query engine), `codec
 Each corpus is one SQLite file in WAL mode, holding sources, chunks, a full-text index, optional vectors and a provider-tagged symbol graph.
 
 ```sql
-CREATE TABLE meta     (key TEXT PRIMARY KEY, value TEXT);          -- schema_version, indexed_at, manifest_hash
+CREATE TABLE meta     (key TEXT PRIMARY KEY, value TEXT);          -- schema_version, indexed_at, max_age_days, manifest_hash
 
 CREATE TABLE source (
   id INTEGER PRIMARY KEY, name TEXT NOT NULL,                       -- a document's versions share its name
@@ -198,15 +198,17 @@ BM25 over code-aware terms does most of the work; vectors and graph signals refi
 
 **Ranking**
 
-- FTS5 `bm25()` with column weights: symbol name highest, then path, then body.
+- The query is split into terms as indexed text is (step 4), and each term is quoted, so FTS5 never reads the user's text as query syntax. A chunk matches when it holds any term (`OR`), and BM25 ranks the chunks that hold more of them, and rarer ones, higher.
+- FTS5 `bm25()` with column weights: symbol name 10, path 5, body 1.
 - With embeddings on, nearest neighbors from `chunk_vec`, merged with BM25 by reciprocal rank fusion (k = 60).
-- An exact symbol-name match is boosted to the top.
-- Filters by corpus, repo, language and path glob are plain SQL `WHERE` clauses.
+- A chunk whose symbol's name is exactly the query, as written, comes first; the rest follow by score.
+- Only the current version of each document is searched; an older pinned version is reached by its citation.
+- Filters by corpus, repo, language and path glob are plain SQL `WHERE` clauses. The path glob is SQLite's `GLOB`: `*` matches any run of characters, `/` included, and case matters.
 
 **Freshness**
 
 - Each document stores a content hash. Re-indexing a git source diffs the old commit against the new one and rewrites only changed documents.
-- Each corpus has a maximum age (default 30 days). Older indexes are refused unless the caller passes `--allow-stale`, and every result carries its `indexed_at`.
+- Each corpus has a maximum age (default 30 days). An index run stores it in `meta.max_age_days` beside `meta.indexed_at`, so a query needs no manifest. Older indexes are refused unless the caller passes `--allow-stale`, and every result carries its source's `indexed_at`.
 
 **Initial targets, to validate in milestone 4:** index 100k lines of code in under 60 seconds without SCIP on a laptop, and answer BM25 queries over 1 million chunks in under 100 ms at p95.
 
@@ -264,7 +266,7 @@ The CLI and the MCP server expose the same operations and return the same JSON, 
 | --- | --- |
 | `codecite add <corpus> <url>...` | Add sources to a manifest, detect licenses, pin the current commit |
 | `codecite index <corpus> [--manifest <path>] [--print-hashes]` | Fetch, index and run providers; incremental by default. Reads `corpora/<corpus>.toml` unless `--manifest` names another file. `--print-hashes` downloads each document source and prints its sha256, without checking or indexing, so a new or changed document is pinned on purpose |
-| `codecite search <corpus> "<query>"` | Ranked chunks with citations |
+| `codecite search <corpus> "<query>" [--language <name>] [--path <glob>] [--limit <n>] [--json] [--allow-stale]` | Ranked chunks with citations, at most `--limit` (default 10). `--json` prints the result objects as a JSON array; otherwise each result is its rank and citation, a line naming its kind, symbol, score, license class and `indexed_at`, and its snippet's first 3 lines |
 | `codecite def <symbol>` | Where a symbol is defined |
 | `codecite refs <symbol>` | Every reference to a symbol |
 | `codecite graph <callers\|callees\|impact\|path> ...` | Graph queries with `--min-confidence` |
@@ -300,10 +302,11 @@ Every result has the same shape:
 }
 ```
 
+- Search results also carry the chunk's `kind`; a code result carries `dirty`, and a spec result its pinned spec citation and no `symbol`. Fields with no value are left out, and graph fields (`providers`, `confidence`) appear only on graph results.
 - Snippets are capped at 40 lines; agents call `read` for more, which keeps token use predictable.
 - Code citations look like `repo@sha:path#L10-L42`; spec citations like `rfc9449@sha256:1a2b3c4d5e6f#section-4.3` and `openid-connect-core-1_0@sha256:…#section-3.1.3.7/step-13`. The canonical forms parse strictly, so that each span has exactly one spelling: a commit is 7 to 64 lowercase hex digits, a spec hash is 12, numbers have no leading zeros, and one line is `#L10`, not `#L10-L10`. `read` and `cite` also accept the forms people write (`RFC 9449 §4.3`, `OIDC Core §3.1.3.7 step 13`, `Core 3.1.3.7(13)`, a spec URL with its anchor). These parse to an unresolved reference (a document or none, a section number or the document's own anchor, and an optional step), with document aliases taken from the manifest. A string that matches no form is no match rather than an error, and one string holds one citation: step ranges such as `steps 4-6` and lists such as `§2 / §3.1.3.7` are errors. A bare `§` resolves only when exactly one current document has that section and step.
 - `cite` findings: `no_such_section`, `no_such_step`, `anchor_label_mismatch`, `strength_mismatch`, `superseded_document`, `topic_mismatch` (only when exactly one sibling step or section holds the claim's protocol term) and `ambiguous_document`. codecite supplies facts; the agent judges meaning.
-- Errors are explicit: an unknown corpus, a stale index or an ambiguous symbol name returns a typed error with candidates, never an empty success.
+- Errors are explicit: an unknown corpus (with the corpora that exist), a stale index, an empty query or an ambiguous symbol name returns a typed error with candidates, never an empty success. A search that matches nothing is an empty list.
 
 ## Security and privacy
 
