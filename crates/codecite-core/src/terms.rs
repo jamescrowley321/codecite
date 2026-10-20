@@ -32,6 +32,27 @@ pub fn split_identifier(identifier: &str) -> Vec<String> {
     parts
 }
 
+/// Returns the search terms for an identifier: its lowercase parts, then
+/// the identifier itself, separated by spaces.
+///
+/// `validateToken` gives `validate token validateToken`, so a search for
+/// "validate token" and a search for the exact name both match. An
+/// identifier that is already a single lowercase part is returned alone.
+pub fn identifier_terms(identifier: &str) -> String {
+    let parts = split_identifier(identifier);
+    if let [only] = parts.as_slice()
+        && only == identifier
+    {
+        return identifier.to_owned();
+    }
+    let mut terms = parts.join(" ");
+    if !terms.is_empty() && !identifier.is_empty() {
+        terms.push(' ');
+    }
+    terms.push_str(identifier);
+    terms
+}
+
 /// Moves a finished part, lowercased, into `parts`.
 fn flush(current: &mut String, parts: &mut Vec<String>) {
     if !current.is_empty() {
@@ -97,5 +118,41 @@ mod tests {
     #[test]
     fn lone_capital_before_lowercase_splits_off() {
         assert_eq!(parts("IPv4Address"), ["i", "pv4", "address"]);
+    }
+
+    #[test]
+    fn terms_match_the_issue_examples() {
+        assert_eq!(
+            identifier_terms("validateToken"),
+            "validate token validateToken"
+        );
+        assert_eq!(
+            identifier_terms("id_token_hint"),
+            "id token hint id_token_hint"
+        );
+        assert_eq!(
+            identifier_terms("back-channel"),
+            "back channel back-channel"
+        );
+        assert_eq!(identifier_terms("HTTPServer"), "http server HTTPServer");
+    }
+
+    #[test]
+    fn one_part_identifier_is_not_repeated() {
+        assert_eq!(identifier_terms("token"), "token");
+        assert_eq!(identifier_terms("sha256"), "sha256");
+        assert_eq!(identifier_terms("rfc9449"), "rfc9449");
+        assert_eq!(identifier_terms("Token"), "token Token");
+    }
+
+    #[test]
+    fn non_ascii_terms_keep_the_original() {
+        assert_eq!(identifier_terms("ÜberMaß"), "über maß ÜberMaß");
+    }
+
+    #[test]
+    fn empty_input_gives_no_terms() {
+        assert_eq!(identifier_terms(""), "");
+        assert_eq!(identifier_terms("__"), "__");
     }
 }

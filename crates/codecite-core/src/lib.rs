@@ -18,4 +18,4 @@ mod store;
 pub use store::{SCHEMA_VERSION, Store};
 
 mod terms;
-pub use terms::split_identifier;
+pub use terms::{identifier_terms, split_identifier};
