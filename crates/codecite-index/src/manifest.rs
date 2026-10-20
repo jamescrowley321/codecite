@@ -222,7 +222,7 @@ struct RawManifest {
 }
 
 fn default_max_age_days() -> u32 {
-    30
+    codecite_core::DEFAULT_MAX_AGE_DAYS
 }
 
 impl Manifest {

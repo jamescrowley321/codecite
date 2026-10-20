@@ -219,13 +219,16 @@ impl Store {
         Ok(sources.into_iter().map(|(_, label)| label).collect())
     }
 
-    /// Records when the corpus was last indexed, in `meta.indexed_at`.
-    pub fn set_indexed_at(&mut self) -> Result<()> {
+    /// Records when the corpus was last indexed, in `meta.indexed_at`, and
+    /// the manifest's `max_age_days`, so queries can refuse a stale index
+    /// without reading the manifest.
+    pub fn set_indexed_at(&mut self, max_age_days: u32) -> Result<()> {
         self.conn.execute(
             "INSERT INTO meta (key, value)
-             VALUES ('indexed_at', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+             VALUES ('indexed_at', strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                    ('max_age_days', ?1)
              ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-            [],
+            [max_age_days.to_string()],
         )?;
         Ok(())
     }
@@ -538,16 +541,18 @@ mod tests {
             .unwrap();
         store.set_dirty(id, "src/lib.rs", true).unwrap();
         assert_eq!(count(&store, "SELECT dirty FROM document"), 1);
-        store.set_indexed_at().unwrap();
-        let at: String = store
-            .conn
-            .query_row(
-                "SELECT value FROM meta WHERE key = 'indexed_at'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
+        store.set_indexed_at(7).unwrap();
+        let meta = |key: &str| -> String {
+            store
+                .conn
+                .query_row("SELECT value FROM meta WHERE key = ?1", [key], |row| {
+                    row.get(0)
+                })
+                .unwrap()
+        };
+        let at = meta("indexed_at");
         assert_eq!(at.len(), "2026-10-20T06:00:00Z".len(), "{at}");
+        assert_eq!(meta("max_age_days"), "7");
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }

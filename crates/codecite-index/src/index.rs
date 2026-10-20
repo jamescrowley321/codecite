@@ -131,7 +131,7 @@ pub fn index_corpus(
         keep.push(index_document(store, doc, bytes, &mut summary)?);
     }
     summary.removed_sources = store.delete_sources_except(&keep)?;
-    store.set_indexed_at()?;
+    store.set_indexed_at(manifest.max_age_days)?;
     summary.elapsed = started.elapsed();
     Ok(summary)
 }
