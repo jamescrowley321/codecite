@@ -3,3 +3,6 @@
 
 mod error;
 pub use error::{Error, Result};
+
+mod store;
+pub use store::{SCHEMA_VERSION, Store};
