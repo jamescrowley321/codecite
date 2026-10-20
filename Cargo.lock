@@ -194,6 +194,8 @@ dependencies = [
  "codecite-lsp",
  "codecite-mcp",
  "directories",
+ "rusqlite",
+ "serde_json",
  "tempfile",
 ]
 
@@ -203,6 +205,9 @@ version = "0.0.0"
 dependencies = [
  "proptest",
  "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
  "thiserror",
 ]
 

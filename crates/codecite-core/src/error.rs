@@ -37,6 +37,51 @@ pub enum Error {
         /// The newest schema version this build supports.
         supported: u32,
     },
+
+    /// A corpus name that isn't a plain file name.
+    #[error(
+        "invalid corpus name {name:?}: use ASCII letters, digits, `-`, `_` and `.`, not starting with `.`"
+    )]
+    InvalidCorpusName {
+        /// The name as given.
+        name: String,
+    },
+
+    /// No corpus file has this name.
+    #[error("unknown corpus `{corpus}`; {}", known_corpora(known))]
+    UnknownCorpus {
+        /// The name asked for.
+        corpus: String,
+        /// The corpora that do exist, sorted.
+        known: Vec<String>,
+    },
+
+    /// The corpus was last indexed longer ago than its manifest's
+    /// `max_age_days` allows.
+    #[error(
+        "corpus `{corpus}` was indexed at {indexed_at}, more than {max_age_days} days ago; re-run codecite index, or allow a stale index"
+    )]
+    StaleIndex {
+        /// The corpus's name.
+        corpus: String,
+        /// When it was last indexed.
+        indexed_at: String,
+        /// Its maximum age.
+        max_age_days: u32,
+    },
+
+    /// The query has no letter or digit to search for.
+    #[error("the query has no words to search for")]
+    EmptyQuery,
+}
+
+/// The end of an [`Error::UnknownCorpus`] message.
+fn known_corpora(known: &[String]) -> String {
+    if known.is_empty() {
+        "no corpus has been indexed yet; run codecite index".into()
+    } else {
+        format!("known corpora: {}", known.join(", "))
+    }
 }
 
 /// `Result` with [`Error`] as the default error type.
@@ -91,6 +136,39 @@ mod tests {
         assert!(matches!(err, Error::Sqlite(_)));
         assert_eq!(err.to_string(), "SQLite error");
         assert_eq!(err.source().unwrap().to_string(), msg);
+    }
+
+    #[test]
+    fn unknown_corpus_lists_the_known_ones() {
+        let err = Error::UnknownCorpus {
+            corpus: "identty".into(),
+            known: vec!["identity".into(), "specs".into()],
+        };
+        assert_eq!(
+            err.to_string(),
+            "unknown corpus `identty`; known corpora: identity, specs"
+        );
+        let err = Error::UnknownCorpus {
+            corpus: "identity".into(),
+            known: vec![],
+        };
+        assert_eq!(
+            err.to_string(),
+            "unknown corpus `identity`; no corpus has been indexed yet; run codecite index"
+        );
+    }
+
+    #[test]
+    fn stale_index_names_the_age_limit() {
+        let err = Error::StaleIndex {
+            corpus: "identity".into(),
+            indexed_at: "2026-09-01T00:00:00Z".into(),
+            max_age_days: 30,
+        };
+        assert_eq!(
+            err.to_string(),
+            "corpus `identity` was indexed at 2026-09-01T00:00:00Z, more than 30 days ago; re-run codecite index, or allow a stale index"
+        );
     }
 
     #[test]

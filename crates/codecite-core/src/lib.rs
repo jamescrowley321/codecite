@@ -18,7 +18,10 @@ mod keyword;
 pub use keyword::{Keyword, UnknownKeyword, requirement_keywords};
 
 mod store;
-pub use store::{ChunkRecord, DocumentRecord, SCHEMA_VERSION, SourceRecord, Store, SymbolRecord};
+pub use store::{
+    ChunkRecord, DEFAULT_MAX_AGE_DAYS, DocumentRecord, Freshness, MAX_SNIPPET_LINES,
+    SCHEMA_VERSION, SearchQuery, SearchResult, SourceRecord, Store, SymbolRecord, is_corpus_name,
+};
 
 mod terms;
 pub use terms::{identifier_terms, split_identifier, text_terms};

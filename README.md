@@ -14,8 +14,12 @@ Pre-alpha. `codecite index <corpus>` indexes the local git checkouts a corpus
 manifest (`corpora/<corpus>.toml`) lists into `~/.local/share/codecite/<corpus>.db`
 on Linux, and downloads the documents it lists, checking each against its
 pinned sha256 and caching it in `~/.cache/codecite/documents`, so later runs
-work offline. `codecite index <corpus> --print-hashes` prints each document's
-current hash, for pinning. Indexing documents and searching come next.
+work offline, then indexes their sections and numbered steps.
+`codecite index <corpus> --print-hashes` prints each document's current hash,
+for pinning. `codecite search <corpus> "<query>"` prints ranked, cited results
+(`--json` for JSON; `--language`, `--path <glob>` and `--limit` filter them),
+and refuses an index older than the manifest's `max_age_days` unless
+`--allow-stale`. The MCP server comes next.
 
 ## Planned
 

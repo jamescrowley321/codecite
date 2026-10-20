@@ -9,6 +9,9 @@ use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionB
 
 use crate::{Error, Result};
 
+mod search;
+pub use search::{DEFAULT_MAX_AGE_DAYS, Freshness, MAX_SNIPPET_LINES, SearchQuery, SearchResult};
+
 mod write;
 pub use write::{ChunkRecord, DocumentRecord, SourceRecord, SymbolRecord};
 
@@ -146,6 +149,28 @@ impl Store {
         })
     }
 
+    /// Opens the corpus named `corpus` in `dir`, the file
+    /// `<dir>/<corpus>.db`, for queries.
+    ///
+    /// A name that isn't a plain file name is [`Error::InvalidCorpusName`],
+    /// and one with no file is [`Error::UnknownCorpus`], listing the corpora
+    /// `dir` does hold.
+    pub fn open_corpus(dir: &Path, corpus: &str) -> Result<Store> {
+        if !is_corpus_name(corpus) {
+            return Err(Error::InvalidCorpusName {
+                name: corpus.into(),
+            });
+        }
+        let path = dir.join(format!("{corpus}.db"));
+        if !path.exists() {
+            return Err(Error::UnknownCorpus {
+                corpus: corpus.into(),
+                known: known_corpora(dir)?,
+            });
+        }
+        Store::open_read_only(&path)
+    }
+
     /// The schema version stored in the file.
     pub fn schema_version(&self) -> Result<u32> {
         read_version(&self.conn, &self.path)
@@ -155,6 +180,36 @@ impl Store {
     pub fn path(&self) -> &Path {
         &self.path
     }
+}
+
+/// Whether `name` can name a corpus. It becomes a file name, so it may
+/// hold only ASCII letters, digits, `-`, `_` and `.`, and may not start
+/// with `.`.
+pub fn is_corpus_name(name: &str) -> bool {
+    let allowed = |c: char| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.');
+    !name.is_empty() && !name.starts_with('.') && name.chars().all(allowed)
+}
+
+/// The corpora in `dir`: the names of its `.db` files, sorted. A missing
+/// directory holds none.
+fn known_corpora(dir: &Path) -> Result<Vec<String>> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e.into()),
+    };
+    let mut names = Vec::new();
+    for entry in entries {
+        let path = entry?.path();
+        if path.extension().is_some_and(|ext| ext == "db")
+            && let Some(name) = path.file_stem().and_then(|s| s.to_str())
+            && is_corpus_name(name)
+        {
+            names.push(name.to_owned());
+        }
+    }
+    names.sort();
+    Ok(names)
 }
 
 /// Puts the file in WAL mode.
@@ -645,6 +700,43 @@ mod tests {
             ),
             "{err:?}"
         );
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn corpus_names_are_plain_file_names() {
+        for good in ["identity", "oidc-impls", "rfc_9449", "v1.2"] {
+            assert!(is_corpus_name(good), "{good}");
+        }
+        for bad in ["", ".hidden", "..", "../x", "a/b", "a\\b", "名前", "a b"] {
+            assert!(!is_corpus_name(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn open_corpus_names_the_known_corpora() {
+        let dir = scratch("open-corpus");
+        let err = Store::open_corpus(&dir.join("missing"), "identity")
+            .err()
+            .unwrap();
+        assert!(
+            matches!(&err, Error::UnknownCorpus { known, .. } if known.is_empty()),
+            "{err:?}"
+        );
+        drop(Store::open_read_write(&dir.join("specs.db")).unwrap());
+        drop(Store::open_read_write(&dir.join("identity.db")).unwrap());
+        fs::write(dir.join("notes.txt"), "not a corpus").unwrap();
+        let err = Store::open_corpus(&dir, "identty").err().unwrap();
+        assert!(
+            matches!(&err, Error::UnknownCorpus { corpus, known }
+                if corpus == "identty" && known == &["identity", "specs"]),
+            "{err:?}"
+        );
+        let err = Store::open_corpus(&dir, "../specs").err().unwrap();
+        assert!(matches!(err, Error::InvalidCorpusName { .. }), "{err:?}");
+        let store = Store::open_corpus(&dir, "specs").unwrap();
+        assert_eq!(store.path(), dir.join("specs.db"));
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }
