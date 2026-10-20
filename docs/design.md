@@ -177,7 +177,7 @@ BM25 over code-aware terms does most of the work; vectors and graph signals refi
 1. **Fetch:** `git clone --filter=blob:none` at the manifest's pinned commit, read a local working tree, or fetch a document by URL and check it against its pinned `sha256`. Fetched documents are cached outside the repo; changed bytes stop the run until the pin is updated on purpose.
 2. **Walk:** respect `.gitignore`, skip binaries by content sniffing, cap file size, apply the secrets deny-list.
 3. **Chunk:** tree-sitter splits at function and class boundaries with line ranges. Prose and unsupported languages fall back to heading sections or 60-line windows. Spec documents split into numbered sections and the numbered steps inside them, each with its anchor and its uppercase requirement keywords (BCP 14: RFC 2119 and RFC 8174).
-4. **Terms:** split camelCase, snake_case and kebab-case identifiers and keep the original, so `validateToken` matches "validate token" and the exact name.
+4. **Terms:** split camelCase, snake_case and kebab-case identifiers into lowercase parts and keep the original, so `validateToken` matches "validate token" and the exact name. Any character that is not a letter or digit separates parts, an acronym ends before the capital that starts the next word (`HTTPServer` → `http server`), and digits stay with the part before them (`sha256`, `rfc9449`).
 5. **Write:** chunks, full-text rows and symbols for one document in a single transaction.
 6. **Providers:** SCIP, CodeGraph and Graphify run after the base pass and add symbols and edges.
 7. **Embed (optional):** a small local model through `fastembed`, 384 dimensions, CPU only.
