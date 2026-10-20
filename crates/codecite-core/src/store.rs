@@ -2,9 +2,10 @@
 //! schema with numbered migrations.
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior};
+use rusqlite::config::DbConfig;
+use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionBehavior};
 
 use crate::{Error, Result};
 
@@ -34,6 +35,10 @@ impl Store {
     pub fn open_read_write(path: &Path) -> Result<Store> {
         let mut conn = Connection::open(path)?;
         conn.busy_timeout(BUSY_TIMEOUT)?;
+        // Closing the last connection checkpoints any WAL a crashed writer
+        // left into the main file. Hold that off until the file is accepted,
+        // so a refused one stays as it was.
+        conn.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, true)?;
 
         // `BEGIN IMMEDIATE` takes the write lock before reading the version,
         // so two indexers racing on a fresh file migrate it one after the
@@ -56,16 +61,11 @@ impl Store {
             )?;
         }
         tx.commit()?;
+        conn.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, false)?;
 
         // Switching to WAL can't run inside a transaction, and doing it only
         // now leaves a refused file's header untouched.
-        let mode: String = conn.query_row("PRAGMA journal_mode = WAL", [], |row| row.get(0))?;
-        if !mode.eq_ignore_ascii_case("wal") {
-            return Err(Error::InvalidCorpus {
-                path: path.to_path_buf(),
-                reason: format!("could not switch to WAL mode (journal mode is {mode})"),
-            });
-        }
+        enable_wal(&conn, path)?;
 
         Ok(Store {
             conn,
@@ -125,6 +125,33 @@ impl Store {
     pub fn path(&self) -> &Path {
         &self.path
     }
+}
+
+/// Puts the file in WAL mode.
+///
+/// The switch takes a read lock and then upgrades it to a write lock. SQLite
+/// fails that upgrade with `SQLITE_BUSY` at once, without calling the busy
+/// handler, when another opener holds the write lock, so this retries until
+/// [`BUSY_TIMEOUT`] runs out.
+fn enable_wal(conn: &Connection, path: &Path) -> Result<()> {
+    let deadline = Instant::now() + BUSY_TIMEOUT;
+    let mode: String = loop {
+        match conn.query_row("PRAGMA journal_mode = WAL", [], |row| row.get(0)) {
+            Err(rusqlite::Error::SqliteFailure(e, _))
+                if e.code == ErrorCode::DatabaseBusy && Instant::now() < deadline =>
+            {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            result => break result?,
+        }
+    };
+    if !mode.eq_ignore_ascii_case("wal") {
+        return Err(Error::InvalidCorpus {
+            path: path.to_path_buf(),
+            reason: format!("could not switch to WAL mode (journal mode is {mode})"),
+        });
+    }
+    Ok(())
 }
 
 /// Reads `meta.schema_version`. A file with no schema objects at all is
@@ -273,6 +300,82 @@ mod tests {
             "{err:?}"
         );
         assert_eq!(fs::read(&path).unwrap(), before);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A newer-schema corpus whose version bump sits, committed but not yet
+    /// checkpointed, in its WAL: the files a writer leaves when it dies.
+    fn newer_schema_in_wal(dir: &Path) -> PathBuf {
+        let live = dir.join("live.db");
+        drop(Store::open_read_write(&live).unwrap());
+        let writer = raw(&live);
+        writer
+            .execute_batch(&format!(
+                "PRAGMA wal_autocheckpoint = 0;
+                 UPDATE meta SET value = '{}' WHERE key = 'schema_version';",
+                SCHEMA_VERSION + 1
+            ))
+            .unwrap();
+        // Copy the files while the writer is still open, so its close-time
+        // checkpoint can't reach them.
+        let path = dir.join("corpus.db");
+        fs::copy(&live, &path).unwrap();
+        fs::copy(dir.join("live.db-wal"), dir.join("corpus.db-wal")).unwrap();
+        drop(writer);
+        path
+    }
+
+    #[test]
+    fn read_write_refuses_newer_schema_in_wal_unchanged() {
+        let dir = scratch("rw-newer-wal");
+        let path = newer_schema_in_wal(&dir);
+        let before = fs::read(&path).unwrap();
+
+        let err = Store::open_read_write(&path).err().unwrap();
+        assert!(matches!(err, Error::SchemaTooNew { .. }), "{err:?}");
+        assert_eq!(fs::read(&path).unwrap(), before);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn read_only_refuses_newer_schema_in_wal_unchanged() {
+        let dir = scratch("ro-newer-wal");
+        let path = newer_schema_in_wal(&dir);
+        let before = fs::read(&path).unwrap();
+
+        let err = Store::open_read_only(&path).err().unwrap();
+        assert!(matches!(err, Error::SchemaTooNew { .. }), "{err:?}");
+        assert_eq!(fs::read(&path).unwrap(), before);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn wal_switch_waits_for_another_writer() {
+        let dir = scratch("wal-busy");
+        let path = dir.join("corpus.db");
+        // A migrated file still in rollback-journal mode: the state between
+        // an open's migration commit and its WAL switch.
+        raw(&path)
+            .execute_batch(&format!(
+                "{}
+                 INSERT INTO meta (key, value) VALUES ('schema_version', '{SCHEMA_VERSION}');",
+                MIGRATIONS.join("\n")
+            ))
+            .unwrap();
+
+        // A second opener holds the write lock for a moment.
+        let other = raw(&path);
+        other.execute_batch("BEGIN IMMEDIATE").unwrap();
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            other.execute_batch("COMMIT").unwrap();
+        });
+
+        let conn = raw(&path);
+        conn.busy_timeout(BUSY_TIMEOUT).unwrap();
+        enable_wal(&conn, &path).unwrap();
+        release.join().unwrap();
+        drop(conn);
         fs::remove_dir_all(&dir).unwrap();
     }
 
