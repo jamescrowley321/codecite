@@ -1,5 +1,7 @@
 Self-referential implementation loop for codecite. Execute ONE phase of ONE issue per iteration, then end. Fresh context each iteration: persist all state to files.
 
+The word `CODECITE_QUEUE_EMPTY` ends the whole run, wherever it appears in your output. Write it only in the two cases below that call for it. Ending a phase needs no marker: finish your summary and stop.
+
 ## Context
 
 Repo `jamescrowley321/codecite`: a Rust workspace (`crates/*`). Read `~/repos/codecite/AGENTS.md` and `~/repos/codecite/docs/design.md` before planning. The owner is learning Rust through this project: PRs explain the idioms they use.
@@ -18,7 +20,7 @@ GitHub issues are the only queue and the only status. No status words in files.
 
 1. Scope: open issues in milestones numbered up to `LAST_MILESTONE = 3` (M3 MCP server), across milestones, in dependency order. List them with `gh issue list --state open --limit 200 --json number,title,body,milestone,labels`.
 2. A candidate is an in-scope issue without the `blocked` label, not in the stack ledger and not in the parked list. Take the lowest number whose every `Depends on #N` (from its body) is closed or in the ledger. An issue that depends on a parked issue is never a candidate.
-3. No candidate → output `<promise>LOOP_COMPLETE</promise>`. There is no cap on the stack's depth.
+3. No candidate → output `<promise>CODECITE_QUEUE_EMPTY</promise>`. There is no cap on the stack's depth.
 
 ## Stacked PRs
 
@@ -39,7 +41,7 @@ Park, don't block, for a design question the issue and `docs/design.md` cannot s
 Read the task state.
 
 - **Does not exist** → read and execute `restack.md`. If it ends without blocking, pick the next issue (Queue), write the task state below, and execute `setup.md`.
-- **phase is `blocked`** → do nothing; output `<promise>LOOP_COMPLETE</promise>`. The owner answers `## Blocked` and resets the phase.
+- **phase is `blocked`** → do nothing; output `<promise>CODECITE_QUEUE_EMPTY</promise>`. The owner answers `## Blocked` and resets the phase.
 - **Any other phase** → read and execute ONLY that phase file.
 
 Phase order: `setup → plan → implement → pr → ci → review → review-fix → complete`. review-fix loops back to `ci` for each re-review.
