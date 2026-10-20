@@ -3,8 +3,10 @@
 [Ralph Orchestrator](https://github.com/mikeyobrien/ralph-orchestrator) works through the open issues of M2 and M3 in dependency order (`LAST_MILESTONE` in `PROMPT.md`), one phase per iteration, and opens a stack of PRs for review.
 
 - `PROMPT.md`: the router. It reads the queue from GitHub issues and routes each iteration to one phase file.
-- `phases/`: `restack → setup → plan → implement → review → review-fix → pr → ci → complete`. Planning and TDD use the superpowers skills; review uses the `blind-peer-review` agents.
+- `phases/`: `restack → setup → plan → implement → pr → ci → review → review-fix → complete`. Planning and TDD use the superpowers skills.
+- Review runs in CI: `.github/workflows/claude.yml` reviews each PR when it opens. The loop waits for that verdict, answers each round in a PR comment, and asks `@claude review this PR` after its fixes, for up to two re-reviews. If CI doesn't review, the loop runs `blind-peer-review:check` locally and posts the result. The plugin chooses the lenses, so tuning the review means changing the plugin pin in `claude.yml`.
 - `run.sh`: launches or resumes the loop from the runner worktree `~/repos/codecite-worktrees/ralph-loop`.
+- `wait-ci.sh` and `wait-review.sh`: after each push, sleep a minute, then wait for that commit's CI run or for the review comment. `ci` fixes failures from the log the script prints and pushes again (up to 3 attempts).
 
 ## Run
 
@@ -30,11 +32,11 @@ The loop never merges.
 ## Stopping and unblocking
 
 - **Stopping:** stop ralph between iterations. The task state keeps your place.
-- **Parked:** a design question, or Critical review findings that two fix rounds didn't close, parks that issue instead of stopping the run. The loop comments on the issue, keeps its work on a local branch, lists it in `ralph-parked.md`, and moves on; issues that depend on it are skipped. Answer on the issue, delete its row, and the next run picks it up again.
+- **Parked:** a design question parks that issue instead of stopping the run. The loop comments on the issue, keeps its work on a local branch, lists it in `ralph-parked.md`, and moves on; issues that depend on it are skipped. Answer on the issue, delete its row, and the next run picks it up again.
 - **Blocked:** the loop stops with `phase: blocked` only when the stack itself is in trouble:
   - a rebase conflict;
   - a loop PR closed without merging;
-  - CI still failing after 3 fix attempts;
-  - a reviewer that won't run.
+  - CI still failing after 3 fix attempts.
 
   It writes the reason under `## Blocked` in the task state. Fix the cause, set the phase back, and re-run `run.sh`.
+- **Still BLOCK after review:** a PR the CI review still blocks after two re-reviews does not stop the run. It stays in the stack with a comment for you, and its `review` column in `ralph-stack.md` says BLOCK.

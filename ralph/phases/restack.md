@@ -3,7 +3,7 @@
 Keep the stack of open loop PRs based on what is actually upstream. Runs before every new issue.
 
 The ledger `~/repos/codecite/.claude/ralph-stack.md` is a table, bottom of the stack first:
-`| issue | branch | pr | parent | parent_sha |`. `parent` is the branch the PR targets, and `parent_sha` is the parent tip this branch was last rebased onto. A missing or empty ledger → nothing to do; end this phase.
+`| issue | branch | pr | parent | parent_sha | review |`. `parent` is the branch the PR targets, and `parent_sha` is the parent tip this branch was last rebased onto. A missing or empty ledger → nothing to do; end this phase.
 
 1. `git -C ~/repos/codecite fetch --prune origin && git -C ~/repos/codecite pull --ff-only`
 2. Drop rows from the bottom whose PR is merged (`gh pr view <pr> --json state`). A PR closed without merging → set `phase: blocked`, ask the owner under `## Blocked` what to do with its children, and end.
