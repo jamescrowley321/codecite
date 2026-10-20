@@ -237,6 +237,22 @@ mod tests {
     }
 
     #[test]
+    fn headings_allow_three_leading_spaces_and_a_tab() {
+        let text = "   # Three\n    # Four is code\n#\tTab\n";
+        let chunks = sections(&Lines::new(text));
+        let titles: Vec<_> = chunks.iter().map(|c| c.title.as_deref().unwrap()).collect();
+        assert_eq!(titles, ["Three", "Tab"]);
+        assert_eq!(spans(&chunks), [(1, 2), (3, 3)]);
+    }
+
+    #[test]
+    fn a_shorter_fence_does_not_close() {
+        let text = "````\n```\n# inside\n````\n# Outside\n";
+        let chunks = sections(&Lines::new(text));
+        assert_eq!(spans(&chunks), [(5, 5)]);
+    }
+
+    #[test]
     fn a_fence_closes_only_with_its_own_marker() {
         let text = "~~~\n```\n# inside\n~~~\n# Outside\n";
         let chunks = sections(&Lines::new(text));

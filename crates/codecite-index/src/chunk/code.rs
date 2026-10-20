@@ -39,6 +39,18 @@ pub enum ChunkerError {
 /// quadratic in its depth; deeper definitions stay in their parent's chunk.
 pub(super) const MAX_DEPTH: usize = 32;
 
+/// The longest descriptor a definition can have and still get a symbol.
+/// Each descriptor copies its parent's, so a long name would otherwise be
+/// copied into every definition inside it. A definition whose descriptor is
+/// longer keeps its chunk, and neither it nor anything inside it gets a
+/// symbol.
+pub(super) const MAX_DESCRIPTOR: usize = 512;
+
+/// The most descriptor bytes one file can hold. With [`MAX_DESCRIPTOR`] this
+/// bounds a file's descriptor memory by its size; once the budget is spent,
+/// later definitions keep their chunks but get no symbol.
+pub(super) const DESCRIPTOR_BUDGET: usize = 8 << 20;
+
 /// Loads a grammar from its crate.
 type Grammar = fn() -> tree_sitter::Language;
 
@@ -129,21 +141,32 @@ impl CodeChunker {
 
         let defs = definitions(query, tree.root_node(), source, lines.len() as u32);
         // Each definition's full descriptor, built from its innermost
-        // parent's, which comes earlier in `defs`.
-        let mut full: Vec<String> = Vec::with_capacity(defs.len());
+        // parent's, which comes earlier in `defs`; `None` when it doesn't
+        // fit (see [`MAX_DESCRIPTOR`]).
+        let mut full: Vec<Option<String>> = Vec::with_capacity(defs.len());
         let mut seen: HashMap<String, u32> = HashMap::new();
+        let mut budget = DESCRIPTOR_BUDGET;
         let mut out = Vec::new();
         for def in &defs {
-            let parent = def.parent.map(|p| (&full[p], defs[p].kind));
-            let mut prefix = parent.map_or_else(String::new, |(d, _)| d.clone());
-            if let Some(receiver) = &def.receiver {
-                prefix.push_str(&escape_name(receiver));
-                prefix.push('#');
-            }
+            let parent = def.parent.map(|p| (full[p].as_deref(), defs[p].kind));
+            // Inside a definition without a descriptor, nothing gets one.
+            let prefix = match parent {
+                Some((None, _)) => None,
+                Some((Some(d), _)) => Some(d.to_string()),
+                None => Some(String::new()),
+            };
+            let prefix = prefix.map(|mut prefix| {
+                if let Some(receiver) = &def.receiver {
+                    prefix.push_str(&escape_name(receiver));
+                    prefix.push('#');
+                }
+                prefix
+            });
             let Some(kind) = def.kind else {
                 // An `impl` block: a chunk that names the methods inside it
                 // but has no symbol of its own.
-                full.push(prefix + &def.descriptor_part(0));
+                let descriptor = prefix.map(|p| p + &def.descriptor_part(0));
+                full.push(descriptor.and_then(|d| fit(d, &mut budget)));
                 out.push(Chunk {
                     kind: ChunkKind::Class,
                     start_line: def.start_line,
@@ -162,21 +185,28 @@ impl CodeChunker {
                 SymbolKind::Function if in_type => SymbolKind::Method,
                 k => k,
             };
-            let first = prefix.clone() + &def.descriptor_part(0);
-            let n = *seen
-                .entry(first.clone())
-                .and_modify(|n| *n += 1)
-                .or_insert(0);
-            let descriptor = match (kind, n) {
-                (_, 0) => Some(first.clone()),
-                (SymbolKind::Function | SymbolKind::Method, n) => {
-                    Some(prefix.clone() + &def.descriptor_part(n))
+            // The descriptor, and whether it names a symbol.
+            let named = prefix.and_then(|prefix| {
+                let first = prefix.clone() + &def.descriptor_part(0);
+                if first.len() > MAX_DESCRIPTOR.min(budget) {
+                    return None;
                 }
-                // A second type with the same name (behind a `cfg`, say) keeps
-                // its chunk but gets no symbol, so IDs stay unique.
-                _ => None,
-            };
-            full.push(descriptor.clone().unwrap_or(first));
+                let n = *seen
+                    .entry(first.clone())
+                    .and_modify(|n| *n += 1)
+                    .or_insert(0);
+                Some(match (kind, n) {
+                    (_, 0) => (first, true),
+                    (SymbolKind::Function | SymbolKind::Method, n) => {
+                        (prefix + &def.descriptor_part(n), true)
+                    }
+                    // A second type with the same name (behind a `cfg`, say)
+                    // keeps its chunk but gets no symbol, so IDs stay unique.
+                    _ => (first, false),
+                })
+            });
+            let named = named.and_then(|(d, symbol)| Some((fit(d, &mut budget)?, symbol)));
+            full.push(named.as_ref().map(|(d, _)| d.clone()));
             out.push(Chunk {
                 kind: match kind {
                     SymbolKind::Function | SymbolKind::Method => ChunkKind::Function,
@@ -185,16 +215,28 @@ impl CodeChunker {
                 start_line: def.start_line,
                 end_line: def.end_line,
                 text: lines.span(def.start_line, def.end_line),
-                symbol: descriptor.map(|descriptor| Symbol {
-                    name: def.name.clone(),
-                    kind,
-                    descriptor,
+                symbol: named.and_then(|(descriptor, symbol)| {
+                    symbol.then(|| Symbol {
+                        name: def.name.clone(),
+                        kind,
+                        descriptor,
+                    })
                 }),
                 title: None,
             });
         }
         out
     }
+}
+
+/// `descriptor` when it is at most [`MAX_DESCRIPTOR`] bytes and fits in
+/// what is left of the file's `budget`, which it then takes from.
+fn fit(descriptor: String, budget: &mut usize) -> Option<String> {
+    if descriptor.len() > MAX_DESCRIPTOR.min(*budget) {
+        return None;
+    }
+    *budget -= descriptor.len();
+    Some(descriptor)
 }
 
 /// A captured definition or scope.
@@ -336,10 +378,19 @@ fn symbol_kind(node: Node<'_>) -> SymbolKind {
     }
 }
 
-/// The bare type name of a Rust `impl` target: `Foo` for `Foo<T>` or `a::Foo`.
+/// The bare type name of a Rust `impl` target: `Foo` for `Foo<T>`, `a::Foo`,
+/// `&'a Foo`, `*const Foo` or `dyn Foo`.
 fn type_name(mut node: Node<'_>) -> Node<'_> {
     loop {
         match node.kind() {
+            "reference_type" | "pointer_type" => match node.child_by_field_name("type") {
+                Some(t) => node = t,
+                None => return node,
+            },
+            "dynamic_type" | "abstract_type" => match node.child_by_field_name("trait") {
+                Some(t) => node = t,
+                None => return node,
+            },
             "generic_type" => match node.child_by_field_name("type") {
                 Some(t) => node = t,
                 None => return node,

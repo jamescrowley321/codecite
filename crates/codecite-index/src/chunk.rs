@@ -371,6 +371,66 @@ mod tests {
     }
 
     #[test]
+    fn long_names_get_no_symbol_and_their_members_none_either() {
+        // A long impl target with many methods: copying its name into every
+        // method's descriptor would take memory quadratic in the file.
+        let name = "N".repeat(code::MAX_DESCRIPTOR);
+        let text = format!(
+            "impl {name} {{\n{}}}\nfn after() {{}}\n",
+            "fn a() {}\n".repeat(1_000)
+        );
+        let mut chunker = Chunker::new().unwrap();
+        let chunks = chunker.chunk("long.rs", &text);
+        assert_eq!(chunks.len(), 1_002);
+        let symbols: Vec<_> = chunks.iter().filter_map(|c| c.symbol.as_ref()).collect();
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].descriptor, "after().");
+        // A type whose own descriptor fits keeps it.
+        let fits = "N".repeat(code::MAX_DESCRIPTOR - 1);
+        let got = outline("fits.rs", &format!("struct {fits};\n"));
+        assert_eq!(got, expect(&[("class", 1, 1, &format!("{fits}#"))]));
+    }
+
+    #[test]
+    fn descriptors_stop_when_the_file_budget_is_spent() {
+        // Each method's descriptor is about 500 bytes; the budget runs out
+        // part way through, and later definitions get no symbol.
+        let name = "N".repeat(490);
+        let methods: String = (0..40_000).map(|i| format!("fn a{i}() {{}}\n")).collect();
+        let text = format!("impl {name} {{\n{methods}}}\n");
+        let mut chunker = Chunker::new().unwrap();
+        let chunks = chunker.chunk("wide.rs", &text);
+        assert_eq!(chunks.len(), 40_001);
+        let bytes: usize = chunks
+            .iter()
+            .filter_map(|c| c.symbol.as_ref())
+            .map(|s| s.descriptor.len())
+            .sum();
+        assert!(bytes <= code::DESCRIPTOR_BUDGET, "{bytes}");
+        assert!(
+            bytes > code::DESCRIPTOR_BUDGET - 2 * code::MAX_DESCRIPTOR,
+            "{bytes}"
+        );
+        assert!(chunks.last().unwrap().symbol.is_none());
+    }
+
+    #[test]
+    fn impl_targets_behind_references_and_dyn_name_their_type() {
+        let text = "impl<'a> IntoIterator for &'a Foo { fn into_iter() {} }\nimpl dyn Any { fn is() {} }\nimpl Bar for *const Baz { fn get() {} }\n";
+        assert_eq!(
+            outline("refs.rs", text),
+            expect(&[
+                ("class", 1, 1, ""),
+                ("function", 1, 1, "Foo#into_iter()."),
+                ("class", 2, 2, ""),
+                ("function", 2, 2, "Any#is()."),
+                ("class", 3, 3, ""),
+                ("function", 3, 3, "Baz#get()."),
+            ])
+        );
+    }
+
+    #[test]
     fn interface_methods_without_bodies() {
         assert_eq!(
             outline("i.ts", "interface I {\n  run(): void;\n}\n"),

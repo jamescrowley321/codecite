@@ -67,8 +67,9 @@ impl Language {
         let mut words = line.split_whitespace();
         let mut program = words.next()?.rsplit('/').next()?;
         if program == "env" {
-            // `#!/usr/bin/env -S node --flag`: the first word that isn't a flag.
-            program = words.find(|w| !w.starts_with('-'))?;
+            // `#!/usr/bin/env -S NAME=value node --flag`: the first word
+            // that isn't a flag or a variable.
+            program = words.find(|w| !w.starts_with('-') && !w.contains('='))?;
         }
         match program {
             "node" | "nodejs" => Some(Self::JavaScript),
@@ -91,8 +92,10 @@ mod tests {
             ("types.pyi", Language::Python),
             ("src/index.ts", Language::TypeScript),
             ("src/util.mts", Language::TypeScript),
+            ("src/util.cts", Language::TypeScript),
             ("src/App.tsx", Language::Tsx),
             ("lib/a.js", Language::JavaScript),
+            ("lib/a.mjs", Language::JavaScript),
             ("lib/a.cjs", Language::JavaScript),
             ("lib/View.jsx", Language::JavaScript),
             ("cmd/main.go", Language::Go),
@@ -126,6 +129,11 @@ mod tests {
             ("#!/usr/bin/env node\n", Some(Language::JavaScript)),
             (
                 "#!/usr/bin/env -S node --no-warnings\n",
+                Some(Language::JavaScript),
+            ),
+            ("#!/usr/bin/nodejs\n", Some(Language::JavaScript)),
+            (
+                "#!/usr/bin/env NODE_OPTIONS=--x node\n",
                 Some(Language::JavaScript),
             ),
             ("#!/usr/local/bin/ts-node\n", Some(Language::TypeScript)),
