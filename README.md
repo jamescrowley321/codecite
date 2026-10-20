@@ -30,9 +30,10 @@ Pre-alpha. Nothing is usable yet; the design is being turned into milestones.
 `cargo` call. Build with `cargo build --workspace` and run with
 `cargo run -p codecite -- --version`.
 
-CI runs `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
-`cargo test --workspace` and `cargo deny check` on every PR. Run them locally
-before pushing; `cargo deny` needs `cargo install cargo-deny --locked`.
+CI runs `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`,
+`cargo test --workspace --locked` and `cargo deny check` on every PR. Run them
+locally before pushing; `--locked` fails if `Cargo.lock` is out of date, as it
+does in CI. `cargo deny` needs `cargo install cargo-deny --locked`.
 
 ## License
 
