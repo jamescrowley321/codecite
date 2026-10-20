@@ -21,9 +21,30 @@ use crate::manifest::is_lower_hex;
 /// history. A clone is never made twice: when the pinned commit moves, the
 /// clone is fetched, and when the clone already has the commit, nothing is
 /// fetched at all, so indexing works offline after the first run.
+///
+/// Every change to a clone happens under a lock on the file next to it
+/// (`<clone>.lock`), so index runs in other processes that share a
+/// repository never change one clone at the same time.
 #[derive(Debug, Clone)]
 pub struct Clones {
     dir: PathBuf,
+}
+
+/// A clone checked out at a pinned commit, holding the clone's lock so no
+/// other run checks out another commit while this one reads the files.
+/// Dropping it releases the lock.
+#[derive(Debug)]
+pub struct Checkout {
+    path: PathBuf,
+    // Never read: the open file holds the lock until it is closed.
+    _lock: fs::File,
+}
+
+impl Checkout {
+    /// The clone's work tree, exactly the pinned commit.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
 }
 
 /// Why a git source could not be cloned, fetched or checked out.
@@ -98,13 +119,61 @@ impl Clones {
     /// is missing. Returns the clone's directory.
     ///
     /// A commit the remote doesn't have is [`CloneError::CommitNotFound`].
+    /// Waits while another run holds the clone's lock.
     pub fn fetch(&self, git: &GitSource) -> Result<PathBuf, CloneError> {
+        let _lock = self.lock(git)?;
+        self.fetch_locked(git)
+    }
+
+    /// Checks out `git.commit` in its clone, after fetching it as
+    /// [`Clones::fetch`] does, and removes every file the commit doesn't
+    /// track, so the work tree is exactly the commit. Fetches the files'
+    /// contents that the clone doesn't have yet.
+    ///
+    /// The returned [`Checkout`] holds the clone's lock: keep it until the
+    /// last file is read.
+    pub fn checkout(&self, git: &GitSource) -> Result<Checkout, CloneError> {
+        let lock = self.lock(git)?;
+        let path = self.fetch_locked(git)?;
+        run(
+            &path,
+            git,
+            &["checkout", "--quiet", "--force", "--detach", &git.commit],
+        )?;
+        run(&path, git, &["clean", "--quiet", "-ffdx"])?;
+        Ok(Checkout { path, _lock: lock })
+    }
+
+    /// Takes the lock on `git.url`'s clone, waiting while another run holds
+    /// it. The lock is the open file: closing it, on drop or when the
+    /// process exits, releases it.
+    fn lock(&self, git: &GitSource) -> Result<fs::File, CloneError> {
         if !is_lower_hex(&git.commit, 40) {
             return Err(CloneError::BadPin {
                 url: git.url.clone(),
                 commit: git.commit.clone(),
             });
         }
+        let mut path = self.path(&git.url).into_os_string();
+        path.push(".lock");
+        let path = PathBuf::from(path);
+        let cache_error = |source| CloneError::Cache {
+            path: path.clone(),
+            source,
+        };
+        fs::create_dir_all(&self.dir).map_err(cache_error)?;
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&path)
+            .map_err(cache_error)?;
+        file.lock().map_err(cache_error)?;
+        Ok(file)
+    }
+
+    /// [`Clones::fetch`], with the clone's lock already held.
+    fn fetch_locked(&self, git: &GitSource) -> Result<PathBuf, CloneError> {
         let path = self.path(&git.url);
         if !self.is_clone(&path, git)? {
             self.clone_into(&path, git)?;
@@ -124,7 +193,8 @@ impl Clones {
                 ],
             );
             match fetched {
-                Ok(_) | Err(CloneError::Git { .. }) => {}
+                Ok(_) => {}
+                Err(CloneError::Git { ref stderr, .. }) if refused(stderr) => {}
                 Err(e) => return Err(e),
             }
             if !has_commit(&path, git)? {
@@ -134,21 +204,6 @@ impl Clones {
                 });
             }
         }
-        Ok(path)
-    }
-
-    /// Checks out `git.commit` in its clone, which [`Clones::fetch`] made
-    /// sure holds it, and removes every file the commit doesn't track, so
-    /// the work tree is exactly the commit. Fetches the files' contents
-    /// that the clone doesn't have yet. Returns the clone's directory.
-    pub fn checkout(&self, git: &GitSource) -> Result<PathBuf, CloneError> {
-        let path = self.fetch(git)?;
-        run(
-            &path,
-            git,
-            &["checkout", "--quiet", "--force", "--detach", &git.commit],
-        )?;
-        run(&path, git, &["clean", "--quiet", "-ffdx"])?;
         Ok(path)
     }
 
@@ -198,6 +253,18 @@ impl Clones {
         )?;
         fs::rename(tmp.keep(), path).map_err(cache_error)
     }
+}
+
+/// Whether git's `stderr` from a fetch says the remote has no such commit,
+/// or won't serve it, rather than that the remote couldn't be reached.
+fn refused(stderr: &str) -> bool {
+    [
+        "not our ref",
+        "couldn't find remote ref",
+        "no such remote ref",
+    ]
+    .iter()
+    .any(|refusal| stderr.contains(refusal))
 }
 
 /// Whether the clone at `path` holds `git.commit` as a commit.
@@ -289,31 +356,39 @@ mod tests {
     fn checkout_makes_a_partial_clone_at_the_commit() {
         let (_repo, remote, commit, cache) = setup();
         let clones = Clones::new(cache.path().join("repos"));
-        let path = clones.checkout(&source(&remote, &commit)).unwrap();
+        let checkout = clones.checkout(&source(&remote, &commit)).unwrap();
+        let path = checkout.path();
 
         assert_eq!(path, clones.path(&remote.url()));
-        assert_eq!(git_out(&path, &["rev-parse", "HEAD"]), commit);
+        assert_eq!(git_out(path, &["rev-parse", "HEAD"]), commit);
         assert_eq!(
-            git_out(&path, &["config", "remote.origin.partialclonefilter"]),
+            git_out(path, &["config", "remote.origin.partialclonefilter"]),
             "blob:none"
         );
         assert_eq!(
             fs::read_to_string(path.join("a.rs")).unwrap(),
             "fn a() {}\n"
         );
-        // Only the clone is left in the cache, no temporary directory.
-        let entries: Vec<_> = fs::read_dir(cache.path().join("repos"))
+        // Only the clone and its lock are left in the cache, no temporary
+        // directory.
+        let mut entries: Vec<_> = fs::read_dir(cache.path().join("repos"))
             .unwrap()
-            .map(|e| e.unwrap().file_name())
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
             .collect();
-        assert_eq!(entries, [path.file_name().unwrap()]);
+        entries.sort();
+        let name = path.file_name().unwrap().to_str().unwrap();
+        assert_eq!(entries, [name.to_owned(), format!("{name}.lock")]);
     }
 
     #[test]
     fn a_new_commit_is_fetched_into_the_same_clone() {
         let (repo, remote, first, cache) = setup();
         let clones = Clones::new(cache.path());
-        let path = clones.checkout(&source(&remote, &first)).unwrap();
+        let path = clones
+            .checkout(&source(&remote, &first))
+            .unwrap()
+            .path()
+            .to_owned();
         // A marker in the clone's git directory survives a fetch, not a re-clone.
         fs::write(path.join(".git/marker"), "").unwrap();
 
@@ -321,7 +396,10 @@ mod tests {
         repo.commit_all(&["b.rs"]);
         // A side branch: fetching by id must reach commits no clone saw.
         let second = repo.push(&remote, "side");
-        assert_eq!(clones.checkout(&source(&remote, &second)).unwrap(), path);
+        assert_eq!(
+            clones.checkout(&source(&remote, &second)).unwrap().path(),
+            path
+        );
         assert!(path.join(".git/marker").exists());
         assert_eq!(git_out(&path, &["rev-parse", "HEAD"]), second);
         assert!(path.join("b.rs").exists());
@@ -341,8 +419,8 @@ mod tests {
         clones.checkout(&git).unwrap();
 
         drop(remote);
-        let path = clones.checkout(&git).unwrap();
-        assert_eq!(git_out(&path, &["rev-parse", "HEAD"]), commit);
+        let checkout = clones.checkout(&git).unwrap();
+        assert_eq!(git_out(checkout.path(), &["rev-parse", "HEAD"]), commit);
     }
 
     #[test]
@@ -384,5 +462,59 @@ mod tests {
         clones.checkout(&source(&remote, &commit)).unwrap();
         assert!(!path.join("half").exists());
         assert_eq!(git_out(&path, &["rev-parse", "HEAD"]), commit);
+    }
+
+    #[test]
+    fn a_checkout_keeps_other_runs_off_the_clone_until_dropped() {
+        let (repo, remote, first, cache) = setup();
+        repo.write("a.rs", "fn a2() {}\n");
+        repo.commit_all(&["a.rs"]);
+        let second = repo.push(&remote, "side");
+        let clones = Clones::new(cache.path());
+        let held = clones.checkout(&source(&remote, &first)).unwrap();
+
+        // Another run, as another process would, waits for the lock rather
+        // than switching the clone to its own commit under this one.
+        let (done_tx, done) = std::sync::mpsc::channel();
+        let other = {
+            let (clones, git) = (clones.clone(), source(&remote, &second));
+            std::thread::spawn(move || {
+                let checkout = clones.checkout(&git).unwrap();
+                done_tx.send(()).unwrap();
+                git_out(checkout.path(), &["rev-parse", "HEAD"])
+            })
+        };
+        assert!(
+            done.recv_timeout(std::time::Duration::from_millis(500))
+                .is_err(),
+            "the other checkout ran while this one was held"
+        );
+        assert_eq!(git_out(held.path(), &["rev-parse", "HEAD"]), first);
+        assert_eq!(
+            fs::read_to_string(held.path().join("a.rs")).unwrap(),
+            "fn a() {}\n"
+        );
+
+        drop(held);
+        assert_eq!(other.join().unwrap(), second);
+    }
+
+    #[test]
+    fn a_fetch_that_cannot_reach_the_remote_keeps_gits_error() {
+        let (repo, remote, first, cache) = setup();
+        let clones = Clones::new(cache.path());
+        clones.fetch(&source(&remote, &first)).unwrap();
+        repo.write("b.rs", "fn b() {}\n");
+        repo.commit_all(&["b.rs"]);
+        let second = repo.push(&remote, "main");
+        let git = source(&remote, &second);
+
+        // The remote is gone: that is not the commit missing from it.
+        drop(remote);
+        let err = clones.fetch(&git).unwrap_err();
+        assert!(
+            matches!(&err, CloneError::Git { command, .. } if command.starts_with("git fetch")),
+            "{err:?}"
+        );
     }
 }

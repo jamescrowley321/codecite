@@ -140,7 +140,8 @@ fn a_git_source_is_cloned_once_and_cited_at_its_commit() {
         "{first}"
     );
     let repos = tmp.path().join("cache/codecite/repos");
-    assert_eq!(fs::read_dir(&repos).unwrap().count(), 1);
+    // One clone, and the lock file beside it.
+    assert_eq!(fs::read_dir(&repos).unwrap().count(), 2);
 
     let citation = format!("app@{}:src/lib.rs#L1", &commit[..7]);
     let read = stdout(&codecite(&work, tmp.path(), &["read", "demo", &citation]));

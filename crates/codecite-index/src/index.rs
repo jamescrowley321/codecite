@@ -12,7 +12,7 @@ use codecite_core::{ChunkRecord, DocumentRecord, SourceRecord, SpecAliases, Stor
 use sha2::{Digest, Sha256};
 
 use crate::{
-    Chunker, Clones, DocumentSource, Error, Fetcher, GitSource, Language, LicenseClass,
+    Checkout, Chunker, Clones, DocumentSource, Error, Fetcher, GitSource, Language, LicenseClass,
     LocalSource, LocalTree, Manifest, Result, SkipReason, Source, SpecDocument, WalkOptions,
     split_spec, walk_local,
 };
@@ -104,16 +104,21 @@ pub fn index_corpus(
                     license: local.license.as_deref(),
                     license_class: local.license_class,
                     tree,
+                    checkout: None,
                 }
             }
-            Source::Git(git) if git.license_class != LicenseClass::Excluded => Walked {
-                name: git_name(git),
-                kind: "git",
-                url: git.url.clone(),
-                license: git.license.as_deref(),
-                license_class: git.license_class,
-                tree: walk_git(clones, git, options)?,
-            },
+            Source::Git(git) if git.license_class != LicenseClass::Excluded => {
+                let (tree, checkout) = walk_git(clones, git, options)?;
+                Walked {
+                    name: git_name(git),
+                    kind: "git",
+                    url: git.url.clone(),
+                    license: git.license.as_deref(),
+                    license_class: git.license_class,
+                    tree,
+                    checkout: Some(checkout),
+                }
+            }
             Source::Local(local) => {
                 let name = local
                     .name
@@ -207,12 +212,18 @@ fn git_name(git: &GitSource) -> String {
 }
 
 /// Checks a git source out at its pinned commit and walks the clone. The
-/// work tree is exactly the commit, so no file is `dirty`.
-fn walk_git(clones: &Clones, git: &GitSource, options: &WalkOptions) -> Result<LocalTree> {
-    let path = clones.checkout(git)?;
+/// work tree is exactly the commit, so no file is `dirty`. The returned
+/// [`Checkout`] holds the clone's lock; files are read from the tree while
+/// it lives.
+fn walk_git(
+    clones: &Clones,
+    git: &GitSource,
+    options: &WalkOptions,
+) -> Result<(LocalTree, Checkout)> {
+    let locked = clones.checkout(git)?;
     let checkout = LocalSource {
         name: git.name.clone(),
-        path,
+        path: locked.path().to_owned(),
         license: git.license.clone(),
         license_class: git.license_class,
         include: git.include.clone(),
@@ -222,7 +233,7 @@ fn walk_git(clones: &Clones, git: &GitSource, options: &WalkOptions) -> Result<L
     for file in &mut tree.files {
         file.dirty = false;
     }
-    Ok(tree)
+    Ok((tree, locked))
 }
 
 /// A local or git source, walked and ready to write.
@@ -239,6 +250,10 @@ struct Walked<'a> {
     /// The walk. Its HEAD is the commit results cite: a local checkout's
     /// HEAD, or a git source's pinned commit.
     tree: LocalTree,
+    /// A git source's clone, locked until every file is read, so another
+    /// run can't check out a different commit under this one.
+    #[expect(dead_code, reason = "held for its lock, never read")]
+    checkout: Option<Checkout>,
 }
 
 /// Writes one walked source into the store and returns its ID.

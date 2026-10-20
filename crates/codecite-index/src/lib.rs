@@ -17,7 +17,7 @@ pub use chunk::{
 };
 
 mod clone;
-pub use clone::{CloneError, Clones};
+pub use clone::{Checkout, CloneError, Clones};
 
 mod error;
 pub use error::{Error, Result};
