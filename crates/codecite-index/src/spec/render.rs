@@ -128,7 +128,9 @@ fn is_skipped(el: ElementRef) -> bool {
 /// A list being written, for numbering its items.
 enum List {
     /// `<ol>`: the next item's number and whether it is written as a letter.
-    Ordered { next: u32, letters: Option<u8> },
+    /// `start` is read as a `u32`, and the count is a `u64`, so adding one
+    /// per item cannot overflow.
+    Ordered { next: u64, letters: Option<u8> },
     /// `<ul>`.
     Unordered,
 }
@@ -142,7 +144,10 @@ fn open(el: ElementRef, out: &mut Writer, lists: &mut Vec<List>, pre_depth: &mut
         }
         "ol" => {
             out.end_paragraph();
-            let next = e.attr("start").and_then(|s| s.parse().ok()).unwrap_or(1);
+            let next = e
+                .attr("start")
+                .and_then(|s| s.parse::<u32>().ok())
+                .map_or(1, u64::from);
             let letters = match e.attr("type") {
                 Some("a") => Some(b'a'),
                 Some("A") => Some(b'A'),
@@ -188,7 +193,13 @@ fn close(el: ElementRef, out: &mut Writer, lists: &mut Vec<List>, pre_depth: &mu
             lists.pop();
             out.end_paragraph();
         }
-        "li" | "dt" | "dd" | "tr" => out.end_line(),
+        "li" => {
+            // An item with no text never wrote its label; drop it here so
+            // it can't land on the text after the list.
+            out.label = None;
+            out.end_line();
+        }
+        "dt" | "dd" | "tr" => out.end_line(),
         name if is_block(name) => out.end_paragraph(),
         _ => {}
     }
@@ -576,5 +587,25 @@ mod tests {
                 "- dot"
             ]
         );
+    }
+
+    #[test]
+    fn list_numbers_past_u32_max_keep_counting() {
+        let html = Html::parse_document(
+            "<section id=\"section-1\"><h2><a class=\"section-number\">1. </a>Big</h2>\
+             <ol start=\"4294967295\"><li>max</li><li>past</li></ol></section>",
+        );
+        let lines = render(&html, SpecFormat::RfcV3).lines;
+        assert_eq!(lines, ["1. Big", "", "4294967295. max", "4294967296. past"]);
+    }
+
+    #[test]
+    fn an_empty_item_label_does_not_leak_out_of_its_list() {
+        let html = Html::parse_document(
+            "<section id=\"section-1\"><h2><a class=\"section-number\">1. </a>Empty</h2>\
+             <ol><li></li></ol><p>MUST validate.</p></section>",
+        );
+        let lines = render(&html, SpecFormat::RfcV3).lines;
+        assert_eq!(lines, ["1. Empty", "", "MUST validate."]);
     }
 }

@@ -111,8 +111,18 @@ fn split(format: SpecFormat, rendered: render::Rendered) -> SpecDocument {
             continue;
         }
         let start = heading.line;
-        let next = headings.get(i + 1).map_or(lines.len(), |h| h.line);
-        let mut end = next.max(start + 1);
+        // A heading that rendered no text records the line after the last
+        // one, which may be past the end once trailing blanks are dropped.
+        let next = headings
+            .get(i + 1)
+            .map_or(lines.len(), |h| h.line)
+            .min(lines.len());
+        // Such a heading owns no line: the next heading, or the end of the
+        // document, starts on the line it would have used.
+        if start >= next {
+            continue;
+        }
+        let mut end = next;
         while end > start + 1 && lines[end - 1].is_empty() {
             end -= 1;
         }
@@ -332,6 +342,26 @@ mod tests {
         let doc = split_spec(html).unwrap();
         assert_eq!(outline(&doc), [("1", "Intro", "section-1", None)]);
         assert_eq!(doc.sections[0].text, "1.  Intro\n   Text bold");
+    }
+
+    #[test]
+    fn headings_that_render_no_text_are_skipped() {
+        // A numbered heading with no text, at the end and before another
+        // heading: neither gets a section, and nothing panics.
+        let html = "<section id=\"section-1\"><h2><a class=\"section-number\">1. </a>Intro</h2>\
+                    <p>Text.</p></section>\
+                    <section id=\"section-2\"><h2><a class=\"section-number\"></a></h2></section>\
+                    <section id=\"section-3\"><h2><a class=\"section-number\">3. </a>Last</h2></section>\
+                    <section id=\"section-4\"><h2><a class=\"section-number\"></a></h2></section>";
+        let doc = split_spec(html).unwrap();
+        assert_eq!(
+            outline(&doc),
+            [
+                ("1", "Intro", "section-1", None),
+                ("3", "Last", "section-3", None)
+            ]
+        );
+        assert_ranges_match(&doc);
     }
 
     /// A real spec page, fetched through the pinned cache in the temp
