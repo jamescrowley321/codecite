@@ -10,6 +10,7 @@ use std::time::Duration;
 use sha2::{Digest, Sha256};
 
 use crate::DocumentSource;
+use crate::manifest::is_lower_hex;
 
 /// The largest document a fetch accepts: 16 MiB. The largest RFC in HTML is
 /// a few MiB; anything bigger is not a spec.
@@ -56,6 +57,17 @@ pub enum FetchError {
         expected: String,
         /// The hash of the fetched bytes.
         actual: String,
+    },
+
+    /// The pinned `sha256` is not 64 lowercase hex digits, so it can't name
+    /// a cache file. [`crate::Manifest::parse`] rejects these; this guards
+    /// a [`DocumentSource`] built any other way.
+    #[error("document `{name}` pins sha256 {sha256:?}, which is not 64 lowercase hex digits")]
+    BadPin {
+        /// The document's name.
+        name: String,
+        /// The pin as given.
+        sha256: String,
     },
 
     /// The request failed, the server answered with an error status, or the
@@ -109,6 +121,14 @@ impl Fetcher {
     /// downloaded and checked against `doc.sha256`. A mismatch is an error
     /// and nothing is cached.
     pub fn fetch_pinned(&self, doc: &DocumentSource) -> Result<Fetched, FetchError> {
+        // The pin becomes a file name, so anything but a hash (`../x`, an
+        // absolute path) would point outside the cache.
+        if !is_lower_hex(&doc.sha256, 64) {
+            return Err(FetchError::BadPin {
+                name: doc.name.clone(),
+                sha256: doc.sha256.clone(),
+            });
+        }
         let cached = self.cache_dir.join(&doc.sha256);
         if let Some(bytes) = self.read_cached(&cached)? {
             return Ok(Fetched {
@@ -143,27 +163,31 @@ impl Fetcher {
     }
 
     /// A cached document's bytes, or `None` when it isn't cached. A cached
-    /// file whose bytes no longer hash to its name is deleted and treated as
-    /// missing.
+    /// file larger than [`MAX_DOCUMENT_SIZE`], or whose bytes no longer hash
+    /// to its name, is deleted and treated as missing.
     fn read_cached(&self, path: &Path) -> Result<Option<Vec<u8>>, FetchError> {
-        let bytes = match fs::read(path) {
-            Ok(bytes) => bytes,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-            Err(source) => {
-                return Err(FetchError::Cache {
-                    path: path.to_owned(),
-                    source,
-                });
-            }
-        };
-        let name = path.file_name().and_then(|n| n.to_str());
-        if name == Some(hex(&Sha256::digest(&bytes)).as_str()) {
-            return Ok(Some(bytes));
-        }
-        fs::remove_file(path).map_err(|source| FetchError::Cache {
+        let cache_error = |source| FetchError::Cache {
             path: path.to_owned(),
             source,
-        })?;
+        };
+        let file = match fs::File::open(path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(source) => return Err(cache_error(source)),
+        };
+        // Read at most one byte past the limit, as a download does, so a
+        // huge file in the cache can't exhaust memory.
+        let mut bytes = Vec::new();
+        file.take(MAX_DOCUMENT_SIZE + 1)
+            .read_to_end(&mut bytes)
+            .map_err(cache_error)?;
+        let name = path.file_name().and_then(|n| n.to_str());
+        if bytes.len() as u64 <= MAX_DOCUMENT_SIZE
+            && name == Some(hex(&Sha256::digest(&bytes)).as_str())
+        {
+            return Ok(Some(bytes));
+        }
+        fs::remove_file(path).map_err(cache_error)?;
         Ok(None)
     }
 
@@ -368,6 +392,42 @@ mod tests {
         let fetched = Fetcher::new(cache.path()).fetch_pinned(&doc).unwrap();
         assert!(!fetched.from_cache);
         assert_eq!(fs::read(cache.path().join(&doc.sha256)).unwrap(), SPEC);
+    }
+
+    #[test]
+    fn a_pin_that_is_not_a_sha256_never_touches_the_filesystem() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("documents");
+        fs::create_dir_all(&cache).unwrap();
+        let victim = dir.path().join("victim");
+        fs::write(&victim, b"not a document").unwrap();
+        let fetcher = Fetcher::new(&cache);
+
+        let absolute = victim.to_str().unwrap().to_owned();
+        for pin in [absolute, "../victim".into(), sha256(SPEC).to_uppercase()] {
+            let doc = document("http://127.0.0.1:9/never".into(), pin.clone());
+            let err = fetcher.fetch_pinned(&doc).unwrap_err();
+            assert!(
+                matches!(&err, FetchError::BadPin { sha256, .. } if *sha256 == pin),
+                "{err:?}"
+            );
+        }
+        assert_eq!(fs::read(&victim).unwrap(), b"not a document");
+    }
+
+    #[test]
+    fn an_oversized_cache_file_is_discarded_even_when_its_hash_matches() {
+        let server = Server::start();
+        let cache = tempfile::tempdir().unwrap();
+        let size = usize::try_from(MAX_DOCUMENT_SIZE).unwrap();
+        let big = vec![b'a'; size + 1];
+        let doc = document(server.url("/big.html"), sha256(&big));
+        fs::write(cache.path().join(&doc.sha256), &big).unwrap();
+
+        // The cache file is dropped, so the fetch goes to the server (404).
+        let err = Fetcher::new(cache.path()).fetch_pinned(&doc).unwrap_err();
+        assert!(matches!(err, FetchError::Download { .. }), "{err:?}");
+        assert!(!cache.path().join(&doc.sha256).exists());
     }
 
     #[test]

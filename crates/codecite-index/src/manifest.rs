@@ -281,7 +281,7 @@ fn parse_source(
 }
 
 /// Whether `s` is exactly `len` digits of lowercase hex.
-fn is_lower_hex(s: &str, len: usize) -> bool {
+pub(crate) fn is_lower_hex(s: &str, len: usize) -> bool {
     s.len() == len && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
