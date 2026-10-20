@@ -38,11 +38,29 @@ pub enum Error {
         source: std::io::Error,
     },
 
-    /// Two local sources in the manifest have the same name.
+    /// Two sources in the manifest have the same name, and they aren't
+    /// versions of one document.
     #[error("two sources are named `{name}`; give one of them a different `name`")]
     DuplicateSource {
         /// The shared name.
         name: String,
+    },
+
+    /// A document source's bytes are not UTF-8, so they can't be HTML a
+    /// spec is split from.
+    #[error("document `{name}` is not UTF-8 text")]
+    DocumentNotUtf8 {
+        /// The document's name.
+        name: String,
+    },
+
+    /// A document source is not a spec page in a layout codecite reads.
+    #[error("document `{name}` can't be split into sections")]
+    Spec {
+        /// The document's name.
+        name: String,
+        /// Why splitting failed.
+        source: crate::SpecError,
     },
 }
 

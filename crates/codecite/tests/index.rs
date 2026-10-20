@@ -152,8 +152,12 @@ fn document_manifest(work: &Path, url: &str, sha256: &str) {
 
 #[test]
 fn documents_are_pinned_by_hash_and_cached() {
-    const SPEC: &[u8] = b"<h1>RFC 9449</h1>\n";
-    const SPEC_SHA256: &str = "adcd06b613eb4e660e403fbec3d11011983dec4501489279e191b728e2fe6b2b";
+    // The smallest xml2rfc v3 page: one numbered section.
+    const SPEC: &[u8] = b"<section id=\"section-1\"><h2><a href=\"#section-1\" \
+        class=\"section-number selfRef\">1. </a><a href=\"#name-introduction\" \
+        class=\"section-name selfRef\">Introduction</a></h2>\n\
+        <p>A client MUST send a DPoP proof.</p></section>\n";
+    const SPEC_SHA256: &str = "14fc279128304abd07e3ae5da78db59f24f3916bd17e4579545e26eeeb29aef9";
     let old_pin = "0".repeat(64);
     let tmp = tempfile::tempdir().unwrap();
     let work = tmp.path().join("work");
@@ -185,8 +189,16 @@ fn documents_are_pinned_by_hash_and_cached() {
         indexed.contains("fetched: 0 downloaded, 1 from the cache"),
         "{indexed}"
     );
+    assert!(
+        indexed.contains("documents: 1 written, 0 unchanged, 0 removed"),
+        "{indexed}"
+    );
     let pinned = stdout(&codecite(&work, tmp.path(), &["index", "specs"]));
     assert!(pinned.contains("1 from the cache"), "{pinned}");
+    assert!(
+        pinned.contains("documents: 0 written, 1 unchanged, 0 removed"),
+        "{pinned}"
+    );
     assert!(
         tmp.path()
             .join("cache/codecite/documents")

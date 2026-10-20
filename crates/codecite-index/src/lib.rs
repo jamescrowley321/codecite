@@ -6,7 +6,8 @@
 //! headings, anything else into 60-line windows. [`Fetcher`] downloads document
 //! sources and checks them against their pinned sha256, caching them by hash.
 //! [`index_corpus`] fetches a corpus's documents, runs the other steps over
-//! its local sources and writes the result into its store.
+//! its local sources, splits each document into spec sections and steps,
+//! and writes the result into its store.
 
 mod chunk;
 pub use chunk::{

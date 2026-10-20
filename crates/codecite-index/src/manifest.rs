@@ -1,7 +1,7 @@
 //! Corpus manifests: the committed TOML file that says what a corpus indexes,
 //! at which commit or hash, and how agents may use each source.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -199,6 +199,15 @@ pub enum ManifestError {
         /// The document's name.
         name: String,
     },
+
+    /// One version of a document is pinned twice.
+    #[error("document `{name}`: sha256 {sha256} is pinned twice; remove one")]
+    DuplicateVersion {
+        /// The document's name.
+        name: String,
+        /// The repeated pin.
+        sha256: String,
+    },
 }
 
 /// The top level before each source is parsed on its own.
@@ -227,7 +236,7 @@ impl Manifest {
             .enumerate()
             .map(|(i, table)| parse_source(i, table, home.as_deref()))
             .collect::<Result<Vec<_>, _>>()?;
-        check_current(&sources)?;
+        check_versions(&sources)?;
         Ok(Manifest {
             name: raw.name,
             max_age_days: raw.max_age_days,
@@ -285,12 +294,20 @@ pub(crate) fn is_lower_hex(s: &str, len: usize) -> bool {
     s.len() == len && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-/// Checks that each document name has exactly one version with
-/// `current = true`. Names are checked in order, so the first error is stable.
-fn check_current(sources: &[Source]) -> Result<(), ManifestError> {
+/// Checks that no document version is pinned twice and that each document
+/// name has exactly one version with `current = true`. Names are checked in
+/// order, so the first error is stable.
+fn check_versions(sources: &[Source]) -> Result<(), ManifestError> {
     let mut current: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut pins = HashSet::new();
     for source in sources {
         if let Source::Document(doc) = source {
+            if !pins.insert((&doc.name, &doc.sha256)) {
+                return Err(ManifestError::DuplicateVersion {
+                    name: doc.name.clone(),
+                    sha256: doc.sha256.clone(),
+                });
+            }
             *current.entry(&doc.name).or_default() += usize::from(doc.current);
         }
     }
@@ -610,5 +627,19 @@ updated_by = "openid-connect-core-1_0-errata2"
         )))
         .unwrap();
         assert_eq!(m.sources.len(), 2);
+    }
+
+    #[test]
+    fn a_version_pinned_twice_is_an_error() {
+        let text = manifest(&format!(
+            "{}{}",
+            document("core", SHA256, Some(true)),
+            document("core", SHA256, Some(false)),
+        ));
+        let err = Manifest::parse(&text).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            format!("document `core`: sha256 {SHA256} is pinned twice; remove one")
+        );
     }
 }
