@@ -18,6 +18,8 @@ codecite-core.workspace = true
 codecite-index.workspace = true
 codecite-lsp.workspace = true
 codecite-mcp.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
+rusqlite.workspace = true
 tempfile.workspace = true

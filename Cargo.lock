@@ -194,6 +194,8 @@ dependencies = [
  "codecite-lsp",
  "codecite-mcp",
  "directories",
+ "rusqlite",
+ "serde_json",
  "tempfile",
 ]
 
