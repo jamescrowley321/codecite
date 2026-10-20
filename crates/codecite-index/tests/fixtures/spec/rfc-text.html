@@ -1,0 +1,76 @@
+<pre>Internet Engineering Task Force (IETF)                     D. Hardt, Ed.
+Request for Comments: 6749                                     Microsoft
+Obsoletes: <a href="./rfc5849">5849</a>                                             October 2012
+Category: Standards Track
+
+
+                 <span class="h1">The OAuth 2.0 Authorization Framework</span>
+
+Abstract
+
+   The OAuth 2.0 authorization framework enables a third-party
+   application to obtain limited access to an HTTP service.
+
+Table of Contents
+
+   <a href="#section-1">1</a>. Introduction ....................................................<a href="#page-4">4</a>
+   <a href="#section-4">4</a>. Obtaining Authorization ........................................<a href="#page-23">23</a>
+
+<span class="h2"><a class="selflink" id="section-1" href="#section-1">1</a>.  Introduction</span>
+
+   In the traditional client-server authentication model, the client
+   requests an access-restricted resource.
+
+<span class="h2"><a class="selflink" id="section-4" href="#section-4">4</a>.  Obtaining Authorization</span>
+
+   To request an access token, the client obtains authorization from the
+   resource owner.
+
+<span class="h3"><a class="selflink" id="section-4.1" href="#section-4.1">4.1</a>.  Authorization Code Grant</span>
+
+   The authorization code grant type is used to obtain both access
+   tokens and refresh tokens.
+
+<span class="h4"><a class="selflink" id="section-4.1.2" href="#section-4.1.2">4.1.2</a>.  Authorization Response</span>
+
+   If the resource owner grants the access request, the authorization
+   server issues an authorization code.
+
+<span class="h5"><a class="selflink" id="section-4.1.2.1" href="#section-4.1.2.1">4.1.2.1</a>.  Error Response</span>
+
+   If the request fails due to a missing, invalid, or mismatching
+   redirection URI, the authorization server SHOULD inform the
+   resource owner of the error.
+
+
+
+<span class="grey">Hardt                        Standards Track                   [Page 26]</span></pre>
+<hr class='noprint'/><!--NewPage--><pre class='newpage'><span id="page-27" ></span>
+<span class="grey"><a href="./rfc6749">RFC 6749</a>                        OAuth 2.0                   October 2012</span>
+
+
+   See <a href="#section-4.1.2">Section&nbsp;4.1.2</a> for the response.
+
+<span class="h2"><a class="selflink" id="section-12" href="#section-12">12</a>.  References</span>
+
+<span class="h3"><a class="selflink" id="section-12.1" href="#section-12.1">12.1</a>.  Normative References</span>
+
+   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", BCP 14, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+<span class="h2"><a class="selflink" id="appendix-A" href="#appendix-A">Appendix A</a>.  Augmented Backus-Naur Form (ABNF) Syntax</span>
+
+   This section provides Augmented Backus-Naur Form (ABNF) syntax
+   descriptions for the elements defined in this specification.
+
+<span class="h3"><a class="selflink" id="appendix-A.1" href="#appendix-A.1">A.1</a>.  "client_id" Syntax</span>
+
+     client-id     = *VSCHAR
+
+Author's Address
+
+   Dick Hardt (editor)
+   Microsoft
+
+<span class="grey">Hardt                        Standards Track                   [Page 76]</span>
+</pre>

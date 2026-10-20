@@ -44,3 +44,5 @@ tree-sitter-go = "0.25"
 tree-sitter-c-sharp = "0.23"
 streaming-iterator = "0.1"
 tempfile = "3"
+scraper = { version = "0.27", default-features = false }
+ego-tree = "0.11"
