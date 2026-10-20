@@ -21,3 +21,11 @@
 .vscode/
 *.swp
 .DS_Store
+
+# ralph loop (see ralph/): runtime state and per-run scratch
+/.ralph/
+/PROMPT.md
+/.claude/task-state.md
+/.claude/ralph-stack.md
+/.claude/ralph-parked.md
+/.claude/review/
