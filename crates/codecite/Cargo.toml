@@ -13,7 +13,11 @@ workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+directories.workspace = true
 codecite-core.workspace = true
 codecite-index.workspace = true
 codecite-lsp.workspace = true
 codecite-mcp.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

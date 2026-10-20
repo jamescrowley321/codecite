@@ -10,7 +10,9 @@ from memory.
 
 ## Status
 
-Pre-alpha. Nothing is usable yet; the design is being turned into milestones.
+Pre-alpha. `codecite index <corpus>` indexes the local git checkouts a corpus
+manifest (`corpora/<corpus>.toml`) lists into `~/.local/share/codecite/<corpus>.db`
+on Linux; searching it comes next.
 
 ## Planned
 

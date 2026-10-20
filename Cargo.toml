@@ -28,6 +28,7 @@ codecite-mcp = { path = "crates/codecite-mcp", version = "0.0.0" }
 clap = { version = "4", features = ["derive"] }
 thiserror = "2"
 anyhow = "1"
+directories = "6"
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 toml = "1"
