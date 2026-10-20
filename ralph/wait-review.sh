@@ -3,7 +3,9 @@
 #
 #   ralph/wait-review.sh <pr> <since UTC, e.g. 2026-10-20T03:00:00Z> <out file>
 #
-# Sleeps a minute first, then polls once a minute for up to 20 minutes. Only
+# Sleeps a minute first, then polls once a minute for up to 7 minutes, so a
+# call fits inside one foreground Bash call (10-minute cap). The review phase
+# calls it again on WAITING. Only
 # signals from this PR count: its comments, and the pull_request runs on its
 # head branch. Prints one line:
 #   FOUND <PASS|BLOCK|UNKNOWN>   exit 0   (the comment body is written to <out file>)
@@ -44,7 +46,7 @@ verdict_of() {
 }
 
 quiet_polls=0
-for _ in $(seq 1 20); do
+for _ in $(seq 1 7); do
   # This PR's comments from Claude since the request, newest last.
   comments=$(gh pr view "$pr" -R "$repo" --json comments --jq \
     "[.comments[] | select(.author.login == \"claude\" and .createdAt > \"$since\") | .body]")
