@@ -208,7 +208,7 @@ max_age_days = 30
 url = "https://github.com/panva/openid-client"
 commit = "<40-character SHA>"
 license = "MIT"
-use = "adapt"                    # adapt | approach_only | excluded
+use = "adapt"                    # adapt | approach_only | quote | excluded
 include = ["lib/**", "docs/**"]
 
 [[source]]
@@ -228,6 +228,8 @@ current = true                   # several versions of one name may be pinned; o
 ```
 
 `kind = "local"` reads a working tree in place (`path = "~/repos/auth/identity-model"`); its results cite the checkout's HEAD and carry `dirty: true` for files with uncommitted changes. Document relations (`obsoleted_by`, `updated_by`) are written by hand in the manifest and never fetched. The first real corpus, `corpora/identity.toml`, is identity-model plus the OAuth and OpenID specs it cites; see `docs/superpowers/specs/2026-10-17-identity-corpus-design.md`.
+
+Each source needs `use`; `license` is optional until SPDX detection lands. A git source needs `url` and a 40-character lowercase `commit`; a local source needs `path` (`~` expands to the home directory); a document needs `name`, `url` and a 64-character lowercase `sha256`, and exactly one version of each document name has `current = true`. `name` is optional for git and local sources. Unknown keys are errors, and every error names the source and the field.
 
 | Class | Typical licenses | What agents are told |
 | --- | --- | --- |
