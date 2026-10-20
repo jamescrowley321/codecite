@@ -4,6 +4,9 @@
 //! walks local checkouts, listing the files git sees and reporting every file
 //! it skips.
 
+mod chunk;
+pub use chunk::Language;
+
 mod error;
 pub use error::{Error, Result};
 
