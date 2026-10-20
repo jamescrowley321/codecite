@@ -19,6 +19,10 @@ pub enum Error {
     /// A local source could not be walked.
     #[error(transparent)]
     Walk(#[from] crate::WalkError),
+
+    /// A bundled tree-sitter grammar or query failed to load.
+    #[error(transparent)]
+    Chunker(#[from] crate::ChunkerError),
 }
 
 /// `Result` with [`Error`] as the default error type.
