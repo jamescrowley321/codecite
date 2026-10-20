@@ -3,7 +3,10 @@
 //! canonical code and spec citations. Depends on no other codecite crate.
 
 mod citation;
-pub use citation::{CitationError, CodeCitation, CommitSha, LineRange};
+pub use citation::{
+    Citation, CitationError, CodeCitation, CommitSha, ContentHash, LineRange, SectionNumber,
+    SpecCitation,
+};
 
 mod error;
 pub use error::{Error, Result};

@@ -4,8 +4,47 @@
 //! Parsing is strict. Every string the parser accepts formats back to exactly
 //! the same string, so each span has one spelling.
 
+use std::fmt;
+use std::str::FromStr;
+
 mod code;
 pub use code::{CodeCitation, CommitSha, LineRange};
+
+mod spec;
+pub use spec::{ContentHash, SectionNumber, SpecCitation};
+
+/// A canonical citation of either form.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Citation {
+    /// A span of code: `<repo>@<sha>:<path>#L<a>-L<b>`.
+    Code(CodeCitation),
+    /// A spec section or step: `<doc>@sha256:<hash>#section-<n>[/step-<k>]`.
+    Spec(SpecCitation),
+}
+
+impl FromStr for Citation {
+    type Err = CitationError;
+
+    /// Picks the spec form when the text after the first `@` starts with
+    /// `sha256:`, and the code form otherwise.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (_, rest) = s.split_once('@').ok_or(CitationError::MissingAt)?;
+        if rest.starts_with("sha256:") {
+            s.parse().map(Citation::Spec)
+        } else {
+            s.parse().map(Citation::Code)
+        }
+    }
+}
+
+impl fmt::Display for Citation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Citation::Code(c) => c.fmt(f),
+            Citation::Spec(c) => c.fmt(f),
+        }
+    }
+}
 
 /// Why a string is not a canonical citation.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -105,4 +144,41 @@ fn parse_number(s: &str, what: &'static str) -> Result<u32, CitationError> {
         return Err(bad());
     }
     s.parse().map_err(|_| bad())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn citation_picks_the_code_form() {
+        let s = "github.com/panva/openid-client@3f2a9c1:lib/client.js#L412-L455";
+        let c: Citation = s.parse().unwrap();
+        assert!(matches!(c, Citation::Code(_)));
+        assert_eq!(c.to_string(), s);
+    }
+
+    #[test]
+    fn citation_picks_the_spec_form() {
+        let s = "openid-connect-core-1_0@sha256:1a2b3c4d5e6f#section-3.1.3.7/step-13";
+        let c: Citation = s.parse().unwrap();
+        assert!(matches!(c, Citation::Spec(_)));
+        assert_eq!(c.to_string(), s);
+    }
+
+    #[test]
+    fn citation_without_at_is_an_error() {
+        assert_eq!(
+            "rfc9449#section-4.3".parse::<Citation>(),
+            Err(CitationError::MissingAt)
+        );
+    }
+
+    #[test]
+    fn citation_with_a_bad_hash_reports_the_hash() {
+        assert!(matches!(
+            "rfc9449@sha256:1a2b#section-4.3".parse::<Citation>(),
+            Err(CitationError::BadHash { .. })
+        ));
+    }
 }
