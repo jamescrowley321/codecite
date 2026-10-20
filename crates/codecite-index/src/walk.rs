@@ -1,15 +1,16 @@
 //! Walking a local source: list the checkout's files the way git sees them,
 //! skip what must not be indexed, and report every skip with its reason.
 
-// The helpers have no caller outside tests until `walk_local` lands.
-#![allow(dead_code)]
-
 mod git;
 #[cfg(test)]
 mod test_repo;
 
-use std::io;
-use std::path::PathBuf;
+use std::collections::BTreeMap;
+use std::fs::{self, File};
+use std::io::{self, Read};
+use std::path::{Path, PathBuf};
+
+use crate::LocalSource;
 
 /// Why a local source could not be walked.
 #[derive(Debug, thiserror::Error)]
@@ -159,6 +160,191 @@ fn glob_set(patterns: &[String]) -> Result<GlobSet, WalkError> {
     set.build().map_err(glob_error(&patterns.join(", ")))
 }
 
+/// The default size cap: files larger than 1 MiB are skipped.
+pub const DEFAULT_MAX_FILE_SIZE: u64 = 1024 * 1024;
+
+/// Knobs for [`walk_local`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WalkOptions {
+    /// Files larger than this many bytes are skipped as [`SkipReason::Oversized`].
+    pub max_file_size: u64,
+}
+
+impl Default for WalkOptions {
+    fn default() -> Self {
+        WalkOptions {
+            max_file_size: DEFAULT_MAX_FILE_SIZE,
+        }
+    }
+}
+
+/// A walked local checkout.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalTree {
+    /// The checkout's root, canonicalized.
+    pub root: PathBuf,
+    /// HEAD's commit, which results from this checkout cite.
+    pub head: String,
+    /// The files to index, sorted by path.
+    pub files: Vec<LocalFile>,
+    /// Everything not indexed, with the reason: listed paths in path order,
+    /// then ignored entries.
+    pub skipped: Vec<SkippedFile>,
+}
+
+/// A file to index.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalFile {
+    /// The path from the checkout's root, `/`-separated.
+    pub path: String,
+    /// The size in bytes when walked.
+    pub size: u64,
+    /// Whether the file differs from HEAD (modified, staged or untracked).
+    pub dirty: bool,
+}
+
+/// A path the walk did not index.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkippedFile {
+    /// The path from the checkout's root; an ignored directory ends in `/`.
+    pub path: String,
+    /// Why it was skipped.
+    pub reason: SkipReason,
+}
+
+/// Why the walk skipped a path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum SkipReason {
+    /// git ignores it (`.gitignore`, `.git/info/exclude`, global excludes).
+    Ignored,
+    /// The manifest's `include`/`exclude` leaves it out.
+    Excluded,
+    /// Its name is on the secrets deny-list; it was never opened.
+    DenyListed,
+    /// Tracked, but deleted from the work tree.
+    Deleted,
+    /// A symbolic link; links are never followed.
+    Symlink,
+    /// Not a regular file (a submodule, for example).
+    NotAFile,
+    /// Larger than [`WalkOptions::max_file_size`].
+    Oversized,
+    /// Binary content: a NUL byte near the start.
+    Binary,
+    /// The path is not valid UTF-8, so no citation can name it.
+    NonUtf8Path,
+}
+
+impl LocalTree {
+    /// How many paths were skipped for each reason.
+    pub fn skip_counts(&self) -> BTreeMap<SkipReason, usize> {
+        let mut counts = BTreeMap::new();
+        for skipped in &self.skipped {
+            *counts.entry(skipped.reason).or_default() += 1;
+        }
+        counts
+    }
+}
+
+/// Walks a local source: lists the files git sees, applies the manifest's
+/// globs, skips deny-listed, oversized and binary files, and marks each kept
+/// file `dirty` when it differs from HEAD.
+pub fn walk_local(source: &LocalSource, options: &WalkOptions) -> Result<LocalTree, WalkError> {
+    let filter = PathFilter::new(&source.include, &source.exclude)?;
+    let root = git::canonical(&source.path)?;
+    let head = git::head(&root)?;
+    let dirty = git::dirty(&root)?;
+    let mut files = Vec::new();
+    let mut skipped = Vec::new();
+    for path in git::files(&root)? {
+        let path = match path {
+            Ok(path) => path,
+            Err(lossy) => {
+                skipped.push(SkippedFile {
+                    path: lossy,
+                    reason: SkipReason::NonUtf8Path,
+                });
+                continue;
+            }
+        };
+        match check(&root, &path, &filter, options)? {
+            Check::Keep { size } => {
+                let dirty = dirty.contains(&path);
+                files.push(LocalFile { path, size, dirty });
+            }
+            Check::Skip(reason) => skipped.push(SkippedFile { path, reason }),
+        }
+    }
+    for path in git::ignored(&root)? {
+        let path = path.unwrap_or_else(|lossy| lossy);
+        skipped.push(SkippedFile {
+            path,
+            reason: SkipReason::Ignored,
+        });
+    }
+    Ok(LocalTree {
+        root,
+        head,
+        files,
+        skipped,
+    })
+}
+
+/// What [`check`] decided for one path.
+enum Check {
+    Keep { size: u64 },
+    Skip(SkipReason),
+}
+
+/// Runs the per-path checks in order; the first that fails is the reason.
+fn check(
+    root: &Path,
+    path: &str,
+    filter: &PathFilter,
+    options: &WalkOptions,
+) -> Result<Check, WalkError> {
+    if !filter.allows(path) {
+        return Ok(Check::Skip(SkipReason::Excluded));
+    }
+    let name = path.rsplit('/').next().unwrap_or(path);
+    if is_deny_listed(name) {
+        return Ok(Check::Skip(SkipReason::DenyListed));
+    }
+    let full = root.join(path);
+    let io_error = |source| WalkError::Io {
+        path: full.clone(),
+        source,
+    };
+    let meta = match fs::symlink_metadata(&full) {
+        Ok(meta) => meta,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            return Ok(Check::Skip(SkipReason::Deleted));
+        }
+        Err(e) => return Err(io_error(e)),
+    };
+    let reason = if meta.file_type().is_symlink() {
+        Some(SkipReason::Symlink)
+    } else if !meta.is_file() {
+        Some(SkipReason::NotAFile)
+    } else if meta.len() > options.max_file_size {
+        Some(SkipReason::Oversized)
+    } else {
+        None
+    };
+    if let Some(reason) = reason {
+        return Ok(Check::Skip(reason));
+    }
+    let mut prefix = Vec::with_capacity(SNIFF_LEN);
+    File::open(&full)
+        .and_then(|file| file.take(SNIFF_LEN as u64).read_to_end(&mut prefix))
+        .map_err(io_error)?;
+    if looks_binary(&prefix) {
+        return Ok(Check::Skip(SkipReason::Binary));
+    }
+    Ok(Check::Keep { size: meta.len() })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -237,5 +423,153 @@ mod tests {
             "{err:?}"
         );
         assert_eq!(err.to_string(), "invalid glob \"src/[\"");
+    }
+
+    use crate::walk::test_repo::Repo;
+    use crate::{LicenseClass, LocalSource};
+    use std::collections::BTreeMap;
+
+    fn local(repo: &Repo) -> LocalSource {
+        LocalSource {
+            name: None,
+            path: repo.path().to_owned(),
+            license: None,
+            license_class: LicenseClass::ApproachOnly,
+            include: Vec::new(),
+            exclude: Vec::new(),
+        }
+    }
+
+    fn paths(tree: &LocalTree) -> Vec<(&str, bool)> {
+        tree.files
+            .iter()
+            .map(|f| (f.path.as_str(), f.dirty))
+            .collect()
+    }
+
+    #[test]
+    fn walk_skips_and_counts() {
+        let repo = Repo::new();
+        repo.write(".gitignore", "target/\n");
+        repo.write("src/lib.rs", "pub fn lib() {}\n");
+        repo.write("src/main.rs", "fn main() {}\n");
+        repo.write("src/id_token.rs", "pub struct IdToken;\n");
+        // Text without an extension is indexed; extensions are never trusted.
+        repo.write("scripts/build", "#!/bin/sh\necho build\n");
+        // Binary by content, whatever the name says.
+        repo.write("assets/logo.png", b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR");
+        repo.write("data/notes.txt", b"looks like text \0 but is not");
+        repo.write("big.txt", vec![b'a'; DEFAULT_MAX_FILE_SIZE as usize + 1]);
+        repo.write("exact.txt", vec![b'a'; DEFAULT_MAX_FILE_SIZE as usize]);
+        repo.write(".env", "SECRET=1\n");
+        repo.write("certs/server.pem", "-----BEGIN PRIVATE KEY-----\n");
+        repo.write("id_ed25519", "-----BEGIN OPENSSH PRIVATE KEY-----\n");
+        repo.commit_all(&["."]);
+
+        repo.write("src/main.rs", "fn main() { changed() }\n");
+        repo.write("src/new.rs", "pub fn new() {}\n");
+        repo.write("target/debug/app", "build output\n");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("/etc/hostname", repo.path().join("link")).unwrap();
+
+        let tree = walk_local(&local(&repo), &WalkOptions::default()).unwrap();
+
+        assert_eq!(tree.head.len(), 40, "{}", tree.head);
+        assert_eq!(
+            paths(&tree),
+            [
+                (".gitignore", false),
+                ("exact.txt", false),
+                ("scripts/build", false),
+                ("src/id_token.rs", false),
+                ("src/lib.rs", false),
+                ("src/main.rs", true),
+                ("src/new.rs", true),
+            ]
+        );
+        assert_eq!(tree.files[1].size, DEFAULT_MAX_FILE_SIZE);
+
+        let mut expected = BTreeMap::from([
+            (SkipReason::Ignored, 1),
+            (SkipReason::DenyListed, 3),
+            (SkipReason::Oversized, 1),
+            (SkipReason::Binary, 2),
+        ]);
+        if cfg!(unix) {
+            expected.insert(SkipReason::Symlink, 1);
+        }
+        assert_eq!(tree.skip_counts(), expected);
+
+        let reason = |path: &str| {
+            tree.skipped
+                .iter()
+                .find(|s| s.path == path)
+                .map(|s| s.reason)
+        };
+        assert_eq!(reason("target/"), Some(SkipReason::Ignored));
+        assert_eq!(reason("id_ed25519"), Some(SkipReason::DenyListed));
+        assert_eq!(reason("data/notes.txt"), Some(SkipReason::Binary));
+        assert_eq!(reason("big.txt"), Some(SkipReason::Oversized));
+    }
+
+    #[test]
+    fn walk_applies_include_and_exclude() {
+        let repo = Repo::new();
+        repo.write("src/a.rs", "a\n");
+        repo.write("src/gen/b.rs", "b\n");
+        repo.write("docs/c.md", "c\n");
+        repo.commit_all(&["."]);
+
+        let mut source = local(&repo);
+        source.include = vec!["src/**".into()];
+        source.exclude = vec!["src/gen/**".into()];
+        let tree = walk_local(&source, &WalkOptions::default()).unwrap();
+        assert_eq!(paths(&tree), [("src/a.rs", false)]);
+        assert_eq!(
+            tree.skip_counts(),
+            BTreeMap::from([(SkipReason::Excluded, 2)])
+        );
+    }
+
+    #[test]
+    fn walk_reports_deleted_files_and_honors_the_size_option() {
+        let repo = Repo::new();
+        repo.write("gone.rs", "g\n");
+        repo.write("small.rs", "s\n");
+        repo.write("medium.rs", "0123456789\n");
+        repo.commit_all(&["."]);
+        std::fs::remove_file(repo.path().join("gone.rs")).unwrap();
+
+        let tree = walk_local(&local(&repo), &WalkOptions { max_file_size: 4 }).unwrap();
+        assert_eq!(paths(&tree), [("small.rs", false)]);
+        assert_eq!(
+            tree.skipped,
+            [
+                SkippedFile {
+                    path: "gone.rs".into(),
+                    reason: SkipReason::Deleted
+                },
+                SkippedFile {
+                    path: "medium.rs".into(),
+                    reason: SkipReason::Oversized
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn walk_errors_name_the_problem() {
+        let plain = tempfile::tempdir().unwrap();
+        let mut source = local(&Repo::new());
+        source.path = plain.path().to_owned();
+        let err = walk_local(&source, &WalkOptions::default()).unwrap_err();
+        assert!(matches!(err, WalkError::NotAGitRepo { .. }), "{err:?}");
+
+        source.path = plain.path().join("missing");
+        let err = walk_local(&source, &WalkOptions::default()).unwrap_err();
+        assert!(matches!(err, WalkError::Io { .. }), "{err:?}");
+
+        let err: crate::Error = err.into();
+        assert!(matches!(err, crate::Error::Walk(_)));
     }
 }

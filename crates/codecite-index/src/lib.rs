@@ -13,4 +13,7 @@ pub use manifest::{
 };
 
 mod walk;
-pub use walk::WalkError;
+pub use walk::{
+    DEFAULT_MAX_FILE_SIZE, LocalFile, LocalTree, SkipReason, SkippedFile, WalkError, WalkOptions,
+    walk_local,
+};
