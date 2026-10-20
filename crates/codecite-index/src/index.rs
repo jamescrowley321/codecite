@@ -11,8 +11,8 @@ use codecite_core::{ChunkRecord, DocumentRecord, SourceRecord, Store, SymbolReco
 use sha2::{Digest, Sha256};
 
 use crate::{
-    Chunker, Error, Language, LicenseClass, LocalSource, LocalTree, Manifest, Result, SkipReason,
-    Source, WalkOptions, walk_local,
+    Chunker, Error, Fetcher, Language, LicenseClass, LocalSource, LocalTree, Manifest, Result,
+    SkipReason, Source, WalkOptions, walk_local,
 };
 
 /// What an index run did.
@@ -26,6 +26,10 @@ pub struct IndexSummary {
     pub removed: usize,
     /// Chunks written, over every written document.
     pub chunks: usize,
+    /// Document sources downloaded and checked against their pin.
+    pub downloaded: usize,
+    /// Document sources read from the cache.
+    pub cached: usize,
     /// Files not indexed, counted by reason.
     pub skipped: BTreeMap<SkipReason, usize>,
     /// Manifest sources not indexed, with the reason.
@@ -36,20 +40,37 @@ pub struct IndexSummary {
     pub elapsed: Duration,
 }
 
-/// Indexes every local source in `manifest` into `store`.
+/// Fetches every document source in `manifest` and indexes every local
+/// source into `store`.
 ///
-/// A document whose content hash matches the stored one is not rewritten,
-/// and a stored document whose file is gone, or is now skipped, is deleted.
-/// Git and document sources are reported in
-/// [`IndexSummary::skipped_sources`], as are sources marked `excluded`.
-/// Every source the run did not index is then deleted from the store.
+/// Documents are fetched first, from `fetcher`'s cache when they are there,
+/// so a document whose bytes don't match its pinned `sha256` stops the run
+/// before anything is written. Documents are not indexed yet.
+///
+/// A file whose content hash matches the stored one is not rewritten, and a
+/// stored file that is gone, or is now skipped, is deleted. Git and document
+/// sources are reported in [`IndexSummary::skipped_sources`], as are sources
+/// marked `excluded`. Every source the run did not index is then deleted
+/// from the store.
 pub fn index_corpus(
     store: &mut Store,
     manifest: &Manifest,
     options: &WalkOptions,
+    fetcher: &Fetcher,
 ) -> Result<IndexSummary> {
     let started = Instant::now();
     let mut summary = IndexSummary::default();
+    for source in &manifest.sources {
+        if let Source::Document(doc) = source
+            && doc.license_class != LicenseClass::Excluded
+        {
+            if fetcher.fetch_pinned(doc)?.from_cache {
+                summary.cached += 1;
+            } else {
+                summary.downloaded += 1;
+            }
+        }
+    }
     let mut chunker = Chunker::new()?;
     let mut indexed: Vec<String> = Vec::new();
     for source in &manifest.sources {
@@ -71,9 +92,12 @@ pub fn index_corpus(
                 continue;
             }
             Source::Document(doc) => {
-                summary
-                    .skipped_sources
-                    .push((doc.name.clone(), "document sources are not indexed yet"));
+                let reason = if doc.license_class == LicenseClass::Excluded {
+                    "use = \"excluded\""
+                } else {
+                    "document sources are fetched and checked, not indexed yet"
+                };
+                summary.skipped_sources.push((doc.name.clone(), reason));
                 continue;
             }
         };
@@ -211,6 +235,13 @@ impl fmt::Display for IndexSummary {
             self.written, self.unchanged, self.removed
         )?;
         writeln!(f, "chunks: {} written", self.chunks)?;
+        if self.downloaded + self.cached > 0 {
+            writeln!(
+                f,
+                "fetched: {} downloaded, {} from the cache",
+                self.downloaded, self.cached
+            )?;
+        }
         if !self.skipped.is_empty() {
             let parts: Vec<String> = self
                 .skipped
@@ -232,7 +263,9 @@ impl fmt::Display for IndexSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::DocumentSource;
     use crate::test_repo::Repo;
+    use crate::test_server::Server;
     use rusqlite::Connection;
     use std::path::PathBuf;
 
@@ -246,6 +279,24 @@ mod tests {
             exclude: Vec::new(),
         })
     }
+
+    fn document(url: String, sha256: &str) -> Source {
+        Source::Document(DocumentSource {
+            name: "rfc9449".into(),
+            url,
+            sha256: sha256.into(),
+            license: None,
+            license_class: LicenseClass::Quote,
+            current: true,
+            aliases: Vec::new(),
+            obsoleted_by: None,
+            updated_by: None,
+        })
+    }
+
+    const SPEC: &str = "<h1>RFC 9449</h1>\n";
+    /// The sha256 of [`SPEC`].
+    const SPEC_SHA256: &str = "adcd06b613eb4e660e403fbec3d11011983dec4501489279e191b728e2fe6b2b";
 
     fn manifest(sources: Vec<Source>) -> Manifest {
         Manifest {
@@ -285,8 +336,13 @@ mod tests {
         }
 
         fn index(&self, manifest: &Manifest) -> IndexSummary {
+            self.try_index(manifest).unwrap()
+        }
+
+        fn try_index(&self, manifest: &Manifest) -> Result<IndexSummary> {
             let mut store = Store::open_read_write(&self.path()).unwrap();
-            index_corpus(&mut store, manifest, &WalkOptions::default()).unwrap()
+            let fetcher = Fetcher::new(self.dir.path().join("cache"));
+            index_corpus(&mut store, manifest, &WalkOptions::default(), &fetcher)
         }
 
         fn sql(&self) -> Connection {
@@ -483,12 +539,71 @@ mod tests {
             .unwrap();
         assert_eq!(name, dir.file_name().unwrap().to_str().unwrap());
 
-        let mut store = Store::open_read_write(&corpus.path()).unwrap();
         let twice = manifest(vec![local(&repo, Some("app")), local(&repo, Some("app"))]);
-        let err = index_corpus(&mut store, &twice, &WalkOptions::default()).unwrap_err();
+        let err = corpus.try_index(&twice).unwrap_err();
         assert!(
             matches!(&err, Error::DuplicateSource { name } if name == "app"),
             "{err:?}"
+        );
+    }
+
+    #[test]
+    fn documents_are_fetched_once_and_not_indexed_yet() {
+        let server = Server::start();
+        server.set("/rfc9449.html", SPEC);
+        let corpus = Corpus::new();
+        let manifest = manifest(vec![document(server.url("/rfc9449.html"), SPEC_SHA256)]);
+
+        let first = corpus.index(&manifest);
+        assert_eq!((first.downloaded, first.cached), (1, 0));
+        assert_eq!(
+            first.skipped_sources,
+            [(
+                "rfc9449".to_owned(),
+                "document sources are fetched and checked, not indexed yet"
+            )]
+        );
+        let second = corpus.index(&manifest);
+        assert_eq!((second.downloaded, second.cached), (0, 1));
+        assert_eq!(server.requests(), 1);
+    }
+
+    #[test]
+    fn a_changed_document_stops_the_run_before_any_write() {
+        let repo = fixture();
+        let server = Server::start();
+        server.set("/rfc9449.html", "<h1>RFC 9449, edited</h1>\n");
+        let corpus = Corpus::new();
+        let manifest = manifest(vec![
+            local(&repo, Some("app")),
+            document(server.url("/rfc9449.html"), SPEC_SHA256),
+        ]);
+
+        let err = corpus.try_index(&manifest).unwrap_err();
+        assert!(
+            matches!(&err, Error::Fetch(crate::FetchError::Mismatch { name, .. }) if name == "rfc9449"),
+            "{err:?}"
+        );
+        let sources: i64 = corpus
+            .sql()
+            .query_row("SELECT count(*) FROM source", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(sources, 0);
+    }
+
+    #[test]
+    fn excluded_documents_are_not_fetched() {
+        let server = Server::start();
+        let corpus = Corpus::new();
+        let mut doc = document(server.url("/rfc9449.html"), SPEC_SHA256);
+        if let Source::Document(d) = &mut doc {
+            d.license_class = LicenseClass::Excluded;
+        }
+        let summary = corpus.index(&manifest(vec![doc]));
+        assert_eq!(server.requests(), 0);
+        assert_eq!(
+            summary.skipped_sources,
+            [("rfc9449".to_owned(), "use = \"excluded\"")]
         );
     }
 
@@ -499,6 +614,8 @@ mod tests {
             unchanged: 5,
             removed: 1,
             chunks: 9,
+            downloaded: 1,
+            cached: 2,
             skipped: BTreeMap::from([(SkipReason::Ignored, 3), (SkipReason::Binary, 1)]),
             skipped_sources: vec![("rfc9449".into(), "document sources are not indexed yet")],
             removed_sources: vec!["old".into()],
@@ -508,6 +625,7 @@ mod tests {
             summary.to_string(),
             "documents: 2 written, 5 unchanged, 1 removed\n\
              chunks: 9 written\n\
+             fetched: 1 downloaded, 2 from the cache\n\
              skipped: 3 ignored, 1 binary\n\
              source rfc9449 not indexed: document sources are not indexed yet\n\
              source old removed: the run no longer indexes it\n\

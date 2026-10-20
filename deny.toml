@@ -26,7 +26,12 @@ allow = [
 ]
 # The BSD and ISC entries are allowed ahead of the crates that will need them.
 unused-allowed-license = "allow"
-exceptions = [{ crate = "option-ext", allow = ["MPL-2.0"] }]
+exceptions = [
+    { crate = "option-ext", allow = ["MPL-2.0"] },
+    # Mozilla's root certificates as data, via `ureq` -> `webpki-roots`. A
+    # permissive data license; it asks only that the license text be kept.
+    { crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
+]
 
 [bans]
 multiple-versions = "deny"
@@ -36,6 +41,8 @@ highlight = "all"
 # version, and the upstream reason, e.g.
 # { crate = "foo@0.1.0", reason = "bar still depends on foo 0.1" }
 skip = [
+    { crate = "getrandom@0.2.17", reason = "ring 0.17 (TLS for ureq, via rustls) still depends on getrandom 0.2; tempfile uses 0.4" },
+    { crate = "windows-sys@0.52.0", reason = "ring 0.17 (TLS for ureq, via rustls) still depends on windows-sys 0.52; Windows only" },
     { crate = "hashbrown@0.16.1", reason = "rsqlite-vfs, via sqlite-wasm-rs (a wasm32-only dependency of rusqlite), still depends on hashbrown 0.16" },
 ]
 

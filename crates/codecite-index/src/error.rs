@@ -24,6 +24,11 @@ pub enum Error {
     #[error(transparent)]
     Chunker(#[from] crate::ChunkerError),
 
+    /// A document source could not be fetched, or its bytes don't match
+    /// the manifest's pinned `sha256`.
+    #[error(transparent)]
+    Fetch(#[from] crate::FetchError),
+
     /// A walked file could not be read.
     #[error("reading {}", path.display())]
     ReadFile {
