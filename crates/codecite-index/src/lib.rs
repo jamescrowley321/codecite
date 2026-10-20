@@ -3,8 +3,10 @@
 //! It also reads corpus manifests, which say what each corpus indexes, walks
 //! local checkouts, listing the files git sees and reporting every file it
 //! skips, and splits files into chunks: code at definitions, Markdown at
-//! headings, anything else into 60-line windows. [`index_corpus`] runs those
-//! steps over a corpus's local sources and writes the result into its store.
+//! headings, anything else into 60-line windows. [`Fetcher`] downloads document
+//! sources and checks them against their pinned sha256, caching them by hash.
+//! [`index_corpus`] fetches a corpus's documents, runs the other steps over
+//! its local sources and writes the result into its store.
 
 mod chunk;
 pub use chunk::{
@@ -13,6 +15,9 @@ pub use chunk::{
 
 mod error;
 pub use error::{Error, Result};
+
+mod fetch;
+pub use fetch::{FetchError, Fetched, Fetcher, MAX_DOCUMENT_SIZE};
 
 mod index;
 pub use index::{IndexSummary, index_corpus};
@@ -24,6 +29,9 @@ pub use manifest::{
 
 #[cfg(test)]
 mod test_repo;
+
+#[cfg(test)]
+mod test_server;
 
 mod walk;
 pub use walk::{
