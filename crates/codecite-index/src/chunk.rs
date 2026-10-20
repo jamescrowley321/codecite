@@ -2,9 +2,11 @@
 //! supported language splits at definitions with tree-sitter, Markdown at
 //! headings, and everything else into 60-line windows.
 
+mod code;
 mod language;
 mod text;
 
+pub use code::ChunkerError;
 pub use language::Language;
 
 /// The longest window, in lines.
@@ -80,6 +82,20 @@ pub struct Symbol {
     pub descriptor: String,
 }
 
+impl Symbol {
+    /// The SCIP-shaped ID for this symbol in `path` of the source named
+    /// `source`: `codecite . <source> . <path segments>/<descriptor>`.
+    pub fn scip_id(&self, source: &str, path: &str) -> String {
+        let mut id = format!("codecite . {} . ", source.replace(' ', "  "));
+        for segment in path.split('/') {
+            id.push_str(&code::escape_name(segment));
+            id.push('/');
+        }
+        id.push_str(&self.descriptor);
+        id
+    }
+}
+
 /// One span of a file, borrowing its text from the file's contents.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Chunk<'a> {
@@ -97,24 +113,30 @@ pub struct Chunk<'a> {
     pub title: Option<String>,
 }
 
-/// Splits files into chunks.
-#[derive(Debug, Default)]
-pub struct Chunker {}
+/// Splits files into chunks. Holds a parser and the compiled queries, so
+/// build one and reuse it for every file.
+pub struct Chunker {
+    code: code::CodeChunker,
+}
 
 impl Chunker {
-    /// A chunker for Markdown and windows.
-    pub fn new() -> Self {
-        Self {}
+    /// Compiles the tree-sitter query of every supported language.
+    pub fn new() -> Result<Self, ChunkerError> {
+        Ok(Self {
+            code: code::CodeChunker::new()?,
+        })
     }
 
     /// Splits `text`, the contents of `path`, into chunks ordered by start
-    /// line, then longest first. Lines outside every section, which is every
-    /// line in a file that isn't Markdown, become windows.
+    /// line, then longest first. Lines outside every definition and every
+    /// section, which is every line in a file of another language, become
+    /// windows.
     pub fn chunk<'a>(&mut self, path: &str, text: &'a str) -> Vec<Chunk<'a>> {
         let lines = text::Lines::new(text);
         let mut chunks = match Language::detect(path, text) {
             Some(Language::Markdown) => text::sections(&lines),
-            _ => Vec::new(),
+            Some(language) => self.code.chunk(language, &lines),
+            None => Vec::new(),
         };
         let mut covered = vec![false; lines.len()];
         for c in &chunks {
@@ -132,7 +154,7 @@ mod tests {
 
     /// Each chunk as (kind, start, end, symbol descriptor or section title).
     fn outline(path: &str, text: &str) -> Vec<(&'static str, u32, u32, String)> {
-        let mut chunker = Chunker::new();
+        let mut chunker = Chunker::new().unwrap();
         chunker
             .chunk(path, text)
             .into_iter()
@@ -172,5 +194,212 @@ mod tests {
         let want = expect(&[("window", 1, 60, ""), ("window", 61, 61, "")]);
         assert_eq!(outline("notes.md", &text), want);
         assert_eq!(outline("notes.txt", &text), want);
+    }
+
+    #[test]
+    fn every_query_compiles() {
+        Chunker::new().unwrap();
+    }
+
+    #[test]
+    fn rust_fixture() {
+        let text = include_str!("../tests/fixtures/chunk/sample.rs");
+        assert_eq!(
+            outline("src/sample.rs", text),
+            expect(&[
+                ("window", 1, 5, ""),
+                ("class", 6, 8, "Client#"),
+                ("class", 10, 18, ""),
+                ("function", 11, 13, "Client#new()."),
+                ("function", 15, 17, "Client#validate()."),
+                ("class", 20, 24, ""),
+                ("function", 21, 23, "Client#fmt()."),
+                ("class", 26, 29, "Grant#"),
+                ("class", 31, 33, "Verifier#"),
+                ("function", 32, 32, "Verifier#verify()."),
+                ("function", 35, 40, "helper()."),
+                ("function", 36, 38, "helper().inner()."),
+            ])
+        );
+    }
+
+    #[test]
+    fn python_fixture() {
+        let text = include_str!("../tests/fixtures/chunk/sample.py");
+        assert_eq!(
+            outline("app/sample.py", text),
+            expect(&[
+                ("window", 1, 4, ""),
+                ("class", 7, 13, "Client#"),
+                ("function", 8, 9, "Client#__init__()."),
+                ("function", 11, 13, "Client#validate()."),
+                ("function", 16, 20, "helper()."),
+                ("function", 17, 18, "helper().inner()."),
+            ])
+        );
+    }
+
+    #[test]
+    fn typescript_fixture() {
+        let text = include_str!("../tests/fixtures/chunk/sample.ts");
+        let want = expect(&[
+            ("window", 1, 1, ""),
+            ("class", 3, 5, "Claims#"),
+            ("class", 7, 10, "Grant#"),
+            ("class", 12, 18, "Client#"),
+            ("function", 13, 13, "Client#constructor()."),
+            ("function", 15, 17, "Client#validate()."),
+            ("function", 20, 22, "helper()."),
+            ("function", 24, 26, "parse()."),
+        ]);
+        assert_eq!(outline("src/sample.ts", text), want);
+        // The TSX grammar parses the same file the same way.
+        assert_eq!(outline("src/sample.tsx", text), want);
+    }
+
+    #[test]
+    fn javascript_fixture() {
+        let text = include_str!("../tests/fixtures/chunk/sample.js");
+        assert_eq!(
+            outline("lib/sample.js", text),
+            expect(&[
+                ("window", 1, 2, ""),
+                ("class", 4, 8, "Client#"),
+                ("function", 5, 7, "Client#validate()."),
+                ("function", 10, 12, "helper()."),
+                ("window", 14, 14, ""),
+            ])
+        );
+    }
+
+    #[test]
+    fn go_fixture() {
+        let text = include_str!("../tests/fixtures/chunk/sample.go");
+        assert_eq!(
+            outline("sample/sample.go", text),
+            expect(&[
+                ("window", 1, 5, ""),
+                ("class", 6, 8, "Client#"),
+                ("class", 10, 12, "Verifier#"),
+                ("function", 14, 16, "NewClient()."),
+                ("function", 18, 20, "Client#Validate()."),
+            ])
+        );
+    }
+
+    #[test]
+    fn csharp_fixture() {
+        let text = include_str!("../tests/fixtures/chunk/sample.cs");
+        assert_eq!(
+            outline("src/Sample.cs", text),
+            expect(&[
+                ("window", 1, 3, ""),
+                ("class", 5, 8, "IVerifier#"),
+                ("function", 7, 7, "IVerifier#Verify()."),
+                ("class", 10, 14, "Grant#"),
+                ("class", 16, 29, "Client#"),
+                ("function", 18, 21, "Client#Client()."),
+                ("function", 25, 28, "Client#Validate()."),
+            ])
+        );
+    }
+
+    #[test]
+    fn symbols_carry_name_and_kind() {
+        let text = include_str!("../tests/fixtures/chunk/sample.go");
+        let mut chunker = Chunker::new().unwrap();
+        let symbols: Vec<_> = chunker
+            .chunk("sample.go", text)
+            .into_iter()
+            .filter_map(|c| c.symbol)
+            .map(|s| (s.name, s.kind))
+            .collect();
+        assert_eq!(
+            symbols,
+            [
+                ("Client".to_string(), SymbolKind::Struct),
+                ("Verifier".to_string(), SymbolKind::Interface),
+                ("NewClient".to_string(), SymbolKind::Function),
+                ("Validate".to_string(), SymbolKind::Method),
+            ]
+        );
+    }
+
+    #[test]
+    fn chunk_text_borrows_whole_lines() {
+        let text = include_str!("../tests/fixtures/chunk/sample.py");
+        let mut chunker = Chunker::new().unwrap();
+        let chunks = chunker.chunk("sample.py", text);
+        let validate = chunks.iter().find(|c| c.start_line == 11).unwrap();
+        assert_eq!(
+            validate.text,
+            "    @staticmethod\n    def validate(token):\n        return bool(token)"
+        );
+    }
+
+    #[test]
+    fn duplicate_names_keep_ids_unique() {
+        let text = "struct Dup;\n#[cfg(test)]\nstruct Dup;\nmod m { fn new() {} }\nfn new() {}\nimpl<T> Wrap<T> { fn new() {} }\nimpl a::Path { fn new() {} }\n";
+        assert_eq!(
+            outline("dup.rs", text),
+            expect(&[
+                ("class", 1, 1, "Dup#"),
+                ("window", 2, 2, ""),
+                ("class", 3, 3, ""),
+                ("function", 4, 4, "new()."),
+                ("function", 5, 5, "new(+1)."),
+                ("class", 6, 6, ""),
+                ("function", 6, 6, "Wrap#new()."),
+                ("class", 7, 7, ""),
+                ("function", 7, 7, "Path#new()."),
+            ])
+        );
+    }
+
+    #[test]
+    fn broken_or_empty_code_still_chunks() {
+        assert!(outline("empty.rs", "").is_empty());
+        // tree-sitter recovers from syntax errors; the text stays searchable.
+        let got = outline("broken.rs", "fn ok() {}\nfn broken( {\nlet x = ;\n");
+        assert_eq!(got[0], ("function", 1, 1, "ok().".to_string()));
+        assert!(got.iter().any(|c| c.2 == 3), "{got:?}");
+    }
+
+    #[test]
+    fn crlf_line_endings() {
+        let got = outline("crlf.rs", "fn a() {}\r\n\r\nfn b() {\r\n}");
+        assert_eq!(
+            got,
+            expect(&[("function", 1, 1, "a()."), ("function", 3, 4, "b().")])
+        );
+    }
+
+    #[test]
+    fn scip_id_prefixes_source_and_path() {
+        let symbol = Symbol {
+            name: "validate".into(),
+            kind: SymbolKind::Method,
+            descriptor: "Client#validate().".into(),
+        };
+        assert_eq!(
+            symbol.scip_id("identity-model", "src/client.rs"),
+            "codecite . identity-model . src/`client.rs`/Client#validate()."
+        );
+        assert_eq!(
+            symbol.scip_id("my repo", "a`b/c"),
+            "codecite . my  repo . `a``b`/c/Client#validate()."
+        );
+    }
+
+    #[test]
+    fn escape_name_follows_scip() {
+        assert_eq!(code::escape_name("new"), "new");
+        assert_eq!(code::escape_name("$el-x+1"), "$el-x+1");
+        assert_eq!(code::escape_name("größe"), "`größe`");
+        assert_eq!(
+            code::escape_name("[Symbol.iterator]"),
+            "`[Symbol.iterator]`"
+        );
+        assert_eq!(code::escape_name(""), "``");
     }
 }

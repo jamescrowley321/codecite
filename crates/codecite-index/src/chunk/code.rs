@@ -1,0 +1,365 @@
+//! Code chunking with tree-sitter: one chunk per definition that a
+//! language's query (`queries/<language>.scm`) captures.
+
+use std::collections::HashMap;
+
+use streaming_iterator::StreamingIterator;
+use tree_sitter::{Node, Parser, Query, QueryCursor};
+
+use super::text::Lines;
+use super::{Chunk, ChunkKind, Language, Symbol, SymbolKind};
+
+/// A bundled grammar or query failed to load: a bug in codecite, or a
+/// grammar crate built for an incompatible tree-sitter.
+#[derive(Debug, thiserror::Error)]
+pub enum ChunkerError {
+    /// The grammar's ABI doesn't match the tree-sitter library.
+    #[error("cannot load the {language} grammar")]
+    Grammar {
+        /// The language whose grammar failed.
+        language: &'static str,
+        /// What tree-sitter reported.
+        #[source]
+        source: tree_sitter::LanguageError,
+    },
+    /// The language's query doesn't compile against its grammar.
+    #[error("invalid {language} query")]
+    Query {
+        /// The language whose query failed.
+        language: &'static str,
+        /// What tree-sitter reported.
+        #[source]
+        source: tree_sitter::QueryError,
+    },
+}
+
+/// Loads a grammar from its crate.
+type Grammar = fn() -> tree_sitter::Language;
+
+/// The code languages, each with its grammar and query. TSX shares the
+/// TypeScript query: its grammar has the same node kinds, plus JSX.
+const LANGUAGES: [(Language, Grammar, &str); 7] = [
+    (
+        Language::Rust,
+        || tree_sitter_rust::LANGUAGE.into(),
+        include_str!("queries/rust.scm"),
+    ),
+    (
+        Language::Python,
+        || tree_sitter_python::LANGUAGE.into(),
+        include_str!("queries/python.scm"),
+    ),
+    (
+        Language::TypeScript,
+        || tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        include_str!("queries/typescript.scm"),
+    ),
+    (
+        Language::Tsx,
+        || tree_sitter_typescript::LANGUAGE_TSX.into(),
+        include_str!("queries/typescript.scm"),
+    ),
+    (
+        Language::JavaScript,
+        || tree_sitter_javascript::LANGUAGE.into(),
+        include_str!("queries/javascript.scm"),
+    ),
+    (
+        Language::Go,
+        || tree_sitter_go::LANGUAGE.into(),
+        include_str!("queries/go.scm"),
+    ),
+    (
+        Language::CSharp,
+        || tree_sitter_c_sharp::LANGUAGE.into(),
+        include_str!("queries/csharp.scm"),
+    ),
+];
+
+pub(super) struct CodeChunker {
+    parser: Parser,
+    /// Each code language's grammar and compiled query.
+    grammars: HashMap<Language, (tree_sitter::Language, Query)>,
+}
+
+impl CodeChunker {
+    pub(super) fn new() -> Result<Self, ChunkerError> {
+        let mut parser = Parser::new();
+        let mut grammars = HashMap::new();
+        for (language, grammar, source) in LANGUAGES {
+            let name = language.name();
+            let grammar = grammar();
+            // Setting each grammar once checks its ABI up front.
+            parser
+                .set_language(&grammar)
+                .map_err(|source| ChunkerError::Grammar {
+                    language: name,
+                    source,
+                })?;
+            let query = Query::new(&grammar, source).map_err(|source| ChunkerError::Query {
+                language: name,
+                source,
+            })?;
+            grammars.insert(language, (grammar, query));
+        }
+        Ok(Self { parser, grammars })
+    }
+
+    /// One chunk per captured definition or `impl` block, ordered by
+    /// position. A language without a grammar (Markdown), or a file the
+    /// parser gives up on, gives no chunks, so the file falls back to
+    /// windows.
+    pub(super) fn chunk<'a>(&mut self, language: Language, lines: &Lines<'a>) -> Vec<Chunk<'a>> {
+        let Some((grammar, query)) = self.grammars.get(&language) else {
+            return Vec::new();
+        };
+        if self.parser.set_language(grammar).is_err() {
+            return Vec::new();
+        }
+        let source = lines.text().as_bytes();
+        let Some(tree) = self.parser.parse(source, None) else {
+            return Vec::new();
+        };
+
+        let defs = definitions(query, tree.root_node(), source, lines.len() as u32);
+        // Each definition's full descriptor, built from its innermost
+        // parent's, which comes earlier in `defs`.
+        let mut full: Vec<String> = Vec::with_capacity(defs.len());
+        let mut seen: HashMap<String, u32> = HashMap::new();
+        let mut out = Vec::new();
+        for def in &defs {
+            let parent = def.parents.last().map(|&p| (&full[p], defs[p].kind));
+            let mut prefix = parent.map_or_else(String::new, |(d, _)| d.clone());
+            if let Some(receiver) = &def.receiver {
+                prefix.push_str(&escape_name(receiver));
+                prefix.push('#');
+            }
+            let Some(kind) = def.kind else {
+                // An `impl` block: a chunk that names the methods inside it
+                // but has no symbol of its own.
+                full.push(prefix + &def.descriptor_part(0));
+                out.push(Chunk {
+                    kind: ChunkKind::Class,
+                    start_line: def.start_line,
+                    end_line: def.end_line,
+                    text: lines.span(def.start_line, def.end_line),
+                    symbol: None,
+                    title: None,
+                });
+                continue;
+            };
+            let in_type = def.receiver.is_some()
+                || parent.is_some_and(|(_, k)| {
+                    !matches!(k, Some(SymbolKind::Function | SymbolKind::Method))
+                });
+            let kind = match kind {
+                SymbolKind::Function if in_type => SymbolKind::Method,
+                k => k,
+            };
+            let first = prefix.clone() + &def.descriptor_part(0);
+            let n = *seen
+                .entry(first.clone())
+                .and_modify(|n| *n += 1)
+                .or_insert(0);
+            let descriptor = match (kind, n) {
+                (_, 0) => Some(first.clone()),
+                (SymbolKind::Function | SymbolKind::Method, n) => {
+                    Some(prefix.clone() + &def.descriptor_part(n))
+                }
+                // A second type with the same name (behind a `cfg`, say) keeps
+                // its chunk but gets no symbol, so IDs stay unique.
+                _ => None,
+            };
+            full.push(descriptor.clone().unwrap_or(first));
+            out.push(Chunk {
+                kind: match kind {
+                    SymbolKind::Function | SymbolKind::Method => ChunkKind::Function,
+                    _ => ChunkKind::Class,
+                },
+                start_line: def.start_line,
+                end_line: def.end_line,
+                text: lines.span(def.start_line, def.end_line),
+                symbol: descriptor.map(|descriptor| Symbol {
+                    name: def.name.clone(),
+                    kind,
+                    descriptor,
+                }),
+                title: None,
+            });
+        }
+        out
+    }
+}
+
+/// A captured definition or scope.
+struct Definition {
+    /// `None` for a Rust `impl` block, which names the methods inside it
+    /// but defines no symbol.
+    kind: Option<SymbolKind>,
+    name: String,
+    /// A Go method's receiver type.
+    receiver: Option<String>,
+    start_line: u32,
+    end_line: u32,
+    /// Indices of the enclosing definitions and scopes, outermost first.
+    parents: Vec<usize>,
+}
+
+impl Definition {
+    /// This definition's own SCIP descriptor; `disambiguator` > 0 marks the
+    /// n-th later function with the same name, e.g. `new(+1).`.
+    fn descriptor_part(&self, disambiguator: u32) -> String {
+        let name = escape_name(&self.name);
+        match self.kind {
+            Some(SymbolKind::Function | SymbolKind::Method) if disambiguator > 0 => {
+                format!("{name}(+{disambiguator}).")
+            }
+            Some(SymbolKind::Function | SymbolKind::Method) => format!("{name}()."),
+            _ => format!("{name}#"),
+        }
+    }
+}
+
+fn definitions(query: &Query, root: Node<'_>, source: &[u8], last: u32) -> Vec<Definition> {
+    let names = query.capture_names();
+    let mut cursor = QueryCursor::new();
+    let mut matches = cursor.matches(query, root, source);
+    let mut found: Vec<(Node<'_>, Definition)> = Vec::new();
+    while let Some(m) = matches.next() {
+        let mut node = None;
+        let mut is_scope = false;
+        let mut name = None;
+        let mut receiver = None;
+        for capture in m.captures() {
+            match names[capture.index as usize] {
+                "function" | "type" => node = Some(capture.node),
+                "scope" => {
+                    node = Some(capture.node);
+                    is_scope = true;
+                }
+                "name" => name = Some(capture.node),
+                "receiver" => receiver = Some(capture.node),
+                _ => {}
+            }
+        }
+        let (Some(node), Some(name)) = (node, name) else {
+            continue;
+        };
+        let text = |n: Node<'_>| n.utf8_text(source).unwrap_or_default().to_string();
+        let name = if is_scope { type_name(name) } else { name };
+        // A Python decorator belongs to the definition it decorates.
+        let span = match node.parent() {
+            Some(p) if p.kind() == "decorated_definition" => p,
+            _ => node,
+        };
+        let (start_line, end_line) = line_range(span, last);
+        found.push((
+            node,
+            Definition {
+                kind: if is_scope {
+                    None
+                } else {
+                    Some(symbol_kind(node))
+                },
+                name: text(name),
+                receiver: receiver.map(text),
+                start_line,
+                end_line,
+                parents: Vec::new(),
+            },
+        ));
+    }
+    // Sort by position so every parent comes before what it encloses.
+    found.sort_by_key(|(n, _)| (n.start_byte(), std::cmp::Reverse(n.end_byte())));
+    let ids: HashMap<usize, usize> = found
+        .iter()
+        .enumerate()
+        .map(|(i, (n, _))| (n.id(), i))
+        .collect();
+    let mut defs = Vec::with_capacity(found.len());
+    for (index, (node, mut def)) in found.into_iter().enumerate() {
+        let mut parent = node.parent();
+        while let Some(p) = parent {
+            // `i < index` holds for every real parent; checking it keeps a
+            // parent and child with the same span from pointing forwards.
+            if let Some(&i) = ids.get(&p.id())
+                && i < index
+            {
+                def.parents.push(i);
+            }
+            parent = p.parent();
+        }
+        def.parents.reverse();
+        defs.push(def);
+    }
+    defs
+}
+
+/// The kind of a captured definition node.
+fn symbol_kind(node: Node<'_>) -> SymbolKind {
+    match node.kind() {
+        "method_definition"
+        | "method_declaration"
+        | "abstract_method_signature"
+        | "constructor_declaration" => SymbolKind::Method,
+        "struct_item" | "union_item" | "struct_declaration" => SymbolKind::Struct,
+        "enum_item" | "enum_declaration" => SymbolKind::Enum,
+        "trait_item" => SymbolKind::Trait,
+        "interface_declaration" => SymbolKind::Interface,
+        "class_definition"
+        | "class_declaration"
+        | "abstract_class_declaration"
+        | "record_declaration" => SymbolKind::Class,
+        // Go: `type Foo struct {...}` or `type Foo interface {...}`.
+        "type_spec" => match node.child_by_field_name("type").map(|t| t.kind()) {
+            Some("interface_type") => SymbolKind::Interface,
+            _ => SymbolKind::Struct,
+        },
+        _ => SymbolKind::Function,
+    }
+}
+
+/// The bare type name of a Rust `impl` target: `Foo` for `Foo<T>` or `a::Foo`.
+fn type_name(mut node: Node<'_>) -> Node<'_> {
+    loop {
+        match node.kind() {
+            "generic_type" => match node.child_by_field_name("type") {
+                Some(t) => node = t,
+                None => return node,
+            },
+            "scoped_type_identifier" => match node.child_by_field_name("name") {
+                Some(n) => node = n,
+                None => return node,
+            },
+            _ => return node,
+        }
+    }
+}
+
+/// A node's lines, from 1, inclusive, and never past `last`. A node that
+/// ends at the start of a line ends on the line before.
+fn line_range(node: Node<'_>, last: u32) -> (u32, u32) {
+    let start = node.start_position().row;
+    let end = node.end_position();
+    let end_row = if end.column == 0 && end.row > start {
+        end.row - 1
+    } else {
+        end.row
+    };
+    let start = (start as u32 + 1).min(last);
+    (start, (end_row as u32 + 1).clamp(start, last))
+}
+
+/// A SCIP descriptor name: bare when it's only ASCII letters, digits, `_`, `+`,
+/// `-` and `$`, otherwise in backticks with any backtick doubled.
+pub(super) fn escape_name(name: &str) -> String {
+    if !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '+' | '-' | '$'))
+    {
+        name.to_string()
+    } else {
+        format!("`{}`", name.replace('`', "``"))
+    }
+}

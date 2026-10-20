@@ -20,6 +20,11 @@ impl<'a> Lines<'a> {
         Self { text, starts }
     }
 
+    /// The whole text.
+    pub(super) fn text(&self) -> &'a str {
+        self.text
+    }
+
     /// The number of lines.
     pub(super) fn len(&self) -> usize {
         self.starts.len()
