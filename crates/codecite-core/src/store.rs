@@ -9,10 +9,16 @@ use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionB
 
 use crate::{Error, Result};
 
+mod write;
+pub use write::{ChunkRecord, DocumentRecord, SourceRecord, SymbolRecord};
+
 /// The migrations, oldest first. Index `i` brings a file to version `i + 1`.
 /// The files are compiled into the binary, so it needs no migrations
 /// directory at run time.
-const MIGRATIONS: &[&str] = &[include_str!("../migrations/0001_initial.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("../migrations/0001_initial.sql"),
+    include_str!("../migrations/0002_incremental_index.sql"),
+];
 
 /// The schema version this build creates and reads.
 pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
@@ -66,6 +72,10 @@ impl Store {
         // Switching to WAL can't run inside a transaction, and doing it only
         // now leaves a refused file's header untouched.
         enable_wal(&conn, path)?;
+        // In WAL mode, NORMAL syncs at checkpoints rather than at every
+        // commit. A power cut can lose the last commits but never corrupts
+        // the file, and an index run commits once per document.
+        conn.pragma_update(None, "synchronous", "NORMAL")?;
 
         Ok(Store {
             conn,
