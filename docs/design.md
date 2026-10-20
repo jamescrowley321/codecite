@@ -108,7 +108,7 @@ CREATE TABLE chunk (
 );
 
 CREATE VIRTUAL TABLE chunk_fts USING fts5(
-  symbol, path, terms, content='', tokenize='unicode61'
+  symbol, path, terms, content='', contentless_delete=1, tokenize='unicode61'
 );
 
 -- optional, created only when embeddings are enabled
@@ -135,7 +135,7 @@ CREATE INDEX symbol_name ON symbol(display_name);
 - **Symbol IDs** are SCIP symbol strings, so precise indexers drop in without remapping. Symbols found only by tree-sitter get SCIP-shaped local IDs, replaced when a SCIP index for the same source arrives.
 - **Edges from different providers are kept as separate rows.** Queries collapse them to the highest confidence and list every provider that agrees.
 - **One file per corpus** keeps corpora portable and independently rebuildable. Cross-corpus queries use `ATTACH`.
-- **Migrations** are numbered SQL files keyed off `meta.schema_version`; an index from a newer schema is refused, not guessed at.
+- **Migrations** are numbered SQL files in `crates/codecite-core/migrations/`, keyed off `meta.schema_version`; an index from a newer schema is refused, not guessed at. Only indexing opens the file read-write and migrates it. Queries open it read-only and refuse an older schema instead of migrating it.
 
 ## Provider model
 
@@ -344,7 +344,7 @@ Ten milestones in order, each shippable on its own; the first four make codecite
 
 ## Decisions and open questions
 
-Nine decisions are made for v1; seven questions remain open. Each open question becomes a GitHub issue once its milestone starts; when one is settled, move the answer into the decisions table and delete the question.
+Eleven decisions are made for v1; five questions remain open. Each open question becomes a GitHub issue once its milestone starts; when one is settled, move the answer into the decisions table and delete the question.
 
 | Decision | Choice | Why | Revisit if |
 | --- | --- | --- | --- |
@@ -357,11 +357,11 @@ Nine decisions are made for v1; seven questions remain open. Each open question 
 | MCP transport | stdio first | No network surface | Remote agents need it (milestone 10) |
 | Spec pinning | Fetched documents pinned by URL and `sha256`; changed bytes refused | Results must not change because a website changed | A spec publisher offers stable versioned archives |
 | License | Apache-2.0 | Matches py-identity-model and the wider ecosystem | Never |
+| Identifier splitting | A stored `terms` column, filled at index time | Simpler. A custom FTS5 tokenizer means C callbacks over FFI, and the workspace forbids `unsafe` | Index size on disk becomes a problem |
+| FTS5 updates | Contentless table with `contentless_delete=1`; the bundled SQLite (3.53.2, via `rusqlite`'s `bundled` feature) supports it | Deletes by rowid without storing the text twice. Rows are updated whole, never column by column | A `rusqlite` bump changes the bundled SQLite's FTS5 options |
 
 **Open questions**
 
-- Split identifiers in a stored `terms` column, or write a custom FTS5 tokenizer? The column is simpler; the tokenizer is smaller on disk.
-- Contentless FTS5 needs `contentless_delete=1` (SQLite 3.43 or later) for incremental updates. Confirm the bundled SQLite version supports it.
 - Which embedding model gives the best recall on code at 384 dimensions?
 - How to reconcile tree-sitter local symbols with SCIP IDs when both exist for the same definition.
 - Graphify sends docs and images to Claude for extraction. Allow its doc pass only for public corpora?
