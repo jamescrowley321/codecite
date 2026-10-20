@@ -49,3 +49,4 @@ tempfile = "3"
 scraper = { version = "0.27", default-features = false }
 ego-tree = "0.11"
 proptest = { version = "1", default-features = false, features = ["std"] }
+schemars = "1"
