@@ -130,14 +130,7 @@ impl Store {
     /// `query.allow_stale` is set.
     pub fn search(&self, query: &SearchQuery<'_>) -> Result<Vec<SearchResult>> {
         let fts = fts_query(query.text).ok_or(Error::EmptyQuery)?;
-        let freshness = self.freshness()?;
-        if freshness.is_stale() && !query.allow_stale {
-            return Err(Error::StaleIndex {
-                corpus: self.corpus_name(),
-                indexed_at: freshness.indexed_at,
-                max_age_days: freshness.max_age_days,
-            });
-        }
+        self.check_fresh(query.allow_stale)?;
 
         let (w_symbol, w_path, w_text) = COLUMN_WEIGHTS;
         let mut stmt = self.conn.prepare_cached(
@@ -202,6 +195,20 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// Refuses an index older than its maximum age with
+    /// [`Error::StaleIndex`], unless `allow_stale` is set.
+    pub(super) fn check_fresh(&self, allow_stale: bool) -> Result<()> {
+        let freshness = self.freshness()?;
+        if freshness.is_stale() && !allow_stale {
+            return Err(Error::StaleIndex {
+                corpus: self.corpus_name(),
+                indexed_at: freshness.indexed_at,
+                max_age_days: freshness.max_age_days,
+            });
+        }
+        Ok(())
+    }
+
     /// The corpus's name: its file's name without `.db`.
     fn corpus_name(&self) -> String {
         self.path
@@ -235,7 +242,13 @@ fn fts_query(text: &str) -> Option<String> {
 }
 
 /// `repo@sha:path#L10-L42`, or `#L10` for one line.
-fn code_citation(source: &str, revision: &str, path: &str, start: u32, end: u32) -> String {
+pub(super) fn code_citation(
+    source: &str,
+    revision: &str,
+    path: &str,
+    start: u32,
+    end: u32,
+) -> String {
     if start == end {
         format!("{source}@{revision}:{path}#L{start}")
     } else {
@@ -367,6 +380,7 @@ mod tests {
             content_hash: path.as_bytes(),
             size_bytes: 1,
             dirty,
+            text: None,
             chunks,
         }
     }
@@ -394,6 +408,7 @@ mod tests {
             content_hash: text.as_bytes(),
             size_bytes: 1,
             dirty: false,
+            text: None,
             chunks: vec![section, step],
         }
     }

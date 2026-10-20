@@ -19,8 +19,9 @@ pub use keyword::{Keyword, UnknownKeyword, requirement_keywords};
 
 mod store;
 pub use store::{
-    ChunkRecord, DEFAULT_MAX_AGE_DAYS, DocumentRecord, Freshness, MAX_SNIPPET_LINES,
-    SCHEMA_VERSION, SearchQuery, SearchResult, SourceRecord, Store, SymbolRecord, is_corpus_name,
+    ChunkRecord, DEFAULT_MAX_AGE_DAYS, DEFAULT_MAX_LINES, DocumentRecord, Freshness,
+    MAX_SNIPPET_LINES, ReadOptions, ReadResult, SCHEMA_VERSION, SearchQuery, SearchResult,
+    SourceRecord, Store, SymbolRecord, is_corpus_name,
 };
 
 mod terms;

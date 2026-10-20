@@ -46,6 +46,18 @@ pub enum Error {
         name: String,
     },
 
+    /// One alias names two documents, so a citation using it would be a
+    /// guess.
+    #[error("alias {alias:?} names both `{first}` and `{second}`; keep it on one")]
+    DuplicateAlias {
+        /// The alias as the manifest writes it.
+        alias: String,
+        /// The document it names first.
+        first: String,
+        /// The other document it names.
+        second: String,
+    },
+
     /// A document source's bytes are not UTF-8, so they can't be HTML a
     /// spec is split from.
     #[error("document `{name}` is not UTF-8 text")]

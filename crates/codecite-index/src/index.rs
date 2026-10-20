@@ -8,7 +8,7 @@ use std::io;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use codecite_core::{ChunkRecord, DocumentRecord, SourceRecord, Store, SymbolRecord};
+use codecite_core::{ChunkRecord, DocumentRecord, SourceRecord, SpecAliases, Store, SymbolRecord};
 use sha2::{Digest, Sha256};
 
 use crate::{
@@ -76,6 +76,7 @@ pub fn index_corpus(
             documents.push((doc, fetched.bytes));
         }
     }
+    let aliases = document_aliases(manifest)?;
     let mut chunker = Chunker::new()?;
     let mut indexed: Vec<String> = Vec::new();
     let mut keep: Vec<i64> = Vec::new();
@@ -131,9 +132,37 @@ pub fn index_corpus(
         keep.push(index_document(store, doc, bytes, &mut summary)?);
     }
     summary.removed_sources = store.delete_sources_except(&keep)?;
+    store.set_aliases(&aliases)?;
     store.set_indexed_at(manifest.max_age_days)?;
     summary.elapsed = started.elapsed();
     Ok(summary)
+}
+
+/// The aliases of every document the run indexes. An alias that names two
+/// documents is [`Error::DuplicateAlias`], found before anything is written.
+fn document_aliases(manifest: &Manifest) -> Result<SpecAliases> {
+    let mut aliases = SpecAliases::new();
+    for source in &manifest.sources {
+        let Source::Document(doc) = source else {
+            continue;
+        };
+        if doc.license_class == LicenseClass::Excluded {
+            continue;
+        }
+        for alias in &doc.aliases {
+            match aliases.get(alias) {
+                Some(first) if first != doc.name => {
+                    return Err(Error::DuplicateAlias {
+                        alias: alias.clone(),
+                        first: first.into(),
+                        second: doc.name.clone(),
+                    });
+                }
+                _ => aliases.insert(alias, &doc.name),
+            }
+        }
+    }
+    Ok(aliases)
 }
 
 /// The manifest's `name`, else the checkout directory's name.
@@ -208,6 +237,7 @@ fn index_local(
             content_hash: hash.as_slice(),
             size_bytes: text.len() as u64,
             dirty: file.dirty,
+            text: Some(&text),
             chunks: chunks
                 .iter()
                 .zip(symbol_ids)
@@ -295,6 +325,8 @@ fn index_document(
         content_hash: hash.as_slice(),
         size_bytes: bytes.len() as u64,
         dirty: false,
+        // A spec's text is its sections and steps.
+        text: None,
         chunks: spec_chunks(&spec, &step_numbers),
     };
     summary.chunks += store.write_document(source_id, &document)?;
@@ -553,6 +585,16 @@ mod tests {
         );
         assert_eq!(corpus.matches("symbol:validate"), 1);
         assert_eq!(corpus.matches("token"), 2);
+        // The file's text is kept whole, the blank line no chunk holds too.
+        let text: String = corpus
+            .sql()
+            .query_row(
+                "SELECT text FROM document WHERE path = 'src/lib.rs'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(text, "pub fn validate_token() {}\n\npub struct Client;\n");
         let (name, kind, revision, class): (String, String, String, String) = corpus
             .sql()
             .query_row(
@@ -919,6 +961,35 @@ mod tests {
             .query_row("SELECT count(*) FROM source", [], |row| row.get(0))
             .unwrap();
         assert_eq!(sources, 0);
+    }
+
+    #[test]
+    fn aliases_are_stored_and_name_one_document() {
+        let server = Server::start();
+        server.set("/rfc9449.html", SPEC);
+        let corpus = Corpus::new();
+        let mut doc = document(server.url("/rfc9449.html"), &sha256(SPEC));
+        if let Source::Document(d) = &mut doc {
+            d.aliases = vec!["DPoP".into(), "OAuth  DPoP".into()];
+        }
+        corpus.index(&manifest(vec![doc.clone()]));
+        let store = Store::open_read_only(&corpus.path()).unwrap();
+        let aliases = store.aliases().unwrap();
+        assert_eq!(aliases.get("dpop"), Some("rfc9449"));
+        assert_eq!(aliases.get("OAuth DPoP"), Some("rfc9449"));
+        drop(store);
+
+        let mut other = doc.clone();
+        if let Source::Document(d) = &mut other {
+            d.name = "rfc9450".into();
+            d.aliases = vec!["dpop".into()];
+        }
+        let err = corpus.try_index(&manifest(vec![doc, other])).unwrap_err();
+        assert!(
+            matches!(&err, Error::DuplicateAlias { alias, first, second }
+                if alias == "dpop" && first == "rfc9449" && second == "rfc9450"),
+            "{err:?}"
+        );
     }
 
     #[test]

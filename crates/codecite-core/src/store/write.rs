@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use rusqlite::{Transaction, params};
 
 use super::Store;
-use crate::{Keyword, Result, identifier_terms, text_terms};
+use crate::{Keyword, Result, SpecAliases, identifier_terms, text_terms};
 
 /// A source to create or update. A document is matched by its name and
 /// revision, since each pinned version is its own source; any other source
@@ -47,6 +47,9 @@ pub struct DocumentRecord<'a> {
     pub size_bytes: u64,
     /// Whether the file differs from the source's revision.
     pub dirty: bool,
+    /// The file's text, which `read` cites lines of. `None` for a spec,
+    /// whose sections and steps are its text.
+    pub text: Option<&'a str>,
     /// The chunks, in order.
     pub chunks: Vec<ChunkRecord<'a>>,
 }
@@ -149,11 +152,11 @@ impl Store {
     ) -> Result<usize> {
         let tx = self.conn.transaction()?;
         let document_id: i64 = tx.query_row(
-            "INSERT INTO document (source_id, path, language, content_hash, size_bytes, dirty)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "INSERT INTO document (source_id, path, language, content_hash, size_bytes, dirty, text)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT (source_id, path) DO UPDATE SET
                language = excluded.language, content_hash = excluded.content_hash,
-               size_bytes = excluded.size_bytes, dirty = excluded.dirty
+               size_bytes = excluded.size_bytes, dirty = excluded.dirty, text = excluded.text
              RETURNING id",
             params![
                 source_id,
@@ -163,6 +166,7 @@ impl Store {
                 // SQLite integers are i64; no file comes near i64::MAX bytes.
                 i64::try_from(document.size_bytes).unwrap_or(i64::MAX),
                 document.dirty,
+                document.text,
             ],
             |row| row.get(0),
         )?;
@@ -230,6 +234,20 @@ impl Store {
              ON CONFLICT (key) DO UPDATE SET value = excluded.value",
             [max_age_days.to_string()],
         )?;
+        Ok(())
+    }
+
+    /// Replaces the stored document aliases with `aliases`, so `read` can
+    /// resolve `OIDC Core §3.1` without the manifest.
+    pub fn set_aliases(&mut self, aliases: &SpecAliases) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        tx.execute("DELETE FROM alias", [])?;
+        let mut insert = tx.prepare("INSERT INTO alias (alias, name) VALUES (?1, ?2)")?;
+        for (alias, name) in aliases.iter() {
+            insert.execute([alias, name])?;
+        }
+        drop(insert);
+        tx.commit()?;
         Ok(())
     }
 }
@@ -372,6 +390,7 @@ mod tests {
             content_hash: text.as_bytes(),
             size_bytes: text.len() as u64,
             dirty: false,
+            text: Some(text),
             chunks: vec![ChunkRecord {
                 kind: "function",
                 start_line: 1,
@@ -444,6 +463,11 @@ mod tests {
         assert_eq!(matches(&store, "terms:token"), 1);
         let hashes = store.document_hashes(id).unwrap();
         assert_eq!(hashes["src/lib.rs"], text.as_bytes());
+        let stored: String = store
+            .conn
+            .query_row("SELECT text FROM document", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(stored, text);
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -644,6 +668,30 @@ mod tests {
     }
 
     #[test]
+    fn set_aliases_replaces_the_stored_ones() {
+        let (mut store, dir) = store("aliases");
+        let first: SpecAliases = [("OIDC Core", "openid-connect-core-1_0"), ("Core", "x")]
+            .into_iter()
+            .collect();
+        store.set_aliases(&first).unwrap();
+        let second: SpecAliases = [("Core", "openid-connect-core-1_0")].into_iter().collect();
+        store.set_aliases(&second).unwrap();
+        let rows: Vec<(String, String)> = {
+            let mut stmt = store.conn.prepare("SELECT alias, name FROM alias").unwrap();
+            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap()
+        };
+        assert_eq!(
+            rows,
+            [("core".to_owned(), "openid-connect-core-1_0".to_owned())]
+        );
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn spec_chunks_store_their_number_parent_and_strength() {
         let (mut store, dir) = store("spec");
         let sha = "1".repeat(64);
@@ -668,6 +716,7 @@ mod tests {
             content_hash: sha.as_bytes(),
             size_bytes: 10,
             dirty: false,
+            text: None,
             chunks: vec![
                 chunk(
                     "section",
