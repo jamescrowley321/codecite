@@ -13,3 +13,6 @@ workspace = true
 [dependencies]
 rusqlite.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
