@@ -11,6 +11,10 @@ pub enum Error {
     /// Reading or writing a file in the corpus failed.
     #[error("I/O error")]
     Io(#[from] std::io::Error),
+
+    /// A corpus manifest is invalid.
+    #[error(transparent)]
+    Manifest(#[from] crate::ManifestError),
 }
 
 /// `Result` with [`Error`] as the default error type.
