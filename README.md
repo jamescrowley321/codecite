@@ -22,7 +22,8 @@ and refuses an index older than the manifest's `max_age_days` unless
 `--allow-stale`. `codecite read <corpus> <citation>` prints the exact text a
 citation points at under its pinned citation, for the citations search prints
 and the spec forms people write (`RFC 9449 §4.3`, `OIDC Core §3.1.3.7 step 13`,
-a spec URL). The MCP server comes next.
+a spec URL). `corpora/identity.toml` is the first real corpus: identity-model and
+the OAuth and OpenID specs it cites. The MCP server comes next.
 
 ## Planned
 
