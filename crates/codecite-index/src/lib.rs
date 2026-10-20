@@ -34,7 +34,9 @@ mod test_repo;
 mod test_server;
 
 mod spec;
-pub use spec::{SpecDocument, SpecError, SpecFormat, SpecSection, split_spec};
+pub use spec::{
+    SpecDocument, SpecError, SpecFormat, SpecRelations, SpecSection, SpecStep, split_spec,
+};
 
 mod walk;
 pub use walk::{

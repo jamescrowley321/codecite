@@ -7,12 +7,28 @@ use scraper::{CaseSensitivity, ElementRef, Html, Node, Selector};
 
 use super::SpecFormat;
 
-/// The page as lines, and every heading in it in document order.
+/// The page as lines, and every heading and numbered list item in it in
+/// document order.
 pub(super) struct Rendered {
     /// Lines without line endings. Blank lines are empty strings, and two
     /// never follow each other.
     pub(super) lines: Vec<String>,
     pub(super) headings: Vec<Heading>,
+    /// The items of each numbered `<ol>` that is not inside another list.
+    /// An older RFC's steps are plain text, so it has none.
+    pub(super) items: Vec<Item>,
+}
+
+/// An item of a numbered list: a step, if it falls inside a section.
+pub(super) struct Item {
+    /// The number written before the item: its list's `start` plus its
+    /// position.
+    pub(super) number: u64,
+    /// The item's first line in [`Rendered::lines`], counting from 0. It
+    /// may be blank when the item starts with a paragraph.
+    pub(super) start: usize,
+    /// The line after the item's last.
+    pub(super) end: usize,
 }
 
 /// A heading: the start of a section, or of an unnumbered part such as
@@ -57,6 +73,7 @@ pub(super) fn render(html: &Html, format: SpecFormat) -> Rendered {
     let mut out = Writer::default();
     let mut headings = Vec::new();
     let mut lists: Vec<List> = Vec::new();
+    let mut items = Items::default();
     let mut pre_depth = 0usize;
     let mut skipping: Option<NodeId> = None;
 
@@ -75,7 +92,7 @@ pub(super) fn render(html: &Html, format: SpecFormat) -> Rendered {
                             skipping = Some(node.id());
                             continue;
                         }
-                        open(el, &mut out, &mut lists, &mut pre_depth);
+                        open(el, &mut out, &mut lists, &mut items, &mut pre_depth);
                         if let Some(numbered) = heading(format, el) {
                             headings.push(Heading {
                                 line: out.next_line(),
@@ -92,7 +109,7 @@ pub(super) fn render(html: &Html, format: SpecFormat) -> Rendered {
                 } else if skipping.is_none()
                     && let Some(el) = ElementRef::wrap(node)
                 {
-                    close(el, &mut out, &mut lists, &mut pre_depth);
+                    close(el, &mut out, &mut lists, &mut items, &mut pre_depth);
                 }
             }
         }
@@ -105,7 +122,11 @@ pub(super) fn render(html: &Html, format: SpecFormat) -> Rendered {
     while lines.last().is_some_and(String::is_empty) {
         lines.pop();
     }
-    Rendered { lines, headings }
+    Rendered {
+        lines,
+        headings,
+        items: items.done,
+    }
 }
 
 /// Elements whose text is not part of the spec: page furniture, scripts,
@@ -135,7 +156,27 @@ enum List {
     Unordered,
 }
 
-fn open(el: ElementRef, out: &mut Writer, lists: &mut Vec<List>, pre_depth: &mut usize) {
+/// The numbered list items written so far, and the one being written.
+#[derive(Default)]
+struct Items {
+    /// The open item's number and first line.
+    open: Option<(u64, usize)>,
+    done: Vec<Item>,
+}
+
+/// Whether an `<li>` opening or closing now is an item of a numbered list
+/// that sits inside no other list: `lists` holds only its `<ol>`.
+fn is_step_item(lists: &[List]) -> bool {
+    matches!(lists, [List::Ordered { letters: None, .. }])
+}
+
+fn open(
+    el: ElementRef,
+    out: &mut Writer,
+    lists: &mut Vec<List>,
+    items: &mut Items,
+    pre_depth: &mut usize,
+) {
     let e = el.value();
     match e.name() {
         "pre" => {
@@ -161,6 +202,11 @@ fn open(el: ElementRef, out: &mut Writer, lists: &mut Vec<List>, pre_depth: &mut
         }
         "li" => {
             out.end_line();
+            if is_step_item(lists)
+                && let Some(List::Ordered { next, .. }) = lists.last()
+            {
+                items.open = Some((*next, out.next_line()));
+            }
             match lists.last_mut() {
                 Some(List::Ordered { next, letters }) => {
                     let label = match *letters {
@@ -183,7 +229,13 @@ fn open(el: ElementRef, out: &mut Writer, lists: &mut Vec<List>, pre_depth: &mut
     }
 }
 
-fn close(el: ElementRef, out: &mut Writer, lists: &mut Vec<List>, pre_depth: &mut usize) {
+fn close(
+    el: ElementRef,
+    out: &mut Writer,
+    lists: &mut Vec<List>,
+    items: &mut Items,
+    pre_depth: &mut usize,
+) {
     match el.value().name() {
         "pre" => {
             *pre_depth = pre_depth.saturating_sub(1);
@@ -198,6 +250,15 @@ fn close(el: ElementRef, out: &mut Writer, lists: &mut Vec<List>, pre_depth: &mu
             // it can't land on the text after the list.
             out.label = None;
             out.end_line();
+            if is_step_item(lists)
+                && let Some((number, start)) = items.open.take()
+            {
+                items.done.push(Item {
+                    number,
+                    start,
+                    end: out.next_line(),
+                });
+            }
         }
         "dt" | "dd" | "tr" => out.end_line(),
         name if is_block(name) => out.end_paragraph(),
