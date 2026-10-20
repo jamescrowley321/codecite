@@ -8,26 +8,26 @@ server. Every result cites where it came from — `repo@sha:path#L10-L42` — so
 agent builds on real implementations and spec text instead of recalling them
 from memory.
 
-## Status
+```mermaid
+flowchart LR
+  M["corpus manifest<br/>code + specs, pinned"] -->|codecite index| DB[("one SQLite file<br/>per corpus")]
+  DB -->|search · read · corpora| CLI["terminal"]
+  DB -->|codecite mcp| A["AI agent"]
+```
 
-Pre-alpha. `codecite index <corpus>` indexes the local git checkouts a corpus
-manifest (`corpora/<corpus>.toml`) lists into `~/.local/share/codecite/<corpus>.db`
-on Linux, and the git repositories it lists at their pinned commits, from a
-partial clone kept in `~/.cache/codecite/repos`, and downloads the documents it lists, checking each against its
-pinned sha256 and caching it in `~/.cache/codecite/documents`, so later runs
-work offline, then indexes their sections and numbered steps.
-`codecite index <corpus> --print-hashes` prints each document's current hash,
-for pinning. `codecite search <corpus> "<query>"` prints ranked, cited results
-(`--json` for JSON; `--language`, `--path <glob>` and `--limit` filter them),
-and refuses an index older than the manifest's `max_age_days` unless
-`--allow-stale`. `codecite read <corpus> <citation>` prints the exact text a
-citation points at under its pinned citation, for the citations search prints
-and the spec forms people write (`RFC 9449 §4.3`, `OIDC Core §3.1.3.7 step 13`,
-a spec URL). `codecite corpora` lists the indexed corpora as JSON, with each
-one's age, size, source count and staleness. `codecite mcp` runs the MCP server
-over stdio; its one tool so far, `corpora`, returns the same JSON.
-`corpora/identity.toml` is the first real corpus: identity-model and the OAuth
-and OpenID specs it cites.
+## What it does
+
+| Command | What you get |
+| --- | --- |
+| `codecite index <corpus>` | Indexes the local checkouts, git repositories (at pinned commits) and spec documents (pinned by sha256) that `corpora/<corpus>.toml` lists. Code splits at definitions with tree-sitter (Rust, Python, TypeScript, JavaScript, Go, C#); RFC and OpenID HTML splits into numbered sections and steps. Later runs work offline and rewrite only what changed |
+| `codecite search <corpus> "<query>"` | Ranked results, each with its citation, license class and when it was indexed. Identifiers match however they are written (`validate token` finds `validateToken`) |
+| `codecite read <corpus> <citation>` | The exact text a citation points at, under its pinned citation. Accepts the canonical forms search prints and the ones people write: `RFC 9449 §4.3`, `OIDC Core §3.1.3.7 step 13`, a spec URL |
+| `codecite corpora` | The indexed corpora as JSON, with each one's age, size, source count and staleness |
+| `codecite mcp` | An MCP server over stdio. Each tool returns the same JSON as the command of the same name; `tools/list` names the ones this build serves |
+
+A citation that doesn't resolve to exactly one span is an error listing the
+candidates, never a guess, and an index older than its manifest's
+`max_age_days` is refused unless you pass `--allow-stale`.
 
 ## Install
 
@@ -94,10 +94,25 @@ $ codecite corpora
 {"corpora":[{"age_days":0.0,"corpus":"self","indexed_at":"2026-10-20T20:49:36Z","max_age_days":30,"size_bytes":7655424,"sources":1,"stale":false}]}
 ```
 
-## Planned
+To give an agent the same answers, register the MCP server, for example with
+Claude Code:
 
-- Code-aware full-text search (BM25 over split identifiers), with optional
-  local embeddings.
+```sh
+claude mcp add codecite -- codecite mcp
+```
+
+## Documentation
+
+- [Using codecite](docs/usage.md): manifests, indexing, search, citation
+  forms, and connecting an agent.
+- [Design](docs/design.md): goals, architecture and data model diagrams,
+  ranking, licensing, security and the evaluation plan.
+- [Milestones](https://github.com/jamescrowley321/codecite/milestones): the
+  work, in order.
+
+## Where it is going
+
+- Optional local embeddings, merged with BM25 ranking.
 - A code graph — definitions, references, callers, callees, impact — merged from
   tree-sitter, SCIP, LSP, CodeGraph and Graphify, with every edge tagged by the
   provider that produced it and how far to trust it.

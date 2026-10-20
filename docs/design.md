@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-10-17
+last_verified: 2026-10-20
 ---
 
 # codecite — design
@@ -70,6 +70,57 @@ flowchart LR
 ```
 
 The workspace has five crates: `codecite-core` (schema and query engine), `codecite-index` (pipeline and providers), `codecite-lsp`, `codecite-mcp`, and the `codecite` binary that ties them together.
+
+The crates depend on core and never on each other; only the binary sees them all.
+
+```mermaid
+flowchart TD
+  bin["codecite<br/>CLI: clap subcommands"] --> index["codecite-index<br/>manifest · fetch · clone · walk · chunk · spec"]
+  bin --> mcp["codecite-mcp<br/>rmcp server on stdio"]
+  bin --> lsp["codecite-lsp<br/>live provider"]
+  bin --> core
+  index --> core["codecite-core<br/>store · migrations · search · read · corpora<br/>citations · terms · requirement keywords"]
+  mcp --> core
+  lsp --> core
+  core --> sqlite[("rusqlite<br/>bundled SQLite + FTS5")]
+```
+
+An index run reads the manifest, fetches every pinned input before it writes anything, then chunks and writes one document per transaction.
+
+```mermaid
+flowchart TD
+  manifest["Manifest<br/>corpora/#lt;corpus#gt;.toml"] --> docs & gits & locals
+  docs["document sources"] --> fetcher{"Fetcher:<br/>sha256 in cache?"}
+  fetcher -- yes --> cached["read ~/.cache/codecite/documents/#lt;sha256#gt;"]
+  fetcher -- no --> get["HTTP GET, ≤16 MiB, 60 s<br/>hash while streaming"] --> pin{"matches pin?"}
+  pin -- no --> stop["stop: Mismatch names both hashes<br/>store untouched"]
+  pin -- yes --> cached
+  gits["git sources"] --> clones["Clones: partial clone per URL<br/>fetch pinned commit, checkout, clean"]
+  clones --> walk
+  locals["local sources"] --> walk["Walk: git ls-files + include/exclude<br/>skip deny-list, symlink, binary, #gt;1 MiB"]
+  walk --> chunker["Chunker"]
+  chunker --> ts["tree-sitter definitions<br/>Rust · Python · TS/JS · Go · C#"]
+  chunker --> md["Markdown heading sections"]
+  chunker --> win["60-line windows"]
+  cached --> spec["Spec: render HTML to lines<br/>numbered sections + steps<br/>BCP 14 keywords · RFC relations"]
+  ts & md & win & spec --> terms["Terms: split identifiers"]
+  terms --> write["Store write<br/>one transaction per document<br/>unchanged hash → skip"]
+  write --> db[("#lt;corpus#gt;.db")]
+```
+
+Queries open the corpus read-only, refuse a stale or newer-schema file, and return results that the CLI prints and the MCP tools return as the same JSON.
+
+```mermaid
+flowchart LR
+  subgraph clients
+    cli["codecite search / read / corpora"]
+    agent["agent → codecite mcp<br/>(tools on tokio's blocking pool)"]
+  end
+  cli & agent --> open["Store::open_corpus<br/>read-only · schema check · freshness"]
+  open --> search["search: terms → quoted OR FTS5<br/>bm25 weights symbol 10 · path 5 · body 1<br/>exact symbol first · current versions"]
+  open --> read["read: written form (aliases) or canonical<br/>→ version → section/step or lines"]
+  search & read --> out["result with citation, license class, indexed_at<br/>or a typed error with candidates"]
+```
 
 `codecite-mcp` serves MCP over stdio with `rmcp` on a single-threaded `tokio` runtime. Its tools are `rmcp` `#[tool]` methods: an input schema is generated from the tool's parameter type and an output schema from its result type (`schemars`), and the result types are the ones `codecite-core` returns to the CLI, so both print the same JSON. A tool runs its SQLite work on `tokio`'s blocking pool. stdout carries only MCP messages; anything else goes to stderr. A failed operation is a tool result with `isError` and the error's message and causes, so the agent can read it; an unknown tool or malformed request is a JSON-RPC error.
 
@@ -148,6 +199,66 @@ CREATE INDEX edge_evidence ON edge(evidence_doc);
 CREATE TRIGGER chunk_fts_delete AFTER DELETE ON chunk BEGIN
   DELETE FROM chunk_fts WHERE rowid = old.id;                       -- a contentless FTS table can't be a foreign key's child
 END;
+```
+
+How the tables relate, with the columns that carry each relation:
+
+```mermaid
+erDiagram
+  source ||--o{ document : "holds"
+  document ||--o{ chunk : "splits into"
+  document ||--o{ symbol : "defines"
+  chunk |o--o{ chunk : "parent_id (section → step)"
+  symbol |o--o{ chunk : "symbol_id"
+  chunk ||--|| chunk_fts : "rowid"
+  symbol ||--o{ edge : "src / dst"
+  document |o--o{ edge : "evidence_doc"
+  alias }o--|| source : "name (document)"
+  source {
+    int id PK
+    text name
+    text kind "local | git | document"
+    text revision "commit or sha256"
+    int is_current
+    text license_class
+  }
+  document {
+    int id PK
+    int source_id FK
+    text path
+    blob content_hash
+    int dirty
+    text text "code files only"
+  }
+  chunk {
+    int id PK
+    int document_id FK
+    int start_line
+    int end_line
+    text kind "function | class | section | step | window"
+    text number
+    text strength "MUST,SHOULD"
+  }
+  symbol {
+    text id PK "SCIP symbol string"
+    text display_name
+  }
+  edge {
+    text src
+    text dst
+    text kind
+    text provider
+    int confidence
+  }
+  alias {
+    text alias PK
+    text name
+  }
+  chunk_fts {
+    text symbol
+    text path
+    text terms
+  }
 ```
 
 - **Document versions** are separate sources: each pinned version of a document is its own `source` row, with the document's name, its `sha256` as `revision`, and `is_current`, `obsoleted_by` and `updated_by` from the manifest. A version is unique by name and revision, any other source by name. Results name a version as citations do, `rfc9449@sha256:1a2b3c4d5e6f`.
