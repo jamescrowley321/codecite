@@ -1,5 +1,5 @@
-//! Indexing a corpus: walk each local source, chunk the files whose content
-//! changed, split each new document version into its sections and steps,
+//! Indexing a corpus: walk each local source and each git source's clone at
+//! its pinned commit, chunk the files whose content changed, split each new document version into its sections and steps,
 //! and write them into the store, one transaction per document.
 
 use std::collections::{BTreeMap, HashSet};
@@ -12,8 +12,9 @@ use codecite_core::{ChunkRecord, DocumentRecord, SourceRecord, SpecAliases, Stor
 use sha2::{Digest, Sha256};
 
 use crate::{
-    Chunker, DocumentSource, Error, Fetcher, Language, LicenseClass, LocalSource, LocalTree,
-    Manifest, Result, SkipReason, Source, SpecDocument, WalkOptions, split_spec, walk_local,
+    Checkout, Chunker, Clones, DocumentSource, Error, Fetcher, GitSource, Language, LicenseClass,
+    LocalSource, LocalTree, Manifest, Result, SkipReason, Source, SpecDocument, WalkOptions,
+    split_spec, walk_local,
 };
 
 /// What an index run did.
@@ -41,24 +42,29 @@ pub struct IndexSummary {
     pub elapsed: Duration,
 }
 
-/// Fetches every document source in `manifest` and indexes it and every
-/// local source into `store`.
+/// Fetches every document source and git source in `manifest` and indexes
+/// them and every local source into `store`.
 ///
 /// Documents are fetched first, from `fetcher`'s cache when they are there,
 /// so a document whose bytes don't match its pinned `sha256` stops the run
-/// before anything is written. Each pinned version of a document is its own
+/// before anything is written. So is each git source's pinned commit, into
+/// its clone in `clones`, so a commit the repository lacks stops the run
+/// too. A git source is then checked out at its commit and walked like a
+/// local checkout, and its files are never `dirty`. Each pinned version of a document is its own
 /// source, split into section and step chunks when it is first indexed.
 ///
 /// A file whose content hash matches the stored one is not rewritten, and a
-/// stored file that is gone, or is now skipped, is deleted. Git sources are
-/// reported in [`IndexSummary::skipped_sources`], as are sources marked
-/// `excluded`. Every source the run did not index, a document version no
+/// stored file that is gone, or is now skipped, is deleted, so re-indexing
+/// a git source at a new commit rewrites only the files that changed between
+/// the two commits. Sources marked `excluded` are reported in
+/// [`IndexSummary::skipped_sources`]. Every source the run did not index, a document version no
 /// longer pinned included, is then deleted from the store.
 pub fn index_corpus(
     store: &mut Store,
     manifest: &Manifest,
     options: &WalkOptions,
     fetcher: &Fetcher,
+    clones: &Clones,
 ) -> Result<IndexSummary> {
     let started = Instant::now();
     let mut summary = IndexSummary::default();
@@ -76,13 +82,43 @@ pub fn index_corpus(
             documents.push((doc, fetched.bytes));
         }
     }
+    for source in &manifest.sources {
+        if let Source::Git(git) = source
+            && git.license_class != LicenseClass::Excluded
+        {
+            clones.fetch(git)?;
+        }
+    }
     let aliases = document_aliases(manifest)?;
     let mut chunker = Chunker::new()?;
     let mut indexed: Vec<String> = Vec::new();
     let mut keep: Vec<i64> = Vec::new();
     for source in &manifest.sources {
-        let local = match source {
-            Source::Local(local) if local.license_class != LicenseClass::Excluded => local,
+        let walked = match source {
+            Source::Local(local) if local.license_class != LicenseClass::Excluded => {
+                let tree = walk_local(local, options)?;
+                Walked {
+                    name: source_name(local, &tree),
+                    kind: "local",
+                    url: tree.root.to_string_lossy().into_owned(),
+                    license: local.license.as_deref(),
+                    license_class: local.license_class,
+                    tree,
+                    checkout: None,
+                }
+            }
+            Source::Git(git) if git.license_class != LicenseClass::Excluded => {
+                let (tree, checkout) = walk_git(clones, git, options)?;
+                Walked {
+                    name: git_name(git),
+                    kind: "git",
+                    url: git.url.clone(),
+                    license: git.license.as_deref(),
+                    license_class: git.license_class,
+                    tree,
+                    checkout: Some(checkout),
+                }
+            }
             Source::Local(local) => {
                 let name = local
                     .name
@@ -92,10 +128,9 @@ pub fn index_corpus(
                 continue;
             }
             Source::Git(git) => {
-                let name = git.name.clone().unwrap_or_else(|| git.url.clone());
                 summary
                     .skipped_sources
-                    .push((name, "git sources are not indexed yet"));
+                    .push((git_name(git), "use = \"excluded\""));
                 continue;
             }
             Source::Document(doc) => {
@@ -107,20 +142,11 @@ pub fn index_corpus(
                 continue;
             }
         };
-        let tree = walk_local(local, options)?;
-        let name = source_name(local, &tree);
-        if indexed.contains(&name) {
-            return Err(Error::DuplicateSource { name });
+        if indexed.contains(&walked.name) {
+            return Err(Error::DuplicateSource { name: walked.name });
         }
-        keep.push(index_local(
-            store,
-            &mut chunker,
-            local,
-            &name,
-            &tree,
-            &mut summary,
-        )?);
-        indexed.push(name);
+        keep.push(index_tree(store, &mut chunker, &walked, &mut summary)?);
+        indexed.push(walked.name);
     }
     for (doc, bytes) in &documents {
         // A document's versions share its name, but no other source may.
@@ -174,23 +200,77 @@ fn source_name(local: &LocalSource, tree: &LocalTree) -> String {
     })
 }
 
-/// Writes one walked local source into the store and returns its ID.
-fn index_local(
+/// The manifest's `name`, else the URL's last path segment without `.git`:
+/// `identity-model` for `https://github.com/acme/identity-model.git`.
+fn git_name(git: &GitSource) -> String {
+    git.name.clone().unwrap_or_else(|| {
+        let url = git.url.trim_end_matches('/');
+        let last = url.rsplit(['/', ':']).next().unwrap_or(url);
+        let stem = last.strip_suffix(".git").unwrap_or(last);
+        if stem.is_empty() { "git" } else { stem }.to_owned()
+    })
+}
+
+/// Checks a git source out at its pinned commit and walks the clone. The
+/// work tree is exactly the commit, so no file is `dirty`. The returned
+/// [`Checkout`] holds the clone's lock; files are read from the tree while
+/// it lives.
+fn walk_git(
+    clones: &Clones,
+    git: &GitSource,
+    options: &WalkOptions,
+) -> Result<(LocalTree, Checkout)> {
+    let locked = clones.checkout(git)?;
+    let checkout = LocalSource {
+        name: git.name.clone(),
+        path: locked.path().to_owned(),
+        license: git.license.clone(),
+        license_class: git.license_class,
+        include: git.include.clone(),
+        exclude: git.exclude.clone(),
+    };
+    let mut tree = walk_local(&checkout, options)?;
+    for file in &mut tree.files {
+        file.dirty = false;
+    }
+    Ok((tree, locked))
+}
+
+/// A local or git source, walked and ready to write.
+struct Walked<'a> {
+    /// The name results cite.
+    name: String,
+    /// `local` or `git`.
+    kind: &'static str,
+    /// The checkout's root for a local source, the repository URL for a git
+    /// source.
+    url: String,
+    license: Option<&'a str>,
+    license_class: LicenseClass,
+    /// The walk. Its HEAD is the commit results cite: a local checkout's
+    /// HEAD, or a git source's pinned commit.
+    tree: LocalTree,
+    /// A git source's clone, locked until every file is read, so another
+    /// run can't check out a different commit under this one.
+    #[expect(dead_code, reason = "held for its lock, never read")]
+    checkout: Option<Checkout>,
+}
+
+/// Writes one walked source into the store and returns its ID.
+fn index_tree(
     store: &mut Store,
     chunker: &mut Chunker,
-    local: &LocalSource,
-    name: &str,
-    tree: &LocalTree,
+    walked: &Walked<'_>,
     summary: &mut IndexSummary,
 ) -> Result<i64> {
-    let url = tree.root.to_string_lossy();
+    let (name, tree) = (walked.name.as_str(), &walked.tree);
     let source_id = store.upsert_source(&SourceRecord {
         name,
-        kind: "local",
-        url: &url,
+        kind: walked.kind,
+        url: &walked.url,
         revision: &tree.head,
-        license_spdx: local.license.as_deref(),
-        license_class: local.license_class.as_str(),
+        license_spdx: walked.license,
+        license_class: walked.license_class.as_str(),
         is_current: true,
         obsoleted_by: None,
         updated_by: None,
@@ -426,7 +506,7 @@ impl fmt::Display for IndexSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_repo::Repo;
+    use crate::test_repo::{Remote, Repo};
     use crate::test_server::Server;
     use rusqlite::Connection;
     use std::path::PathBuf;
@@ -485,6 +565,30 @@ mod tests {
         source
     }
 
+    fn git(remote: &Remote, commit: &str) -> Source {
+        Source::Git(GitSource {
+            name: None,
+            url: remote.url(),
+            commit: commit.into(),
+            license: Some("Apache-2.0".into()),
+            license_class: LicenseClass::Adapt,
+            include: Vec::new(),
+            exclude: Vec::new(),
+        })
+    }
+
+    /// Each document's path and `dirty` flag, by path.
+    fn dirty(corpus: &Corpus) -> Vec<(String, bool)> {
+        let conn = corpus.sql();
+        let mut stmt = conn
+            .prepare("SELECT path, dirty FROM document ORDER BY path")
+            .unwrap();
+        stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    }
+
     fn manifest(sources: Vec<Source>) -> Manifest {
         Manifest {
             name: "test".into(),
@@ -529,7 +633,14 @@ mod tests {
         fn try_index(&self, manifest: &Manifest) -> Result<IndexSummary> {
             let mut store = Store::open_read_write(&self.path()).unwrap();
             let fetcher = Fetcher::new(self.dir.path().join("cache"));
-            index_corpus(&mut store, manifest, &WalkOptions::default(), &fetcher)
+            let clones = Clones::new(self.dir.path().join("repos"));
+            index_corpus(
+                &mut store,
+                manifest,
+                &WalkOptions::default(),
+                &fetcher,
+                &clones,
+            )
         }
 
         fn sql(&self) -> Connection {
@@ -642,18 +753,8 @@ mod tests {
         assert_eq!(after["src/lib.rs"].len(), 1);
         assert_eq!(corpus.matches("symbol:validate"), 0);
         assert_eq!(corpus.matches("symbol:refresh"), 1);
-        let dirty: Vec<(String, bool)> = {
-            let conn = corpus.sql();
-            let mut stmt = conn
-                .prepare("SELECT path, dirty FROM document ORDER BY path")
-                .unwrap();
-            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
-                .unwrap()
-                .collect::<rusqlite::Result<_>>()
-                .unwrap()
-        };
         assert_eq!(
-            dirty,
+            dirty(&corpus),
             [
                 ("README.md".to_owned(), false),
                 ("notes.txt".to_owned(), false),
@@ -742,6 +843,140 @@ mod tests {
             matches!(&err, Error::DuplicateSource { name } if name == "app"),
             "{err:?}"
         );
+    }
+
+    #[test]
+    fn indexes_a_git_source_at_its_pinned_commit() {
+        let repo = fixture();
+        let remote = Remote::new();
+        let commit = repo.push(&remote, "main");
+        // The checkout the remote was pushed from has moved on; the pin hasn't.
+        repo.write("src/lib.rs", "pub fn unpushed() {}\n");
+        repo.commit_all(&["src/lib.rs"]);
+        let corpus = Corpus::new();
+        let summary = corpus.index(&manifest(vec![git(&remote, &commit)]));
+
+        assert_eq!((summary.written, summary.chunks), (3, 4));
+        assert!(summary.skipped_sources.is_empty());
+        let source: (String, String, String, String, String) = corpus
+            .sql()
+            .query_row(
+                "SELECT name, kind, url, revision, license_spdx FROM source",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .unwrap();
+        // The name is the URL's last segment: the remote's directory name.
+        let dir = remote.url().rsplit('/').next().unwrap().to_owned();
+        assert_eq!(
+            source,
+            (dir, "git".into(), remote.url(), commit, "Apache-2.0".into())
+        );
+        assert_eq!(corpus.matches("symbol:validate"), 1);
+        assert_eq!(corpus.matches("symbol:unpushed"), 0);
+        assert!(dirty(&corpus).iter().all(|(_, dirty)| !dirty));
+    }
+
+    #[test]
+    fn reindexing_a_git_source_at_a_new_commit_rewrites_only_what_changed() {
+        let repo = fixture();
+        let remote = Remote::new();
+        let first = repo.push(&remote, "main");
+        let corpus = Corpus::new();
+        corpus.index(&manifest(vec![git(&remote, &first)]));
+        let before = corpus.chunk_ids();
+
+        repo.write("src/lib.rs", "pub fn refresh_session() {}\n");
+        repo.git(&["rm", "-q", "notes.txt"]);
+        repo.commit_all(&["src/lib.rs"]);
+        let second = repo.push(&remote, "main");
+        let summary = corpus.index(&manifest(vec![git(&remote, &second)]));
+
+        assert_eq!(
+            (summary.written, summary.unchanged, summary.removed),
+            (1, 1, 1)
+        );
+        let after = corpus.chunk_ids();
+        assert_eq!(after["README.md"], before["README.md"]);
+        assert!(!after.contains_key("notes.txt"));
+        assert_eq!(corpus.matches("symbol:refresh"), 1);
+        assert_eq!(corpus.matches("symbol:validate"), 0);
+        let revision: String = corpus
+            .sql()
+            .query_row("SELECT revision FROM source", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(revision, second);
+        assert!(dirty(&corpus).iter().all(|(_, dirty)| !dirty));
+
+        // Pinning the first commit again brings its files back.
+        let summary = corpus.index(&manifest(vec![git(&remote, &first)]));
+        assert_eq!(
+            (summary.written, summary.unchanged, summary.removed),
+            (2, 1, 0)
+        );
+    }
+
+    #[test]
+    fn a_missing_commit_stops_the_run_before_any_write() {
+        let repo = fixture();
+        let remote = Remote::new();
+        repo.push(&remote, "main");
+        let corpus = Corpus::new();
+        let missing = "0123456789abcdef0123456789abcdef01234567";
+        let manifest = manifest(vec![local(&repo, Some("app")), git(&remote, missing)]);
+
+        let err = corpus.try_index(&manifest).unwrap_err();
+        assert!(
+            matches!(&err, Error::Clone(crate::CloneError::CommitNotFound { commit, .. })
+                if commit == missing),
+            "{err:?}"
+        );
+        let sources: i64 = corpus
+            .sql()
+            .query_row("SELECT count(*) FROM source", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(sources, 0);
+    }
+
+    #[test]
+    fn git_sources_are_named_by_url_and_excluded_ones_are_not_cloned() {
+        let remote = Remote::new();
+        let mut source = git(&remote, "0123456789abcdef0123456789abcdef01234567");
+        let Source::Git(g) = &mut source else {
+            unreachable!()
+        };
+        for (url, name) in [
+            (
+                "https://github.com/acme/identity-model.git",
+                "identity-model",
+            ),
+            ("https://github.com/acme/identity-model/", "identity-model"),
+            ("git@github.com:acme/tools.git", "tools"),
+            ("file:///srv/git/app", "app"),
+            ("/", "git"),
+        ] {
+            g.url = url.into();
+            assert_eq!(git_name(g), name, "{url}");
+        }
+        g.name = Some("client".into());
+        assert_eq!(git_name(g), "client");
+
+        g.license_class = LicenseClass::Excluded;
+        let corpus = Corpus::new();
+        let summary = corpus.index(&manifest(vec![source]));
+        assert_eq!(
+            summary.skipped_sources,
+            [("client".to_owned(), "use = \"excluded\"")]
+        );
+        assert!(!corpus.dir.path().join("repos").exists());
     }
 
     #[test]
@@ -1018,7 +1253,7 @@ mod tests {
             downloaded: 1,
             cached: 2,
             skipped: BTreeMap::from([(SkipReason::Ignored, 3), (SkipReason::Binary, 1)]),
-            skipped_sources: vec![("client".into(), "git sources are not indexed yet")],
+            skipped_sources: vec![("client".into(), "use = \"excluded\"")],
             removed_sources: vec!["old".into()],
             elapsed: Duration::from_millis(1250),
         };
@@ -1028,7 +1263,7 @@ mod tests {
              chunks: 9 written\n\
              fetched: 1 downloaded, 2 from the cache\n\
              skipped: 3 ignored, 1 binary\n\
-             source client not indexed: git sources are not indexed yet\n\
+             source client not indexed: use = \"excluded\"\n\
              source old removed: the run no longer indexes it\n\
              elapsed: 1.25s"
         );

@@ -8,7 +8,7 @@ use clap::{Parser, Subcommand};
 use codecite_core::{
     DEFAULT_MAX_LINES, ReadOptions, ReadResult, SearchQuery, SearchResult, Store, is_corpus_name,
 };
-use codecite_index::{Fetcher, LicenseClass, Manifest, Source, WalkOptions, index_corpus};
+use codecite_index::{Clones, Fetcher, LicenseClass, Manifest, Source, WalkOptions, index_corpus};
 
 /// Command-line arguments.
 #[derive(Parser)]
@@ -144,8 +144,15 @@ fn index(corpus: &str, manifest: Option<PathBuf>, print_hashes: bool) -> anyhow:
     }
     let mut store = Store::open_read_write(&path)
         .with_context(|| format!("opening corpus file {}", path.display()))?;
-    let summary = index_corpus(&mut store, &manifest, &WalkOptions::default(), &fetcher)
-        .with_context(|| format!("indexing corpus `{corpus}`"))?;
+    let clones = Clones::new(dirs.cache_dir().join("repos"));
+    let summary = index_corpus(
+        &mut store,
+        &manifest,
+        &WalkOptions::default(),
+        &fetcher,
+        &clones,
+    )
+    .with_context(|| format!("indexing corpus `{corpus}`"))?;
     println!("indexed corpus `{corpus}` into {}", path.display());
     println!("{summary}");
     Ok(())
@@ -296,8 +303,9 @@ fn print_document_hashes(manifest: &Manifest, fetcher: &Fetcher) -> anyhow::Resu
 }
 
 /// Where codecite keeps its files, never in a repository: corpus files in
-/// the data directory (`~/.local/share/codecite/<corpus>.db` on Linux) and
-/// fetched documents in the cache directory (`~/.cache/codecite/documents`).
+/// the data directory (`~/.local/share/codecite/<corpus>.db` on Linux), and
+/// fetched documents and git sources' clones in the cache directory
+/// (`~/.cache/codecite/documents` and `~/.cache/codecite/repos`).
 fn project_dirs() -> anyhow::Result<directories::ProjectDirs> {
     directories::ProjectDirs::from("", "", "codecite")
         .context("no home directory to keep corpus files in")

@@ -4,15 +4,20 @@
 //! local checkouts, listing the files git sees and reporting every file it
 //! skips, and splits files into chunks: code at definitions, Markdown at
 //! headings, anything else into 60-line windows. [`Fetcher`] downloads document
-//! sources and checks them against their pinned sha256, caching them by hash.
-//! [`index_corpus`] fetches a corpus's documents, runs the other steps over
-//! its local sources, splits each document into spec sections and steps,
-//! and writes the result into its store.
+//! sources and checks them against their pinned sha256, caching them by hash,
+//! and [`Clones`] keeps a partial clone of each git source's repository.
+//! [`index_corpus`] fetches a corpus's documents and pinned commits, runs the
+//! other steps over its local sources and git sources' checkouts, splits
+//! each document into spec sections and steps, and writes the result into
+//! its store.
 
 mod chunk;
 pub use chunk::{
     Chunk, ChunkKind, Chunker, ChunkerError, Language, Symbol, SymbolKind, WINDOW_LINES,
 };
+
+mod clone;
+pub use clone::{Checkout, CloneError, Clones};
 
 mod error;
 pub use error::{Error, Result};
