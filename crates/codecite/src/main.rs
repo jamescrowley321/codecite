@@ -137,12 +137,27 @@ fn search(corpus: &str, query: &SearchQuery<'_>, json: bool) -> anyhow::Result<(
     let dirs = project_dirs()?;
     let store = Store::open_corpus(dirs.data_dir(), corpus)?;
     let results = store.search(query)?;
-    if json {
-        println!("{}", serde_json::to_string_pretty(&results)?);
-    } else {
-        print!("{}", human(&results));
+    match write_results(&mut std::io::stdout().lock(), &results, json) {
+        // A reader that stops early, like `| head`, is not a failure.
+        Err(err) if err.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        written => written.context("writing the results"),
     }
-    Ok(())
+}
+
+/// Writes the results to `out`. Unlike `println!`, which panics when stdout
+/// is closed, a failed write comes back as an error.
+fn write_results(
+    out: &mut impl std::io::Write,
+    results: &[SearchResult],
+    json: bool,
+) -> std::io::Result<()> {
+    if json {
+        serde_json::to_writer_pretty(&mut *out, results)?;
+        writeln!(out)?;
+    } else {
+        out.write_all(human(results).as_bytes())?;
+    }
+    out.flush()
 }
 
 /// How many lines of each snippet the human form shows.
@@ -159,10 +174,10 @@ fn human(results: &[SearchResult]) -> String {
     let mut out = String::new();
     for (rank, r) in (1..).zip(results) {
         // `write!` to a `String` can't fail.
-        let _ = writeln!(out, "{rank}. {}", r.citation);
-        let mut about = r.kind.clone();
+        let _ = writeln!(out, "{rank}. {}", escape_controls(&r.citation));
+        let mut about = escape_controls(&r.kind);
         if let Some(symbol) = &r.symbol {
-            let _ = write!(about, " {symbol}");
+            let _ = write!(about, " {}", escape_controls(symbol));
         }
         let _ = write!(
             about,
@@ -174,10 +189,25 @@ fn human(results: &[SearchResult]) -> String {
         }
         let _ = writeln!(out, "   {about}");
         for line in r.snippet.lines().take(HUMAN_SNIPPET_LINES) {
-            let _ = writeln!(out, "     {line}");
+            let _ = writeln!(out, "     {}", escape_controls(line));
         }
     }
     out
+}
+
+/// Indexed text is untrusted: an escape sequence in it could drive the
+/// terminal, such as OSC 52 writing to the clipboard. Control characters
+/// other than tab print as Rust escapes like `\u{1b}` instead.
+fn escape_controls(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_control() && c != '\t' {
+                c.escape_unicode().to_string()
+            } else {
+                c.to_string()
+            }
+        })
+        .collect()
 }
 
 /// `codecite index --print-hashes`: downloads each document source that is
@@ -338,5 +368,57 @@ mod tests {
 "
         );
         assert_eq!(human(&[]), "no results\n");
+    }
+
+    /// A writer whose every write fails, like stdout after its reader has
+    /// gone away.
+    struct ClosedPipe;
+
+    impl std::io::Write for ClosedPipe {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::ErrorKind::BrokenPipe.into())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_closed_stdout_is_an_error_not_a_panic() {
+        for json in [true, false] {
+            let err = write_results(&mut ClosedPipe, &[], json).unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::BrokenPipe);
+        }
+        let mut out = Vec::new();
+        write_results(&mut out, &[], false).unwrap();
+        assert_eq!(out, b"no results\n");
+        let mut out = Vec::new();
+        write_results(&mut out, &[], true).unwrap();
+        assert_eq!(out, b"[]\n");
+    }
+
+    #[test]
+    fn the_human_form_escapes_control_characters() {
+        let result = SearchResult {
+            citation: "app@0123456:a\u{1b}.md#L1-L1".into(),
+            kind: "section".into(),
+            symbol: Some("Title\u{7}".into()),
+            score: 1.0,
+            license_class: "adapt".into(),
+            indexed_at: "2026-10-20T06:00:00Z".into(),
+            dirty: None,
+            snippet: "# Title\u{1b}]52;c;ZWNobyBoaQ==\u{7}\tend".into(),
+        };
+        let out = human(&[result]);
+        assert!(
+            !out.chars()
+                .any(|c| c.is_control() && c != '\n' && c != '\t')
+        );
+        assert!(out.contains("a\\u{1b}.md"), "{out}");
+        assert!(out.contains("Title\\u{7}"), "{out}");
+        assert!(
+            out.contains("# Title\\u{1b}]52;c;ZWNobyBoaQ==\\u{7}\tend"),
+            "{out}"
+        );
     }
 }
