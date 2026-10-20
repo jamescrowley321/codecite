@@ -32,7 +32,7 @@ The parked list `~/repos/codecite/.claude/ralph-parked.md` holds issues the loop
 2. Commit any work in the worktree, then `git -C ~/repos/codecite worktree remove --force <worktree>`. The branch stays local and unpushed.
 3. Append the row to the parked list (create it with its header row if missing). Delete the task state. End your response.
 
-Park, don't block, for a design question the issue and `docs/design.md` cannot settle, and for Critical findings still open after review-fix. Never park an issue whose PR is already open: by then it is in the ledger and its children build on it.
+Park, don't block, for a design question the issue and `docs/design.md` cannot settle. Never park an issue whose PR is already open: by then it is in the ledger and its children build on it.
 
 ## Routing
 
@@ -42,7 +42,7 @@ Read the task state.
 - **phase is `blocked`** → do nothing; output `<promise>LOOP_COMPLETE</promise>`. The owner answers `## Blocked` and resets the phase.
 - **Any other phase** → read and execute ONLY that phase file.
 
-Phase order: `setup → plan → implement → review → review-fix → pr → ci → complete`
+Phase order: `setup → plan → implement → pr → ci → review → review-fix → complete`. review-fix loops back to `ci` for each re-review.
 
 Task state for a new issue:
 ```
@@ -53,6 +53,10 @@ base_branch: <tip of stack, or main>
 worktree: ~/repos/codecite-worktrees/<branch with / replaced by ->
 phase: setup
 ```
+
+## Review
+
+The blind peer review runs in CI (`.github/workflows/claude.yml`): opening a PR starts it, and the comment `@claude review this PR` re-runs it. The loop waits for its verdict on the PR, answers every round in a PR comment, and falls back to running the `blind-peer-review:check` skill locally only when CI does not review. The plugin decides which lenses run: never name, add or drop lenses.
 
 ## Gates (mirror CI; run before every push)
 
@@ -65,4 +69,4 @@ phase: setup
 - `git add <paths>`, never `git add .` or `-A`. Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - Never push to `main`, never merge, never force-push a branch that isn't in the ledger, never create or edit labels, and never change GitHub repo settings (those live in Terraform in oss-admin).
 - A spec gap or decision the issue and `docs/design.md` cannot settle → park the issue (see Parking). Never guess at a design decision.
-- Block (`phase: blocked`, the reason under `## Blocked`, end) only when the stack itself is in trouble: a restack conflict, a loop PR closed without merging, CI that still fails after 3 fix attempts, or a reviewer that won't run.
+- Block (`phase: blocked`, the reason under `## Blocked`, end) only when the stack itself is in trouble: a restack conflict, a loop PR closed without merging, or CI that still fails after 3 fix attempts. A PR still at BLOCK after two re-reviews stays open in the stack with a comment for the owner; the run continues.
