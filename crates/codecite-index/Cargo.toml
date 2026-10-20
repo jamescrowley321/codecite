@@ -16,6 +16,7 @@ thiserror.workspace = true
 serde.workspace = true
 toml.workspace = true
 globset.workspace = true
+sha2.workspace = true
 tree-sitter.workspace = true
 tree-sitter-rust.workspace = true
 tree-sitter-python.workspace = true
@@ -26,4 +27,5 @@ tree-sitter-c-sharp.workspace = true
 streaming-iterator.workspace = true
 
 [dev-dependencies]
+rusqlite.workspace = true
 tempfile.workspace = true

@@ -179,7 +179,7 @@ pub(super) fn split_paths(out: &[u8]) -> impl Iterator<Item = Result<String, Str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::walk::test_repo::Repo;
+    use crate::test_repo::Repo;
 
     fn strings(paths: Vec<Result<String, String>>) -> Vec<String> {
         paths.into_iter().map(Result::unwrap).collect()
