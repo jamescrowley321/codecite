@@ -1,7 +1,8 @@
 //! Schema and query engine for codecite: owns the per-corpus SQLite store
 //! and answers searches against it. It also parses and formats the
 //! canonical code and spec citations, and parses the spec citation forms
-//! people write into unresolved references. Depends on no other codecite
+//! people write into unresolved references. It also splits identifiers
+//! into the search terms the index stores. Depends on no other codecite
 //! crate.
 
 mod citation;
@@ -15,3 +16,6 @@ pub use error::{Error, Result};
 
 mod store;
 pub use store::{SCHEMA_VERSION, Store};
+
+mod terms;
+pub use terms::split_identifier;
