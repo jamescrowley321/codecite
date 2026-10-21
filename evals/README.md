@@ -115,3 +115,10 @@ later. `runs/<run-id>/` then holds `stdout.jsonl`, `stderr.txt` and
 `~/.config/codecite/evals.env`, mode 0600, holds `OPENROUTER_EVAL_API_KEY`
 and `CLAUDE_CODE_OAUTH_TOKEN`. Only the `call` phase reads it. The harness
 refuses the file when group or others can read it, and never prints a value.
+
+When `CLAUDE_CODE_OAUTH_TOKEN` is unset, the `claude` adapter falls back to
+`claudeAiOauth.accessToken` in the owner's `~/.claude/.credentials.json`, read
+fresh for each run and never written. It passes the token to `claude -p` as
+`CLAUDE_CODE_OAUTH_TOKEN` and lists it in its spec's `secrets`, so the call
+loop redacts it from `stdout.jsonl`, `stderr.txt` and `result.json` like the
+env file's values.

@@ -1,12 +1,17 @@
 // The Claude Code adapter: runs `claude -p` with a clean start (an empty
 // HOME and config dir, no settings files, no MCP servers) and reads its
-// stream-json output. Auth is the owner's subscription token from the evals
-// env file; ANTHROPIC_API_KEY is never passed.
+// stream-json output. Auth is the owner's subscription token: from the evals
+// env file when set, else the owner's Claude Code login. ANTHROPIC_API_KEY is
+// never passed.
 
-import { accessSync, constants } from 'node:fs';
+import { accessSync, constants, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { delimiter, isAbsolute, join } from 'node:path';
 import { emptyAgentResult } from '../lib/agent.mjs';
-import { requireSecret } from '../lib/secrets.mjs';
+import { SECRETS_PATH } from '../lib/secrets.mjs';
+
+/** The owner's Claude Code login, read (never written) when evals.env has no token. */
+export const CREDENTIALS_PATH = join(homedir(), '.claude', '.credentials.json');
 
 export const CONFIG_LEAKED = 'config leaked';
 
@@ -88,6 +93,34 @@ function parseLines(stdout) {
   return events;
 }
 
+/**
+ * The subscription token: `secrets.claudeOauth` if set, else
+ * `claudeAiOauth.accessToken` from `credentialsPath`, read fresh each call so
+ * a login Claude Code refreshed mid-round is picked up. Errors name the
+ * sources, never a value.
+ */
+export function claudeToken(secrets, credentialsPath) {
+  if (secrets?.claudeOauth) return secrets.claudeOauth;
+  const none = `claude: CLAUDE_CODE_OAUTH_TOKEN is not set in ${SECRETS_PATH}, and`;
+  let text;
+  try {
+    text = readFileSync(credentialsPath, 'utf8');
+  } catch (e) {
+    throw new Error(`${none} ${credentialsPath} is missing or unreadable (${e.code ?? 'error'}); run \`claude\` and log in`);
+  }
+  let creds;
+  try {
+    creds = JSON.parse(text);
+  } catch {
+    throw new Error(`${none} ${credentialsPath} is not valid JSON`);
+  }
+  const token = creds?.claudeAiOauth?.accessToken;
+  if (typeof token !== 'string' || !token) {
+    throw new Error(`${none} ${credentialsPath} has no claudeAiOauth.accessToken; run \`claude\` and log in`);
+  }
+  return token;
+}
+
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 function usageFrom(result) {
@@ -105,97 +138,104 @@ function usageFrom(result) {
   return usage;
 }
 
-export default {
-  name: 'claude',
+/** The adapter, reading the fallback login from `credentialsPath`. */
+export function createClaude({ credentialsPath = CREDENTIALS_PATH } = {}) {
+  return {
+    name: 'claude',
 
-  command(run, dirs, ctx) {
-    const token = requireSecret(ctx.secrets, 'claudeOauth');
-    const cmd = findOnPath('claude', dirs.path);
-    if (!cmd) throw new Error(`claude: \`claude\` not found on the run's PATH (${dirs.path})`);
-    // The whole environment, built from nothing: no ANTHROPIC_API_KEY, no
-    // owner HOME, nothing inherited.
-    const env = {
-      HOME: dirs.home,
-      CLAUDE_CONFIG_DIR: dirs.home,
-      XDG_CONFIG_HOME: join(dirs.home, '.config'),
-      XDG_CACHE_HOME: join(dirs.home, '.cache'),
-      XDG_DATA_HOME: dirs.xdg,
-      PATH: dirs.path,
-      LANG: 'C.UTF-8',
-      DISABLE_AUTOUPDATER: '1',
-      CLAUDE_CODE_OAUTH_TOKEN: token,
-    };
-    delete env.ANTHROPIC_API_KEY;
-    return { cmd, args: ['-p', ctx.prompt, '--model', run.model, ...FLAGS], env, cwd: dirs.project };
-  },
+    command(run, dirs, ctx) {
+      const token = claudeToken(ctx.secrets, credentialsPath);
+      const cmd = findOnPath('claude', dirs.path);
+      if (!cmd) throw new Error(`claude: \`claude\` not found on the run's PATH (${dirs.path})`);
+      // The whole environment, built from nothing: no ANTHROPIC_API_KEY, no
+      // owner HOME, nothing inherited.
+      const env = {
+        HOME: dirs.home,
+        CLAUDE_CONFIG_DIR: dirs.home,
+        XDG_CONFIG_HOME: join(dirs.home, '.config'),
+        XDG_CACHE_HOME: join(dirs.home, '.cache'),
+        XDG_DATA_HOME: dirs.xdg,
+        PATH: dirs.path,
+        LANG: 'C.UTF-8',
+        DISABLE_AUTOUPDATER: '1',
+        CLAUDE_CODE_OAUTH_TOKEN: token,
+      };
+      delete env.ANTHROPIC_API_KEY;
+      // `secrets`: the harness redacts the token even when it came from the
+      // login file rather than ctx.secrets.
+      return { cmd, args: ['-p', ctx.prompt, '--model', run.model, ...FLAGS], env, cwd: dirs.project, secrets: [token] };
+    },
 
-  earlyReject(line) {
-    const l = line.trim();
-    if (!l.startsWith('{')) return null;
-    try {
-      return configLeak(JSON.parse(l));
-    } catch {
-      return null;
-    }
-  },
-
-  parse(stdout) {
-    const r = emptyAgentResult();
-    const events = parseLines(stdout);
-    const transcript = [];
-    let result = null;
-    let lastStatus = null;
-    let toolCalls = 0;
-    let codeciteCalls = 0;
-    let assistantOk = 0;
-
-    for (const e of events) {
-      const leak = configLeak(e);
-      if (leak && !r.rejectReason) r.rejectReason = leak;
-      if (e.type === 'system' && e.subtype === 'init') {
-        r.init ??= e;
-      } else if (e.type === 'system' && e.subtype === 'api_retry') {
-        lastStatus = num(e.error_status) ?? lastStatus;
-        transcript.push(`[retry ${e.attempt ?? '?'}: ${e.error_status ?? '?'} ${e.error ?? ''}]`);
-      } else if (e.type === 'assistant') {
-        if (e.error) lastStatus = num(e.message?.api_error_status ?? e.api_error_status) ?? lastStatus;
-        else assistantOk++;
-        for (const b of Array.isArray(e.message?.content) ? e.message.content : []) {
-          if (b?.type === 'text' && b.text) transcript.push(b.text);
-          if (b?.type !== 'tool_use') continue;
-          toolCalls++;
-          const input = b.input ?? {};
-          if (b.name === 'Bash' && typeof input.command === 'string') {
-            r.shellCommands.push(input.command);
-            if (runsCodecite(input.command)) codeciteCalls++;
-            transcript.push(`$ ${input.command}`);
-          } else {
-            if (PATH_TOOLS.has(b.name)) {
-              for (const f of PATH_FIELDS) if (typeof input[f] === 'string' && input[f]) r.readPaths.push(input[f]);
-            }
-            transcript.push(`[${b.name}] ${JSON.stringify(input)}`);
-          }
-        }
-      } else if (e.type === 'result') {
-        result = e;
-        if (typeof e.result === 'string') transcript.push(`[result${e.is_error ? ' error' : ''}] ${e.result}`);
+    earlyReject(line) {
+      const l = line.trim();
+      if (!l.startsWith('{')) return null;
+      try {
+        return configLeak(JSON.parse(l));
+      } catch {
+        return null;
       }
-    }
+    },
 
-    r.toolCalls = toolCalls;
-    r.codeciteCalls = codeciteCalls;
-    r.transcript = transcript.join('\n');
-    if (result) {
-      r.usage = usageFrom(result);
-      r.turns = num(result.num_turns);
-      // A run that only ever got an API error took no real turn.
-      if (result.is_error && assistantOk === 0) r.turns = 0;
-      // The result reports the status that ended the run; a retry that
-      // later succeeded leaves it null.
-      r.providerStatus = num(result.api_error_status);
-    } else {
-      r.providerStatus = lastStatus;
-    }
-    return r;
-  },
-};
+    parse(stdout) {
+      const r = emptyAgentResult();
+      const events = parseLines(stdout);
+      const transcript = [];
+      let result = null;
+      let lastStatus = null;
+      let toolCalls = 0;
+      let codeciteCalls = 0;
+      let assistantOk = 0;
+
+      for (const e of events) {
+        const leak = configLeak(e);
+        if (leak && !r.rejectReason) r.rejectReason = leak;
+        if (e.type === 'system' && e.subtype === 'init') {
+          r.init ??= e;
+        } else if (e.type === 'system' && e.subtype === 'api_retry') {
+          lastStatus = num(e.error_status) ?? lastStatus;
+          transcript.push(`[retry ${e.attempt ?? '?'}: ${e.error_status ?? '?'} ${e.error ?? ''}]`);
+        } else if (e.type === 'assistant') {
+          if (e.error) lastStatus = num(e.message?.api_error_status ?? e.api_error_status) ?? lastStatus;
+          else assistantOk++;
+          for (const b of Array.isArray(e.message?.content) ? e.message.content : []) {
+            if (b?.type === 'text' && b.text) transcript.push(b.text);
+            if (b?.type !== 'tool_use') continue;
+            toolCalls++;
+            const input = b.input ?? {};
+            if (b.name === 'Bash' && typeof input.command === 'string') {
+              r.shellCommands.push(input.command);
+              if (runsCodecite(input.command)) codeciteCalls++;
+              transcript.push(`$ ${input.command}`);
+            } else {
+              if (PATH_TOOLS.has(b.name)) {
+                for (const f of PATH_FIELDS) if (typeof input[f] === 'string' && input[f]) r.readPaths.push(input[f]);
+              }
+              transcript.push(`[${b.name}] ${JSON.stringify(input)}`);
+            }
+          }
+        } else if (e.type === 'result') {
+          result = e;
+          if (typeof e.result === 'string') transcript.push(`[result${e.is_error ? ' error' : ''}] ${e.result}`);
+        }
+      }
+
+      r.toolCalls = toolCalls;
+      r.codeciteCalls = codeciteCalls;
+      r.transcript = transcript.join('\n');
+      if (result) {
+        r.usage = usageFrom(result);
+        r.turns = num(result.num_turns);
+        // A run that only ever got an API error took no real turn.
+        if (result.is_error && assistantOk === 0) r.turns = 0;
+        // The result reports the status that ended the run; a retry that
+        // later succeeded leaves it null.
+        r.providerStatus = num(result.api_error_status);
+      } else {
+        r.providerStatus = lastStatus;
+      }
+      return r;
+    },
+  };
+}
+
+export default createClaude();

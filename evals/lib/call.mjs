@@ -23,6 +23,15 @@ export const MAX_ATTEMPTS = 3;
 export const KILL_GRACE_MS = 10_000;
 export const REDACTED = '[REDACTED]';
 
+/**
+ * ctx.secrets plus the extra values an adapter's spec says it used (a token
+ * the adapter read itself), as one secrets object for redact().
+ */
+export function runSecrets(secrets, spec) {
+  const extra = Array.isArray(spec?.secrets) ? spec.secrets.filter((v) => typeof v === 'string' && v) : [];
+  return { ...secrets, ...Object.fromEntries(extra.map((v, i) => [`adapter${i}`, v])) };
+}
+
 /** Replace every secret value in `text` with [REDACTED]. */
 export function redact(text, secrets) {
   let out = text;
@@ -160,7 +169,10 @@ function spawnAgent({ cmd, args = [], env = {}, cwd, input }, { timeoutMs, killG
   });
 }
 
-/** One attempt at one run. Returns {kind, result}; writes stdout/stderr. */
+/**
+ * One attempt at one run. Returns {kind, result, secrets}, where `secrets`
+ * is everything to redact from this run's output; writes stdout/stderr.
+ */
 async function attemptRun(run, round, adapter, opts) {
   const { secrets, timeoutMs, killGraceMs, basePath } = opts;
   const { plan } = round;
@@ -173,17 +185,18 @@ async function attemptRun(run, round, adapter, opts) {
     dirs = prepareRun(run, round, { basePath });
   } catch (e) {
     mkdirSync(out, { recursive: true });
-    return { kind: 'infra', result: { ...base, error: e.message, ...strip(emptyAgentResult()), tainted: [] } };
+    return { kind: 'infra', result: { ...base, error: e.message, ...strip(emptyAgentResult()), tainted: [] }, secrets };
   }
 
   const arm = plan.arms.find((a) => a.name === run.arm);
   const prompt = renderPrompt(plan.taskDef, arm, round);
   // A throwing adapter (e.g. a missing secret) is a setup error: stop the round.
   const spec = adapter.command(run, dirs, { prompt, secrets, plan, round });
+  const hidden = runSecrets(secrets, spec);
   const earlyReject = typeof adapter.earlyReject === 'function' ? (line) => adapter.earlyReject(line) : null;
   const proc = await spawnAgent(spec, { timeoutMs, killGraceMs, earlyReject });
-  const stdout = redact(proc.stdout, secrets);
-  const stderr = redact(proc.stderr, secrets);
+  const stdout = redact(proc.stdout, hidden);
+  const stderr = redact(proc.stderr, hidden);
   writeFileSync(join(out, 'stdout.jsonl'), stdout);
   writeFileSync(join(out, 'stderr.txt'), stderr);
 
@@ -224,6 +237,7 @@ async function attemptRun(run, round, adapter, opts) {
   return {
     kind,
     result: { ...base, status, wallMs: proc.wallMs, exitCode: proc.exitCode, signal: proc.signal, error, ...strip(agent), tainted },
+    secrets: hidden,
   };
 }
 
@@ -301,11 +315,11 @@ export async function callRound(roundDir, deps = {}) {
       if (outcome.kind !== 'infra' || attempts >= maxAttempts || breaker.tripped) break;
     }
     const result = { ...outcome.result, attempts };
-    writeFileSync(join(round.dir, 'runs', run.id, 'result.json'), redact(`${JSON.stringify(result, null, 2)}\n`, secrets));
+    writeFileSync(join(round.dir, 'runs', run.id, 'result.json'), redact(`${JSON.stringify(result, null, 2)}\n`, outcome.secrets));
     ran++;
     const taint = result.tainted.length ? ` TAINTED(${result.tainted.length})` : '';
     log(`[${run.seq}/${runs.length}] ${run.id} ${result.status} ${result.wallMs ?? '-'}ms${taint}`);
-    if (outcome.kind === 'fatal') return { ran, skipped, stopped: 'fatal', reason: redact(`${run.id}: ${result.error}`, secrets) };
+    if (outcome.kind === 'fatal') return { ran, skipped, stopped: 'fatal', reason: redact(`${run.id}: ${result.error}`, outcome.secrets) };
     if (breaker.tripped) {
       return { ran, skipped, stopped: 'breaker', reason: `${breaker.failed} of ${breaker.calls} calls failed` };
     }

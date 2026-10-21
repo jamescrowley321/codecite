@@ -333,3 +333,20 @@ test('a read of the round plan taints the run', async () => {
   assert.equal(res.tainted.length, 1);
   assert.match(res.tainted[0], /plan\.json/);
 });
+
+test("an adapter's own secrets are redacted like ctx.secrets", async () => {
+  const EXTRA = 'sk-ant-oat01-ADAPTERREADTOKEN5555';
+  const base = fakeAdapter('fake');
+  const adapter = {
+    ...base,
+    command(run, dirs, ctx) {
+      const spec = base.command(run, dirs, ctx);
+      return { ...spec, env: { ...spec.env, FAKE_KEY: EXTRA }, secrets: [EXTRA] };
+    },
+  };
+  const r = makeRound([{ agent: 'fake', model: 'm/fatal' }, { agent: 'fake', model: 'm/ok' }]);
+  await callRound(r.dir, deps({ loadAdapter: async () => adapter }));
+  const files = filesUnder(r.dir);
+  assert.ok(files.some((f) => f.endsWith('stdout.jsonl')));
+  for (const f of files) assert.ok(!readFileSync(f, 'utf8').includes(EXTRA), `${f} holds the adapter's token`);
+});

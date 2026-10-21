@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
-import claude, { configLeak } from './claude.mjs';
+import claude, { configLeak, createClaude } from './claude.mjs';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 const STREAM = fixture('claude-stream.jsonl');
@@ -206,11 +206,56 @@ test('command never sets ANTHROPIC_API_KEY', () => {
   }
 });
 
-test('command needs the Claude token', () => {
-  assert.throws(
-    () => claude.command(RUN, fakeDirs(), { ...CTX, secrets: { openrouter: 'x', claudeOauth: null } }),
-    /CLAUDE_CODE_OAUTH_TOKEN/,
-  );
+const NO_ENV_TOKEN = { ...CTX, secrets: { openrouter: 'x', claudeOauth: null } };
+
+/** A credentials.json at a temp path; `body` is the parsed JSON or raw text. */
+function credentialsFile(body) {
+  const p = join(mkdtempSync(join(tmpdir(), 'claude-creds-')), '.credentials.json');
+  writeFileSync(p, typeof body === 'string' ? body : JSON.stringify(body), { mode: 0o600 });
+  return p;
+}
+
+test('uses evals.env token when present', () => {
+  const p = credentialsFile({ claudeAiOauth: { accessToken: 'tok-from-login-999' } });
+  const c = createClaude({ credentialsPath: p }).command(RUN, fakeDirs(), CTX);
+  assert.equal(c.env.CLAUDE_CODE_OAUTH_TOKEN, 'tok-test-123');
+  assert.deepEqual(c.secrets, ['tok-test-123']);
+});
+
+test('falls back to credentials.json accessToken', () => {
+  const p = credentialsFile({ claudeAiOauth: { accessToken: 'tok-from-login-999', refreshToken: 'r' } });
+  const before = readFileSync(p, 'utf8');
+  const adapter = createClaude({ credentialsPath: p });
+  const c = adapter.command(RUN, fakeDirs(), NO_ENV_TOKEN);
+  assert.equal(c.env.CLAUDE_CODE_OAUTH_TOKEN, 'tok-from-login-999');
+  assert.deepEqual(c.secrets, ['tok-from-login-999'], 'the harness must redact the token it never saw');
+  assert.ok(!c.args.some((a) => a.includes('tok-from-login-999')));
+  assert.equal(readFileSync(p, 'utf8'), before, 'the login file is read-only');
+  // Read fresh on every call: a refreshed login is picked up mid-round.
+  writeFileSync(p, JSON.stringify({ claudeAiOauth: { accessToken: 'tok-refreshed-777' } }));
+  assert.equal(adapter.command(RUN, fakeDirs(), NO_ENV_TOKEN).env.CLAUDE_CODE_OAUTH_TOKEN, 'tok-refreshed-777');
+});
+
+test('error names the source, never the value', () => {
+  const missing = join(mkdtempSync(join(tmpdir(), 'claude-creds-')), '.credentials.json');
+  const cases = [
+    [missing, /CLAUDE_CODE_OAUTH_TOKEN.*\.credentials\.json.*missing/s],
+    [credentialsFile('{"claudeAiOauth": {"accessToken": "tok-secret-in-bad-json'), /not valid JSON/],
+    [credentialsFile({ claudeAiOauth: { refreshToken: 'tok-secret-refresh-555' } }), /claudeAiOauth\.accessToken/],
+    [credentialsFile({ claudeAiOauth: { accessToken: '' } }), /claudeAiOauth\.accessToken/],
+  ];
+  for (const [p, re] of cases) {
+    let err;
+    try {
+      createClaude({ credentialsPath: p }).command(RUN, fakeDirs(), NO_ENV_TOKEN);
+    } catch (e) {
+      err = e;
+    }
+    assert.ok(err, `${p} should throw`);
+    assert.match(err.message, re);
+    assert.ok(err.message.includes(p), 'names the file');
+    assert.ok(!/tok-secret/.test(err.message), `no value in: ${err.message}`);
+  }
 });
 
 test('command fails clearly when claude is not on the run PATH', () => {
