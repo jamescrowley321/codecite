@@ -35,7 +35,7 @@ async function waitForDiscovery(url, timeoutMs = 20000) {
   throw new Error("provider did not become ready");
 }
 
-async function token(clientId, resource) {
+async function token(clientId, resource, scope) {
   const res = await fetch(`${base}/token`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -44,6 +44,7 @@ async function token(clientId, resource) {
       client_id: clientId,
       client_secret: "eval-secret",
       ...(resource ? { resource } : {}),
+      ...(scope ? { scope } : {}),
     }),
   });
   assert.equal(res.status, 200, await res.clone().text());
@@ -87,4 +88,13 @@ test("default resource is the api audience", async () => {
 test("eval-expiring gets a 2 s token", async () => {
   const p = await token("eval-expiring", "urn:codecite-eval:api");
   assert.equal(p.exp - p.iat, 2);
+});
+
+test("a requested scope is granted as the scope claim, on either resource", async () => {
+  // A resource server that requires an access-token marker claim (scope)
+  // must accept the hidden tests' valid tokens.
+  const p = await token("eval-client", "urn:codecite-eval:api", "api:read");
+  assert.equal(p.scope, "api:read");
+  assert.equal((await token("eval-client", "urn:codecite-eval:other", "api:read")).scope, "api:read");
+  assert.equal((await token("eval-expiring", "urn:codecite-eval:api", "api:read")).scope, "api:read");
 });

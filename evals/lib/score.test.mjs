@@ -386,7 +386,7 @@ const realSkip =
   (!existsSync(join(IDENTITY_MODEL_REPO, '.git')) && `no identity-model repo at ${IDENTITY_MODEL_REPO} (set IDENTITY_MODEL_REPO)`) ||
   (!IDP_READY && 'the IdP fixture has no node_modules (npm ci in evals/fixtures/node-oidc)');
 
-test('the reference passes and the starting project fails', { skip: realSkip, timeout: 600_000 }, async (t) => {
+test('the reference passes (hardened too) and the starting project fails', { skip: realSkip, timeout: 600_000 }, async (t) => {
   const task = loadTask('fastapi-middleware');
   const roundDir = join(base, 'real');
   const exportDir = join(roundDir, 'identity-model');
@@ -406,6 +406,12 @@ test('the reference passes and the starting project fails', { skip: realSkip, ti
   };
   const refDir = prepare('reference', join(task.dir, 'reference', 'app', 'main.py'));
   const startDir = prepare('start', null);
+  // identity-model's documented hardening on: valid tokens still pass.
+  const hardMain = join(roundDir, 'hardened-main.py');
+  const refText = readFileSync(join(task.dir, 'reference', 'app', 'main.py'), 'utf8');
+  writeFileSync(hardMain, refText.replace('excluded_paths=["/health"],', 'excluded_paths=["/health"],\n    require_access_token_marker=True,'));
+  assert.notEqual(readFileSync(hardMain, 'utf8'), refText);
+  const hardDir = prepare('hardened', hardMain);
   const exitMain = join(roundDir, 'exit-main.py');
   writeFileSync(exitMain, 'import os\n\nos._exit(3)\n');
   const exitDir = prepare('exits', exitMain);
@@ -420,6 +426,8 @@ test('the reference passes and the starting project fails', { skip: realSkip, ti
   try {
     const ref = await scoreRun(refDir, task, idp.url, { round, bwrap: BWRAP });
     assert.deepEqual(ref, { passed: true, failures: [] }, readFileSync(join(refDir, 'score.log'), 'utf8').slice(-3000));
+    const hard = await scoreRun(hardDir, task, idp.url, { round, bwrap: BWRAP });
+    assert.deepEqual(hard, { passed: true, failures: [] }, readFileSync(join(hardDir, 'score.log'), 'utf8').slice(-3000));
     const start = await scoreRun(startDir, task, idp.url, { round, bwrap: BWRAP });
     assert.equal(start.passed, false);
     assert.ok(start.failures.length >= 5, start.failures.join('\n'));

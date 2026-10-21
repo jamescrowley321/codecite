@@ -16,6 +16,10 @@ const OTHER = "urn:codecite-eval:other";
 const SECRET = "eval-secret";
 
 const TTL_BY_CLIENT = { "eval-client": 600, "eval-expiring": 2 };
+// Granted when requested, so tokens carry a `scope` claim: a resource server
+// that requires an access-token marker claim (identity-model's
+// require_access_token_marker) accepts them.
+const SCOPE = "api:read";
 const DEFAULT_TTL = 600;
 
 function client(client_id) {
@@ -56,7 +60,7 @@ const provider = new Provider(ISSUER, {
           return undefined;
         }
         return {
-          scope: "",
+          scope: SCOPE,
           accessTokenFormat: "jwt",
           accessTokenTTL: TTL_BY_CLIENT[client.clientId] ?? DEFAULT_TTL,
           jwt: { sign: { alg: "RS256" } },

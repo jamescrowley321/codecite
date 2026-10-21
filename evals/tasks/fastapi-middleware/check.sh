@@ -104,4 +104,20 @@ else
   status=1
 fi
 
+# A correct solution that also turns on identity-model's documented
+# hardening (an access-token marker claim is required) must pass too.
+echo "== hardened reference, require_access_token_marker=True (expect 0 failures)" >&2
+prepare "$WORK/hardened"
+sed 's|excluded_paths=\["/health"\],|excluded_paths=["/health"],\n    require_access_token_marker=True,|' \
+  "$HERE/reference/app/main.py" >"$WORK/hardened/app/main.py"
+grep -q 'require_access_token_marker=True' "$WORK/hardened/app/main.py" \
+  || { echo "check: could not make the hardened reference" >&2; exit 1; }
+hard_failed="$(score "$WORK/hardened")"
+if (( hard_failed == 0 )); then
+  echo "check: hardened reference passes every hidden test: ok" >&2
+else
+  echo "check: hardened reference fails $hard_failed hidden tests (want 0)" >&2
+  status=1
+fi
+
 exit "$status"

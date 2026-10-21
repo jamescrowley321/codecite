@@ -10,6 +10,9 @@ import pytest
 IDP = os.environ.get("TEST_IDP", "http://127.0.0.1:9011").rstrip("/")
 AUDIENCE = "urn:codecite-eval:api"
 SECRET = "eval-secret"
+# Requested so every token carries a `scope` claim: a correct, hardened
+# solution (require_access_token_marker=True) must accept the valid ones.
+SCOPE = "api:read"
 
 # The score command runs from the project root; make `app` importable from it.
 sys.path.insert(0, os.getcwd())
@@ -48,6 +51,7 @@ def token():
                 "client_id": client,
                 "client_secret": SECRET,
                 "resource": resource,
+                "scope": SCOPE,
             },
             timeout=10,
         )

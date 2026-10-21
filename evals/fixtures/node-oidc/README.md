@@ -11,6 +11,9 @@ JWT access tokens over the `client_credentials` grant, bound to 127.0.0.1.
   - `eval-expiring`: access token TTL 2 s
 - Resources: `urn:codecite-eval:api` (the audience the app must enforce, and the
   default) and `urn:codecite-eval:other` (for the wrong-audience test)
+- Scope: `api:read`, granted on either resource when requested, so tokens can
+  carry a `scope` claim. The hidden tests request it, so a solution that turns
+  on identity-model's `require_access_token_marker` accepts valid tokens.
 
 ## Start
 
