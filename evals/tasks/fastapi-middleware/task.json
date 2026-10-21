@@ -1,0 +1,10 @@
+{
+  "id": "fastapi-middleware",
+  "project": "project",
+  "prompt": "prompt.md",
+  "hidden": "hidden",
+  "corpus": { "repo": "identity-model", "commit": "9458d60f4f2f20227bddf2594fd7d10cba66ea0a" },
+  "idp": "node-oidc",
+  "setup": ["uv", "sync"],
+  "score": ["uv", "run", "--with", "pytest", "--with", "httpx", "pytest", "-q", "{hidden}"]
+}

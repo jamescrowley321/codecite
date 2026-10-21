@@ -31,3 +31,5 @@
 /.claude/review/
 
 evals/**/node_modules/
+evals/**/.venv/
+evals/**/__pycache__/
