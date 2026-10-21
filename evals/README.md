@@ -29,6 +29,7 @@ Node 26, ES modules, no npm dependencies. Tests: `node --test evals/`.
 | `lib/openrouter.mjs` | The key's remaining limit and the round's cost estimate |
 | `lib/idp.mjs` | Start the eval IdP for the score phase |
 | `lib/score.mjs` | Run the hidden tests against each run's project, sandboxed |
+| `lib/pytest-plugin/` | The `-p` plugin that marks pytest as started |
 | `lib/scorecard.mjs` | The no-loss comparison and the Markdown scorecard |
 | `agents/<name>.mjs` | One adapter per agent; the plan's `agent` names it |
 
@@ -231,7 +232,7 @@ node evals/run.mjs score --round <id> [--rescore]
 `score` holds no secrets. It starts the IdP (`fixtures/node-oidc`, with this
 Node on a free loopback port), scores every run whose `result.json` status is
 `ok`, `timeout` or `agent_error` and that has no pass/fail score yet (all of
-them with `--rescore`; unscored runs are always tried again), then writes `<round>/scorecard.md` and prints each
+them with `--rescore`; unscored runs are tried again, 3 attempts in all), then writes `<round>/scorecard.md` and prints each
 pair's verdict and the round's. `infra_error` and `fatal` runs are not
 scored.
 
@@ -251,18 +252,31 @@ scored.
   its home instead). The network is shared, so the IdP on `127.0.0.1` is
   reachable. A bwrap failure is a harness error, never a failed run.
 - **Pass:** the command exits 0 and its JUnit report shows at least one test
-  and no failure, error or skip. A score command past its 10-minute timeout
-  fails (the hidden tests' IdP calls and uv's fetches time out on their own,
-  so only the agent's code hangs that long).
-- **Unscored, never failed:** a scoring fault is not the run's result. When
-  the IdP's discovery document doesn't answer before or after the command,
-  or the command leaves no JUnit report (uv couldn't fetch the scoring deps,
-  the network was down, the process ended before pytest reported), the run
-  gets `passed: null` and the reason in `unscored`. It doesn't count, so its
-  pair reads INCOMPLETE until a later `score` scores it. An IdP that is down
-  stops the phase. The scorecard lists unscored runs with their reason.
-- `score.json` holds `passed`, `failures` (test ids), `unscored`, `tests`,
-  `exitCode`, `timedOut`, `wallMs` and the command; `score.log` the output.
+  and no failure, error or skip.
+- **Two stages.** A scoring fault is never the run's result, and the agent's
+  own breakage always is:
+  - *Infra* (unscored: `passed: null`, the reason in `unscored`): the IdP's
+    discovery document not answering before or after; the task's
+    `scoreWarm` command (`uv run --no-project` with the same pinned
+    `--with` deps, run in `score/` with the venv's base Python, outside the
+    agent's project) failing or timing out; the score command timing out
+    before pytest started. An unscored run doesn't count, so its pair reads
+    INCOMPLETE.
+  - *Agent* (failed): after a good warm step, no report is a failed run,
+    either "before pytest started" (the agent's project failed to sync or
+    import under uv) or "pytest started" (its code ended the process). A
+    timeout after pytest started fails too. The started marker is written by
+    `lib/pytest-plugin/codecite_score_started.py`, loaded with `-p` from a
+    read-only bind, before any conftest imports the agent's code.
+- **Retries:** an unscored run is tried up to 3 times in all, across `score`
+  calls; then it is a fatal scoring error (`fatal: true`), skipped by later
+  calls until `--rescore`, shown at the top of the scorecard, and `score`
+  exits 1. An IdP that is down stops the phase. A missing `project/` is a
+  harness fault and stops it too.
+- `score.json` holds `passed`, `failures` (test ids or the no-report
+  reason), `unscored`, `scoreAttempts`, `fatal`, `tests`, `exitCode`,
+  `timedOut`, `pytestStarted`, `wallMs` and the commands; `score.log` both
+  stages' output.
 
 ### The scorecard
 

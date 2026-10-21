@@ -122,6 +122,11 @@ async function score(argv) {
   writeFileSync(join(dir, 'scorecard.md'), renderScorecard({ plan, records, pairs }));
   for (const p of pairs) console.log(`${p.agent} ${p.model} ${p.arm}: ${p.verdict}${p.reasons.length ? ` (${p.reasons.join('; ')})` : ''}`);
   console.log(`verdict: ${roundVerdict(pairs)}; scorecard at ${join(dir, 'scorecard.md')}`);
+  const fatal = records.filter((r) => r.scoreFatal).map((r) => r.id);
+  if (fatal.length > 0) {
+    console.error(`score: ${fatal.length} run(s) could not be scored (fatal scoring errors): ${fatal.join(', ')}; fix the cause and run score --rescore`);
+    process.exit(1);
+  }
 }
 
 const [command, ...rest] = process.argv.slice(2);

@@ -22,6 +22,7 @@ const EPS = 1e-9;
  * @property {number} attempts
  * @property {boolean|null} passed  null when never scored, or unscored (a scoring fault)
  * @property {string|null} unscored  why scoring gave no result
+ * @property {boolean} scoreFatal  unscored after every allowed attempt: a fatal scoring error
  * @property {number|null} totalTokens
  * @property {number|null} wallMs
  * @property {number|null} costUsd
@@ -197,6 +198,8 @@ export function loadRecords(roundDir) {
       passed: typeof score?.passed === 'boolean' ? score.passed : null,
       failures: Array.isArray(score?.failures) ? score.failures : [],
       unscored: typeof score?.unscored === 'string' ? score.unscored : null,
+      scoreFatal: score?.passed === null && score?.fatal === true,
+      scoreAttempts: num(score?.scoreAttempts),
       totalTokens: num(result.usage?.totalTokens),
       costUsd: num(result.usage?.costUsd),
       wallMs: num(result.wallMs),
@@ -275,6 +278,13 @@ export function renderScorecard(round) {
   const out = [];
   out.push(`# Scorecard: ${plan.roundId ?? 'round'}`, '');
   out.push(`Verdict: **${verdict}**`, '');
+  const scoreErrors = records.filter((r) => r.scoreFatal);
+  if (scoreErrors.length > 0) {
+    out.push(
+      `**Scoring errors:** ${scoreErrors.length} run${scoreErrors.length === 1 ? '' : 's'} could not be scored (${scoreErrors.map((r) => `\`${r.id}\``).join(', ')}); see Excluded runs. Fix the cause and run \`score --rescore\`.`,
+      '',
+    );
+  }
   out.push(
     `The rule: per agent/model pair, the codecite arm must not lose to the baseline. A loss is a pass rate more than ${MARGIN_PTS} points lower, or median total tokens or median wall time more than ${MARGIN_PCT}% higher. Any loss is STOP. A pair with fewer than ${plan.runs} usable runs in an arm, or an unknown measure, is INCOMPLETE. Usable runs are scored runs with status ok, timeout or agent_error that are not tainted; medians cover all of them, failed runs included.`,
     '',
@@ -303,7 +313,8 @@ export function renderScorecard(round) {
   out.push('## Excluded runs', '');
   if (excluded.length === 0) out.push('None.');
   for (const r of excluded) {
-    const why = !SCORED.has(r.status) ? r.status : r.unscored ? `unscored (${cell(r.unscored)})` : 'not scored';
+    const fatalNote = r.scoreFatal ? `, a fatal scoring error after ${r.scoreAttempts ?? '?'} attempts` : '';
+    const why = !SCORED.has(r.status) ? r.status : r.unscored ? `unscored (${cell(r.unscored)})${fatalNote}` : 'not scored';
     out.push(`- \`${r.id}\`: ${why}${r.error ? `: ${cell(r.error)}` : ''} (attempts ${r.attempts})`);
   }
   out.push('');

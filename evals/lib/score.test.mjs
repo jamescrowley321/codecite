@@ -24,6 +24,10 @@ test("task.json pins the scoring deps and turns off pytest's cache", () => {
   const task = loadTask('fastapi-middleware');
   assert.ok(task.score.includes('-p') && task.score.includes('no:cacheprovider'), task.score.join(' '));
   assert.ok(task.score.includes('pytest==9.1.1') && task.score.includes('httpx==0.28.1'), task.score.join(' '));
+  // The warm step fetches exactly the score command's pinned deps.
+  const withs = (argv) => argv.filter((a, i) => argv[i - 1] === '--with');
+  assert.deepEqual(withs(task.scoreWarm), withs(task.score));
+  assert.ok(task.scoreWarm.includes('--no-project'), 'the warm step stays out of the agent project');
 });
 
 /**
@@ -40,18 +44,19 @@ async function fakeIdp(upFor = Infinity) {
   await new Promise((r) => srv.listen(0, '127.0.0.1', r));
   return { url: `http://127.0.0.1:${srv.address().port}`, stop: () => new Promise((r) => srv.close(r)) };
 }
+const UV_ON_PATH = findOnPath('uv', cleanPath());
 // Nothing listens on the discard port.
 const DEAD_IDP = 'http://127.0.0.1:9';
 // A score command that writes a one-test passing JUnit report where
 // PYTEST_ADDOPTS asks for it.
-const PASSING = ['/bin/sh', '-c', 'printf \'<testsuite tests="1"><testcase classname="c" name="t"/></testsuite>\' > "${PYTEST_ADDOPTS#--junitxml=}"', '{hidden}'];
+const PASSING = ['/bin/sh', '-c', 'printf \'<testsuite tests="1"><testcase classname="c" name="t"/></testsuite>\' > "${PYTEST_ADDOPTS##*--junitxml=}"', '{hidden}'];
 
 /** A synthetic round under `base`: one task with hidden/, and `ids` runs with a project. */
-function synthRound(name, score, ids = ['me']) {
+function synthRound(name, score, ids = ['me'], extra = {}) {
   const dir = join(base, name);
   const roundDir = join(dir, 'round');
   mkdirSync(join(dir, 'task', 'hidden'), { recursive: true });
-  const task = { id: 't', dir: join(dir, 'task'), hidden: 'hidden', setup: [], score };
+  const task = { id: 't', dir: join(dir, 'task'), hidden: 'hidden', setup: [], score, ...extra };
   for (const id of ids) mkdirSync(join(roundDir, 'runs', id, 'project'), { recursive: true });
   const round = { dir: roundDir, export: null, taintPaths: [task.dir], plan: { taskDef: task } };
   return { roundDir, task, round, runDir: (id = ids[0]) => join(roundDir, 'runs', id) };
@@ -131,21 +136,44 @@ test("scoring can't read the owner's secrets or other runs, and reads hidden/ re
   assert.match(log, /PROJECT-WRITABLE/, log);
   assert.match(log, new RegExp(`IDP=${idp.url} SENTINEL=none`), log);
   assert.ok(existsSync(join(runDir, 'project', 'made-by-score')));
-  // No JUnit report: unscored, not failed.
-  assert.equal(r.passed, null);
-  assert.match(r.unscored, /no test report \(exit 3\)/);
+  // No JUnit report and pytest never started: the run failed.
+  assert.equal(r.passed, false);
+  assert.match(r.failures.join(' '), /no test report, before pytest started.*exit 3/);
   const saved = JSON.parse(readFileSync(join(runDir, 'score.json'), 'utf8'));
-  assert.equal(saved.passed, null);
+  assert.equal(saved.passed, false);
   assert.equal(saved.exitCode, 3);
+  assert.equal(saved.pytestStarted, false);
 });
 
-test('a score command that exits 0 without a test report is unscored, never a pass', { skip: noBwrap }, async () => {
+test('a score command that exits 0 without a test report fails', { skip: noBwrap }, async () => {
   const { task, round, runDir } = synthRound('zero', ['/bin/true', '{hidden}']);
   const idp = await fakeIdp();
   try {
     const r = await scoreRun(runDir(), task, idp.url, { round, bwrap: BWRAP });
-    assert.equal(r.passed, null);
-    assert.match(r.unscored, /no test report/);
+    assert.equal(r.passed, false);
+    assert.match(r.failures.join(' '), /no test report, before pytest started/);
+  } finally {
+    await idp.stop();
+  }
+});
+
+test('a missing project dir is a harness fault: it throws', { skip: noBwrap }, async () => {
+  const { task, round, runDir } = synthRound('noproject', PASSING);
+  rmSync(join(runDir(), 'project'), { recursive: true });
+  await assert.rejects(scoreRun(runDir(), task, DEAD_IDP, { round, bwrap: BWRAP }), /project is missing/);
+});
+
+test('a timeout before pytest started is unscored; after it started, a failure', { skip: noBwrap }, async () => {
+  const idp = await fakeIdp();
+  try {
+    const pre = synthRound('timeout-pre', ['/bin/sh', '-c', 'sleep 30', '{hidden}']);
+    const r1 = await scoreRun(pre.runDir(), pre.task, idp.url, { round: pre.round, bwrap: BWRAP, timeoutMs: 500 });
+    assert.equal(r1.passed, null);
+    assert.match(r1.unscored, /timed out .* before pytest started/);
+    const post = synthRound('timeout-post', ['/bin/sh', '-c', 'touch "$CODECITE_SCORE_STARTED"; sleep 30', '{hidden}']);
+    const r2 = await scoreRun(post.runDir(), post.task, idp.url, { round: post.round, bwrap: BWRAP, timeoutMs: 500 });
+    assert.equal(r2.passed, false);
+    assert.match(r2.failures.join(' '), /timed out/);
   } finally {
     await idp.stop();
   }
@@ -161,16 +189,33 @@ test('a report with every test passing and exit 0 passes', { skip: noBwrap }, as
   }
 });
 
-const UV_ON_PATH = findOnPath('uv', cleanPath());
-test('uv failing to fetch the scoring deps leaves the run unscored, not failed', { skip: noBwrap || (!UV_ON_PATH && 'uv is not on PATH') }, async () => {
-  // --offline with a version no cache holds: uv fails before pytest, as it does when PyPI is down.
-  const { task, round, runDir } = synthRound('uv-down', ['uv', 'run', '--offline', '--no-project', '--with', 'pytest==0.0.1', 'pytest', '-q', '{hidden}']);
+const noUv = noBwrap || (!UV_ON_PATH && 'uv is not on PATH');
+test('the warm step failing to fetch the scoring deps leaves the run unscored', { skip: noUv }, async () => {
+  // --offline with a version no cache holds: uv fails, as it does when PyPI is down.
+  const { task, round, runDir } = synthRound('warm-down', PASSING, ['me'], {
+    scoreWarm: ['uv', 'run', '--offline', '--no-project', '--with', 'pytest==0.0.1', 'python', '-c', ''],
+  });
   const idp = await fakeIdp();
   try {
     const r = await scoreRun(runDir(), task, idp.url, { round, bwrap: BWRAP });
     assert.equal(r.passed, null, readFileSync(join(runDir(), 'score.log'), 'utf8'));
-    assert.match(r.unscored, /no test report \(exit [1-9]/);
-    assert.deepEqual(r.failures, []);
+    assert.match(r.unscored, /warm step failed \(exit [1-9]/);
+    assert.equal(existsSync(join(runDir(), 'score', 'report.xml')), false, 'the score command never ran');
+  } finally {
+    await idp.stop();
+  }
+});
+
+test("a broken pyproject in the agent's project is a failed run, before pytest started", { skip: noUv }, async () => {
+  const { task, round, runDir } = synthRound('broken-pyproject', ['uv', 'run', '--offline', '--with', 'pytest==9.1.1', 'pytest', '-q', '{hidden}'], ['me'], {
+    scoreWarm: ['/bin/true'],
+  });
+  writeFileSync(join(runDir(), 'project', 'pyproject.toml'), '[project\nname = "broken"\n');
+  const idp = await fakeIdp();
+  try {
+    const r = await scoreRun(runDir(), task, idp.url, { round, bwrap: BWRAP });
+    assert.equal(r.passed, false, readFileSync(join(runDir(), 'score.log'), 'utf8'));
+    assert.match(r.failures.join(' '), /no test report, before pytest started: the project failed to sync or import/);
   } finally {
     await idp.stop();
   }
@@ -214,7 +259,7 @@ test('scoreRound tries unscored runs again and skips scored ones', { skip: noBwr
   const idp = await fakeIdp();
   try {
     const summary = await scoreRound(roundDir, { idpUrl: idp.url, bwrap: BWRAP, log: () => {} });
-    assert.deepEqual(summary, { scored: 1, unscored: 0, skipped: 1 });
+    assert.deepEqual(summary, { scored: 1, unscored: 0, skipped: 1, fatal: [] });
     assert.equal(JSON.parse(readFileSync(join(runDir('a-m-baseline-1'), 'score.json'), 'utf8')).passed, true);
     assert.deepEqual(JSON.parse(readFileSync(join(runDir('a-m-codecite-1'), 'score.json'), 'utf8')).failures, ['kept']);
   } finally {
@@ -231,6 +276,54 @@ test('scoreRound stops when the IdP is down, recording the run as unscored', { s
     .map((f) => JSON.parse(readFileSync(f, 'utf8')));
   assert.equal(saved.length, 1, 'it stopped after the first run');
   assert.equal(saved[0].passed, null);
+  assert.equal(saved[0].fatal, false);
+});
+
+test('a run unscored 3 times is a fatal scoring error, skipped until --rescore', { skip: noBwrap }, async () => {
+  const { roundDir, runDir, task } = roundForScoreRound('round-fatal', PASSING);
+  task.scoreWarm = ['/bin/false'];
+  writeFileSync(join(roundDir, 'plan.json'), JSON.stringify({ ...JSON.parse(readFileSync(join(roundDir, 'plan.json'), 'utf8')), taskDef: task }));
+  const idp = await fakeIdp();
+  const lines = [];
+  try {
+    const first = await scoreRound(roundDir, { idpUrl: idp.url, bwrap: BWRAP, log: (l) => lines.push(l) });
+    assert.deepEqual(first.fatal.sort(), ['a-m-baseline-1', 'a-m-codecite-1']);
+    assert.equal(first.unscored, 2);
+    assert.equal(lines.filter((l) => /unscored \(attempt/.test(l)).length, 6, 'three attempts each');
+    for (const id of first.fatal) {
+      const saved = JSON.parse(readFileSync(join(runDir(id), 'score.json'), 'utf8'));
+      assert.equal(saved.passed, null);
+      assert.equal(saved.fatal, true);
+      assert.equal(saved.scoreAttempts, 3);
+      assert.match(saved.unscored, /warm step failed/);
+    }
+    const again = await scoreRound(roundDir, { idpUrl: idp.url, bwrap: BWRAP, log: () => {} });
+    assert.deepEqual(again, { scored: 0, unscored: 0, skipped: 2, fatal: first.fatal });
+    // Fixed, --rescore scores them.
+    task.scoreWarm = ['/bin/true'];
+    writeFileSync(join(roundDir, 'plan.json'), JSON.stringify({ ...JSON.parse(readFileSync(join(roundDir, 'plan.json'), 'utf8')), taskDef: task }));
+    const fixed = await scoreRound(roundDir, { idpUrl: idp.url, bwrap: BWRAP, rescore: true, log: () => {} });
+    assert.deepEqual(fixed, { scored: 2, unscored: 0, skipped: 0, fatal: [] });
+  } finally {
+    await idp.stop();
+  }
+});
+
+test('an unscored run resumes its attempt count across score calls', { skip: noBwrap }, async () => {
+  const { roundDir, runDir, task } = roundForScoreRound('round-resume', PASSING);
+  task.scoreWarm = ['/bin/false'];
+  writeFileSync(join(roundDir, 'plan.json'), JSON.stringify({ ...JSON.parse(readFileSync(join(roundDir, 'plan.json'), 'utf8')), taskDef: task }));
+  writeFileSync(join(runDir('a-m-baseline-1'), 'score.json'), JSON.stringify({ passed: null, failures: [], unscored: 'x', scoreAttempts: 2, fatal: false }));
+  writeFileSync(join(runDir('a-m-codecite-1'), 'score.json'), JSON.stringify({ passed: true, failures: [] }));
+  const idp = await fakeIdp();
+  const lines = [];
+  try {
+    const r = await scoreRound(roundDir, { idpUrl: idp.url, bwrap: BWRAP, log: (l) => lines.push(l) });
+    assert.deepEqual(r.fatal, ['a-m-baseline-1']);
+    assert.equal(lines.filter((l) => /unscored \(attempt/.test(l)).length, 1, 'one attempt left');
+  } finally {
+    await idp.stop();
+  }
 });
 
 // The real task: the reference passes, the starting project fails.
@@ -266,6 +359,9 @@ test('the reference passes and the starting project fails', { skip: realSkip, ti
   };
   const refDir = prepare('reference', join(task.dir, 'reference', 'app', 'main.py'));
   const startDir = prepare('start', null);
+  const exitMain = join(roundDir, 'exit-main.py');
+  writeFileSync(exitMain, 'import os\n\nos._exit(3)\n');
+  const exitDir = prepare('exits', exitMain);
 
   let idp;
   try {
@@ -284,6 +380,11 @@ test('the reference passes and the starting project fails', { skip: realSkip, ti
     const saved = JSON.parse(readFileSync(join(startDir, 'score.json'), 'utf8'));
     assert.equal(saved.passed, false);
     assert.equal(saved.tests, 7);
+    assert.equal(saved.pytestStarted, true);
+    // The agent's code ends the process on import: no report, a failed run.
+    const exits = await scoreRun(exitDir, task, idp.url, { round, bwrap: BWRAP });
+    assert.equal(exits.passed, false, readFileSync(join(exitDir, 'score.log'), 'utf8').slice(-3000));
+    assert.match(exits.failures.join(' '), /no test report, pytest started.*exit 3/);
     for (const d of [join(refDir, 'project'), join(startDir, 'project'), join(task.dir, task.hidden)]) {
       assert.equal(existsSync(join(d, '.pytest_cache')), false, `no .pytest_cache in ${d}`);
     }

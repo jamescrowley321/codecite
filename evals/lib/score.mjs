@@ -5,6 +5,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadRound, roundSandbox } from './call.mjs';
 import { expandRuns } from './plan.mjs';
 import { findBwrap, findOnPath, probeBwrap } from './sandbox.mjs';
@@ -100,31 +101,60 @@ const isDir = (p) => {
   }
 };
 
+/** The pytest plugin dir (read-only in the sandbox) holding the started marker. */
+export const PLUGIN_DIR = fileURLToPath(new URL('./pytest-plugin/', import.meta.url)).replace(/\/$/, '');
+export const PLUGIN = 'codecite_score_started';
+
+/** The base Python of the project's venv (pyvenv.cfg `home`), else null. */
+function venvBasePython(project) {
+  try {
+    const cfg = readFileSync(join(project, '.venv', 'pyvenv.cfg'), 'utf8');
+    const home = /^home\s*=\s*(.+?)\s*$/m.exec(cfg)?.[1];
+    if (!home) return null;
+    return ['python3', 'python'].map((n) => join(home, n)).find((p) => existsSync(p)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+const tail = (output) => {
+  const last = output.trim().split('\n').pop() ?? '';
+  return last ? `: ${last.slice(0, 300)}` : '';
+};
+
 /**
  * Score one run: the task's score command in `runDir/project`, with
  * TEST_IDP=idpUrl and `{hidden}` set to the task's hidden/ dir, inside the
  * round's agent sandbox (the round dir, its taintPaths and the owner's home
  * hidden; the project read-write; the export, the score command's tools, the
- * venv's Python and hidden/ read-only; the network shared, so the IdP on
- * localhost is reachable). The run's own home/ is not bound: scoring gets a
- * fresh `runDir/score/` as HOME (uv's cache lives there). It passes only when
- * the command exits 0 and its JUnit report (asked for via PYTEST_ADDOPTS)
- * shows at least one test and no failure, error or skip.
+ * venv's Python, hidden/ and the marker plugin read-only; the network
+ * shared, so the IdP on localhost is reachable). The run's own home/ is not
+ * bound: scoring gets a fresh `runDir/score/` as HOME (uv's cache lives
+ * there). It passes only when the command exits 0 and its JUnit report
+ * (asked for via PYTEST_ADDOPTS) shows at least one test and no failure,
+ * error or skip.
  *
- * A fault of the scoring harness is never the run's result: when the IdP's
- * discovery document doesn't answer before or after the command, or the
- * command leaves no JUnit report (uv couldn't fetch pytest from PyPI, the
- * network was down, or the process ended before pytest reported), the run
- * is unscored: `passed: null` with the reason in `unscored`, which keeps it
- * out of the verdict (its pair reads INCOMPLETE) until it is scored again.
- * A score command that runs past `timeoutMs` is a failure: every hidden
- * test's IdP call has its own 10 s timeout and uv's fetches theirs, so only
- * the agent's code hangs that long. Writes score.json and score.log.
+ * Two stages, so a fault of the scoring harness is never the run's result
+ * and the agent's own breakage always is:
+ *
+ * - Infra (unscored, `passed: null`, the reason in `unscored`): the IdP's
+ *   discovery document not answering before or after; the task's
+ *   `scoreWarm` command (fetching the pinned scoring deps into this
+ *   cache, outside the agent's project) failing or timing out; and the score
+ *   command timing out before pytest started.
+ * - Agent (failed): once the warm step succeeded, no report is a failure:
+ *   either before pytest started (the agent's project failed to sync, or
+ *   uv failed on it) or after (its code ended the process). A timeout after
+ *   pytest started is a failure too. A plugin loaded with `-p` writes
+ *   `score/started` before any conftest imports the agent's code.
+ *
+ * Writes score.json and score.log. A missing project/ is a harness fault:
+ * it throws.
  *
  * @param {object} opts  `round` (default: loaded from runDir's round dir),
  *   `bwrap` (default: on PATH), `basePath` (the PATH to clean, default
- *   process.env.PATH), `timeoutMs` (default 10 min), `sandbox` ({ro, rw,
- *   alwaysHidden}: tests only).
+ *   process.env.PATH), `timeoutMs` (each stage, default 10 min), `sandbox`
+ *   ({ro, rw, alwaysHidden}: tests only).
  * @returns {Promise<{passed: boolean|null, failures: string[], unscored?: string}>}
  */
 export async function scoreRun(runDir, task, idpUrl, opts = {}) {
@@ -133,28 +163,27 @@ export async function scoreRun(runDir, task, idpUrl, opts = {}) {
   if (!bwrap) throw new Error('score: bwrap not found on PATH; scoring runs the agent\'s code in the same bubblewrap sandbox');
   const round = opts.round ?? loadRound(dirname(dirname(resolve(runDir))));
   const project = join(runDir, 'project');
+  if (!isDir(project)) throw new Error(`score: ${project} is missing; the run dir is damaged`);
   const hidden = resolve(task.dir, task.hidden);
   if (!isDir(hidden)) throw new Error(`score: the task's hidden tests are not at ${hidden}`);
   const argv = scoreCommand(task);
+  const warm = Array.isArray(task.scoreWarm) && task.scoreWarm.length > 0 ? task.scoreWarm : null;
 
   const home = join(runDir, 'score');
   rmSync(home, { recursive: true, force: true });
   mkdirSync(home, { recursive: true });
   const report = join(home, 'report.xml');
+  const started = join(home, 'started');
+  const logs = [];
   const record = (fields) => {
     const { passed, failures, unscored } = fields;
-    writeFileSync(join(runDir, 'score.json'), `${JSON.stringify({ passed, failures, ...fields, command: argv, idpUrl, scoredAt: new Date().toISOString() }, null, 2)}\n`);
+    writeFileSync(join(runDir, 'score.log'), logs.join(''));
+    writeFileSync(join(runDir, 'score.json'), `${JSON.stringify({ passed, failures, ...fields, command: argv, warm, idpUrl, scoredAt: new Date().toISOString() }, null, 2)}\n`);
     return unscored ? { passed, failures, unscored } : { passed, failures };
   };
   const unscoredRecord = (reason, fields = {}) => record({ passed: null, failures: [], unscored: reason, tests: null, exitCode: null, ...fields });
-  if (!isDir(project)) {
-    writeFileSync(join(runDir, 'score.log'), '');
-    return unscoredRecord('no project directory');
-  }
 
   const path = cleanPath(basePath);
-  const cmd = findOnPath(argv[0], path);
-  if (!cmd) throw new Error(`score: \`${argv[0]}\` not found on PATH (${path})`);
   const env = {
     PATH: path,
     HOME: home,
@@ -163,42 +192,66 @@ export async function scoreRun(runDir, task, idpUrl, opts = {}) {
     LANG: 'C.UTF-8',
     TEST_IDP: idpUrl,
     PYTHONDONTWRITEBYTECODE: '1',
-    PYTEST_ADDOPTS: `--junitxml=${report}`,
     UV_PYTHON_DOWNLOADS: 'never',
     UV_NO_PROGRESS: '1',
   };
-  const spec = { cmd, args: argv.slice(1), env, cwd: project };
   const dirs = { project, home, xdg: null, bin: null };
   // The agent's sandbox for this task: the same hides, export and tool binds.
   const scoringRound = { ...round, plan: { ...round.plan, taskDef: task } };
-  const sb = roundSandbox(spec, dirs, scoringRound, {
-    bwrap,
-    sandbox: { ro: [hidden, ...(sandbox.ro ?? [])], rw: sandbox.rw ?? [], alwaysHidden: sandbox.alwaysHidden },
-  });
-  const before = await idpProblem(idpUrl);
-  if (before) {
-    writeFileSync(join(runDir, 'score.log'), '');
-    return unscoredRecord(`IdP down before scoring: ${before}`);
-  }
-  const proc = await spawnScore(sb, project, timeoutMs);
-  writeFileSync(join(runDir, 'score.log'), proc.output);
-  if (proc.spawnError) throw new Error(`score: spawn ${bwrap}: ${proc.spawnError}`);
-  // bwrap failing to build the sandbox is the harness's fault, not the run's.
-  const bwrapError = /^bwrap: .*/.exec(proc.output)?.[0];
-  if (proc.exitCode !== 0 && bwrapError && proc.output.trim() === bwrapError.trim()) throw new Error(`score: sandbox failed: ${bwrapError}`);
+  const sandboxed = (cmdArgv, extraEnv, cwd) => {
+    const cmd = findOnPath(cmdArgv[0], path);
+    if (!cmd) throw new Error(`score: \`${cmdArgv[0]}\` not found on PATH (${path})`);
+    const spec = { cmd, args: cmdArgv.slice(1), env: { ...env, ...extraEnv }, cwd };
+    return roundSandbox(spec, dirs, scoringRound, {
+      bwrap,
+      sandbox: { ro: [hidden, PLUGIN_DIR, ...(sandbox.ro ?? [])], rw: sandbox.rw ?? [], alwaysHidden: sandbox.alwaysHidden },
+    });
+  };
+  const run = async (sb, cwd, label) => {
+    const proc = await spawnScore(sb, cwd, timeoutMs);
+    logs.push(`== ${label}\n`, proc.output, proc.output.endsWith('\n') || !proc.output ? '' : '\n');
+    if (proc.spawnError) throw new Error(`score: spawn ${bwrap}: ${proc.spawnError}`);
+    // bwrap failing to build the sandbox is the harness's fault, not the run's.
+    const bwrapError = /^bwrap: .*/.exec(proc.output)?.[0];
+    if (proc.exitCode !== 0 && bwrapError && proc.output.trim() === bwrapError.trim()) throw new Error(`score: sandbox failed: ${bwrapError}`);
+    return proc;
+  };
 
-  const procFields = { exitCode: proc.exitCode, signal: proc.signal, timedOut: proc.timedOut, wallMs: proc.wallMs };
+  const before = await idpProblem(idpUrl);
+  if (before) return unscoredRecord(`IdP down before scoring: ${before}`);
+
+  // Infra stage: fetch the pinned scoring deps with the venv's base Python,
+  // outside the agent's project, so PyPI and the network are known good.
+  if (warm) {
+    const py = venvBasePython(project);
+    const w = await run(sandboxed(warm, py ? { UV_PYTHON: py } : {}, home), home, 'warm');
+    if (w.timedOut) return unscoredRecord(`warm step timed out after ${Math.round(timeoutMs / 1000)} s`, { warmExitCode: w.exitCode });
+    if (w.exitCode !== 0) return unscoredRecord(`warm step failed (exit ${w.exitCode ?? w.signal})${tail(w.output)}`, { warmExitCode: w.exitCode });
+  }
+
+  // Agent stage: the score command in the agent's project.
+  const proc = await run(
+    sandboxed(argv, { PYTEST_ADDOPTS: `-p ${PLUGIN} --junitxml=${report}`, PYTHONPATH: PLUGIN_DIR, CODECITE_SCORE_STARTED: started }, project),
+    project,
+    'score',
+  );
+  const pytestStarted = existsSync(started);
+  const procFields = { exitCode: proc.exitCode, signal: proc.signal, timedOut: proc.timedOut, wallMs: proc.wallMs, pytestStarted };
   const after = await idpProblem(idpUrl);
   if (after) return unscoredRecord(`IdP down after scoring: ${after}`, procFields);
+  if (proc.timedOut && !pytestStarted) return unscoredRecord(`score timed out after ${Math.round(timeoutMs / 1000)} s before pytest started`, procFields);
 
   const parsed = existsSync(report) ? parseJunit(readFileSync(report, 'utf8')) : null;
-  const lastLine = proc.output.trim().split('\n').pop() ?? '';
-  if (!parsed && !proc.timedOut) {
-    return unscoredRecord(`no test report (exit ${proc.exitCode ?? proc.signal})${lastLine ? `: ${lastLine.slice(0, 300)}` : ''}`, procFields);
-  }
   const failures = [];
   if (proc.timedOut) failures.push(`score timed out after ${Math.round(timeoutMs / 1000)} s`);
-  if (parsed) {
+  if (!parsed) {
+    const exit = `exit ${proc.exitCode ?? proc.signal}`;
+    failures.push(
+      pytestStarted
+        ? `no test report, pytest started: the process ended before reporting (${exit})${tail(proc.output)}`
+        : `no test report, before pytest started: the project failed to sync or import (${exit})${tail(proc.output)}`,
+    );
+  } else {
     failures.push(...parsed.failures);
     if (parsed.tests === 0) failures.push('no tests ran');
     if (proc.exitCode !== 0 && failures.length === 0) failures.push(`exit ${proc.exitCode ?? proc.signal}`);
@@ -218,15 +271,22 @@ export async function idpProblem(idpUrl, timeoutMs = 10_000) {
   }
 }
 
+/** Attempts at a run that keeps coming back unscored before it is a fatal scoring error. */
+export const MAX_SCORE_ATTEMPTS = 3;
+
 /**
  * Score a round: every run whose result.json status is in SCORED and that
- * has no pass/fail score yet (all of them with `rescore`); unscored runs are
- * tried again. Infra and fatal runs are not scored; they never count. Stops
- * (throws) when the IdP goes down, after recording that run as unscored.
+ * has no pass/fail score yet (all of them with `rescore`). Infra and fatal
+ * runs are not scored; they never count. An unscored run is tried up to
+ * MAX_SCORE_ATTEMPTS times in all (across `score` calls), then recorded as a
+ * fatal scoring error (`fatal: true` in score.json), which later calls skip
+ * until `rescore`. Stops (throws) when the IdP goes down, after recording
+ * that run as unscored.
  *
- * @returns {Promise<{scored: number, unscored: number, skipped: number}>}
+ * @returns {Promise<{scored: number, unscored: number, skipped: number, fatal: string[]}>}
+ *   `fatal`: every run of the round that is a fatal scoring error.
  */
-export async function scoreRound(roundDir, { idpUrl, rescore = false, log = console.log, bwrap = findBwrap(process.env.PATH), ...opts }) {
+export async function scoreRound(roundDir, { idpUrl, rescore = false, log = console.log, bwrap = findBwrap(process.env.PATH), maxAttempts = MAX_SCORE_ATTEMPTS, ...opts }) {
   if (!bwrap) throw new Error('score: bwrap not found on PATH; install bubblewrap (apt install bubblewrap)');
   const probe = probeBwrap(bwrap);
   if (probe) throw new Error(`score: bwrap probe failed, so scoring can't be sandboxed: ${probe}`);
@@ -235,6 +295,14 @@ export async function scoreRound(roundDir, { idpUrl, rescore = false, log = cons
   let scored = 0;
   let unscored = 0;
   let skipped = 0;
+  const fatal = [];
+  const readScore = (runDir) => {
+    try {
+      return JSON.parse(readFileSync(join(runDir, 'score.json'), 'utf8'));
+    } catch {
+      return null;
+    }
+  };
   for (const run of expandRuns(round.plan)) {
     const runDir = join(round.dir, 'runs', run.id);
     let status;
@@ -244,27 +312,38 @@ export async function scoreRound(roundDir, { idpUrl, rescore = false, log = cons
       skipped++;
       continue; // never called
     }
-    let prior = null;
-    try {
-      prior = JSON.parse(readFileSync(join(runDir, 'score.json'), 'utf8'));
-    } catch {
-      // not scored yet
-    }
-    // An unscored run (passed: null) is always tried again.
+    const prior = readScore(runDir);
     if (!SCORED.has(status) || (!rescore && typeof prior?.passed === 'boolean')) {
       skipped++;
       continue;
     }
-    const r = await scoreRun(runDir, task, idpUrl, { ...opts, round, bwrap });
-    if (r.unscored) {
-      unscored++;
-      log(`${run.id} unscored: ${r.unscored}`);
+    if (!rescore && prior?.fatal === true) {
+      skipped++;
+      fatal.push(run.id);
+      continue;
+    }
+    let attempts = !rescore && prior?.passed === null ? (prior.scoreAttempts ?? 1) : 0;
+    let r;
+    for (;;) {
+      r = await scoreRun(runDir, task, idpUrl, { ...opts, round, bwrap });
+      attempts++;
+      if (!r.unscored) break;
+      const saved = readScore(runDir);
+      const giveUp = attempts >= maxAttempts;
+      writeFileSync(join(runDir, 'score.json'), `${JSON.stringify({ ...saved, scoreAttempts: attempts, fatal: giveUp }, null, 2)}\n`);
+      log(`${run.id} unscored (attempt ${attempts} of ${maxAttempts}): ${r.unscored}`);
       // Every later run would be unscored too.
       if (/^IdP down/.test(r.unscored)) throw new Error(`score: stopped at ${run.id}: ${r.unscored}`);
+      if (giveUp) break;
+    }
+    if (r.unscored) {
+      unscored++;
+      fatal.push(run.id);
+      log(`${run.id} could not be scored after ${attempts} attempts: a fatal scoring error`);
       continue;
     }
     scored++;
     log(`${run.id} ${r.passed ? 'passed' : `failed (${r.failures.length}: ${r.failures.slice(0, 3).join('; ')})`}`);
   }
-  return { scored, unscored, skipped };
+  return { scored, unscored, skipped, fatal };
 }

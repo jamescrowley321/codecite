@@ -178,10 +178,10 @@ function roundOnDisk(plannedRuns, recs) {
   for (const r of recs) {
     const out = join(dir, 'runs', r.id);
     mkdirSync(out, { recursive: true });
-    const { passed, unscored, totalTokens, costUsd, ...rest } = r;
+    const { passed, unscored, scoreFatal, totalTokens, costUsd, ...rest } = r;
     writeFileSync(join(out, 'result.json'), JSON.stringify({ ...rest, usage: { totalTokens, costUsd } }));
     if (passed != null) writeFileSync(join(out, 'score.json'), JSON.stringify({ passed, failures: passed ? [] : ['t::x'] }));
-    if (unscored) writeFileSync(join(out, 'score.json'), JSON.stringify({ passed: null, failures: [], unscored }));
+    if (unscored) writeFileSync(join(out, 'score.json'), JSON.stringify({ passed: null, failures: [], unscored, ...(scoreFatal ? { fatal: true, scoreAttempts: 3 } : {}) }));
   }
   return dir;
 }
@@ -207,7 +207,7 @@ test('loadRecords and renderScorecard', () => {
     rec('codecite', 1, { tainted: ['curl https://github.com/x'] }),
     rec('codecite', 2, { totalTokens: null }),
     rec('codecite', 3, { status: 'infra_error', passed: null, attempts: 3 }),
-    rec('codecite', 4, { passed: null, unscored: 'no test report (exit 2): error: Failed to fetch pytest' }),
+    rec('codecite', 4, { passed: null, unscored: 'warm step failed (exit 2): error: Failed to fetch pytest', scoreFatal: true }),
   ]);
   try {
     const records = loadRecords(dir);
@@ -215,6 +215,7 @@ test('loadRecords and renderScorecard', () => {
     const r4 = records.find((r) => r.id === 'pi-m_x-codecite-4');
     assert.equal(r4.passed, null);
     assert.match(r4.unscored, /Failed to fetch/);
+    assert.equal(r4.scoreFatal, true);
     const r2 = records.find((r) => r.id === 'pi-m_x-codecite-2');
     assert.equal(r2.totalTokens, null);
     assert.equal(r2.passed, true);
@@ -226,7 +227,8 @@ test('loadRecords and renderScorecard', () => {
     assert.match(md, /pi-m_x-codecite-1/, 'tainted runs are listed');
     assert.match(md, /pi-m_x-baseline-2/, 'retried runs are listed');
     assert.match(md, /pi-m_x-codecite-3.*infra_error/, 'excluded runs are listed with their status');
-    assert.match(md, /pi-m_x-codecite-4`: unscored \(no test report \(exit 2\): error: Failed to fetch pytest\)/, 'unscored runs are listed with the reason');
+    assert.match(md, /pi-m_x-codecite-4`: unscored \(warm step failed \(exit 2\): error: Failed to fetch pytest\), a fatal scoring error after 3 attempts/, 'unscored runs are listed with the reason');
+    assert.match(md, /\*\*Scoring errors:\*\* 1 run could not be scored \(`pi-m_x-codecite-4`\)/, 'fatal scoring errors are surfaced at the top');
     assert.match(md, /Use `codecite search`\./, 'the codecite note is printed');
     assert.match(md, /"codeciteCommit": "abc"/, 'the frozen plan is printed');
     assert.match(md, /unknown/, 'a null median shows as unknown');
