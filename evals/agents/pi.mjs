@@ -3,8 +3,9 @@
 // auth.json we write, no sessions, MCP, extensions, skills, prompt
 // templates, themes or project-local .pi resources) and reads its JSON event
 // stream. The key is the evals OpenRouter key, in the agent dir's auth.json
-// (mode 0600), not in the environment, so `env` in the agent's shell doesn't
-// print it; the agent can still read the file. Nothing from the owner's
+// (0600, fed to bwrap from a pipe, never on the host's disk), not in the
+// environment, so `env` in the agent's shell doesn't print it; the agent can
+// still read the file. Nothing from the owner's
 // ~/.pi is read.
 
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -133,12 +134,12 @@ export default {
     if (!cmd) throw new Error(`pi: \`pi\` not found on the run's PATH (${dirs.path})`);
     // pi's agent dir: empty but for models.json and auth.json (the evals
     // key, 0600), so no settings, AGENTS.md, skills, extensions or MCP
-    // config of the owner's load. Written on the host; pi sees it at the
-    // in-sandbox home.
+    // config of the owner's load. models.json is written on the host; pi
+    // sees it at the in-sandbox home.
     const hostAgentDir = join(dirs.host?.home ?? dirs.home, 'pi');
     mkdirSync(hostAgentDir, { recursive: true });
     writeFileSync(join(hostAgentDir, 'models.json'), `${JSON.stringify(modelsJson(ctx.plan?.roundId, run.arm), null, 2)}\n`);
-    writeFileSync(join(hostAgentDir, 'auth.json'), `${JSON.stringify({ openrouter: { type: 'api_key', key } }, null, 2)}\n`, { mode: 0o600 });
+
     // The whole environment, built from nothing; no key in it.
     const env = {
       HOME: dirs.home,
@@ -153,8 +154,18 @@ export default {
     };
     // The prompt goes last, after `--`, so it is a message and never a flag.
     const args = ['-p', ...FLAGS, '--model', run.model, ...ISOLATION, '--', ctx.prompt];
-    // auth.json goes once pi exits, so no round dir keeps the key.
-    return { cmd, args, env, cwd: dirs.project, secretFiles: [join(hostAgentDir, 'auth.json')] };
+    // auth.json with the key reaches the sandbox from a pipe (bwrap's
+    // --bind-data, 0600), so it is never on the host's disk; the empty mount
+    // point bwrap leaves in the host agent dir is removed after the run.
+    const auth = `${JSON.stringify({ openrouter: { type: 'api_key', key } }, null, 2)}\n`;
+    return {
+      cmd,
+      args,
+      env,
+      cwd: dirs.project,
+      dataFiles: [{ path: join(dirs.home, 'pi', 'auth.json'), data: auth }],
+      secretFiles: [join(hostAgentDir, 'auth.json')],
+    };
   },
 
   earlyReject(line) {

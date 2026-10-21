@@ -5,7 +5,19 @@ import { createServer } from 'node:net';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
-import { DAEMON_SOCKETS, findBwrap, hiddenRoots, opensslFiles, sandboxArgs } from './sandbox.mjs';
+import { DAEMON_SOCKETS, findBwrap, hiddenRoots, opensslFiles, sandboxArgs, spawnSandbox } from './sandbox.mjs';
+
+/** Run a sandbox through spawnSandbox; resolves {code, stdout, stderr}. */
+function runSandbox(sb, { cwd }) {
+  return new Promise((res) => {
+    const child = spawnSandbox(sb, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    const out = [];
+    const err = [];
+    child.stdout.on('data', (c) => out.push(c));
+    child.stderr.on('data', (c) => err.push(c));
+    child.on('close', (code) => res({ code, stdout: Buffer.concat(out).toString(), stderr: Buffer.concat(err).toString() }));
+  });
+}
 
 const BWRAP = findBwrap(process.env.PATH);
 // The defaults minus /tmp: these tests' dirs live under /tmp, so with it
@@ -302,4 +314,27 @@ test('the default daemon socket list names the container daemons', () => {
   for (const p of ['/run/docker.sock', '/var/run/docker.sock', '/run/containerd/containerd.sock', '/run/podman/podman.sock', '/var/snap/lxd/common/lxd/unix.socket', '/var/lib/lxd/unix.socket', '/run/incus/unix.socket']) {
     assert.ok(DAEMON_SOCKETS.includes(p), p);
   }
+});
+
+test('spawnSandbox hands bwrap its binds on a pipe: pid 1 shows no host path', { skip }, async () => {
+  const s = spec('/bin/sh', ['-c', 'tr "\\0" " " </proc/1/cmdline; echo; for p in /proc/[0-9]*/cmdline; do tr "\\0" " " <"$p"; echo; done']);
+  const sb = sandboxArgs(s, dirs, opts);
+  const r = await runSandbox(sb, { cwd: dirs.project });
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, /^\S*bwrap --args 3 -- \/bin\/sh/);
+  assert.ok(!r.stdout.includes(dirs.project) && !r.stdout.includes(round), r.stdout);
+  assert.ok(!r.stdout.includes('--bind'), r.stdout);
+});
+
+test('a data file reaches the sandbox from a pipe, never the host disk', { skip }, async () => {
+  const s = { ...spec('/bin/sh', ['-c', `cat "${dirs.home}/key.json"; echo; stat -c %a "${dirs.home}/key.json"`]), dataFiles: [{ path: join(dirs.home, 'key.json'), data: '{"k":"planted-data"}' }] };
+  const sb = sandboxArgs(s, dirs, opts);
+  assert.ok(!sb.args.join(' ').includes('planted-data'), 'the data is never in argv');
+  const r = await runSandbox(sb, { cwd: dirs.project });
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, /planted-data/);
+  assert.match(r.stdout, /^600$/m);
+  // bwrap leaves an empty mount point behind in the bound dir; the data is not in it.
+  const host = join(dirs.home, 'key.json');
+  assert.ok(!existsSync(host) || readFileSync(host, 'utf8') === '', 'nothing on the host');
 });

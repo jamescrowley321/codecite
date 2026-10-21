@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import pi, { TOOLS, configLeak } from './pi.mjs';
@@ -226,18 +226,19 @@ test('env is built from nothing, and holds no key: pi reads it from auth.json', 
   assert.ok(!spec.args.some((a) => a.includes('or-test-123')));
 });
 
-test('agent dir holds only models.json and a private auth.json with the key', () => {
+test('agent dir holds only models.json; the key reaches auth.json from a pipe, never the disk', () => {
   const titles = [];
   for (const arm of ['baseline', 'codecite']) {
     const dirs = fakeDirs({ codecite: arm === 'codecite' });
     const spec = pi.command({ ...RUN, arm }, dirs, CTX);
     assert.equal(spec.env.PI_CODING_AGENT_DIR, '/work/home/pi');
     const agentDir = join(dirs.host.home, 'pi');
-    assert.deepEqual(readdirSync(agentDir).sort(), ['auth.json', 'models.json']);
-    const auth = JSON.parse(readFileSync(join(agentDir, 'auth.json'), 'utf8'));
-    assert.deepEqual(auth, { openrouter: { type: 'api_key', key: 'or-test-123' } });
-    assert.equal(statSync(join(agentDir, 'auth.json')).mode & 0o077, 0, 'auth.json is 0600');
-    assert.deepEqual(spec.secretFiles, [join(agentDir, 'auth.json')], 'the harness deletes it after the run');
+    assert.deepEqual(readdirSync(agentDir), ['models.json']);
+    assert.equal(spec.dataFiles.length, 1);
+    assert.equal(spec.dataFiles[0].path, '/work/home/pi/auth.json');
+    assert.deepEqual(JSON.parse(spec.dataFiles[0].data), { openrouter: { type: 'api_key', key: 'or-test-123' } });
+    // bwrap leaves an empty mount point on the host; the harness removes it.
+    assert.deepEqual(spec.secretFiles, [join(agentDir, 'auth.json')]);
     const models = JSON.parse(readFileSync(join(agentDir, 'models.json'), 'utf8'));
     const title = models.providers.openrouter.headers['X-Title'];
     // Per arm, so OpenRouter splits spend by arm, but opaque: the agent can

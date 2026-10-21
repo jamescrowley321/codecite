@@ -11,7 +11,7 @@ import { delimiter, join } from 'node:path';
 import claude from '../agents/claude.mjs';
 import pi from '../agents/pi.mjs';
 import { renderPrompt } from './plan.mjs';
-import { findBwrap, roundSandbox } from './sandbox.mjs';
+import { findBwrap, roundSandbox, spawnSandbox } from './sandbox.mjs';
 import { prepareRun } from './workspace.mjs';
 
 const BWRAP = findBwrap(process.env.PATH);
@@ -85,7 +85,8 @@ function build(agent, arm) {
   };
   walk(dirs.host.home);
   const command = sb.args.slice(sb.args.indexOf('--') + 1);
-  return { run, dirs, spec, sb, prompt, visible: [...dests, ...command, ...Object.values(sb.env), ...files] };
+  const data = (spec.dataFiles ?? []).map((f) => `${f.path}\n${f.data}`);
+  return { run, dirs, spec, sb, prompt, visible: [...dests, ...command, ...Object.values(sb.env), ...files, ...data] };
 }
 
 for (const agent of ['claude', 'pi']) {
@@ -120,18 +121,48 @@ for (const agent of ['claude', 'pi']) {
   });
 }
 
-test('inside the sandbox, pwd, env and the prompt name no arm, run or round', { skip: BWRAP ? false : 'bwrap is not on PATH' }, () => {
-  for (const arm of ['baseline', 'codecite']) {
-    const { run, spec, dirs, prompt } = build('pi', arm);
-    // The run's own sandbox and env, with a probe for the agent.
-    const probe = { ...spec, cmd: '/bin/sh', args: ['-c', 'pwd; env; ls -A /work; printf "%s" "$1"', 'probe', prompt] };
-    const sb = roundSandbox(probe, dirs, round, { bwrap: BWRAP });
-    const r = spawnSync(sb.cmd, sb.args, { cwd: dirs.host.project, env: sb.env, encoding: 'utf8' });
-    assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /^\/work\/project\n/);
-    const seen = r.stdout.replace(NOTE.replace('{identity_model}', '/work/identity-model'), '<note>');
-    for (const f of ['baseline', 'codecite-evals', ROUND_ID, run.id]) assert.ok(!seen.includes(f), `${arm}: ${f} in ${seen}`);
-    const work = seen.split('\n').filter((l) => ['project', 'home', 'xdg', 'bin', 'identity-model'].includes(l)).sort();
-    assert.deepEqual(work, arm === 'codecite' ? ['bin', 'home', 'identity-model', 'project', 'xdg'] : ['home', 'identity-model', 'project', 'xdg']);
-  }
-});
+/** Run a sandbox the way the call loop does (binds on a pipe); resolves {code, stdout, stderr}. */
+function runIt(sb, cwd) {
+  return new Promise((res) => {
+    const child = spawnSandbox(sb, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    const out = [];
+    const err = [];
+    child.stdout.on('data', (c) => out.push(c));
+    child.stderr.on('data', (c) => err.push(c));
+    child.on('close', (code) => res({ code, stdout: Buffer.concat(out).toString(), stderr: Buffer.concat(err).toString() }));
+  });
+}
+
+// What an agent's shell can see of itself and its sandbox. The mount table
+// (mountinfo) is left out: it names the host dirs, and reading it taints.
+const PROBE = [
+  'pwd',
+  'env',
+  'ls -A /work',
+  'ps -eo pid,args',
+  'tr "\\0" " " </proc/1/cmdline; echo',
+  'for p in /proc/[0-9]*/cmdline; do tr "\\0" " " <"$p"; echo; done',
+  'tr "\\0" "\\n" </proc/self/environ',
+  'tr "\\0" "\\n" </proc/1/environ',
+  'cat /proc/self/mounts',
+  'printf "%s" "$1"',
+].join('; ');
+
+for (const agent of ['claude', 'pi']) {
+  test(`${agent}: inside the sandbox, pwd, env, ps, /proc and the prompt name no arm, run or round`, { skip: BWRAP ? false : 'bwrap is not on PATH' }, async () => {
+    for (const arm of ['baseline', 'codecite']) {
+      const { run, spec, dirs, prompt } = build(agent, arm);
+      // The run's own sandbox and env, with a probe for the agent.
+      const probe = { ...spec, cmd: '/bin/sh', args: ['-c', PROBE, 'probe', prompt] };
+      const sb = roundSandbox(probe, dirs, round, { bwrap: BWRAP });
+      const r = await runIt(sb, dirs.host.project);
+      assert.equal(r.code, 0, r.stderr);
+      assert.match(r.stdout, /^\/work\/project\n/);
+      assert.match(r.stdout, /bwrap --args 3 -- \/bin\/sh/, 'pid 1 is bwrap with its binds on a pipe');
+      const seen = r.stdout.replace(NOTE.replace('{identity_model}', '/work/identity-model'), '<note>');
+      for (const f of ['baseline', 'codecite-evals', ROUND_ID, run.id, round.dir]) assert.ok(!seen.includes(f), `${arm}: ${f} in ${seen}`);
+      const work = seen.split('\n').filter((l) => ['project', 'home', 'xdg', 'bin', 'identity-model'].includes(l)).sort();
+      assert.deepEqual(work, arm === 'codecite' ? ['bin', 'home', 'identity-model', 'project', 'xdg'] : ['home', 'identity-model', 'project', 'xdg']);
+    }
+  });
+}

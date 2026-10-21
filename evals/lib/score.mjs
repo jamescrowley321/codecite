@@ -2,13 +2,12 @@
 // inside the same bubblewrap sandbox the agent ran in (the score command
 // imports the agent's code), and record score.json beside result.json.
 
-import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadRound, roundSandbox } from './call.mjs';
 import { expandRuns } from './plan.mjs';
-import { findBwrap, findOnPath, IN_SANDBOX, probeBwrap } from './sandbox.mjs';
+import { findBwrap, findOnPath, IN_SANDBOX, probeBwrap, spawnSandbox } from './sandbox.mjs';
 import { cleanPath } from './workspace.mjs';
 
 /** Run statuses whose project is scored (and that count toward a verdict). */
@@ -66,7 +65,8 @@ function spawnScore(sb, cwd, timeoutMs) {
     const out = [];
     const t0 = performance.now();
     let timedOut = false;
-    const child = spawn(sb.cmd, sb.args, { cwd, env: sb.env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    // Binds on a pipe, not in argv: the agent's code runs here too.
+    const child = spawnSandbox(sb, { cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
     const timer = setTimeout(() => {
       timedOut = true;
       try {

@@ -33,8 +33,11 @@ import { emptyUsage } from './telemetry.mjs';
  *   Secrets go here and only here, never in args.
  * @property {string} cwd
  * @property {string} [input]  Written to the agent's stdin, then closed; stdin is empty otherwise.
- * @property {string[]} [secretFiles]  Host paths of files holding a secret that the adapter wrote
- *   for the agent (pi's auth.json). The harness deletes them once the agent exits.
+ * @property {{path: string, data: string}[]} [dataFiles]  Files the agent needs that hold a secret
+ *   (pi's auth.json), at in-sandbox paths. bwrap copies each from a pipe into its own tmpfs, 0600,
+ *   so it never touches the host's disk.
+ * @property {string[]} [secretFiles]  Host paths the harness deletes once the agent exits (the
+ *   empty mount points dataFiles leave, or any file the adapter wrote holding a secret).
  * @property {string[]} [secrets]  Extra secret values this run uses that are not in
  *   ctx.secrets (e.g. a token the adapter read itself). The harness redacts them
  *   from stdout, stderr and result.json exactly like ctx.secrets.

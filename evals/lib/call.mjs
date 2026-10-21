@@ -13,7 +13,7 @@ import { emptyAgentResult, loadAdapter as defaultLoadAdapter } from './agent.mjs
 import { CircuitBreaker, classify } from './guards.mjs';
 import { estimateUsd, keyRemainingUsd as orKeyRemaining, modelPrices as orModelPrices } from './openrouter.mjs';
 import { expandRuns, renderPrompt } from './plan.mjs';
-import { descendants, findBwrap, IN_SANDBOX, probeBwrap, roundSandbox } from './sandbox.mjs';
+import { descendants, findBwrap, IN_SANDBOX, probeBwrap, roundSandbox, spawnSandbox } from './sandbox.mjs';
 import { requireSecret } from './secrets.mjs';
 import { taintHits } from './taint.mjs';
 import { prepareRun } from './workspace.mjs';
@@ -129,7 +129,7 @@ function resetDir(dir) {
  * later; killing bwrap ends its pid namespace, which kills everything left
  * inside. Wall time runs from spawn to exit.
  */
-function spawnAgent({ cmd, args = [], env = {}, cwd, input }, { timeoutMs, killGraceMs, earlyReject }) {
+function spawnAgent({ sb, cwd, input }, { timeoutMs, killGraceMs, earlyReject }) {
   return new Promise((resolve) => {
     const out = [];
     const err = [];
@@ -192,7 +192,7 @@ function spawnAgent({ cmd, args = [], env = {}, cwd, input }, { timeoutMs, killG
     }, timeoutMs);
     let closeTimer;
     try {
-      child = spawn(cmd, args, { cwd, env, detached: true, stdio: [input == null ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
+      child = spawnSandbox(sb, { cwd, detached: true, stdio: [input == null ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
     } catch (e) {
       spawnError = e.code ? `${e.code}: ${e.message}` : e.message;
       finish();
@@ -349,7 +349,7 @@ async function spawnSandboxed(spec, dirs, round, { bwrap, sandbox = {}, ...run }
     return failed(`sandbox: ${e.message}`);
   }
   // bwrap itself starts in the host project dir; --chdir puts the agent at spec.cwd.
-  const proc = await spawnAgent({ cmd: sb.cmd, args: sb.args, env: sb.env, cwd: dirs.host?.project ?? dirs.project, input: spec.input }, run);
+  const proc = await spawnAgent({ sb, cwd: dirs.host?.project ?? dirs.project, input: spec.input }, run);
   // bwrap's own errors (a bind it couldn't make) come before any agent output.
   const bwrapError = /^bwrap: .*/.exec(proc.stderr)?.[0];
   if (!proc.spawnError && proc.exitCode !== 0 && proc.stdout === '' && bwrapError) proc.spawnError = bwrapError;

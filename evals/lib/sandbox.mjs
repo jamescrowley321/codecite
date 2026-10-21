@@ -9,7 +9,7 @@
 // PWD, which bwrap's --chdir sets), handed to bwrap as its own env. Network
 // is shared: agents need their provider's API.
 
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { accessSync, closeSync, constants, existsSync, lstatSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path';
@@ -451,12 +451,48 @@ export function sandboxArgs(spec, dirs, opts = {}) {
   if (host.bin) args.push('--ro-bind', host.bin, dirs.bin ?? host.bin);
   for (const k of ['project', 'home', 'xdg']) if (host[k]) args.push('--bind', host[k], dirs[k] ?? host[k]);
   for (const [s, d] of rw.filter(Boolean).map(pair)) args.push('--bind', s, d);
+  // Files the agent needs that hold a secret (pi's auth.json): bwrap copies
+  // each from a pipe into its own tmpfs and binds it, 0600, so it is never
+  // on the host's disk. Fds 4, 5, ... (3 carries the args; see spawnSandbox).
+  const dataFiles = Array.isArray(spec.dataFiles) ? spec.dataFiles : [];
+  dataFiles.forEach((f, i) => args.push('--perms', '0600', '--bind-data', String(4 + i), f.path));
   args.push('--remount-ro', '/', ...NAMESPACES, '--chdir', cwd, '--', spec.cmd, ...(spec.args ?? []));
   // bwrap gets exactly the adapter's env and passes it on as is. Not
   // --clearenv/--setenv: the values (secrets) would sit in bwrap's argv,
   // which /proc shows every local user.
-  return { cmd: bwrap, args, env: Object.fromEntries(Object.entries(env).map(([k, v]) => [k, String(v)])) };
+  const command = [spec.cmd, ...(spec.args ?? [])];
+  return {
+    cmd: bwrap,
+    args,
+    options: args.slice(0, args.length - command.length - 1),
+    command,
+    data: dataFiles.map((f) => Buffer.from(String(f.data))),
+    env: Object.fromEntries(Object.entries(env).map(([k, v]) => [k, String(v)])),
+  };
 }
+
+/**
+ * Spawn a sandboxArgs result with bwrap's own options (the binds, which name
+ * the round, the run and its arm) on a pipe (`--args 3`), not in its argv:
+ * bwrap is pid 1 inside the sandbox, and its argv is any process's
+ * /proc/1/cmdline. Its argv is just `bwrap --args 3 -- <command>`. Data files
+ * go on fds 4, 5, .... `opts` are spawn's (cwd, detached); `stdio` gives
+ * fds 0-2, default all piped.
+ */
+export function spawnSandbox(sb, { stdio = ['pipe', 'pipe', 'pipe'], ...opts } = {}) {
+  const extra = 1 + (sb.data?.length ?? 0);
+  const child = spawn(sb.cmd, ['--args', '3', '--', ...sb.command], { ...opts, env: sb.env, stdio: [...stdio, ...Array(extra).fill('pipe')] });
+  const feeds = [Buffer.from(sb.options.map((a) => `${a}\0`).join('')), ...(sb.data ?? [])];
+  feeds.forEach((buf, i) => {
+    const s = child.stdio[3 + i];
+    if (!s) return;
+    s.on('error', () => {});
+    s.end(buf);
+  });
+  return child;
+}
+
+
 
 const isDir = (p) => {
   try {
