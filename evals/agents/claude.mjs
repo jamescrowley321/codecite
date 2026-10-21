@@ -94,6 +94,9 @@ function parseLines(stdout) {
   return events;
 }
 
+/** Margin on top of a run's timeout that a login must still be valid for. */
+export const EXPIRY_MARGIN_MS = 60_000;
+
 /**
  * The subscription token: `secrets.claudeOauth` if set, else
  * `claudeAiOauth.accessToken` from `credentialsPath`, read fresh each call so
@@ -101,7 +104,16 @@ function parseLines(stdout) {
  * sources, never a value.
  */
 export function claudeToken(secrets, credentialsPath) {
-  if (secrets?.claudeOauth) return secrets.claudeOauth;
+  return claudeLogin(secrets, credentialsPath).token;
+}
+
+/**
+ * claudeToken plus, from the login file, its `refreshToken` (to redact,
+ * never to pass) and `expiresAt` (ms since the epoch), each null when
+ * absent or when the token came from evals.env.
+ */
+export function claudeLogin(secrets, credentialsPath) {
+  if (secrets?.claudeOauth) return { token: secrets.claudeOauth, refreshToken: null, expiresAt: null };
   const none = `claude: CLAUDE_CODE_OAUTH_TOKEN is not set in ${SECRETS_PATH}, and`;
   let text;
   try {
@@ -119,10 +131,45 @@ export function claudeToken(secrets, credentialsPath) {
   if (typeof token !== 'string' || !token) {
     throw new Error(`${none} ${credentialsPath} has no claudeAiOauth.accessToken; run \`claude\` and log in`);
   }
-  return token;
+  const refresh = creds.claudeAiOauth.refreshToken;
+  const expiresAt = creds.claudeAiOauth.expiresAt;
+  return {
+    token,
+    refreshToken: typeof refresh === 'string' && refresh ? refresh : null,
+    expiresAt: typeof expiresAt === 'number' && Number.isFinite(expiresAt) ? expiresAt : null,
+  };
 }
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+/**
+ * Usage summed over the assistant messages, for a run with no result event
+ * (killed at timeout). stream-json repeats a message's usage on each of its
+ * content blocks, so each message id counts once (its last report). Cost is
+ * only in the result event: null.
+ */
+function usageFromMessages(events) {
+  const byId = new Map();
+  let anon = 0;
+  for (const e of events) {
+    if (e.type !== 'assistant' || !e.message?.usage) continue;
+    byId.set(e.message.id ?? `anon-${anon++}`, e.message.usage);
+  }
+  if (byId.size === 0) return null;
+  const sum = (f) => {
+    let total = 0;
+    for (const u of byId.values()) {
+      const n = num(u[f]);
+      if (n == null) return null;
+      total += n;
+    }
+    return total;
+  };
+  const usage = { input: sum('input_tokens'), output: sum('output_tokens'), cacheRead: sum('cache_read_input_tokens'), cacheWrite: sum('cache_creation_input_tokens'), totalTokens: null, costUsd: null };
+  const parts = [usage.input, usage.output, usage.cacheRead, usage.cacheWrite];
+  if (parts.every((n) => n != null)) usage.totalTokens = parts.reduce((a, b) => a + b, 0);
+  return usage;
+}
 
 function usageFrom(result) {
   const u = result?.usage ?? {};
@@ -145,7 +192,14 @@ export function createClaude({ credentialsPath = CREDENTIALS_PATH } = {}) {
     name: 'claude',
 
     command(run, dirs, ctx) {
-      const token = claudeToken(ctx.secrets, credentialsPath);
+      const { token, refreshToken, expiresAt } = claudeLogin(ctx.secrets, credentialsPath);
+      // The token is never refreshed here; one that would expire mid-run is
+      // a 401 (fatal) partway through, so stop before the run instead.
+      const needMs = (ctx.plan?.timeoutSec ?? 0) * 1000 + EXPIRY_MARGIN_MS;
+      if (expiresAt != null && expiresAt < Date.now() + needMs) {
+        const when = expiresAt < Date.now() ? 'expired' : 'expires before this run could finish';
+        throw new Error(`claude: the Claude Code login in ${credentialsPath} ${when} (at ${new Date(expiresAt).toISOString()}); log in to Claude Code to refresh it (run \`claude\`), then run call again to resume`);
+      }
       const cmd = findOnPath('claude', dirs.path);
       if (!cmd) throw new Error(`claude: \`claude\` not found on the run's PATH (${dirs.path})`);
       // The whole environment, built from nothing: no ANTHROPIC_API_KEY, no
@@ -163,8 +217,8 @@ export function createClaude({ credentialsPath = CREDENTIALS_PATH } = {}) {
       };
       delete env.ANTHROPIC_API_KEY;
       // `secrets`: the harness redacts the token even when it came from the
-      // login file rather than ctx.secrets.
-      return { cmd, args: ['-p', ctx.prompt, '--model', run.model, ...FLAGS], env, cwd: dirs.project, secrets: [token] };
+      // login file rather than ctx.secrets, and the login's refresh token.
+      return { cmd, args: ['-p', ctx.prompt, '--model', run.model, ...FLAGS], env, cwd: dirs.project, secrets: [token, refreshToken].filter(Boolean) };
     },
 
     earlyReject(line) {
@@ -231,7 +285,11 @@ export function createClaude({ credentialsPath = CREDENTIALS_PATH } = {}) {
         // The result reports the status that ended the run; a retry that
         // later succeeded leaves it null.
         r.providerStatus = num(result.api_error_status);
+        // An error result (a 429 usage limit, a 5xx) ended the run: before
+        // any turn that is infra (classify), after one a failed run.
+        r.endedOnError = result.is_error === true;
       } else {
+        r.usage = usageFromMessages(events) ?? r.usage;
         r.providerStatus = lastStatus;
       }
       return r;

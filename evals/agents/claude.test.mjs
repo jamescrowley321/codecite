@@ -4,12 +4,14 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from '
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import claude, { configLeak, createClaude } from './claude.mjs';
+import { classify } from '../lib/guards.mjs';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 const STREAM = fixture('claude-stream.jsonl');
 const TOOLS = fixture('claude-tools.jsonl');
 const LEAKED = fixture('claude-leaked.jsonl');
 const AUTH_FAILED = fixture('claude-auth-failed.jsonl');
+const USAGE_LIMIT = fixture('claude-usage-limit.jsonl');
 
 const line = (obj) => JSON.stringify(obj);
 const assistant = (...content) => line({ type: 'assistant', message: { id: `msg_${Math.random()}`, content } });
@@ -55,14 +57,29 @@ test('parses usage from the result event', () => {
   assert.match(r.transcript, /ok/);
 });
 
-test('missing result event gives null usage', () => {
+test('a missing result event (a run killed at timeout) sums the per-message usage', () => {
   const truncated = STREAM.trim().split('\n').filter((l) => JSON.parse(l).type !== 'result').join('\n');
   const r = claude.parse(truncated, '');
-  assert.equal(r.usage.totalTokens, null);
-  assert.equal(r.usage.input, null);
-  assert.equal(r.usage.costUsd, null);
+  assert.deepEqual(r.usage, { input: 2, output: 4, cacheRead: 11228, cacheWrite: 5623, totalTokens: 2 + 4 + 11228 + 5623, costUsd: null });
   assert.equal(r.turns, null);
   assert.equal(r.init.model, 'claude-sonnet-5-5');
+});
+
+test('per-message usage counts each message once, though it repeats per content block', () => {
+  const events = TOOLS.trim().split('\n').map((l) => JSON.parse(l));
+  const truncated = events.filter((e) => e.type !== 'result');
+  const seen = new Map();
+  for (const e of truncated) if (e.type === 'assistant') seen.set(e.message.id, e.message.usage);
+  assert.ok(seen.size < truncated.filter((e) => e.type === 'assistant').length, 'the fixture repeats a message id');
+  const want = [...seen.values()].reduce((a, u) => a + u.input_tokens + u.output_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens, 0);
+  const r = claude.parse(truncated.map(line).join('\n'), '');
+  assert.equal(r.usage.totalTokens, want);
+  assert.equal(r.usage.costUsd, null, 'cost is only in the result event');
+});
+
+test('no result and no message usage leaves the tokens unknown', () => {
+  const r = claude.parse(STREAM.trim().split('\n').filter((l) => !['result', 'assistant'].includes(JSON.parse(l).type)).join('\n'), '');
+  assert.equal(r.usage.totalTokens, null);
 });
 
 test('a missing token field makes totalTokens null, not a partial sum', () => {
@@ -148,6 +165,25 @@ test('a 401 surfaces as providerStatus with no turns', () => {
   assert.equal(r.rejectReason, null);
 });
 
+test('a 429 before any turn ends on a provider error, so it is infra, not a failed run', () => {
+  const r = claude.parse(USAGE_LIMIT, '');
+  assert.equal(r.providerStatus, 429);
+  assert.equal(r.turns, 0);
+  assert.equal(r.endedOnError, true);
+  assert.equal(classify({ ...r, spawnError: null }), 'infra');
+});
+
+test('a run that ended on an error after real turns is endedOnError but not infra', () => {
+  const events = TOOLS.trim().split('\n').map((l) => JSON.parse(l));
+  const res = events.find((e) => e.type === 'result');
+  Object.assign(res, { is_error: true, api_error_status: 429 });
+  const r = claude.parse(events.map(line).join('\n'), '');
+  assert.equal(r.endedOnError, true);
+  assert.equal(r.turns, 5);
+  assert.equal(classify({ ...r, spawnError: null }), 'agent');
+  assert.equal(claude.parse(TOOLS, '').endedOnError, false);
+});
+
 test('a retried status that later succeeds is not a provider error', () => {
   const out = [
     line({ type: 'system', subtype: 'api_retry', error_status: 529, error: 'overloaded' }),
@@ -223,12 +259,13 @@ test('uses evals.env token when present', () => {
 });
 
 test('falls back to credentials.json accessToken', () => {
-  const p = credentialsFile({ claudeAiOauth: { accessToken: 'tok-from-login-999', refreshToken: 'r' } });
+  const p = credentialsFile({ claudeAiOauth: { accessToken: 'tok-from-login-999', refreshToken: 'tok-refresh-888' } });
   const before = readFileSync(p, 'utf8');
   const adapter = createClaude({ credentialsPath: p });
   const c = adapter.command(RUN, fakeDirs(), NO_ENV_TOKEN);
   assert.equal(c.env.CLAUDE_CODE_OAUTH_TOKEN, 'tok-from-login-999');
-  assert.deepEqual(c.secrets, ['tok-from-login-999'], 'the harness must redact the token it never saw');
+  assert.deepEqual(c.secrets, ['tok-from-login-999', 'tok-refresh-888'], 'the harness must redact the tokens it never saw, the refresh token too');
+  assert.ok(!Object.values(c.env).includes('tok-refresh-888'), 'the refresh token is never passed');
   assert.ok(!c.args.some((a) => a.includes('tok-from-login-999')));
   assert.equal(readFileSync(p, 'utf8'), before, 'the login file is read-only');
   // Read fresh on every call: a refreshed login is picked up mid-round.
@@ -256,6 +293,28 @@ test('error names the source, never the value', () => {
     assert.ok(err.message.includes(p), 'names the file');
     assert.ok(!/tok-secret/.test(err.message), `no value in: ${err.message}`);
   }
+});
+
+test('an expired or soon-expiring login stops the round with a clear message, never the token', () => {
+  const plan = { timeoutSec: 600 };
+  const ctx = { ...NO_ENV_TOKEN, plan };
+  const at = (ms) => credentialsFile({ claudeAiOauth: { accessToken: 'tok-secret-exp-1', refreshToken: 'tok-secret-exp-2', expiresAt: Date.now() + ms } });
+  for (const p of [at(-60_000), at(5 * 60_000)]) {
+    let err;
+    try {
+      createClaude({ credentialsPath: p }).command(RUN, fakeDirs(), ctx);
+    } catch (e) {
+      err = e;
+    }
+    assert.ok(err, 'throws');
+    assert.match(err.message, /log in to Claude Code/);
+    assert.ok(!/tok-secret/.test(err.message), err.message);
+  }
+  // Valid for longer than a run's timeout: fine.
+  assert.equal(createClaude({ credentialsPath: at(60 * 60_000) }).command(RUN, fakeDirs(), ctx).env.CLAUDE_CODE_OAUTH_TOKEN, 'tok-secret-exp-1');
+  // No expiresAt, or a token from evals.env: not checked.
+  assert.ok(createClaude({ credentialsPath: credentialsFile({ claudeAiOauth: { accessToken: 'a' } }) }).command(RUN, fakeDirs(), ctx));
+  assert.ok(createClaude({ credentialsPath: at(-60_000) }).command(RUN, fakeDirs(), { ...CTX, plan }));
 });
 
 test('command fails clearly when claude is not on the run PATH', () => {
