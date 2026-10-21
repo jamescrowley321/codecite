@@ -230,8 +230,8 @@ node evals/run.mjs score --round <id> [--rescore]
 
 `score` holds no secrets. It starts the IdP (`fixtures/node-oidc`, with this
 Node on a free loopback port), scores every run whose `result.json` status is
-`ok`, `timeout` or `agent_error` and that has no `score.json` yet (all of
-them with `--rescore`), then writes `<round>/scorecard.md` and prints each
+`ok`, `timeout` or `agent_error` and that has no pass/fail score yet (all of
+them with `--rescore`; unscored runs are always tried again), then writes `<round>/scorecard.md` and prints each
 pair's verdict and the round's. `infra_error` and `fatal` runs are not
 scored.
 
@@ -239,7 +239,8 @@ scored.
   task's `hidden/` dir, run in the run's `project/` (the task's conftest puts
   the cwd on `sys.path`). The environment is built from nothing: the cleaned
   `PATH`, `TEST_IDP`, `HOME` and the XDG cache at a fresh `runs/<id>/score/`
-  (uv's cache, so `--with pytest` downloads there),
+  (uv's cache, so `--with pytest==9.1.1 --with httpx==0.28.1`, pinned in
+  `task.json`, download there),
   `PYTHONDONTWRITEBYTECODE=1`, and `PYTEST_ADDOPTS=--junitxml=score/report.xml`.
 - **Sandbox:** the score command imports the agent's code, so it runs in the
   same bubblewrap sandbox as the agent (`roundSandbox`): the same hides (the
@@ -250,17 +251,26 @@ scored.
   its home instead). The network is shared, so the IdP on `127.0.0.1` is
   reachable. A bwrap failure is a harness error, never a failed run.
 - **Pass:** the command exits 0 and its JUnit report shows at least one test
-  and no failure, error or skip. A missing report (the agent's code ended the
-  process early) fails. `score.json` holds `passed`, `failures` (test ids),
-  `tests`, `exitCode`, `timedOut`, `wallMs` and the command; `score.log` the
-  output.
+  and no failure, error or skip. A score command past its 10-minute timeout
+  fails (the hidden tests' IdP calls and uv's fetches time out on their own,
+  so only the agent's code hangs that long).
+- **Unscored, never failed:** a scoring fault is not the run's result. When
+  the IdP's discovery document doesn't answer before or after the command,
+  or the command leaves no JUnit report (uv couldn't fetch the scoring deps,
+  the network was down, the process ended before pytest reported), the run
+  gets `passed: null` and the reason in `unscored`. It doesn't count, so its
+  pair reads INCOMPLETE until a later `score` scores it. An IdP that is down
+  stops the phase. The scorecard lists unscored runs with their reason.
+- `score.json` holds `passed`, `failures` (test ids), `unscored`, `tests`,
+  `exitCode`, `timedOut`, `wallMs` and the command; `score.log` the output.
 
 ### The scorecard
 
 Per agent/model pair, each non-baseline arm against the baseline:
 
-- **Usable runs:** scored, status `ok`, `timeout` or `agent_error`, not
-  tainted. Excluded, retried and tainted runs are listed.
+- **Usable runs:** scored (passed or failed), status `ok`, `timeout` or
+  `agent_error`, not tainted. Excluded (infra, fatal, unscored), retried and
+  tainted runs are listed.
 - **Correctness:** pass rates; a loss when the arm's is more than 5 points
   below baseline's.
 - **Tokens, time:** medians of total tokens and wall time over all usable

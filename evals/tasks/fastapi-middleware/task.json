@@ -6,5 +6,5 @@
   "corpus": { "repo": "identity-model", "commit": "9458d60f4f2f20227bddf2594fd7d10cba66ea0a" },
   "idp": "node-oidc",
   "setup": ["uv", "sync"],
-  "score": ["uv", "run", "--with", "pytest", "--with", "httpx", "pytest", "-q", "-p", "no:cacheprovider", "{hidden}"]
+  "score": ["uv", "run", "--with", "pytest==9.1.1", "--with", "httpx==0.28.1", "pytest", "-q", "-p", "no:cacheprovider", "{hidden}"]
 }

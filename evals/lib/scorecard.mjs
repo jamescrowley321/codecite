@@ -20,7 +20,8 @@ const EPS = 1e-9;
  * @property {string} status  ok|timeout|agent_error|infra_error|fatal
  * @property {string[]} tainted
  * @property {number} attempts
- * @property {boolean|null} passed  null when never scored
+ * @property {boolean|null} passed  null when never scored, or unscored (a scoring fault)
+ * @property {string|null} unscored  why scoring gave no result
  * @property {number|null} totalTokens
  * @property {number|null} wallMs
  * @property {number|null} costUsd
@@ -195,6 +196,7 @@ export function loadRecords(roundDir) {
       tainted: Array.isArray(result.tainted) ? result.tainted : [],
       passed: typeof score?.passed === 'boolean' ? score.passed : null,
       failures: Array.isArray(score?.failures) ? score.failures : [],
+      unscored: typeof score?.unscored === 'string' ? score.unscored : null,
       totalTokens: num(result.usage?.totalTokens),
       costUsd: num(result.usage?.costUsd),
       wallMs: num(result.wallMs),
@@ -264,11 +266,11 @@ function pairSection(p) {
 
 /**
  * The round's scorecard as Markdown. `round` is a round dir, or
- * {plan, records} (records from loadRecords).
+ * {plan, records, pairs?} (records from loadRecords, pairs from comparePlan).
  */
 export function renderScorecard(round) {
-  const { plan, records } = typeof round === 'string' ? { plan: loadRound(round).plan, records: loadRecords(round) } : round;
-  const pairs = comparePlan(plan, records);
+  const { plan, records, pairs: given } = typeof round === 'string' ? { plan: loadRound(round).plan, records: loadRecords(round) } : round;
+  const pairs = given ?? comparePlan(plan, records);
   const verdict = roundVerdict(pairs);
   const out = [];
   out.push(`# Scorecard: ${plan.roundId ?? 'round'}`, '');
@@ -289,7 +291,7 @@ export function renderScorecard(round) {
   out.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
   const bySeq = [...records].sort((a, b) => (a.seq ?? Infinity) - (b.seq ?? Infinity) || a.id.localeCompare(b.id));
   for (const r of bySeq) {
-    const scored = r.passed == null ? 'not scored' : r.passed ? 'passed' : `failed (${r.failures.length})`;
+    const scored = r.passed == null ? (r.unscored ? 'unscored' : 'not scored') : r.passed ? 'passed' : `failed (${r.failures.length})`;
     out.push(
       `| ${[`\`${r.id}\``, r.status, scored, int(r.totalTokens), secs(r.wallMs), usd(r.costUsd), int(r.toolCalls), int(r.codeciteCalls), r.attempts, r.tainted.length ? 'yes' : ''].map(cell).join(' | ')} |`,
     );
@@ -301,7 +303,7 @@ export function renderScorecard(round) {
   out.push('## Excluded runs', '');
   if (excluded.length === 0) out.push('None.');
   for (const r of excluded) {
-    const why = SCORED.has(r.status) ? 'not scored' : r.status;
+    const why = !SCORED.has(r.status) ? r.status : r.unscored ? `unscored (${cell(r.unscored)})` : 'not scored';
     out.push(`- \`${r.id}\`: ${why}${r.error ? `: ${cell(r.error)}` : ''} (attempts ${r.attempts})`);
   }
   out.push('');

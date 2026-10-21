@@ -134,6 +134,21 @@ test('failed and timed-out runs count in the medians', () => {
   assert.equal(r.verdict, 'STOP');
 });
 
+test('unscored runs make the pair INCOMPLETE', () => {
+  // Two codecite runs unscored by a PyPI outage: not failures, so no false STOP.
+  const codecite = runs(20, (i) => (i < 2 ? { passed: null, unscored: 'no test report (exit 2)' } : {}));
+  const r = comparePair(runs(20), codecite, 20);
+  assert.equal(r.verdict, 'INCOMPLETE');
+  assert.equal(r.runs.codecite, 18);
+  assert.equal(r.correctness.codecite, 100);
+});
+
+test('renderScorecard uses the pairs it is given', () => {
+  const plan = { roundId: 'r', runs: 1, agents: [{ agent: 'a', model: 'm' }], arms: [{ name: 'baseline' }, { name: 'codecite' }] };
+  const pairs = [{ agent: 'a', model: 'm', arm: 'codecite', ...comparePair(runs(1), runs(1, { wallMs: 999_000 }), 1) }];
+  assert.match(renderScorecard({ plan, records: [], pairs }), /Verdict: \*\*STOP\*\*/);
+});
+
 test('round STOP if any pair STOPs', () => {
   const pass = comparePair(runs(20), runs(20), 20);
   const stop = comparePair(runs(20), runs(20, { wallMs: 120_000 }), 20);
@@ -163,9 +178,10 @@ function roundOnDisk(plannedRuns, recs) {
   for (const r of recs) {
     const out = join(dir, 'runs', r.id);
     mkdirSync(out, { recursive: true });
-    const { passed, totalTokens, costUsd, ...rest } = r;
+    const { passed, unscored, totalTokens, costUsd, ...rest } = r;
     writeFileSync(join(out, 'result.json'), JSON.stringify({ ...rest, usage: { totalTokens, costUsd } }));
     if (passed != null) writeFileSync(join(out, 'score.json'), JSON.stringify({ passed, failures: passed ? [] : ['t::x'] }));
+    if (unscored) writeFileSync(join(out, 'score.json'), JSON.stringify({ passed: null, failures: [], unscored }));
   }
   return dir;
 }
@@ -191,10 +207,14 @@ test('loadRecords and renderScorecard', () => {
     rec('codecite', 1, { tainted: ['curl https://github.com/x'] }),
     rec('codecite', 2, { totalTokens: null }),
     rec('codecite', 3, { status: 'infra_error', passed: null, attempts: 3 }),
+    rec('codecite', 4, { passed: null, unscored: 'no test report (exit 2): error: Failed to fetch pytest' }),
   ]);
   try {
     const records = loadRecords(dir);
-    assert.equal(records.length, 5);
+    assert.equal(records.length, 6);
+    const r4 = records.find((r) => r.id === 'pi-m_x-codecite-4');
+    assert.equal(r4.passed, null);
+    assert.match(r4.unscored, /Failed to fetch/);
     const r2 = records.find((r) => r.id === 'pi-m_x-codecite-2');
     assert.equal(r2.totalTokens, null);
     assert.equal(r2.passed, true);
@@ -206,6 +226,7 @@ test('loadRecords and renderScorecard', () => {
     assert.match(md, /pi-m_x-codecite-1/, 'tainted runs are listed');
     assert.match(md, /pi-m_x-baseline-2/, 'retried runs are listed');
     assert.match(md, /pi-m_x-codecite-3.*infra_error/, 'excluded runs are listed with their status');
+    assert.match(md, /pi-m_x-codecite-4`: unscored \(no test report \(exit 2\): error: Failed to fetch pytest\)/, 'unscored runs are listed with the reason');
     assert.match(md, /Use `codecite search`\./, 'the codecite note is printed');
     assert.match(md, /"codeciteCommit": "abc"/, 'the frozen plan is printed');
     assert.match(md, /unknown/, 'a null median shows as unknown');

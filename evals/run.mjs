@@ -115,12 +115,13 @@ async function score(argv) {
   } finally {
     await idp.stop();
   }
-  console.log(`scored ${summary.scored}, skipped ${summary.skipped}`);
+  console.log(`scored ${summary.scored}, unscored ${summary.unscored}, skipped ${summary.skipped}`);
   const { plan } = loadRound(dir);
   const records = loadRecords(dir);
-  writeFileSync(join(dir, 'scorecard.md'), renderScorecard({ plan, records }));
-  for (const p of comparePlan(plan, records)) console.log(`${p.agent} ${p.model} ${p.arm}: ${p.verdict}${p.reasons.length ? ` (${p.reasons.join('; ')})` : ''}`);
-  console.log(`verdict: ${roundVerdict(comparePlan(plan, records))}; scorecard at ${join(dir, 'scorecard.md')}`);
+  const pairs = comparePlan(plan, records);
+  writeFileSync(join(dir, 'scorecard.md'), renderScorecard({ plan, records, pairs }));
+  for (const p of pairs) console.log(`${p.agent} ${p.model} ${p.arm}: ${p.verdict}${p.reasons.length ? ` (${p.reasons.join('; ')})` : ''}`);
+  console.log(`verdict: ${roundVerdict(pairs)}; scorecard at ${join(dir, 'scorecard.md')}`);
 }
 
 const [command, ...rest] = process.argv.slice(2);
