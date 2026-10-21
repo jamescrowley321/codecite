@@ -165,6 +165,7 @@ export default {
     let assistants = 0;
     let turns = 0;
     let lastStatus = null;
+    let lastErrored = false;
     let toolCalls = 0;
     let codeciteCalls = 0;
     let system = null;
@@ -180,7 +181,8 @@ export default {
         assistants++;
         model ??= m.model ?? null;
         usage = addUsage(usage, usageOf(m));
-        if (m.stopReason === 'error') {
+        lastErrored = m.stopReason === 'error';
+        if (lastErrored) {
           lastStatus = errorStatus(m.errorMessage);
           transcript.push(`[error] ${m.errorMessage ?? ''}`);
         } else {
@@ -217,6 +219,8 @@ export default {
     r.toolCalls = toolCalls;
     r.codeciteCalls = codeciteCalls;
     r.providerStatus = lastStatus;
+    // pi exits 0 even when the provider ended the run; say so for the call loop.
+    r.endedOnError = lastErrored;
     r.transcript = transcript.join('\n');
     return r;
   },

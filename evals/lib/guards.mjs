@@ -12,10 +12,11 @@ export const FATAL_STATUSES = new Set([400, 401, 402, 404]);
  * - "fatal": provider status 401/402/404, or 400 before any turn (turns 0
  *   or unknown), or the adapter rejected the
  *   run (`rejectReason`, e.g. leaked user config). The round stops.
- * - "infra": provider status >= 500 before any turn, or the harness could
- *   not spawn the agent (`spawnError`). The run is retried.
+ * - "infra": provider status >= 500 before any turn, a run that ended on a
+ *   provider error (`endedOnError`, any status or none) before any turn, or
+ *   the harness could not spawn the agent (`spawnError`). The run is retried.
  * - "agent": everything else, including success.
- * @param {{providerStatus: number|null, turns: number|null, rejectReason?: string|null, spawnError?: string|null}} r
+ * @param {{providerStatus: number|null, turns: number|null, rejectReason?: string|null, spawnError?: string|null, endedOnError?: boolean}} r
  * @returns {"fatal"|"infra"|"agent"}
  */
 export function classify(r) {
@@ -25,6 +26,7 @@ export function classify(r) {
   }
   if (r.spawnError) return 'infra';
   if (r.providerStatus != null && r.providerStatus >= 500 && r.turns === 0) return 'infra';
+  if (r.endedOnError && r.turns === 0) return 'infra';
   return 'agent';
 }
 

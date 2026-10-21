@@ -220,9 +220,13 @@ async function attemptRun(run, round, adapter, opts) {
     error = agent.rejectReason ? `run rejected: ${agent.rejectReason}` : `provider status ${agent.providerStatus}`;
   } else if (kind === 'infra') {
     status = 'infra_error';
-    error ??= `provider status ${agent.providerStatus} before any turn`;
+    error ??= agent.providerStatus == null ? 'provider error before any turn' : `provider status ${agent.providerStatus} before any turn`;
   } else if (proc.timedOut) {
     status = 'timeout';
+  } else if (agent.endedOnError) {
+    // An agent that exits 0 after the provider ended its run (pi) did not finish.
+    status = 'agent_error';
+    error ??= `agent ended on a provider error${agent.providerStatus == null ? '' : ` (${agent.providerStatus})`}`;
   } else if (proc.exitCode === 0 && !error) {
     status = 'ok';
   } else {

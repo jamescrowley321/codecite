@@ -58,6 +58,7 @@ test('sums usage across assistant messages', () => {
   assert.equal(r.codeciteCalls, 0);
   assert.equal(r.providerStatus, null);
   assert.equal(r.rejectReason, null);
+  assert.equal(r.endedOnError, false);
   assert.equal(r.init.model, 'deepseek/deepseek-v4.1-flash');
   assert.deepEqual(r.init.tools, TOOLS);
   assert.deepEqual(r.shellCommands, ['echo hi']);
@@ -99,6 +100,27 @@ test('extracts a 404 as providerStatus', () => {
   assert.equal(r.turns, 0);
 });
 
+test('a 429 before any turn ends the run on error', () => {
+  const r = pi.parse(assistantEnd({ stopReason: 'error', errorMessage: '429 Rate limit exceeded' }), '');
+  assert.equal(r.providerStatus, 429);
+  assert.equal(r.turns, 0);
+  assert.equal(r.endedOnError, true);
+});
+
+test('a statusless error message ends the run on error with no status', () => {
+  const r = pi.parse(assistantEnd({ stopReason: 'error', errorMessage: 'Connection error.' }), '');
+  assert.equal(r.providerStatus, null);
+  assert.equal(r.turns, 0);
+  assert.equal(r.endedOnError, true);
+});
+
+test('an error after turns ends the run on error', () => {
+  const r = pi.parse([assistantEnd({}), assistantEnd({ stopReason: 'error', errorMessage: '502: bad gateway' })].join('\n'), '');
+  assert.equal(r.providerStatus, 502);
+  assert.equal(r.turns, 1);
+  assert.equal(r.endedOnError, true);
+});
+
 test('a 401 from the recorded leaked run is its providerStatus', () => {
   const r = pi.parse(LEAKED, '');
   assert.equal(r.providerStatus, 401);
@@ -109,6 +131,7 @@ test('a later successful message clears an earlier error status', () => {
   const r = pi.parse([assistantEnd({ stopReason: 'error', errorMessage: '503 overloaded' }), assistantEnd({})].join('\n'), '');
   assert.equal(r.providerStatus, null);
   assert.equal(r.turns, 1);
+  assert.equal(r.endedOnError, false);
 });
 
 test('maps tool args into shellCommands, readPaths and codeciteCalls', () => {

@@ -46,6 +46,16 @@ switch (mode) {
   case 'error':
     result({ providerStatus: 429, turns: 2 }, 1);
     break;
+  // Agents like pi exit 0 even when the provider ended the run.
+  case 'errend':
+    result({ providerStatus: 429, turns: 2, endedOnError: true }, 0);
+    break;
+  case 'errstart':
+    result({ providerStatus: 429, turns: 0, endedOnError: true }, 0);
+    break;
+  case 'errnostatus':
+    result({ providerStatus: null, turns: 0, endedOnError: true }, 0);
+    break;
   case 'taint':
     result({ providerStatus: 200, turns: 3, reads: ['app/main.py'], shell: ['cat ../../../plan.json'] }, 0);
     break;

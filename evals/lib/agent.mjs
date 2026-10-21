@@ -21,6 +21,10 @@ import { emptyUsage } from './telemetry.mjs';
  * @property {string[]} shellCommands  Every command the agent ran through its shell tool.
  * @property {string[]} readPaths     Every path its read/edit/write/grep/find/ls-style tools touched,
  *   as the agent gave it (relative paths resolve against the run's project dir).
+ * @property {boolean} [endedOnError]  True when the agent's last model call ended in a
+ *   provider error (any status, or none, e.g. a connection error). For agents that exit 0
+ *   anyway (pi): the run is then infra_error before any turn, else agent_error, never ok.
+ *   Optional; agents whose exit code already reflects the error may leave it unset.
  *
  * @typedef {object} AgentCommand
  * @property {string} cmd
@@ -67,6 +71,7 @@ export function emptyAgentResult() {
     rejectReason: null,
     shellCommands: [],
     readPaths: [],
+    endedOnError: false,
   };
 }
 

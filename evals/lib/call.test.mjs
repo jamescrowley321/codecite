@@ -66,6 +66,7 @@ function fakeAdapter(name) {
         rejectReason: last?.rejectReason ?? null,
         shellCommands: last?.shell ?? [],
         readPaths: last?.reads ?? [],
+        endedOnError: last?.endedOnError ?? false,
       };
     },
   };
@@ -259,6 +260,43 @@ test('the breaker stops a round of failing runs after 10', async () => {
   assert.equal(summary.stopped, 'breaker');
   assert.equal(count(r.counter), 10);
   assert.ok(results(r.dir).every((x) => x.status === 'agent_error'));
+});
+
+test('a run that exits 0 but ended on a provider error after turns is agent_error', async () => {
+  const r = makeRound([{ agent: 'fake', model: 'm/errend' }]);
+  const summary = await callRound(r.dir, deps());
+  assert.equal(summary.stopped, null);
+  assert.equal(count(r.counter), 1);
+  const [res] = results(r.dir);
+  assert.equal(res.status, 'agent_error');
+  assert.equal(res.exitCode, 0);
+  assert.match(res.error, /ended on a provider error \(429\)/);
+});
+
+test('a 429 before any turn with exit 0 is infra, retried, then recorded', async () => {
+  const r = makeRound([{ agent: 'fake', model: 'm/errstart' }]);
+  await callRound(r.dir, deps());
+  assert.equal(count(r.counter), 3);
+  const [res] = results(r.dir);
+  assert.equal(res.status, 'infra_error');
+  assert.equal(res.attempts, 3);
+  assert.match(res.error, /provider status 429 before any turn/);
+});
+
+test('a statusless provider error before any turn is infra', async () => {
+  const r = makeRound([{ agent: 'fake', model: 'm/errnostatus' }]);
+  await callRound(r.dir, deps());
+  const [res] = results(r.dir);
+  assert.equal(res.status, 'infra_error');
+  assert.equal(res.attempts, 3);
+  assert.match(res.error, /provider error before any turn/);
+});
+
+test('a storm of exit-0 provider errors trips the breaker', async () => {
+  const r = makeRound([{ agent: 'fake', model: 'm/errstart' }], { runs: 12 });
+  const summary = await callRound(r.dir, deps());
+  assert.equal(summary.stopped, 'breaker');
+  assert.equal(count(r.counter), 10);
 });
 
 test('refuses when the estimate exceeds the key\'s remaining limit', async () => {

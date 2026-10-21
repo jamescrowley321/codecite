@@ -86,8 +86,10 @@ later. `runs/<run-id>/` then holds `stdout.jsonl`, `stderr.txt` and
   adapter's `rejectReason` (from the init event, or `earlyReject` on a live
   stdout line, which kills the agent at once) is recorded as `fatal` and
   stops the round. A 400 after a turn is the run's own `agent_error`.
-- **Infra:** a spawn or setup failure, or a 5xx before any turn, is retried up
-  to 3 times, then recorded as `infra_error`.
+- **Infra:** a spawn or setup failure, a 5xx before any turn, or an adapter's
+  `endedOnError` before any turn (any status, or none), is retried up to 3
+  times, then recorded as `infra_error`. `endedOnError` after a turn is
+  `agent_error`, even when the agent exited 0.
 - **Breaker:** the round stops once at least 10 attempts are in and 80% or
   more of them ended in anything but `ok` (timeouts count as failures here,
   though resume still skips them).
@@ -150,5 +152,8 @@ the stream; the empty agent dir and `--no-approve` are what keep it out.
 Usage is the sum of each assistant `message_end`'s `usage`; `turns` counts
 assistant messages that didn't end in error; `providerStatus` is the status
 at the head of the last assistant message's `errorMessage` when the run
-ended on an error. pi exits 0 even when the provider refused the request, so
-the status is what makes a 401 fatal.
+ended on an error. pi exits 0 even when the provider ended the run, so the
+adapter sets `endedOnError` whenever the last assistant message ended in
+error: a fatal status stays fatal, an error before any turn (a 429, a
+connection error) is infra and retried, and one after a turn is
+`agent_error`, never `ok`.
