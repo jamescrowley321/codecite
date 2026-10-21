@@ -69,7 +69,8 @@ function fakeAdapter(name) {
         .filter((o) => o?.type === 'result')
         .at(-1);
       return {
-        usage: emptyUsage(),
+        // Known tokens unless the agent says it has none (mode notokens).
+        usage: last?.tokens === null ? emptyUsage() : { ...emptyUsage(), input: 90, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: 100 },
         turns: last?.turns ?? null,
         toolCalls: null,
         codeciteCalls: null,
@@ -139,6 +140,7 @@ function deps(over = {}) {
     keyRemainingUsd: async () => 100,
     modelPrices: async () => ({ get: () => ({ prompt: 0, completion: 0 }) }),
     log: () => {},
+    backoffMs: [0],
     sandbox: { ro: [dirname(FAKE_AGENT)], rw: [counters] },
     ...over,
   };
@@ -249,14 +251,14 @@ test('a round with a fatal run refuses to resume without retryFatal', async () =
 test('retryFatal re-runs the fatal run first', async () => {
   const r = makeRound([{ agent: 'fake', model: 'm/ok' }], { runs: 3 });
   await callRound(r.dir, deps());
-  // Mark the last run fatal and another one an agent_error.
+  // Mark the last run fatal and another one an infra_error.
   const res = results(r.dir).sort((a, b) => a.run.seq - b.run.seq);
   const mark = (x, status) => {
     const f = join(r.dir, 'runs', x.run.id, 'result.json');
     writeFileSync(f, JSON.stringify({ ...x, status }));
   };
   mark(res[2], 'fatal');
-  mark(res[0], 'agent_error');
+  mark(res[0], 'infra_error');
   const order = [];
   const summary = await callRound(r.dir, deps({ retryFatal: true, log: (l) => order.push(l) }));
   assert.equal(summary.ran, 2);
@@ -302,6 +304,15 @@ test('infra failure is retried up to 3 times then recorded', async () => {
   const [res] = results(r.dir);
   assert.equal(res.status, 'infra_error');
   assert.equal(res.attempts, 3);
+});
+
+test('infra retries back off between attempts', async () => {
+  const r = makeRound([{ agent: 'fake', model: 'm/infra' }]);
+  const lines = [];
+  const t0 = Date.now();
+  await callRound(r.dir, deps({ backoffMs: [300, 600], log: (l) => lines.push(l) }));
+  assert.ok(Date.now() - t0 >= 900, `waited ${Date.now() - t0} ms`);
+  assert.equal(lines.filter((l) => /retrying in/.test(l)).length, 2);
 });
 
 test('a spawn failure is infra, retried, then recorded', async () => {
@@ -399,19 +410,65 @@ test('result.json never contains the key', async () => {
   assert.match(readFileSync(join(r.dir, 'runs', ok.run.id, 'stderr.txt'), 'utf8'), /key=\[REDACTED\]/);
 });
 
-test('call resumes: ok and timeout runs are skipped, others redone', async () => {
-  const r = makeRound([{ agent: 'fake', model: 'm/ok' }], { runs: 3 });
+test('call resumes: ok, timeout and agent_error runs are skipped, others redone', async () => {
+  const r = makeRound([{ agent: 'fake', model: 'm/ok' }], { runs: 4 });
   await callRound(r.dir, deps());
-  assert.equal(count(r.counter), 3);
-  // Turn one finished run into an agent_error; it is the only one redone.
-  const id = results(r.dir)[0].run.id;
-  const file = join(r.dir, 'runs', id, 'result.json');
-  writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), status: 'agent_error' }));
-  const summary = await callRound(r.dir, deps());
-  assert.equal(summary.skipped, 2);
-  assert.equal(summary.ran, 1);
   assert.equal(count(r.counter), 4);
-  assert.ok(results(r.dir).every((x) => x.status === 'ok'));
+  // agent_error is a usable failed run: redoing it on resume would re-draw
+  // exactly the failures. Only the infra_error run is redone.
+  const [a, b, c] = results(r.dir).map((x) => x.run.id);
+  const mark = (id, status) => {
+    const file = join(r.dir, 'runs', id, 'result.json');
+    writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), status }));
+  };
+  mark(a, 'agent_error');
+  mark(b, 'timeout');
+  mark(c, 'infra_error');
+  const summary = await callRound(r.dir, deps());
+  assert.equal(summary.skipped, 3);
+  assert.equal(summary.ran, 1);
+  assert.equal(count(r.counter), 5);
+  const byId = Object.fromEntries(results(r.dir).map((x) => [x.run.id, x.status]));
+  assert.equal(byId[a], 'agent_error');
+  assert.equal(byId[b], 'timeout');
+  assert.equal(byId[c], 'ok');
+});
+
+test('a tainted run is redone on resume; the old one is kept as <id>.tainted-N', async () => {
+  const r = makeRound([{ agent: 'fake', model: 'm/ok' }], { runs: 2 });
+  await callRound(r.dir, deps());
+  const [a] = results(r.dir).map((x) => x.run.id);
+  const plant = () => {
+    const file = join(r.dir, 'runs', a, 'result.json');
+    writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), tainted: ['shell (github.com): curl https://github.com/x'] }));
+  };
+  plant();
+  const s1 = await callRound(r.dir, deps());
+  assert.equal(s1.ran, 1);
+  assert.equal(s1.skipped, 1);
+  const dirs = readdirSync(join(r.dir, 'runs')).sort();
+  assert.ok(dirs.includes(`${a}.tainted-1`), dirs.join(' '));
+  const old = JSON.parse(readFileSync(join(r.dir, 'runs', `${a}.tainted-1`, 'result.json'), 'utf8'));
+  assert.equal(old.tainted.length, 1);
+  const fresh = JSON.parse(readFileSync(join(r.dir, 'runs', a, 'result.json'), 'utf8'));
+  assert.deepEqual(fresh.tainted, []);
+  // A second taint of the same run keeps both.
+  plant();
+  await callRound(r.dir, deps());
+  assert.ok(existsSync(join(r.dir, 'runs', `${a}.tainted-2`)));
+  assert.ok(existsSync(join(r.dir, 'runs', `${a}.tainted-1`)));
+});
+
+test('a run with unknown tokens is redone on resume; the old one is kept as <id>.unknown-N', async () => {
+  const r = makeRound([{ agent: 'fake', model: 'm/notokens' }]);
+  await callRound(r.dir, deps());
+  const [res] = results(r.dir);
+  assert.equal(res.status, 'ok');
+  assert.equal(res.usage.totalTokens, null);
+  assert.equal(count(r.counter), 1, 'not retried in the loop');
+  const s = await callRound(r.dir, deps());
+  assert.equal(s.ran, 1);
+  assert.ok(existsSync(join(r.dir, 'runs', `${res.run.id}.unknown-1`, 'result.json')));
 });
 
 test('runs go in seq order', async () => {

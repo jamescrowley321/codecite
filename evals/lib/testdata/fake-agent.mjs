@@ -77,6 +77,9 @@ switch (mode) {
   case 'errnostatus':
     result({ providerStatus: null, turns: 0, endedOnError: true }, 0);
     break;
+  case 'notokens':
+    result({ providerStatus: 200, turns: 1, tokens: null }, 0);
+    break;
   case 'taint':
     result({ providerStatus: 200, turns: 3, reads: ['app/main.py'], shell: ['cat ../../../plan.json'] }, 0);
     break;

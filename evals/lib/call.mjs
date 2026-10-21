@@ -7,7 +7,7 @@
 
 import { spawn } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
-import { accessSync, constants, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { accessSync, constants, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { emptyAgentResult, loadAdapter as defaultLoadAdapter } from './agent.mjs';
 import { CircuitBreaker, classify } from './guards.mjs';
@@ -20,9 +20,15 @@ import { prepareRun } from './workspace.mjs';
 
 /** Every status a result.json can hold. */
 export const STATUSES = new Set(['ok', 'timeout', 'agent_error', 'infra_error', 'fatal']);
-/** Statuses a resumed `call` skips. */
-export const DONE = new Set(['ok', 'timeout']);
+/**
+ * Statuses a resumed `call` skips: every usable outcome, failed runs
+ * included. Redoing agent_error would re-draw exactly the failures, so the
+ * failure rate would fall with each resume.
+ */
+export const DONE = new Set(['ok', 'timeout', 'agent_error']);
 export const MAX_ATTEMPTS = 3;
+/** Waits before the 2nd, 3rd, ... attempt at a run that failed on infra. */
+export const BACKOFF_MS = [5_000, 20_000, 60_000];
 export const KILL_GRACE_MS = 10_000;
 export const REDACTED = '[REDACTED]';
 
@@ -55,14 +61,37 @@ export function loadRound(roundDir) {
   return { ...read('round.json'), plan };
 }
 
-function priorStatus(round, run) {
+function priorResult(round, run) {
   const file = join(round.dir, 'runs', run.id, 'result.json');
   if (!existsSync(file)) return null;
   try {
-    return JSON.parse(readFileSync(file, 'utf8')).status ?? null;
+    return JSON.parse(readFileSync(file, 'utf8'));
   } catch {
     return null;
   }
+}
+
+/**
+ * Why a finished run must be run again although its status is DONE, else
+ * null: "tainted" (it reached outside its sandbox) or "unknown" (its total
+ * tokens are unknown, so it can't count toward the token measure). Such a
+ * run is redone on resume, and its old dir is kept beside the new one as
+ * `<id>.<why>-<n>`, so the scorecard still lists it.
+ */
+export function redoReason(result) {
+  if (!result || !DONE.has(result.status)) return null;
+  if (Array.isArray(result.tainted) && result.tainted.length > 0) return 'tainted';
+  const t = result.usage?.totalTokens;
+  if (typeof t !== 'number' || !Number.isFinite(t)) return 'unknown';
+  return null;
+}
+
+/** Move a run's dir aside as `<id>.<why>-<n>`, n one more than any kept so far. */
+function keepAside(round, run, why) {
+  const runs = join(round.dir, 'runs');
+  const prefix = `${run.id}.${why}-`;
+  const n = 1 + Math.max(0, ...readdirSync(runs).filter((d) => d.startsWith(prefix)).map((d) => Number(d.slice(prefix.length)) || 0));
+  renameSync(join(runs, run.id), join(runs, `${prefix}${n}`));
 }
 
 function resetDir(dir) {
@@ -363,6 +392,7 @@ export async function callRound(roundDir, deps = {}) {
     log = console.log,
     killGraceMs = KILL_GRACE_MS,
     maxAttempts = MAX_ATTEMPTS,
+    backoffMs = BACKOFF_MS,
     basePath,
     retryFatal = false,
     searchPath = process.env.PATH,
@@ -378,16 +408,20 @@ export async function callRound(roundDir, deps = {}) {
   const timeoutMs = deps.timeoutMs ?? plan.timeoutSec * 1000;
 
   const runs = expandRuns(plan);
-  const prior = new Map(runs.map((r) => [r.id, priorStatus(round, r)]));
+  const priorResults = new Map(runs.map((r) => [r.id, priorResult(round, r)]));
+  const prior = new Map(runs.map((r) => [r.id, priorResults.get(r.id)?.status ?? null]));
+  const redo = new Map(runs.map((r) => [r.id, redoReason(priorResults.get(r.id))]));
   const fatal = runs.filter((r) => prior.get(r.id) === 'fatal');
   if (fatal.length > 0 && !retryFatal) {
     throw new Error(
       `call: ${fatal.map((r) => r.id).join(', ')} ended fatal; fix the cause, then pass --retry-fatal to re-run ${fatal.length === 1 ? 'it' : 'them'} first`,
     );
   }
-  const pending = [...fatal, ...runs.filter((r) => !DONE.has(prior.get(r.id)) && prior.get(r.id) !== 'fatal')];
+  const pending = [...fatal, ...runs.filter((r) => (!DONE.has(prior.get(r.id)) || redo.get(r.id)) && prior.get(r.id) !== 'fatal')];
   const skipped = runs.length - pending.length;
   if (skipped > 0) log(`skipping ${skipped} finished runs`);
+  const redone = pending.filter((r) => redo.get(r.id));
+  if (redone.length > 0) log(`redoing ${redone.length} runs that were tainted or had unknown tokens; the old ones are kept beside them`);
 
   const adapters = new Map();
   for (const name of new Set(pending.map((r) => r.agent))) adapters.set(name, await loadAdapter(name));
@@ -396,6 +430,7 @@ export async function callRound(roundDir, deps = {}) {
   const breaker = new CircuitBreaker({ min: 10, ratio: 0.8 });
   let ran = 0;
   for (const run of pending) {
+    if (redo.get(run.id)) keepAside(round, run, redo.get(run.id));
     let attempts = 0;
     let outcome;
     for (;;) {
@@ -403,6 +438,11 @@ export async function callRound(roundDir, deps = {}) {
       outcome = await attemptRun(run, round, adapters.get(run.agent), { secrets, timeoutMs, killGraceMs, basePath, bwrap, sandbox });
       breaker.record(outcome.result.status === 'ok');
       if (outcome.kind !== 'infra' || attempts >= maxAttempts || breaker.tripped) break;
+      const wait = backoffMs[Math.min(attempts - 1, backoffMs.length - 1)] ?? 0;
+      if (wait > 0) {
+        log(redact(`${run.id}: infra failure (${outcome.result.error}); retrying in ${Math.round(wait / 1000)} s`, outcome.secrets));
+        await new Promise((res) => setTimeout(res, wait));
+      }
     }
     const result = { ...outcome.result, attempts };
     writeFileSync(join(round.dir, 'runs', run.id, 'result.json'), redact(`${JSON.stringify(result, null, 2)}\n`, outcome.secrets));
