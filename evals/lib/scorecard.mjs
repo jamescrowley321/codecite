@@ -404,7 +404,7 @@ export function renderScorecard(round) {
   const tainted = records.filter((r) => r.tainted.length > 0);
   out.push('## Tainted runs (left out of the verdict, redone when call resumes)', '');
   if (tainted.length === 0) out.push('None.');
-  for (const r of tainted) out.push(`- \`${r.id}\`: ${r.tainted.map((h) => `\`${cell(typeof h === 'string' ? h : JSON.stringify(h))}\``).join(', ')}`);
+  for (const r of tainted) out.push(`- \`${r.id}\`${r.superseded ? ' (kept aside; redone)' : ''}: ${r.tainted.map((h) => `\`${cell(typeof h === 'string' ? h : JSON.stringify(h))}\``).join(', ')}`);
   out.push('');
 
   const leaked = records.filter((r) => r.secretInTranscript);

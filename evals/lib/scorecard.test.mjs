@@ -314,7 +314,8 @@ test('loadRecords and renderScorecard', () => {
     assert.match(md, /^# /);
     assert.match(md, /Verdict: \*\*INCOMPLETE\*\*/);
     assert.match(md, /pi-m_x-codecite-1/, 'tainted runs are listed');
-    assert.match(md, /`pi-m_x-codecite-1\.tainted-1`: `shell \(wget\): wget x`/, 'a tainted run kept aside is listed as tainted');
+    assert.match(md, /`pi-m_x-codecite-1\.tainted-1` \(kept aside; redone\): `shell \(wget\): wget x`/, 'a tainted run kept aside is listed as tainted and redone');
+    assert.match(md, /`pi-m_x-codecite-1`: `curl https:\/\/github.com\/x`/, 'a live tainted run is listed plainly');
     assert.match(md, /`pi-m_x-codecite-1\.unknown-1`: token usage unknown/, 'an unknown-token run kept aside is listed');
     assert.match(md, /`pi-m_x-codecite-2`: token usage unknown/, 'an unknown-token run is listed as excluded');
     assert.match(md, /## Secrets in transcripts[\s\S]*rotate[\s\S]*`pi-m_x-baseline-3`/, 'runs that echoed a secret are listed with a rotate warning');
