@@ -148,6 +148,10 @@ const tail = (output) => {
  *   pytest started is a failure too. A plugin loaded with `-p` writes
  *   `score/started` before any conftest imports the agent's code.
  *
+ * A plan frozen without `scoreWarm` (loadTask now requires it) can't tell
+ * the two apart before pytest starts, so there no report before pytest
+ * started is unscored.
+ *
  * Writes score.json and score.log. A missing project/ is a harness fault:
  * it throws.
  *
@@ -242,6 +246,12 @@ export async function scoreRun(runDir, task, idpUrl, opts = {}) {
   if (proc.timedOut && !pytestStarted) return unscoredRecord(`score timed out after ${Math.round(timeoutMs / 1000)} s before pytest started`, procFields);
 
   const parsed = existsSync(report) ? parseJunit(readFileSync(report, 'utf8')) : null;
+  // A plan frozen before scoreWarm existed: with no warm step, a fetch
+  // failure and a broken project look the same before pytest starts, so
+  // neither is scored against the agent.
+  if (!warm && !parsed && !pytestStarted) {
+    return unscoredRecord(`no test report before pytest started, and the plan has no warm step to tell a scoring fault from the project's (exit ${proc.exitCode ?? proc.signal})${tail(proc.output)}`, procFields);
+  }
   const failures = [];
   if (proc.timedOut) failures.push(`score timed out after ${Math.round(timeoutMs / 1000)} s`);
   if (!parsed) {
@@ -280,8 +290,9 @@ export const MAX_SCORE_ATTEMPTS = 3;
  * runs are not scored; they never count. An unscored run is tried up to
  * MAX_SCORE_ATTEMPTS times in all (across `score` calls), then recorded as a
  * fatal scoring error (`fatal: true` in score.json), which later calls skip
- * until `rescore`. Stops (throws) when the IdP goes down, after recording
- * that run as unscored.
+ * until `rescore`. Only warm-step failures and timeouts before pytest
+ * started count; an IdP outage doesn't, and stops (throws) the phase after
+ * recording that run as unscored.
  *
  * @returns {Promise<{scored: number, unscored: number, skipped: number, fatal: string[]}>}
  *   `fatal`: every run of the round that is a fatal scoring error.
@@ -322,18 +333,23 @@ export async function scoreRound(roundDir, { idpUrl, rescore = false, log = cons
       fatal.push(run.id);
       continue;
     }
-    let attempts = !rescore && prior?.passed === null ? (prior.scoreAttempts ?? 1) : 0;
+    let attempts = !rescore && prior?.passed === null ? (prior.scoreAttempts ?? 0) : 0;
     let r;
     for (;;) {
       r = await scoreRun(runDir, task, idpUrl, { ...opts, round, bwrap });
-      attempts++;
       if (!r.unscored) break;
+      // The IdP is the harness's own: an outage never counts toward the
+      // cap, and every later run would be unscored too, so stop.
+      const idpDown = /^IdP down/.test(r.unscored);
+      if (!idpDown) attempts++;
       const saved = readScore(runDir);
-      const giveUp = attempts >= maxAttempts;
+      const giveUp = !idpDown && attempts >= maxAttempts;
       writeFileSync(join(runDir, 'score.json'), `${JSON.stringify({ ...saved, scoreAttempts: attempts, fatal: giveUp }, null, 2)}\n`);
+      if (idpDown) {
+        log(`${run.id} unscored: ${r.unscored}`);
+        throw new Error(`score: stopped at ${run.id}: ${r.unscored}`);
+      }
       log(`${run.id} unscored (attempt ${attempts} of ${maxAttempts}): ${r.unscored}`);
-      // Every later run would be unscored too.
-      if (/^IdP down/.test(r.unscored)) throw new Error(`score: stopped at ${run.id}: ${r.unscored}`);
       if (giveUp) break;
     }
     if (r.unscored) {

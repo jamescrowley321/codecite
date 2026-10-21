@@ -268,8 +268,12 @@ scored.
     timeout after pytest started fails too. The started marker is written by
     `lib/pytest-plugin/codecite_score_started.py`, loaded with `-p` from a
     read-only bind, before any conftest imports the agent's code.
+  - *No warm step:* `loadTask` (so `compose`) requires `scoreWarm`. A plan
+    frozen before that has none, so it can't tell a fetch failure from a
+    broken project: there, no report before pytest started is unscored.
 - **Retries:** an unscored run is tried up to 3 times in all, across `score`
-  calls; then it is a fatal scoring error (`fatal: true`), skipped by later
+  calls (warm-step failures and timeouts before pytest started count; an IdP
+  outage doesn't); then it is a fatal scoring error (`fatal: true`), skipped by later
   calls until `--rescore`, shown at the top of the scorecard, and `score`
   exits 1. An IdP that is down stops the phase. A missing `project/` is a
   harness fault and stops it too.

@@ -117,6 +117,7 @@ test("scoring can't read the owner's secrets or other runs, and reads hidden/ re
     dir: taskDir,
     hidden: 'hidden',
     setup: [],
+    scoreWarm: ['/bin/true'],
     score: ['/bin/sh', '-c', script, 'probe', planted, join(roundDir, 'plan.json'), join(roundDir, 'runs', 'sibling', 'project', 'answer.py'), join(runDir, 'home', 'agent-home.txt'), join(taskDir, 'reference', 'main.py'), join(homedir(), '.config', 'codecite', 'evals.env'), join(homedir(), '.claude', '.credentials.json')],
   };
   const round = { dir: roundDir, export: null, taintPaths: [taskDir], plan: { taskDef: task } };
@@ -146,7 +147,7 @@ test("scoring can't read the owner's secrets or other runs, and reads hidden/ re
 });
 
 test('a score command that exits 0 without a test report fails', { skip: noBwrap }, async () => {
-  const { task, round, runDir } = synthRound('zero', ['/bin/true', '{hidden}']);
+  const { task, round, runDir } = synthRound('zero', ['/bin/true', '{hidden}'], ['me'], { scoreWarm: ['/bin/true'] });
   const idp = await fakeIdp();
   try {
     const r = await scoreRun(runDir(), task, idp.url, { round, bwrap: BWRAP });
@@ -216,6 +217,34 @@ test("a broken pyproject in the agent's project is a failed run, before pytest s
     const r = await scoreRun(runDir(), task, idp.url, { round, bwrap: BWRAP });
     assert.equal(r.passed, false, readFileSync(join(runDir(), 'score.log'), 'utf8'));
     assert.match(r.failures.join(' '), /no test report, before pytest started: the project failed to sync or import/);
+  } finally {
+    await idp.stop();
+  }
+});
+
+test('with no warm step (an old frozen plan), uv failing to fetch is unscored, not failed', { skip: noUv }, async () => {
+  // The score stage's own fetch fails (offline, a version no cache holds), as when PyPI is down.
+  const { task, round, runDir } = synthRound('nowarm-fetch', ['uv', 'run', '--offline', '--no-project', '--with', 'pytest==0.0.1', 'pytest', '-q', '{hidden}']);
+  assert.equal(task.scoreWarm, undefined);
+  const idp = await fakeIdp();
+  try {
+    const r = await scoreRun(runDir(), task, idp.url, { round, bwrap: BWRAP });
+    assert.equal(r.passed, null, readFileSync(join(runDir(), 'score.log'), 'utf8'));
+    assert.match(r.unscored, /no test report before pytest started, and the plan has no warm step/);
+  } finally {
+    await idp.stop();
+  }
+});
+
+test('with no warm step, a report still scores and a started-then-died run still fails', { skip: noBwrap }, async () => {
+  const idp = await fakeIdp();
+  try {
+    const ok = synthRound('nowarm-pass', PASSING);
+    assert.deepEqual(await scoreRun(ok.runDir(), ok.task, idp.url, { round: ok.round, bwrap: BWRAP }), { passed: true, failures: [] });
+    const died = synthRound('nowarm-died', ['/bin/sh', '-c', 'touch "$CODECITE_SCORE_STARTED"; exit 3', '{hidden}']);
+    const r = await scoreRun(died.runDir(), died.task, idp.url, { round: died.round, bwrap: BWRAP });
+    assert.equal(r.passed, false);
+    assert.match(r.failures.join(' '), /pytest started/);
   } finally {
     await idp.stop();
   }
@@ -304,6 +333,25 @@ test('a run unscored 3 times is a fatal scoring error, skipped until --rescore',
     writeFileSync(join(roundDir, 'plan.json'), JSON.stringify({ ...JSON.parse(readFileSync(join(roundDir, 'plan.json'), 'utf8')), taskDef: task }));
     const fixed = await scoreRound(roundDir, { idpUrl: idp.url, bwrap: BWRAP, rescore: true, log: () => {} });
     assert.deepEqual(fixed, { scored: 2, unscored: 0, skipped: 0, fatal: [] });
+  } finally {
+    await idp.stop();
+  }
+});
+
+test('IdP outages never count toward the attempt cap', { skip: noBwrap }, async () => {
+  const { roundDir, runDir } = roundForScoreRound('round-idp-cap', PASSING);
+  for (let i = 0; i < 3; i++) {
+    await assert.rejects(scoreRound(roundDir, { idpUrl: DEAD_IDP, bwrap: BWRAP, log: () => {} }), /IdP down/);
+  }
+  const saved = JSON.parse(readFileSync(join(runDir('a-m-baseline-1'), 'score.json'), 'utf8'));
+  assert.equal(saved.passed, null);
+  assert.equal(saved.fatal, false);
+  assert.equal(saved.scoreAttempts, 0);
+  // The IdP back: it scores at once.
+  const idp = await fakeIdp();
+  try {
+    const r = await scoreRound(roundDir, { idpUrl: idp.url, bwrap: BWRAP, log: () => {} });
+    assert.deepEqual(r, { scored: 2, unscored: 0, skipped: 0, fatal: [] });
   } finally {
     await idp.stop();
   }

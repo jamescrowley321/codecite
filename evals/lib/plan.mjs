@@ -88,6 +88,11 @@ export function loadTask(id, tasksDir = TASKS_DIR) {
   for (const f of ['project', 'prompt', 'hidden']) if (!isStr(def[f])) fail(`task ${id}: ${f}`, 'is missing');
   if (!isStr(def.corpus?.repo) || !isStr(def.corpus?.commit)) fail(`task ${id}: corpus`, 'needs repo and commit');
   if (!Array.isArray(def.setup)) fail(`task ${id}: setup`, 'must be a command array');
+  for (const f of ['score', 'scoreWarm']) {
+    if (!Array.isArray(def[f]) || def[f].length === 0 || !def[f].every((x) => typeof x === 'string')) {
+      fail(`task ${id}: ${f}`, f === 'scoreWarm' ? 'must be a command array (it fetches the scoring deps, so a fetch failure is never scored against the agent)' : 'must be a command array');
+    }
+  }
   return { ...def, dir, promptText: readFileSync(join(dir, def.prompt), 'utf8') };
 }
 

@@ -63,6 +63,7 @@ before(() => {
       corpus: { repo: 'identity-model', commit },
       setup: ['sh', '-c', 'echo ran > setup-ran'],
       score: ['true'],
+      scoreWarm: ['true'],
     }),
   );
 

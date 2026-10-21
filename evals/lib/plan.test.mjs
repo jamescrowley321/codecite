@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadPlan, expandRuns, renderPrompt, freezePlan, roundsDir } from './plan.mjs';
+import { loadPlan, loadTask, expandRuns, renderPrompt, freezePlan, roundsDir } from './plan.mjs';
 
 function spec(over = {}) {
   return {
@@ -102,4 +102,27 @@ test('freezePlan writes plan.json under the rounds dir', () => {
     if (old === undefined) delete process.env.CODECITE_EVALS_DIR;
     else process.env.CODECITE_EVALS_DIR = old;
   }
+});
+
+test('loadTask and freezePlan reject a task with no scoreWarm, naming it', () => {
+  const tasksDir = mkdtempSync(join(tmpdir(), 'evals-tasks-'));
+  const write = (id, extra) => {
+    mkdirSync(join(tasksDir, id), { recursive: true });
+    writeFileSync(join(tasksDir, id, 'prompt.md'), 'Do it.\n');
+    const def = { id, project: 'project', prompt: 'prompt.md', hidden: 'hidden', corpus: { repo: 'identity-model', commit: 'abc' }, setup: [], score: ['true'], ...extra };
+    writeFileSync(join(tasksDir, id, 'task.json'), JSON.stringify(def));
+  };
+  write('nowarm', {});
+  write('emptywarm', { scoreWarm: [] });
+  write('noscore', { scoreWarm: ['true'], score: undefined });
+  write('ok', { scoreWarm: ['true'] });
+  assert.throws(() => loadTask('nowarm', tasksDir), /task nowarm: scoreWarm/);
+  assert.throws(() => loadTask('emptywarm', tasksDir), /task emptywarm: scoreWarm/);
+  assert.throws(() => loadTask('noscore', tasksDir), /task noscore: score/);
+  assert.deepEqual(loadTask('ok', tasksDir).scoreWarm, ['true']);
+  assert.throws(() => freezePlan({ ...spec(), task: 'nowarm' }, { codeciteCommit: 'abc', roundId: 'r-nowarm', tasksDir }), /task nowarm: scoreWarm/);
+});
+
+test('the real task has a warm step', () => {
+  assert.ok(loadTask('fastapi-middleware').scoreWarm.length > 0);
 });
