@@ -29,3 +29,5 @@
 /.claude/ralph-stack.md
 /.claude/ralph-parked.md
 /.claude/review/
+
+evals/**/node_modules/
