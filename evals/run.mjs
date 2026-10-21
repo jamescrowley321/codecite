@@ -42,7 +42,8 @@ function compose(argv) {
   });
   if (!values.plan) throw new Error(`compose needs --plan\n${USAGE}`);
   const spec = loadPlan(values.plan);
-  loadTask(spec.task);
+  const task = loadTask(spec.task);
+  if (!spec.repos[task.corpus.repo]) throw new Error(`plan: repos has no path for "${task.corpus.repo}"`);
   const dir = roundsDir();
   if (values['dry-run']) {
     printCounts(spec);

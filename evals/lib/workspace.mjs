@@ -30,10 +30,16 @@ export function buildCodecite() {
   return join(REPO_ROOT, 'target', 'release', 'codecite');
 }
 
+// What prepareRound creates in a round dir; a failure removes exactly these.
+const ROUND_PARTS = ['src-repo', 'identity-model', 'corpus.toml', 'bin-codecite', 'xdg', 'xdg-cache', 'round.json'];
+
 /**
- * Prepare a round once, before any run: export identity-model read-only,
- * index it as corpus `eval`, and copy a codecite binary in.
- * `codeciteBin` skips the cargo build and uses that binary instead.
+ * Prepare a round once, before any run. identity-model's pinned commit is
+ * fetched into a throwaway repo; its checkout, without .git,
+ * becomes the read-only export, and the same repo is indexed as corpus
+ * `eval`. The throwaway repo and codecite's clone cache are then deleted, so
+ * nothing the runs can see names the real repo. `codeciteBin` skips the
+ * cargo build and uses that binary instead.
  */
 export function prepareRound(plan, roundDir, { codeciteBin } = {}) {
   const dir = resolve(roundDir);
@@ -41,16 +47,39 @@ export function prepareRound(plan, roundDir, { codeciteBin } = {}) {
   const { repo, commit } = plan.taskDef.corpus;
   const repoPath = plan.repos[repo];
   if (!repoPath) throw new Error(`round: plan.repos has no path for "${repo}"`);
+  for (const part of ROUND_PARTS) {
+    if (existsSync(join(dir, part))) throw new Error(`round: ${join(dir, part)} already exists`);
+  }
+  mkdirSync(dir, { recursive: true });
+  try {
+    return buildRound(plan, dir, { repo, commit, repoPath: expandHome(repoPath), codeciteBin });
+  } catch (e) {
+    spawnSync('chmod', ['-R', 'u+w', dir]);
+    for (const part of ROUND_PARTS) rmSync(join(dir, part), { recursive: true, force: true });
+    throw e;
+  }
+}
 
+function buildRound(plan, dir, { repo, commit, repoPath, codeciteBin }) {
+  // Not --depth=1: codecite's `clone --filter=blob:none` of a shallow local
+  // repo loops forever (git 2.34). The history goes when this repo does.
+  const srcRepo = join(dir, 'src-repo');
+  run('git', ['init', '-q', srcRepo]);
+  run('git', ['-C', srcRepo, 'fetch', '-q', `file://${repoPath}`, commit]);
+  run('git', ['-C', srcRepo, '-c', 'advice.detachedHead=false', 'checkout', '-q', '--detach', 'FETCH_HEAD']);
+
+  // The full checked-out tree (export-ignore doesn't apply), so the export
+  // is exactly what codecite indexes.
   const exportDir = join(dir, 'identity-model');
-  if (existsSync(exportDir)) throw new Error(`round: ${exportDir} already exists`);
-  mkdirSync(exportDir, { recursive: true });
-  run('bash', ['-o', 'pipefail', '-c', 'git -C "$1" archive "$2" | tar -x -C "$3"', 'bash', expandHome(repoPath), commit, exportDir]);
+  cpSync(srcRepo, exportDir, {
+    recursive: true,
+    verbatimSymlinks: true,
+    filter: (src) => src !== join(srcRepo, '.git'),
+  });
   run('chmod', ['-R', 'a-w', exportDir]);
 
   // codecite refuses a `local` source without .git, so the corpus is a `git`
-  // source cloned from the local repo at the same pinned commit: no network,
-  // and the same tree as the export.
+  // source at the throwaway repo: no network, citations `<repo>@<commit>`.
   const manifest = join(dir, 'corpus.toml');
   writeFileSync(
     manifest,
@@ -60,7 +89,7 @@ export function prepareRound(plan, roundDir, { codeciteBin } = {}) {
       '[[source]]',
       'kind = "git"',
       `name = ${JSON.stringify(repo)}`,
-      `url = ${JSON.stringify(expandHome(repoPath))}`,
+      `url = ${JSON.stringify(srcRepo)}`,
       `commit = ${JSON.stringify(commit)}`,
       'license = "Apache-2.0"',
       'use = "adapt"',
@@ -74,15 +103,24 @@ export function prepareRound(plan, roundDir, { codeciteBin } = {}) {
   copyFileSync(codeciteBin ?? buildCodecite(), bin);
   chmodSync(bin, 0o755);
 
-  // The clone in the cache has a .git; it goes once the index is built.
   const xdg = join(dir, 'xdg');
   const cache = join(dir, 'xdg-cache');
   run(bin, ['index', 'eval', '--manifest', manifest], {
     env: { ...process.env, XDG_DATA_HOME: xdg, XDG_CACHE_HOME: cache },
   });
   rmSync(cache, { recursive: true, force: true });
+  rmSync(srcRepo, { recursive: true, force: true });
 
-  const round = { dir, export: exportDir, manifest, xdg, binCodecite };
+  // Paths a run must not touch (Task 4 flags them): the real repos, and the
+  // round's own records and other runs.
+  const taintPaths = [
+    ...Object.values(plan.repos).map((p) => resolve(expandHome(p))),
+    join(dir, 'plan.json'),
+    join(dir, 'round.json'),
+    manifest,
+    join(dir, 'runs'),
+  ];
+  const round = { dir, export: exportDir, manifest, xdg, binCodecite, taintPaths };
   writeFileSync(join(dir, 'round.json'), `${JSON.stringify(round, null, 2)}\n`);
   return { ...round, plan };
 }

@@ -35,12 +35,16 @@ node evals/run.mjs compose --plan evals/plans/round-1.json [--round <id>] [--cod
 Without it, `compose` freezes the plan to `<round>/plan.json` (with the
 codecite commit and the task's identity-model commit) and prepares the round:
 
-- `identity-model/`: identity-model at the pinned commit, by `git archive`
-  from the local repo named in the plan's `repos`, with no `.git`, read-only.
-- `corpus.toml` and `xdg/`: corpus `eval`, indexed once per round. It is a
-  `git` source cloned from the same local repo at the same commit, since
-  codecite won't index a `local` source without `.git`; the clone is deleted
-  after indexing.
+- `identity-model/`: identity-model at the pinned commit, fetched from the
+  local repo named in the plan's `repos` into a throwaway repo and copied out
+  of its checkout with no `.git`, read-only.
+- `corpus.toml` and `xdg/`: corpus `eval`, indexed once per round from that
+  same throwaway repo as a `git` source (codecite won't index a `local`
+  source without `.git`), so the export is exactly the indexed tree. The
+  throwaway repo and codecite's clone cache are deleted after indexing; no
+  file the runs see names the real repo.
+- `round.json`: the round's paths and `taintPaths`, the paths a run must not
+  touch (the real repos, `plan.json`, `round.json`, `corpus.toml`, `runs/`).
 - `bin-codecite/codecite`: built from this checkout with `cargo build
   --release`, or copied from `--codecite-bin`.
 
