@@ -29,7 +29,7 @@ test('a run that ended on a provider error before any turn is infra', () => {
   assert.equal(classify({ ...base, providerStatus: 429, turns: 0, endedOnError: true }), 'infra');
   assert.equal(classify({ ...base, providerStatus: null, turns: 0, endedOnError: true }), 'infra');
   // After a turn it describes the run; fatal statuses stay fatal.
-  assert.equal(classify({ ...base, providerStatus: 429, turns: 2, endedOnError: true }), 'agent');
+  assert.equal(classify({ ...base, providerStatus: 503, turns: 2, endedOnError: true }), 'agent');
   assert.equal(classify({ ...base, providerStatus: null, turns: null, endedOnError: true }), 'agent');
   assert.equal(classify({ ...base, providerStatus: 401, turns: 0, endedOnError: true }), 'fatal');
   assert.equal(classify({ ...base, providerStatus: 429, turns: 0 }), 'agent');
@@ -69,4 +69,10 @@ test('breaker stays closed at 7 of 10', () => {
   for (let i = 0; i < 3; i++) b.record(true);
   for (let i = 0; i < 7; i++) b.record(false);
   assert.equal(b.tripped, false);
+});
+
+test('a rate or usage limit is infra at any turn: the run is redone, never scored', () => {
+  assert.equal(classify({ ...base, providerStatus: 429, turns: 2, endedOnError: true, rateLimited: true }), 'infra');
+  assert.equal(classify({ ...base, providerStatus: null, turns: 9, endedOnError: true, rateLimited: true }), 'infra');
+  assert.equal(classify({ ...base, providerStatus: 401, turns: 0, rateLimited: true }), 'fatal');
 });

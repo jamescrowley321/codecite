@@ -12,6 +12,7 @@ const TOOLS = fixture('claude-tools.jsonl');
 const LEAKED = fixture('claude-leaked.jsonl');
 const AUTH_FAILED = fixture('claude-auth-failed.jsonl');
 const USAGE_LIMIT = fixture('claude-usage-limit.jsonl');
+const USAGE_LIMIT_MIDRUN = fixture('claude-usage-limit-midrun.jsonl');
 
 const line = (obj) => JSON.stringify(obj);
 const assistant = (...content) => line({ type: 'assistant', message: { id: `msg_${Math.random()}`, content } });
@@ -173,10 +174,21 @@ test('a 429 before any turn ends on a provider error, so it is infra, not a fail
   assert.equal(classify({ ...r, spawnError: null }), 'infra');
 });
 
+test('a usage limit mid-run is rateLimited, so infra: redone, never a failed run', () => {
+  const r = claude.parse(USAGE_LIMIT_MIDRUN, '');
+  assert.ok(r.turns > 0, `turns ${r.turns}`);
+  assert.equal(r.endedOnError, true);
+  assert.equal(r.rateLimited, true);
+  assert.equal(r.providerStatus, 429);
+  assert.equal(classify({ ...r, spawnError: null }), 'infra');
+  assert.equal(claude.parse(USAGE_LIMIT, '').rateLimited, true);
+  assert.equal(claude.parse(TOOLS, '').rateLimited, false, 'an allowed rate_limit_event is no limit');
+});
+
 test('a run that ended on an error after real turns is endedOnError but not infra', () => {
   const events = TOOLS.trim().split('\n').map((l) => JSON.parse(l));
   const res = events.find((e) => e.type === 'result');
-  Object.assign(res, { is_error: true, api_error_status: 429 });
+  Object.assign(res, { is_error: true, api_error_status: 500, result: 'API Error: 500 internal' });
   const r = claude.parse(events.map(line).join('\n'), '');
   assert.equal(r.endedOnError, true);
   assert.equal(r.turns, 5);

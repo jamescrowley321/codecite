@@ -241,6 +241,8 @@ export default {
     r.providerStatus = lastStatus;
     // pi exits 0 even when the provider ended the run; say so for the call loop.
     r.endedOnError = lastErrored;
+    // A 429 at the end: the provider's rate limit, not the agent's failure.
+    r.rateLimited = lastErrored && lastStatus === 429;
     r.transcript = transcript.join('\n');
     return r;
   },

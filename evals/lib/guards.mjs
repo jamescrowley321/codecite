@@ -12,11 +12,11 @@ export const FATAL_STATUSES = new Set([400, 401, 402, 404]);
  * - "fatal": provider status 401/402/404, or 400 before any turn (turns 0
  *   or unknown), or the adapter rejected the
  *   run (`rejectReason`, e.g. leaked user config). The round stops.
- * - "infra": provider status >= 500 before any turn, a run that ended on a
+ * - "infra": a rate or usage limit (`rateLimited`) at any turn, provider status >= 500 before any turn, a run that ended on a
  *   provider error (`endedOnError`, any status or none) before any turn, or
  *   the harness could not spawn the agent (`spawnError`). The run is retried.
  * - "agent": everything else, including success.
- * @param {{providerStatus: number|null, turns: number|null, rejectReason?: string|null, spawnError?: string|null, endedOnError?: boolean}} r
+ * @param {{providerStatus: number|null, turns: number|null, rejectReason?: string|null, spawnError?: string|null, endedOnError?: boolean, rateLimited?: boolean}} r
  * @returns {"fatal"|"infra"|"agent"}
  */
 export function classify(r) {
@@ -24,6 +24,9 @@ export function classify(r) {
   if (r.providerStatus != null && FATAL_STATUSES.has(r.providerStatus)) {
     if (!(r.providerStatus === 400 && r.turns > 0)) return 'fatal';
   }
+  // A rate or usage limit (a 429, Claude's five-hour limit) is the
+  // provider's, not the agent's, however far the run got: redo it.
+  if (r.rateLimited) return 'infra';
   if (r.spawnError) return 'infra';
   if (r.providerStatus != null && r.providerStatus >= 500 && r.turns === 0) return 'infra';
   if (r.endedOnError && r.turns === 0) return 'infra';

@@ -1,7 +1,7 @@
 // A stand-in coding agent for call.test.mjs: `node fake-agent.mjs <mode>`.
 // It prints JSON lines; the last {"type":"result"} line is what the fake
 // adapter parses. It echoes FAKE_KEY so tests can prove the harness redacts.
-import { accessSync, appendFileSync, constants, writeFileSync } from 'node:fs';
+import { accessSync, appendFileSync, constants, readFileSync, writeFileSync } from 'node:fs';
 
 const mode = process.argv[2];
 if (process.env.FAKE_COUNTER) appendFileSync(process.env.FAKE_COUNTER, `${mode}\n`);
@@ -77,6 +77,15 @@ switch (mode) {
   case 'errnostatus':
     result({ providerStatus: null, turns: 0, endedOnError: true }, 0);
     break;
+  case 'ratelimit':
+    result({ providerStatus: 429, turns: 4, endedOnError: true, rateLimited: true }, 1);
+    break;
+  case 'ratelimit-once': {
+    // Rate-limited on its first call only (the counter file has one line).
+    const first = readFileSync(process.env.FAKE_COUNTER, 'utf8').trim().split('\n').length === 1;
+    result(first ? { providerStatus: 429, turns: 4, endedOnError: true, rateLimited: true } : { providerStatus: 200, turns: 2 }, first ? 1 : 0);
+    break;
+  }
   case 'notokens':
     result({ providerStatus: 200, turns: 1, tokens: null }, 0);
     break;

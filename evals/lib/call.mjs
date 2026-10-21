@@ -296,6 +296,7 @@ async function attemptRun(run, round, adapter, opts) {
     error = agent.rejectReason ? `run rejected: ${agent.rejectReason}` : `provider status ${agent.providerStatus}`;
   } else if (kind === 'infra') {
     status = 'infra_error';
+    if (agent.rateLimited) error ??= `provider rate or usage limit${agent.providerStatus == null ? '' : ` (${agent.providerStatus})`} after ${agent.turns ?? '?'} turns`;
     error ??= agent.providerStatus == null ? 'provider error before any turn' : `provider status ${agent.providerStatus} before any turn`;
   } else if (proc.timedOut) {
     status = 'timeout';
@@ -384,7 +385,11 @@ async function checkSpend(plan, runs, { secrets, keyRemainingUsd, modelPrices, l
  *   log(line), timeoutMs (plan.timeoutSec), killGraceMs (10 s), maxAttempts
  *   (3), basePath (PATH for prepareRun), retryFatal (false), searchPath (the
  *   PATH bwrap is looked up on), sandbox ({ro, rw, alwaysHidden}: tests only).
- * @returns {Promise<{ran: number, skipped: number, stopped: null|"fatal"|"breaker", reason: string|null, secretRuns: string[]}>}
+ * A rate or usage limit (adapter `rateLimited`) is infra at any turn: retried
+ * with backoff, and when it outlasts the retries the round pauses
+ * (`stopped: "rate_limit"`); the run is infra_error, so resume redoes it.
+ *
+ * @returns {Promise<{ran: number, skipped: number, stopped: null|"fatal"|"breaker"|"rate_limit", reason: string|null, secretRuns: string[]}>}
  *   `secretRuns`: every run of the round whose output held a secret (see secretRuns()).
  */
 export async function callRound(roundDir, deps = {}) {
@@ -440,7 +445,8 @@ export async function callRound(roundDir, deps = {}) {
     for (;;) {
       attempts++;
       outcome = await attemptRun(run, round, adapters.get(run.agent), { secrets, timeoutMs, killGraceMs, basePath, bwrap, sandbox });
-      breaker.record(outcome.result.status === 'ok');
+      // A rate limit is the provider's; it says nothing about runaway failure.
+      if (!outcome.result.rateLimited) breaker.record(outcome.result.status === 'ok');
       if (outcome.kind !== 'infra' || attempts >= maxAttempts || breaker.tripped) break;
       const wait = backoffMs[Math.min(attempts - 1, backoffMs.length - 1)] ?? 0;
       if (wait > 0) {
@@ -454,7 +460,16 @@ export async function callRound(roundDir, deps = {}) {
     const taint = result.tainted.length ? ` TAINTED(${result.tainted.length})` : '';
     const leak = result.secretInTranscript ? ' SECRET-IN-OUTPUT' : '';
     log(`[${run.seq}/${runs.length}] ${run.id} ${result.status} ${result.wallMs ?? '-'}ms${taint}${leak}`);
-    if (outcome.kind === 'fatal') return { ran, skipped, stopped: 'fatal', reason: redact(`${run.id}: ${result.error}`, outcome.secrets), secretRuns: secretRuns(round.dir) };
+    if (outcome.result.rateLimited && outcome.kind === 'infra') {
+      return {
+        ran,
+        skipped,
+        stopped: 'rate_limit',
+        reason: `${run.id}: the provider's rate or usage limit persisted over ${attempts} attempts; wait for it to reset, then run call again to resume (the run is redone)`,
+        secretRuns: secretRuns(round.dir),
+      };
+    }
+        if (outcome.kind === 'fatal') return { ran, skipped, stopped: 'fatal', reason: redact(`${run.id}: ${result.error}`, outcome.secrets), secretRuns: secretRuns(round.dir) };
     if (breaker.tripped) {
       return { ran, skipped, stopped: 'breaker', reason: `${breaker.failed} of ${breaker.calls} calls failed`, secretRuns: secretRuns(round.dir) };
     }

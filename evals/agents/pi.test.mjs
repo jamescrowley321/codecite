@@ -268,3 +268,13 @@ test('pi missing from PATH throws', () => {
   dirs.path = dirs.xdg;
   assert.throws(() => pi.command(RUN, dirs, CTX), /`pi` not found/);
 });
+
+test('a 429 after turns is rateLimited, so infra; another error after turns is not', () => {
+  const ok = assistantEnd({ usage: usage(10, 5, 0.001) });
+  const limited = pi.parse([ok, assistantEnd({ stopReason: 'error', errorMessage: '429 Rate limit exceeded: free-models-per-day' })].join('\n'), '');
+  assert.equal(limited.turns, 1);
+  assert.equal(limited.rateLimited, true);
+  const other = pi.parse([ok, assistantEnd({ stopReason: 'error', errorMessage: '500 internal' })].join('\n'), '');
+  assert.equal(other.rateLimited, false);
+  assert.equal(pi.parse(ok, '').rateLimited, false);
+});

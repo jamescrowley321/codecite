@@ -83,6 +83,7 @@ function fakeAdapter(name) {
         shellCommands: last?.shell ?? [],
         readPaths: last?.reads ?? [],
         endedOnError: last?.endedOnError ?? false,
+        rateLimited: last?.rateLimited ?? false,
       };
     },
   };
@@ -315,6 +316,30 @@ test('infra retries back off between attempts', async () => {
   await callRound(r.dir, deps({ backoffMs: [300, 600], log: (l) => lines.push(l) }));
   assert.ok(Date.now() - t0 >= 900, `waited ${Date.now() - t0} ms`);
   assert.equal(lines.filter((l) => /retrying in/.test(l)).length, 2);
+});
+
+test('a rate limit mid-run is retried with backoff, and the run counts once it gets through', async () => {
+  const r = makeRound([{ agent: 'fake', model: 'm/ratelimit-once' }]);
+  const summary = await callRound(r.dir, deps());
+  assert.equal(summary.stopped, null);
+  const [res] = results(r.dir);
+  assert.equal(res.status, 'ok');
+  assert.equal(res.attempts, 2);
+});
+
+test('a rate limit that persists pauses the round; resume redoes the run', async () => {
+  const r = makeRound([{ agent: 'fake', model: 'm/ratelimit' }], { runs: 3 });
+  const summary = await callRound(r.dir, deps());
+  assert.equal(summary.stopped, 'rate_limit');
+  assert.match(summary.reason, /rate or usage limit.*resume/s);
+  assert.equal(count(r.counter), 3, 'one run, its 3 attempts, then the pause');
+  const [res] = results(r.dir);
+  assert.equal(res.status, 'infra_error');
+  assert.equal(res.rateLimited, true);
+  assert.match(res.error, /rate or usage limit \(429\) after 4 turns/);
+  const again = await callRound(r.dir, deps());
+  assert.equal(again.stopped, 'rate_limit');
+  assert.equal(count(r.counter), 6, 'resume tries the same run again');
 });
 
 test('a spawn failure is infra, retried, then recorded', async () => {

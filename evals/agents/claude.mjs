@@ -240,6 +240,7 @@ export function createClaude({ credentialsPath = CREDENTIALS_PATH } = {}) {
       let toolCalls = 0;
       let codeciteCalls = 0;
       let assistantOk = 0;
+      let limitStatus = null;
 
       for (const e of events) {
         const leak = configLeak(e);
@@ -268,6 +269,8 @@ export function createClaude({ credentialsPath = CREDENTIALS_PATH } = {}) {
               transcript.push(`[${b.name}] ${JSON.stringify(input)}`);
             }
           }
+        } else if (e.type === 'rate_limit_event') {
+          limitStatus = e.rate_limit_info?.status ?? limitStatus;
         } else if (e.type === 'result') {
           result = e;
           if (typeof e.result === 'string') transcript.push(`[result${e.is_error ? ' error' : ''}] ${e.result}`);
@@ -292,6 +295,12 @@ export function createClaude({ credentialsPath = CREDENTIALS_PATH } = {}) {
         r.usage = usageFromMessages(events) ?? r.usage;
         r.providerStatus = lastStatus;
       }
+      // Ended on a rate or usage limit: a 429, a rejected rate_limit_event,
+      // or the limit message in the error result.
+      const text = typeof result?.result === 'string' ? result.result : '';
+      r.rateLimited =
+        (r.endedOnError || !result) &&
+        (r.providerStatus === 429 || limitStatus === 'rejected' || (r.endedOnError && /usage limit|hit your (usage )?limit|rate.?limit/i.test(text)));
       return r;
     },
   };

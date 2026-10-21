@@ -25,6 +25,9 @@ import { emptyUsage } from './telemetry.mjs';
  *   provider error (any status, or none, e.g. a connection error). For agents that exit 0
  *   anyway (pi): the run is then infra_error before any turn, else agent_error, never ok.
  *   Optional; agents whose exit code already reflects the error may leave it unset.
+ * @property {boolean} [rateLimited]  True when the run ended on a provider rate or usage limit (a
+ *   429, Claude's usage limit). Infra at any turn: retried with backoff, never scored; a limit that
+ *   outlasts the retries pauses the round.
  *
  * @typedef {object} AgentCommand
  * @property {string} cmd
@@ -79,6 +82,7 @@ export function emptyAgentResult() {
     shellCommands: [],
     readPaths: [],
     endedOnError: false,
+    rateLimited: false,
   };
 }
 
