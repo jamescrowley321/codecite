@@ -5,7 +5,7 @@ The same coding agent does the same task twice: in a **baseline** arm, and in a
 tests score both. See
 `docs/superpowers/specs/2026-10-20-ab-eval-harness-design.md` for why.
 
-Node 26, ES modules, no npm dependencies. Tests: `node --test evals/lib/`.
+Node 26, ES modules, no npm dependencies. Tests: `node --test evals/`.
 
 ## Layout
 
@@ -19,6 +19,12 @@ Node 26, ES modules, no npm dependencies. Tests: `node --test evals/lib/`.
 | `lib/workspace.mjs` | Prepare a round and each run's isolated directories |
 | `lib/telemetry.mjs` | Usage sums where unknown stays `null` |
 | `lib/secrets.mjs` | Read the keys from `~/.config/codecite/evals.env` |
+| `lib/agent.mjs` | The agent adapter contract (`AgentResult`, `command`, `parse`) and adapter loading |
+| `lib/call.mjs` | The call loop: run, retry, time out, redact, record |
+| `lib/guards.mjs` | Fatal/infra/agent classification and the circuit breaker |
+| `lib/taint.mjs` | Flag runs that fetched code or touched hidden or other runs' paths |
+| `lib/openrouter.mjs` | The key's remaining limit and the round's cost estimate |
+| `agents/<name>.mjs` | One adapter per agent; the plan's `agent` names it |
 
 ## Rounds
 
@@ -54,6 +60,40 @@ already run), a clean `home/`, its own `xdg/` and a `PATH`. Both arms' `PATH`
 drop every directory that holds a `codecite`, `~/.cargo/bin` and this repo's
 `target/`; the codecite arm then prepends `bin-codecite` and gets a copy of
 the corpus. The run order is shuffled by the plan's seed.
+
+## Calls
+
+```
+node evals/run.mjs call --round <id>
+```
+
+`call` runs the round's runs one at a time in `seq` order. Each run's
+adapter (`agents/<agent>.mjs`, contract in `lib/agent.mjs`) turns the run
+into a command; the agent gets exactly the adapter's environment, in its own
+process group, with `SIGTERM` at the plan's `timeoutSec` and `SIGKILL` 10 s
+later. `runs/<run-id>/` then holds `stdout.jsonl`, `stderr.txt` and
+`result.json`: `{run, status, wallMs, attempts, error, exitCode, signal,
+...AgentResult without transcript, tainted}`, where `status` is `ok`,
+`timeout`, `agent_error` or `infra_error`. Every secret value is replaced by
+`[REDACTED]` before anything is written.
+
+- **Resume:** a run whose `result.json` says `ok` or `timeout` is skipped; any
+  other run is redone from a fresh run directory.
+- **Fatal:** provider status 400, 401, 402 or 404, or an adapter's
+  `rejectReason`, stops the round.
+- **Infra:** a spawn or setup failure, or a 5xx before any turn, is retried up
+  to 3 times, then recorded as `infra_error`.
+- **Breaker:** the round stops once at least 10 attempts are in and 80% or
+  more of them ended in anything but `ok` or `timeout`.
+- **Spend:** before any run, the OpenRouter estimate for the pending runs
+  (300k input and 20k output tokens per run at the model's live price;
+  Claude counts as $0) must fit in the key's remaining limit, and the key
+  must have a limit. `compose --dry-run` prints the same estimate.
+- **Taint:** `tainted` lists shell commands matching `github.com`, `git
+  clone`, `curl`, `wget`, `pip install` or `uv add`, and shell commands or
+  file-tool paths reaching `evals/tasks`, `test_hidden`, `/reference/`,
+  `codecite-worktrees` or a `taintPaths` entry outside the run's own
+  directory. Only commands and paths are scanned, never file contents.
 
 ## Secrets
 

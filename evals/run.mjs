@@ -5,7 +5,10 @@
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { callRound } from './lib/call.mjs';
+import { estimateUsd, modelPrices } from './lib/openrouter.mjs';
 import { expandRuns, freezePlan, loadPlan, loadTask, roundsDir } from './lib/plan.mjs';
+import { readSecrets } from './lib/secrets.mjs';
 import { prepareRound, REPO_ROOT } from './lib/workspace.mjs';
 
 const USAGE = `usage:
@@ -30,7 +33,17 @@ function printCounts(plan) {
   console.log(`total: ${runs.length} runs`);
 }
 
-function compose(argv) {
+// The OpenRouter estimate needs live prices (no key); it is advisory here.
+async function printEstimate(plan) {
+  try {
+    const usd = estimateUsd(plan, { prices: await modelPrices() });
+    console.log(`estimate: $${usd.toFixed(2)} on OpenRouter (Claude runs counted as $0)`);
+  } catch (e) {
+    console.log(`estimate: unavailable (${e.message})`);
+  }
+}
+
+async function compose(argv) {
   const { values } = parseArgs({
     args: argv,
     options: {
@@ -47,6 +60,7 @@ function compose(argv) {
   const dir = roundsDir();
   if (values['dry-run']) {
     printCounts(spec);
+    await printEstimate(spec);
     console.log('dry run: nothing frozen, nothing spent');
     return;
   }
@@ -61,10 +75,23 @@ function compose(argv) {
   console.log(`round ${roundId} prepared at ${round.dir}`);
 }
 
+async function call(argv) {
+  const { values } = parseArgs({ args: argv, options: { round: { type: 'string' } } });
+  if (!values.round) throw new Error(`call needs --round\n${USAGE}`);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(values.round)) throw new Error(`call: bad round id "${values.round}"`);
+  const summary = await callRound(join(roundsDir(), values.round), { secrets: readSecrets() });
+  console.log(`ran ${summary.ran}, skipped ${summary.skipped}`);
+  if (summary.stopped) {
+    console.error(`round stopped (${summary.stopped}): ${summary.reason}`);
+    process.exit(1);
+  }
+}
+
 const [command, ...rest] = process.argv.slice(2);
 try {
-  if (command === 'compose') compose(rest);
-  else if (command === 'call' || command === 'score') {
+  if (command === 'compose') await compose(rest);
+  else if (command === 'call') await call(rest);
+  else if (command === 'score') {
     console.error(`${command}: not implemented yet`);
     process.exit(2);
   } else {
