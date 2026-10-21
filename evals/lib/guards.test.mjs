@@ -25,13 +25,17 @@ test('5xx before any turn is infra', () => {
   assert.equal(classify({ ...base, providerStatus: 503, turns: null }), 'agent');
 });
 
-test('a run that ended on a provider error before any turn is infra', () => {
+test('a run that ended on a provider error is infra at any turn count', () => {
   assert.equal(classify({ ...base, providerStatus: 429, turns: 0, endedOnError: true }), 'infra');
   assert.equal(classify({ ...base, providerStatus: null, turns: 0, endedOnError: true }), 'infra');
   // After a turn it describes the run; fatal statuses stay fatal.
-  assert.equal(classify({ ...base, providerStatus: 503, turns: 2, endedOnError: true }), 'agent');
-  assert.equal(classify({ ...base, providerStatus: null, turns: null, endedOnError: true }), 'agent');
+  // After turns too: a provider error ends the run, not the agent's work.
+  assert.equal(classify({ ...base, providerStatus: 503, turns: 2, endedOnError: true }), 'infra');
+  assert.equal(classify({ ...base, providerStatus: null, turns: 1, endedOnError: true }), 'infra');
+  assert.equal(classify({ ...base, providerStatus: null, turns: null, endedOnError: true }), 'infra');
   assert.equal(classify({ ...base, providerStatus: 401, turns: 0, endedOnError: true }), 'fatal');
+  assert.equal(classify({ ...base, providerStatus: 401, turns: 4, endedOnError: true }), 'fatal', 'fatal statuses stay fatal');
+  assert.equal(classify({ ...base, providerStatus: 400, turns: 3, endedOnError: true }), 'agent', 'a 400 after a turn is still the run');
   assert.equal(classify({ ...base, providerStatus: 429, turns: 0 }), 'agent');
 });
 

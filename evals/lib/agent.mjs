@@ -22,9 +22,11 @@ import { emptyUsage } from './telemetry.mjs';
  * @property {string[]} readPaths     Every path its read/edit/write/grep/find/ls-style tools touched,
  *   as the agent gave it (relative paths resolve against the run's project dir).
  * @property {boolean} [endedOnError]  True when the agent's last model call ended in a
- *   provider error (any status, or none, e.g. a connection error). For agents that exit 0
- *   anyway (pi): the run is then infra_error before any turn, else agent_error, never ok.
+ *   provider error (any status, or none, e.g. a connection error). The run is then infra at any
+ *   turn count (but a 400 after a turn): retried, and infra_error once the attempts run out.
  *   Optional; agents whose exit code already reflects the error may leave it unset.
+ * @property {string|null} [providerError]  The provider's error text when the run ended on one
+ *   (pi's errorMessage, Claude's error result), for the record; else null.
  * @property {boolean} [rateLimited]  True when the run ended on a provider rate or usage limit (a
  *   429, Claude's usage limit). Infra at any turn: retried with backoff, never scored; a limit that
  *   outlasts the retries pauses the round.
@@ -83,6 +85,7 @@ export function emptyAgentResult() {
     readPaths: [],
     endedOnError: false,
     rateLimited: false,
+    providerError: null,
   };
 }
 

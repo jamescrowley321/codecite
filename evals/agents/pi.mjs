@@ -186,6 +186,7 @@ export default {
     let turns = 0;
     let lastStatus = null;
     let lastErrored = false;
+    let lastErrorText = '';
     let toolCalls = 0;
     let codeciteCalls = 0;
     let system = null;
@@ -203,6 +204,7 @@ export default {
         usage = addUsage(usage, usageOf(m));
         lastErrored = m.stopReason === 'error';
         if (lastErrored) {
+          lastErrorText = typeof m.errorMessage === 'string' ? m.errorMessage : '';
           lastStatus = errorStatus(m.errorMessage);
           transcript.push(`[error] ${m.errorMessage ?? ''}`);
         } else {
@@ -243,6 +245,7 @@ export default {
     r.endedOnError = lastErrored;
     // A 429 at the end: the provider's rate limit, not the agent's failure.
     r.rateLimited = lastErrored && lastStatus === 429;
+    r.providerError = lastErrored ? (lastErrorText || null) : null;
     r.transcript = transcript.join('\n');
     return r;
   },

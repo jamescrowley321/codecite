@@ -291,6 +291,7 @@ export function createClaude({ credentialsPath = CREDENTIALS_PATH } = {}) {
         // An error result (a 429 usage limit, a 5xx) ended the run: before
         // any turn that is infra (classify), after one a failed run.
         r.endedOnError = result.is_error === true;
+        r.providerError = r.endedOnError && typeof result.result === 'string' ? result.result.slice(0, 1000) : null;
       } else {
         r.usage = usageFromMessages(events) ?? r.usage;
         r.providerStatus = lastStatus;

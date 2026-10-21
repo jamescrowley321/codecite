@@ -184,7 +184,10 @@ adapter's environment, with `SIGTERM` at the plan's `timeoutSec` and `SIGKILL` 1
 later. `runs/<run-id>/` then holds `stdout.jsonl`, `stderr.txt` and
 `result.json`: `{run, status, wallMs, attempts, error, exitCode, signal,
 ...AgentResult without transcript, tainted, secretInTranscript}`, where
-`status` is `ok`, `timeout`, `agent_error`, `infra_error` or `fatal`. Every
+`status` is `ok` (finished), `timeout`, `agent_error` (the agent failed: a
+non-zero exit, or a 400 after a turn), `infra_error` (the harness or the
+provider failed, after its retries; excluded and redone on resume) or
+`fatal` (the round's setup is wrong; it stops). Every
 secret value is replaced by `[REDACTED]` before anything is written;
 `secretInTranscript` is true when that changed the agent's output (see
 *Secrets*).
@@ -211,11 +214,15 @@ secret value is replaced by `[REDACTED]` before anything is written;
   (`rate_limit`): wait for the limit to reset, then run `call` again, which
   redoes it.
 - **Infra:** a spawn or setup failure (a missing agent command, or bwrap
-  failing before the agent starts), a 5xx before any turn, or an adapter's
-  `endedOnError` before any turn (any status, or none: pi's 429, Claude Code's
-  usage-limit 429), is retried up to 3 times, 5 s and then 20 s apart, then
-  recorded as `infra_error`. `endedOnError` after a turn is `agent_error`,
-  even when the agent exited 0.
+  failing before the agent starts), a 5xx before any turn, or a run the
+  provider ended (an adapter's `endedOnError`: pi's stopReason `error`, such
+  as "Provider finish_reason: error" or "Provider returned an empty
+  response"; Claude Code's `is_error` result) at any turn count, is retried
+  up to 3 times in one `call`, 5 s and then 20 s apart, then recorded as
+  `infra_error` with the provider's error text: excluded from the verdict,
+  listed on the scorecard, and tried again on resume. Fatal statuses stay
+  fatal, rate limits pause the round (above), and a 400 after a turn stays
+  the run's own `agent_error`.
 - **Breaker:** the round stops once at least 10 attempts are in and 80% or
   more of them ended in anything but `ok` (timeouts count as failures here,
   though resume still skips them).
@@ -344,9 +351,9 @@ assistant messages that didn't end in error; `providerStatus` is the status
 at the head of the last assistant message's `errorMessage` when the run
 ended on an error. pi exits 0 even when the provider ended the run, so the
 adapter sets `endedOnError` whenever the last assistant message ended in
-error: a fatal status stays fatal, an error before any turn (a 429, a
-connection error) is infra and retried, and one after a turn is
-`agent_error`, never `ok`.
+error, and `providerError` to its `errorMessage`: a fatal status stays
+fatal, a 429 is a rate limit, and any other provider error, before or after
+a turn, is infra and retried, never `ok` and never a failed run.
 
 ## Scoring
 

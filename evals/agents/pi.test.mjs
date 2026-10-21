@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import pi, { TOOLS, configLeak } from './pi.mjs';
 import { armLabel } from '../lib/plan.mjs';
+import { classify } from '../lib/guards.mjs';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 const STREAM = fixture('pi-stream.jsonl');
@@ -117,11 +118,19 @@ test('a statusless error message ends the run on error with no status', () => {
   assert.equal(r.endedOnError, true);
 });
 
-test('an error after turns ends the run on error', () => {
+test('an error after turns ends the run on error, so infra, with the provider text', () => {
   const r = pi.parse([assistantEnd({}), assistantEnd({ stopReason: 'error', errorMessage: '502: bad gateway' })].join('\n'), '');
   assert.equal(r.providerStatus, 502);
   assert.equal(r.turns, 1);
   assert.equal(r.endedOnError, true);
+  assert.equal(r.providerError, '502: bad gateway');
+  assert.equal(classify({ ...r, spawnError: null }), 'infra');
+  for (const msg of ['Provider finish_reason: error', 'Provider returned an empty response']) {
+    const e = pi.parse([assistantEnd({}), assistantEnd({ stopReason: 'error', errorMessage: msg })].join('\n'), '');
+    assert.equal(classify({ ...e, spawnError: null }), 'infra', msg);
+    assert.equal(e.providerError, msg);
+  }
+  assert.equal(pi.parse(assistantEnd({}), '').providerError, null);
 });
 
 test('a 401 from the recorded leaked run is its providerStatus', () => {

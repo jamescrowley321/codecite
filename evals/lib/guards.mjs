@@ -12,9 +12,11 @@ export const FATAL_STATUSES = new Set([400, 401, 402, 404]);
  * - "fatal": provider status 401/402/404, or 400 before any turn (turns 0
  *   or unknown), or the adapter rejected the
  *   run (`rejectReason`, e.g. leaked user config). The round stops.
- * - "infra": a rate or usage limit (`rateLimited`) at any turn, provider status >= 500 before any turn, a run that ended on a
- *   provider error (`endedOnError`, any status or none) before any turn, or
- *   the harness could not spawn the agent (`spawnError`). The run is retried.
+ * - "infra": a rate or usage limit (`rateLimited`) at any turn, provider
+ *   status >= 500 before any turn, a run that ended on a provider error
+ *   (`endedOnError`, any status or none but a 400 after a turn) at any turn
+ *   count, or the harness could not spawn the agent (`spawnError`). The run
+ *   is retried; after the attempts run out it is recorded infra_error.
  * - "agent": everything else, including success.
  * @param {{providerStatus: number|null, turns: number|null, rejectReason?: string|null, spawnError?: string|null, endedOnError?: boolean, rateLimited?: boolean}} r
  * @returns {"fatal"|"infra"|"agent"}
@@ -29,7 +31,11 @@ export function classify(r) {
   if (r.rateLimited) return 'infra';
   if (r.spawnError) return 'infra';
   if (r.providerStatus != null && r.providerStatus >= 500 && r.turns === 0) return 'infra';
-  if (r.endedOnError && r.turns === 0) return 'infra';
+  // A run the provider ended (pi's stopReason "error": "Provider
+  // finish_reason: error", an empty response; Claude's is_error result) is
+  // the provider's fault at any turn count: redo it. A 400 after a turn
+  // still describes the run (e.g. the agent overfilled its context).
+  if (r.endedOnError && !(r.providerStatus === 400 && r.turns > 0)) return 'infra';
   return 'agent';
 }
 

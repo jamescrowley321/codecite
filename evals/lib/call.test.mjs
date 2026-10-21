@@ -84,6 +84,7 @@ function fakeAdapter(name) {
         readPaths: last?.reads ?? [],
         endedOnError: last?.endedOnError ?? false,
         rateLimited: last?.rateLimited ?? false,
+        providerError: last?.providerError ?? null,
       };
     },
   };
@@ -359,15 +360,26 @@ test('the breaker stops a round of failing runs after 10', async () => {
   assert.ok(results(r.dir).every((x) => x.status === 'agent_error'));
 });
 
-test('a run that exits 0 but ended on a provider error after turns is agent_error', async () => {
+test('a provider error after turns is infra: retried, then infra_error with the provider text', async () => {
   const r = makeRound([{ agent: 'fake', model: 'm/errend' }]);
   const summary = await callRound(r.dir, deps());
-  assert.equal(summary.stopped, null);
-  assert.equal(count(r.counter), 1);
+  assert.equal(summary.stopped, null, 'not a pause: only rate limits pause');
+  assert.equal(count(r.counter), 3, 'three provider-error attempts, then recorded');
   const [res] = results(r.dir);
-  assert.equal(res.status, 'agent_error');
-  assert.equal(res.exitCode, 0);
-  assert.match(res.error, /ended on a provider error \(429\)/);
+  assert.equal(res.status, 'infra_error');
+  assert.equal(res.attempts, 3);
+  assert.match(res.error, /provider error after 2 turns: Provider finish_reason: error/);
+  // Resume tries it again.
+  await callRound(r.dir, deps());
+  assert.equal(count(r.counter), 6);
+});
+
+test('a provider error after turns that clears on retry counts as the retried run', async () => {
+  const r = makeRound([{ agent: 'fake', model: 'm/errend-once' }]);
+  await callRound(r.dir, deps());
+  const [res] = results(r.dir);
+  assert.equal(res.status, 'ok');
+  assert.equal(res.attempts, 2);
 });
 
 test('a 429 before any turn with exit 0 is infra, retried, then recorded', async () => {

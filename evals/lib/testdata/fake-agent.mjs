@@ -69,8 +69,13 @@ switch (mode) {
     break;
   // Agents like pi exit 0 even when the provider ended the run.
   case 'errend':
-    result({ providerStatus: 429, turns: 2, endedOnError: true }, 0);
+    result({ providerStatus: null, turns: 2, endedOnError: true, providerError: 'Provider finish_reason: error' }, 0);
     break;
+  case 'errend-once': {
+    const first = readFileSync(process.env.FAKE_COUNTER, 'utf8').trim().split('\n').length === 1;
+    result(first ? { providerStatus: null, turns: 1, endedOnError: true, providerError: 'Provider returned an empty response' } : { providerStatus: 200, turns: 2 }, 0);
+    break;
+  }
   case 'errstart':
     result({ providerStatus: 429, turns: 0, endedOnError: true }, 0);
     break;

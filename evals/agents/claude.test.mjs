@@ -185,15 +185,18 @@ test('a usage limit mid-run is rateLimited, so infra: redone, never a failed run
   assert.equal(claude.parse(TOOLS, '').rateLimited, false, 'an allowed rate_limit_event is no limit');
 });
 
-test('a run that ended on an error after real turns is endedOnError but not infra', () => {
+test('a run that ended on an error after real turns is infra, with the provider text', () => {
   const events = TOOLS.trim().split('\n').map((l) => JSON.parse(l));
   const res = events.find((e) => e.type === 'result');
   Object.assign(res, { is_error: true, api_error_status: 500, result: 'API Error: 500 internal' });
   const r = claude.parse(events.map(line).join('\n'), '');
   assert.equal(r.endedOnError, true);
   assert.equal(r.turns, 5);
-  assert.equal(classify({ ...r, spawnError: null }), 'agent');
+  assert.equal(r.rateLimited, false);
+  assert.equal(r.providerError, 'API Error: 500 internal');
+  assert.equal(classify({ ...r, spawnError: null }), 'infra');
   assert.equal(claude.parse(TOOLS, '').endedOnError, false);
+  assert.equal(claude.parse(TOOLS, '').providerError, null);
 });
 
 test('a retried status that later succeeds is not a provider error', () => {

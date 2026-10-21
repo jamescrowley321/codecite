@@ -297,11 +297,16 @@ async function attemptRun(run, round, adapter, opts) {
   } else if (kind === 'infra') {
     status = 'infra_error';
     if (agent.rateLimited) error ??= `provider rate or usage limit${agent.providerStatus == null ? '' : ` (${agent.providerStatus})`} after ${agent.turns ?? '?'} turns`;
+    if (agent.endedOnError && agent.turns > 0) {
+      const what = agent.providerError ? `: ${String(agent.providerError).slice(0, 300)}` : agent.providerStatus == null ? '' : ` (${agent.providerStatus})`;
+      error ??= `provider error after ${agent.turns} turns${what}`;
+    }
+    if (agent.providerError) error ??= `provider error before any turn: ${String(agent.providerError).slice(0, 300)}`;
     error ??= agent.providerStatus == null ? 'provider error before any turn' : `provider status ${agent.providerStatus} before any turn`;
   } else if (proc.timedOut) {
     status = 'timeout';
   } else if (agent.endedOnError) {
-    // An agent that exits 0 after the provider ended its run (pi) did not finish.
+    // Only a 400 after a turn gets here (classify): the run's own failure.
     status = 'agent_error';
     error ??= `agent ended on a provider error${agent.providerStatus == null ? '' : ` (${agent.providerStatus})`}`;
   } else if (proc.exitCode === 0 && !error) {
