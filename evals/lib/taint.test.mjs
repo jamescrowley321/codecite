@@ -62,6 +62,40 @@ test('a curl that also reaches a non-loopback host, or names no host, taints', (
   for (const c of bad) assert.equal(hits([c]).length, 1, c);
 });
 
+test('curl or wget named but not run does not taint', () => {
+  for (const c of ['which curl wget', 'command -v curl', 'curl --version', 'wget --help', 'grep -rn curl app/', 'echo "use curl to test"', 'man curl | head']) {
+    assert.deepEqual(hits([c]), [], c);
+  }
+});
+
+test('a loopback POST with a quoted body holding & does not taint', () => {
+  const ok = [
+    'curl -s -X POST -d "grant_type=client_credentials&client_id=x&client_secret=y" http://127.0.0.1:9011/token',
+    "curl -s --data-urlencode 'a=b&c=d' localhost:8000/x",
+    'curl -sf -H "Authorization: Bearer abc.def" -F "f=@a.txt" http://localhost:8000/me',
+    'timeout 5 curl -s http://127.0.0.1:8000/health',
+    'env FOO=1 curl -s http://localhost:8000/',
+    'sudo -n curl http://127.0.0.1/',
+    'curl -s http://127.0.0.1:8000/health 2>&1 | head -5',
+    'curl -s http://127.0.0.1:8000/ > /tmp/out.json',
+  ];
+  for (const c of ok) assert.deepEqual(hits([c]), [], c);
+});
+
+test('a real outside fetch still taints, however it is run', () => {
+  const bad = [
+    'curl -s -d "a=b&c=d" https://example.org/token',
+    'timeout 10 curl -s https://example.org/',
+    'xargs curl < urls.txt',
+    'cd /tmp && wget -q https://example.org/x.tar.gz',
+    'echo hi && curl https://pypi.org/simple/fastapi/',
+    'X=1 curl https://example.org',
+    'curl -o out.json example.org',
+    'curl -s "http://127.0.0.1:8000/a" "https://example.org/b"',
+  ];
+  for (const c of bad) assert.equal(hits([c]).length, 1, c);
+});
+
 test('ignores github.com inside a file the agent read', () => {
   // Only commands and paths are scanned; file contents never reach taintHits.
   assert.deepEqual(hits(['cat README.md'], [`${PROJECT}/README.md`]), []);
