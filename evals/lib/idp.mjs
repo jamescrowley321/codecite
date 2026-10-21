@@ -22,10 +22,16 @@ export function freezeIdp(roundDir, { from = IDP_DIR } = {}) {
   return dest;
 }
 
-/** The IdP a round scores against: its frozen copy, else (a round frozen before that) the live fixture. */
-export function idpDirFor(roundDir) {
+/**
+ * The IdP a round scores against: its frozen copy. A task that names an IdP
+ * (`plan.taskDef.idp`) and has none is a setup error, never a fallback to
+ * the live fixture; a task without that field uses the live fixture.
+ */
+export function idpDirFor(roundDir, plan) {
   const frozen = join(roundDir, 'idp');
-  return existsSync(join(frozen, 'provider.js')) ? frozen : IDP_DIR;
+  if (existsSync(join(frozen, 'provider.js'))) return frozen;
+  if (plan?.taskDef?.idp) throw new Error(`idp: no frozen IdP at ${frozen}, though the task names "${plan.taskDef.idp}"; compose freezes it (run npm ci in ${IDP_DIR}, then compose the round again)`);
+  return IDP_DIR;
 }
 
 function freePort() {

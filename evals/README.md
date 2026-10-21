@@ -57,7 +57,8 @@ commit) and prepares the round:
   editing `evals/tasks/` after compose doesn't change a round.
 - `idp/`: a copy of the task's IdP fixture (`fixtures/node-oidc`, with its
   installed `node_modules`; run `npm ci` there before compose), which `score`
-  starts instead of the live one.
+  starts instead of the live one. A round whose task names an IdP but has no
+  `idp/` is refused, never scored against the live fixture.
 - `identity-model/`: identity-model at the pinned commit, fetched from the
   local repo named in the plan's `repos` into a throwaway repo and copied out
   of its checkout with no `.git`, read-only.
@@ -228,11 +229,17 @@ secret value is replaced by `[REDACTED]` before anything is written;
   new packages") or `uv add`; a `curl` or `wget` run as the command (its
   first word, after `VAR=value` and wrappers such as `sudo`, `env`,
   `timeout`; so `which curl`, `curl --version` and `grep curl` don't count)
-  against anything but loopback (`127.0.0.0/8`, `localhost`, `::1`), or
-  against a target it can't read (`curl $URL`, anything fed by `xargs`).
-  Commands are split quote-aware for this, so a quoted `-d "a=b&c=d"` stays
-  whole, and option values (`-d`, `-H`, `-o`, ...) and redirection targets are
-  never read as hosts; and shell commands or file-tool paths naming `evals/tasks`,
+  against anything but loopback (`127.0.0.0/8`, `0.0.0.0`, `localhost`,
+  `::1`), or against a target it can't read (`curl $URL`, anything fed by
+  `xargs`). Commands are split quote-aware for this, so a quoted
+  `-d "a=b&c=d"` stays whole; `$(...)`, backticks (in double quotes too),
+  subshells, `{ ...; }` groups and shell keywords (`if`, `do`, `!`, ...)
+  start commands, `sh -c`/`bash -c` strings are parsed in turn, and wrappers'
+  valued options (`sudo -u`, `timeout -s`, `nice -n`, `xargs -I`) are
+  skipped. Option values (`-d`, `-H`, `-o`, ...) and redirection targets are
+  never read as hosts. As a safety net under that parse, a command also
+  taints when any word names curl or wget and a non-loopback `scheme://` URL
+  appears anywhere in it; and shell commands or file-tool paths naming `evals/tasks`,
   `test_hidden`, `/reference/`, `codecite-worktrees`, `mountinfo` or
   `findmnt`. Each command is split into segments on `&&`, `||`, `;`, `|`,
   `&` and newlines, with a cwd that starts at `/work/project` and follows

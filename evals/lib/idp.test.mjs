@@ -10,10 +10,12 @@ const ready = existsSync(join(IDP_DIR, 'node_modules')) ? false : 'the IdP fixtu
 test('freezeIdp copies the fixture, node_modules included, and the round scores from the copy', { skip: ready }, async () => {
   const round = mkdtempSync(join(tmpdir(), 'evals-idp-'));
   try {
-    assert.equal(idpDirFor(round), IDP_DIR, 'a round without a frozen IdP (an old one) uses the live fixture');
+    const plan = { taskDef: { idp: 'node-oidc' } };
+    assert.throws(() => idpDirFor(round, plan), /no frozen IdP.*compose/s, 'a task with an IdP never falls back to the live fixture');
+    assert.equal(idpDirFor(round, { taskDef: {} }), IDP_DIR, 'a task without an IdP field uses the live fixture');
     const dir = freezeIdp(round);
     assert.equal(dir, join(round, 'idp'));
-    assert.equal(idpDirFor(round), dir);
+    assert.equal(idpDirFor(round, plan), dir);
     assert.equal(readFileSync(join(dir, 'provider.js'), 'utf8'), readFileSync(join(IDP_DIR, 'provider.js'), 'utf8'));
     assert.ok(existsSync(join(dir, 'node_modules', 'oidc-provider', 'package.json')));
     const idp = await startIdp({ dir });

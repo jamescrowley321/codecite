@@ -96,6 +96,44 @@ test('a real outside fetch still taints, however it is run', () => {
   for (const c of bad) assert.equal(hits([c]).length, 1, c);
 });
 
+test('a fetch hidden in substitutions, subshells, groups, keywords, sh -c or wrapper options still taints', () => {
+  const bad = [
+    'echo $(curl -s https://example.org/x)',
+    'X=`curl https://example.org`',
+    "bash -c 'curl https://example.org/'",
+    'sh -c "wget -qO- https://example.org/"',
+    '(curl https://example.org/)',
+    '{ curl https://example.org/; }',
+    'if curl -sf https://example.org/; then echo up; fi',
+    'for u in a; do curl https://example.org/$u; done',
+    'while true; do wget https://example.org/; break; done',
+    '! curl https://example.org/',
+    'sudo -u root curl https://example.org/',
+    'timeout -s KILL 5 curl https://example.org/',
+    'nice -n 10 wget https://example.org/',
+    'xargs -I {} curl {} < u.txt',
+    'echo "$(curl -s https://example.org/x)"',
+    'curl -s --oauth2-bearer tok example.org',
+  ];
+  for (const c of bad) assert.equal(hits([c]).length, 1, c);
+});
+
+test('the earlier false positives, 0.0.0.0 and an unknown option on a loopback curl stay clean', () => {
+  const ok = [
+    'which curl wget',
+    'curl --version',
+    'grep -rn curl app/',
+    'curl -s -X POST -d "grant_type=client_credentials&client_id=x" http://127.0.0.1:9011/token',
+    'curl -s http://0.0.0.0:8000/health',
+    'curl -s 0.0.0.0:8000/items',
+    'curl -s 127.0.0.1:8000 --oauth2-bearer tok',
+    'echo $(curl -s http://localhost:8000/health)',
+    "bash -c 'curl -s http://127.0.0.1:8000/'",
+    'timeout -s KILL 5 curl -s http://127.0.0.1:8000/',
+  ];
+  for (const c of ok) assert.deepEqual(hits([c]), [], c);
+});
+
 test('ignores github.com inside a file the agent read', () => {
   // Only commands and paths are scanned; file contents never reach taintHits.
   assert.deepEqual(hits(['cat README.md'], [`${PROJECT}/README.md`]), []);

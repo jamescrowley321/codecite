@@ -127,7 +127,7 @@ async function score(argv) {
   if (!values.round) throw new Error(`score needs --round\n${USAGE}`);
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(values.round)) throw new Error(`score: bad round id "${values.round}"`);
   const dir = join(roundsDir(), values.round);
-  const idp = await startIdp({ dir: idpDirFor(dir) });
+  const idp = await startIdp({ dir: idpDirFor(dir, loadRound(dir).plan) });
   let summary;
   try {
     summary = await scoreRound(dir, { idpUrl: idp.url, rescore: values.rescore });
