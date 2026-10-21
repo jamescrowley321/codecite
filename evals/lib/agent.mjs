@@ -46,7 +46,9 @@ import { emptyUsage } from './telemetry.mjs';
  * @typedef {object} Adapter
  * @property {string} name
  * @property {(run: object, dirs: object, ctx: AgentContext) => AgentCommand} command
- *   `run` is {id, agent, model, arm, rep, seq}; `dirs` is prepareRun's {out, project, home, xdg, bin, path}.
+ *   `run` is {id, agent, model, arm, rep, seq}; `dirs` is prepareRun's {out, project, home, xdg, bin, path,
+ *   host}: project/home/xdg/bin are the neutral in-sandbox paths (/work/...) the agent sees, which go
+ *   in its env and cwd; `host` holds the same dirs on the host, for files the adapter writes first.
  *   Throwing (e.g. requireSecret) stops the round.
  * @property {(stdout: string, stderr: string) => AgentResult} parse
  *   Gets the output with secrets already redacted. Throwing records an agent_error.

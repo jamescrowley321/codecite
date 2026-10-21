@@ -7,8 +7,8 @@
 // the plan's seed) judges it: a loss only when even the interval's
 // favourable bound is past the margin, i.e. the pass rate's upper bound is
 // more than 5 points below 0, or the tokens' or time's lower bound more than
-// 5% above. This replaces the spec's plain comparison of the numbers
-// (Ruling R19). Unknown (null) never passes a measure.
+// 5% above. This replaces the spec's plain comparison of the numbers, by
+// the owner's decision. Unknown (null) never passes a measure.
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';

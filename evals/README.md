@@ -30,7 +30,7 @@ Node 26, ES modules, no npm dependencies. Tests: `node --test evals/`.
 | `lib/idp.mjs` | Start the eval IdP for the score phase |
 | `lib/score.mjs` | Run the hidden tests against each run's project, sandboxed |
 | `lib/pytest-plugin/` | The `-p` plugin that marks pytest as started |
-| `lib/scorecard.mjs` | The no-loss comparison and the Markdown scorecard |
+| `lib/scorecard.mjs` | The no-loss comparison (bootstrap intervals) and the Markdown scorecard |
 | `agents/<name>.mjs` | One adapter per agent; the plan's `agent` names it |
 
 ## Rounds
@@ -44,10 +44,17 @@ node evals/run.mjs compose --plan evals/plans/round-1.json --dry-run
 node evals/run.mjs compose --plan evals/plans/round-1.json [--round <id>] [--codecite-bin <path>]
 ```
 
-`--dry-run` prints the run count per agent/model pair and writes nothing.
-Without it, `compose` freezes the plan to `<round>/plan.json` (with the
-codecite commit and the task's identity-model commit) and prepares the round:
+`compose` first checks every non-Claude model slug against OpenRouter's live
+model list (no key needed) and refuses a plan naming one it doesn't list.
+`--dry-run` then prints the run count per agent/model pair and the cost
+estimate, and writes nothing. Without it, `compose` freezes the plan to
+`<round>/plan.json` (with the codecite commit and the task's identity-model
+commit) and prepares the round:
 
+- `task/`: a copy of the task dir (`task.json`, `prompt.md`, `project/`,
+  `hidden/`, `reference/`), which the frozen plan's `taskDef.dir` points at.
+  Runs and scoring read the task from here, never from the live checkout, so
+  editing `evals/tasks/` after compose doesn't change a round.
 - `identity-model/`: identity-model at the pinned commit, fetched from the
   local repo named in the plan's `repos` into a throwaway repo and copied out
   of its checkout with no `.git`, read-only.
@@ -57,17 +64,34 @@ codecite commit and the task's identity-model commit) and prepares the round:
   throwaway repo and codecite's clone cache are deleted after indexing; no
   file the runs see names the real repo.
 - `round.json`: the round's paths and `taintPaths`, the paths a run must not
-  touch (the real repos, this codecite checkout, `plan.json`, `round.json`,
-  `corpus.toml`, `runs/`).
+  touch (the real repos, this codecite checkout, `task/`, `plan.json`,
+  `round.json`, `corpus.toml`, `runs/`).
 - `bin-codecite/codecite`: built from this checkout with `cargo build
   --release`, or copied from `--codecite-bin`.
 
-Each run gets `runs/<run-id>/` with a fresh `project/` (its
-`@IDENTITY_MODEL@` placeholder pointing at the export, the task's `setup`
-already run), a clean `home/`, its own `xdg/` and a `PATH`. Both arms' `PATH`
-drop every directory that holds a `codecite`, `~/.cargo/bin` and this repo's
-`target/`; the codecite arm then prepends `bin-codecite` and gets a copy of
-the corpus. The run order is shuffled by the plan's seed.
+Each run gets `runs/<run-id>/` with a fresh `project/`, a clean `home/`, its
+own `xdg/` and a `PATH`. Inside the sandbox they are at fixed, neutral paths,
+the same for every arm, run and round:
+
+| Host | In the sandbox |
+| --- | --- |
+| `runs/<run-id>/project/` | `/work/project` (the agent's cwd) |
+| `runs/<run-id>/home/` | `/work/home` (`HOME`) |
+| `runs/<run-id>/xdg/` | `/work/xdg` (`XDG_DATA_HOME`) |
+| `identity-model/` | `/work/identity-model` (read-only) |
+| `bin-codecite/` | `/work/bin` (read-only, codecite arm only) |
+
+So the agent's cwd (which both agents put in their system prompt), its
+environment, `PATH`, prompt and pi's `models.json` never name its arm, its
+run, the round or the evals dir. The project's `@IDENTITY_MODEL@` placeholder
+and the prompt's `{identity_model}` are `/work/identity-model`. The task's
+`setup` (`uv sync`) runs before the clock starts in the same sandbox, at the
+same paths, so the venv it builds is valid there; a `uv` setup gets the
+host's Python (the one `uv python find` picks, bound read-only) and a
+per-round uv cache (`<round>/uv-cache`, bound for setup only). Both arms'
+`PATH` drop every directory that holds a `codecite`, `~/.cargo/bin` and this
+repo's `target/`; the codecite arm then prepends `/work/bin` and gets a copy
+of the corpus. The run order is shuffled by the plan's seed.
 
 ## Sandbox
 
@@ -75,6 +99,10 @@ Every agent runs inside `bwrap` (`lib/sandbox.mjs`). There is no
 unsandboxed fallback: `call` refuses to start a round when `bwrap` isn't on
 `PATH` or a probe of the sandbox's namespace setup fails.
 
+- **Root:** the host's `/` is bound read-only one top-level entry at a time
+  (each directory bound, each symlink recreated) rather than as one bind, so
+  the sandbox's own root stays a tmpfs where bwrap can make the `/work`
+  mount points, then `/` is remounted read-only.
 - **Hidden:** the host is mounted read-only, then empty tmpfs mounts cover
   `/home` (and `$HOME` if it's elsewhere), `/root`, `/tmp`, `/var/tmp`,
   `/run`, `$CODECITE_EVALS_DIR`, the round dir and every directory in its
@@ -91,11 +119,13 @@ unsandboxed fallback: `call` refuses to start a round when `bwrap` isn't on
   `/var/lib/lxd/unix.socket`) is covered with `/dev/null`: for a member of
   the `docker`, `lxd` or `incus` group, reaching one is root.
 - **Bound back read-write:** only the run's `project/`, `home/` and `xdg/`,
-  at their real paths. `/tmp` is a fresh, empty tmpfs per run. The run dir's
-  other files (`stdout.jsonl`, `setup.log`) are not visible.
-- **Bound back read-only:** the round's `identity-model/` export,
-  `bin-codecite/` (codecite arm only: the arms' sandboxes differ by that one
-  bind), and what the commands need, found from the command itself: its
+  at `/work/project`, `/work/home` and `/work/xdg`. `/tmp` is a fresh, empty
+  tmpfs per run. The run dir's other files (`stdout.jsonl`, `setup.log`) are
+  not visible.
+- **Bound back read-only:** the round's `identity-model/` export at
+  `/work/identity-model`, `bin-codecite/` at `/work/bin` (codecite arm only:
+  the arms' sandboxes differ by that one bind), and what the commands need,
+  at their own paths, found from the command itself: its
   real path and every symlink on the way (`~/.local/bin/claude` ->
   `~/.local/share/claude/versions/<v>`); for an ELF, its loader and the
   libraries the loader lists (Homebrew's node needs about 50 under
@@ -122,6 +152,12 @@ unsandboxed fallback: `call` refuses to start a round when `bwrap` isn't on
 Taint scanning stays as a second layer: it catches a run that tried to reach
 the hidden paths or fetch code, even though the sandbox kept them out.
 
+Known limits: the mount table (`/proc/self/mountinfo`, `findmnt`) shows the
+host path behind each `/work` bind, which names the round, the run and its
+arm; reading it taints the run. In the codecite arm the corpus file
+(`/work/xdg/codecite/eval.db`) records the round's throwaway source path,
+which no `codecite` command prints.
+
 ## Calls
 
 ```
@@ -134,23 +170,32 @@ into a command; the agent runs in the sandbox above with exactly the
 adapter's environment, with `SIGTERM` at the plan's `timeoutSec` and `SIGKILL` 10 s
 later. `runs/<run-id>/` then holds `stdout.jsonl`, `stderr.txt` and
 `result.json`: `{run, status, wallMs, attempts, error, exitCode, signal,
-...AgentResult without transcript, tainted}`, where `status` is `ok`,
-`timeout`, `agent_error`, `infra_error` or `fatal`. Every secret value is replaced by
-`[REDACTED]` before anything is written.
+...AgentResult without transcript, tainted, secretInTranscript}`, where
+`status` is `ok`, `timeout`, `agent_error`, `infra_error` or `fatal`. Every
+secret value is replaced by `[REDACTED]` before anything is written;
+`secretInTranscript` is true when that changed the agent's output (see
+*Secrets*).
 
-- **Resume:** a run whose `result.json` says `ok` or `timeout` is skipped; any
-  other run is redone from a fresh run directory. A round holding a `fatal`
-  run refuses to resume until you fix the cause and pass `--retry-fatal`,
-  which re-runs the fatal runs first.
+- **Resume:** a run whose `result.json` says `ok`, `timeout` or `agent_error`
+  is skipped: all three are usable outcomes, and redoing failures would make
+  the failure rate fall with each resume. Two exceptions are redone: a
+  tainted run, and one whose total tokens are unknown (no usage reported,
+  e.g. pi died before its first message). Its old dir is kept beside the new
+  one as `runs/<run-id>.tainted-<n>` or `runs/<run-id>.unknown-<n>`, so the
+  scorecard still lists it, and never counts. Any other run (`infra_error`,
+  never finished) is redone from a fresh run directory. A round holding a
+  `fatal` run refuses to resume until you fix the cause and pass
+  `--retry-fatal`, which re-runs the fatal runs first.
 - **Fatal:** provider status 401, 402 or 404, a 400 before any turn, or an
   adapter's `rejectReason` (from the init event, or `earlyReject` on a live
   stdout line, which kills the agent at once) is recorded as `fatal` and
   stops the round. A 400 after a turn is the run's own `agent_error`.
 - **Infra:** a spawn or setup failure (a missing agent command, or bwrap
   failing before the agent starts), a 5xx before any turn, or an adapter's
-  `endedOnError` before any turn (any status, or none), is retried up to 3
-  times, then recorded as `infra_error`. `endedOnError` after a turn is
-  `agent_error`, even when the agent exited 0.
+  `endedOnError` before any turn (any status, or none: pi's 429, Claude Code's
+  usage-limit 429), is retried up to 3 times, 5 s and then 20 s apart, then
+  recorded as `infra_error`. `endedOnError` after a turn is `agent_error`,
+  even when the agent exited 0.
 - **Breaker:** the round stops once at least 10 attempts are in and 80% or
   more of them ended in anything but `ok` (timeouts count as failures here,
   though resume still skips them).
@@ -158,20 +203,25 @@ later. `runs/<run-id>/` then holds `stdout.jsonl`, `stderr.txt` and
   (300k input and 20k output tokens per run at the model's live price;
   Claude counts as $0) must fit in the key's remaining limit, and the key
   must have a limit. `compose --dry-run` prints the same estimate.
-- **Taint:** `tainted` lists shell commands matching `github.com`, `git
-  clone`, `curl`, `wget`, `pip install` or `uv add`, and shell commands or
-  file-tool paths naming `evals/tasks`, `test_hidden`, `/reference/` or
-  `codecite-worktrees`. Each command is split into segments on `&&`, `||`,
-  `;`, `|` and newlines, with a cwd that starts at the project and follows
-  `cd`. Every word (and each non-`cd` segment's cwd) is resolved against it,
-  as is every file-tool path. A path taints when it is inside a `taintPaths`
-  entry (the real repos, this checkout, `plan.json`, `round.json`,
-  `corpus.toml`, `runs/`), or equals or contains the round dir or a
-  `taintPaths` entry (`ls ../../..`, `find /`), unless it is inside the
-  run's own directory. Only commands and paths are scanned, never file
-  contents. The scan is lexical: a path built from `$VAR`, `$(...)`, globs
-  or a script the agent wrote is not resolved, so tainting is detection
-  only; the sandbox is what keeps those paths out of reach.
+- **Taint:** `tainted` lists shell commands matching `github.com`,
+  `githubusercontent.com`, `git clone`, `pip install` (so `uv pip install`
+  and `python -m pip install` too: the spec lists it and the prompt says "no
+  new packages") or `uv add`; a `curl` or `wget` that names anything but
+  loopback (`127.0.0.0/8`, `localhost`, `::1`) or names no host it can read
+  (`curl $URL`); and shell commands or file-tool paths naming `evals/tasks`,
+  `test_hidden`, `/reference/`, `codecite-worktrees`, `mountinfo` or
+  `findmnt`. Each command is split into segments on `&&`, `||`, `;`, `|`,
+  `&` and newlines, with a cwd that starts at `/work/project` and follows
+  `cd`. Every word is resolved against it, as is every file-tool path. A path
+  taints when it is inside a `taintPaths` entry (the real repos, this
+  checkout, the round's `task/`, `plan.json`, `round.json`, `corpus.toml`,
+  `runs/`), never for being an ancestor of one: the sandbox hides the round
+  and everything above the run's dirs, so `ls /`, `find /` or a `/` in a
+  `grep` or a Python division don't taint. Only commands and paths are
+  scanned, never file contents. The scan is lexical: a path built from
+  `$VAR`, `$(...)`, globs or a script the agent wrote is not resolved, so
+  tainting is detection only; the sandbox is what keeps those paths out of
+  reach. A tainted run is redone on resume (see *Resume*).
 
 ## Secrets
 
@@ -180,17 +230,54 @@ and `CLAUDE_CODE_OAUTH_TOKEN`. Only the `call` phase reads it. The harness
 refuses the file when group or others can read it, and never prints a value.
 
 When `CLAUDE_CODE_OAUTH_TOKEN` is unset, the `claude` adapter falls back to
-`claudeAiOauth.accessToken` in the owner's `~/.claude/.credentials.json`, read
-fresh for each run and never written. It passes the token to `claude -p` as
-`CLAUDE_CODE_OAUTH_TOKEN` and lists it in its spec's `secrets`, so the call
-loop redacts it from `stdout.jsonl`, `stderr.txt` and `result.json` like the
-env file's values.
+the owner's `~/.claude/.credentials.json` (see *claude* below), read fresh
+for each run and never written.
 
 Both files are read by the harness, outside the sandbox. Inside it, neither
-exists: an agent holds only the one access token (or key) in its own
-environment, never the refresh token or the other agent's key.
+exists. But each agent holds the one credential it needs: Claude Code's
+access token in its environment, pi's OpenRouter key in its agent dir's
+`auth.json` (not its environment, so `env` doesn't show it). The sandbox
+can't stop an agent printing it (`env`, `cat ~/pi/auth.json`), and whatever
+the agent prints goes to its model provider; redaction cleans only the files
+on disk. A run whose output held a secret has `secretInTranscript: true`
+(and `SECRET-IN-OUTPUT` on its progress line); `call` ends with a warning
+naming every such run of the round, and the scorecard lists them: rotate the
+OpenRouter key and log in to Claude Code again. Neither agent ever gets the
+refresh token or the other agent's credential.
 
 ## Agents
+
+### claude
+
+`agents/claude.mjs` runs `claude -p <prompt> --model <model>
+--output-format stream-json --verbose --strict-mcp-config --mcp-config
+'{"mcpServers":{}}' --setting-sources '' --disallowedTools WebFetch,WebSearch
+--dangerously-skip-permissions --no-session-persistence` (the same in both
+arms). Its environment is built from nothing: `HOME` and `CLAUDE_CONFIG_DIR`
+are `/work/home`, `XDG_DATA_HOME` is `/work/xdg`, `DISABLE_AUTOUPDATER=1` and
+`CLAUDE_CODE_OAUTH_TOKEN`; `ANTHROPIC_API_KEY` is never set, so the run is on
+the owner's subscription, not billed per token.
+
+- **Auth:** `CLAUDE_CODE_OAUTH_TOKEN` from `evals.env`, else
+  `claudeAiOauth.accessToken` from `~/.claude/.credentials.json`. From the
+  file, its `refreshToken` is listed in the spec's `secrets` (redacted, never
+  passed), and its `expiresAt` is checked before each run: a login that has
+  expired, or would before the run's timeout plus a minute, stops the round
+  with "log in to Claude Code to refresh it" rather than a fatal 401 partway
+  through. The harness never refreshes the login; run `claude`, then resume.
+- **Config leaks:** `--setting-sources ''` loads no user, project or local
+  settings, and the empty `CLAUDE_CONFIG_DIR` has no `CLAUDE.md`, memory,
+  plugins or hooks. The run is rejected (`config leaked`, fatal, killed at
+  once by `earlyReject`) on a hook event, or an init event that lists an MCP
+  server, an `mcp__` tool, a non-builtin plugin, or a plugin-namespaced
+  (`plugin:name`) skill or slash command.
+- **Usage:** from the `result` event (`usage`, `total_cost_usd`,
+  `num_turns`, `is_error`, `api_error_status`). Total tokens are input,
+  output, cache reads and cache writes. A run killed at timeout has no
+  `result` event: its tokens are summed from the assistant messages' `usage`,
+  each message id once (stream-json repeats it on every content block), and
+  its cost is unknown. An `is_error` result sets `endedOnError`, so a 429
+  before any turn (a usage limit) is infra, not a failed run.
 
 ### pi
 
@@ -198,11 +285,14 @@ environment, never the refresh token or the other agent's key.
 with `--no-session --no-mcp --no-extensions --no-skills
 --no-prompt-templates --no-themes --no-approve --tools
 read,bash,edit,write,grep,find,ls` (the same in both arms), the prompt last
-after `--`. Its environment is built from nothing: `HOME` is the run's
-`home/`, `PI_CODING_AGENT_DIR` is `home/pi`, `OPENROUTER_API_KEY` is the evals
-key, `PI_TELEMETRY=0` and `PI_SKIP_VERSION_CHECK=1`. The agent dir holds only
-a `models.json` setting OpenRouter's `X-Title` header to
-`codecite-evals-<arm>`, so spend shows per arm on the OpenRouter dashboard
+after `--`. Its environment is built from nothing: `HOME` is `/work/home`,
+`PI_CODING_AGENT_DIR` is `/work/home/pi`, `PI_TELEMETRY=0` and
+`PI_SKIP_VERSION_CHECK=1`; no key. The agent dir holds only an `auth.json`
+(mode 0600) with the evals key as pi's `openrouter` API-key credential, and a
+`models.json` setting OpenRouter's `X-Title` header to an opaque per-arm
+label (`eval-<8 hex>`, from the round id and arm), so spend shows per arm on
+the OpenRouter dashboard while the agent, which can read the file, can't
+tell its arm from it; the scorecard maps each label back to its arm
 (`PI_TELEMETRY=0` also stops pi sending its own attribution headers).
 
 pi reports what it loaded in the session's system message: the system
@@ -214,7 +304,9 @@ outside the list above, or a context file (`AGENTS.md`, `CLAUDE.md`) outside
 the run's cwd. A replaced system prompt (`SYSTEM.md`) is not detectable from
 the stream; the empty agent dir and `--no-approve` are what keep it out.
 
-Usage is the sum of each assistant `message_end`'s `usage`; `turns` counts
+Usage is the sum of each assistant `message_end`'s `usage`. Its `costUsd`
+is pi's own estimate from its model price table, not what OpenRouter bills,
+and runs low against the OpenRouter dashboard; read spend there. `turns` counts
 assistant messages that didn't end in error; `providerStatus` is the status
 at the head of the last assistant message's `errorMessage` when the run
 ended on an error. pi exits 0 even when the provider ended the run, so the
@@ -230,26 +322,30 @@ node evals/run.mjs score --round <id> [--rescore]
 ```
 
 `score` holds no secrets. It starts the IdP (`fixtures/node-oidc`, with this
-Node on a free loopback port), scores every run whose `result.json` status is
+Node on a free loopback port; run `npm ci` in `evals/fixtures/node-oidc`
+first, or `startIdp` refuses), scores every run whose `result.json` status is
 `ok`, `timeout` or `agent_error` and that has no pass/fail score yet (all of
 them with `--rescore`; unscored runs are tried again, 3 attempts in all), then writes `<round>/scorecard.md` and prints each
 pair's verdict and the round's. `infra_error` and `fatal` runs are not
 scored.
 
-- **Command:** the frozen plan's `taskDef.score`, with `{hidden}` set to the
-  task's `hidden/` dir, run in the run's `project/` (the task's conftest puts
-  the cwd on `sys.path`). The environment is built from nothing: the cleaned
-  `PATH`, `TEST_IDP`, `HOME` and the XDG cache at a fresh `runs/<id>/score/`
+- **Command:** the frozen plan's `taskDef.score`, with `{hidden}` set to
+  `/work/hidden`, where the round's `task/hidden/` is bound, run in
+  `/work/project`, the run's `project/` at the agent's own path (its venv and
+  lock name it; the task's conftest puts the cwd on `sys.path`). The
+  environment is built from nothing: the cleaned `PATH`, `TEST_IDP`, `HOME`
+  and the XDG cache at a fresh `runs/<id>/score/`, bound at `/work/score`
   (uv's cache, so `--with pytest==9.1.1 --with httpx==0.28.1`, pinned in
-  `task.json`, download there),
-  `PYTHONDONTWRITEBYTECODE=1`, and `PYTEST_ADDOPTS=--junitxml=score/report.xml`.
+  `task.json`, download there), `PYTHONDONTWRITEBYTECODE=1`, `PYTHONPATH` at
+  the marker plugin (`/work/score-plugin`), and `PYTEST_ADDOPTS=-p
+  codecite_score_started --junitxml=/work/score/report.xml`.
 - **Sandbox:** the score command imports the agent's code, so it runs in the
   same bubblewrap sandbox as the agent (`roundSandbox`): the same hides (the
   owner's home, `/tmp`, `/run`, the round dir, its `taintPaths`), the export
   and the tools (uv, the venv's base Python, their CA files) read-only, the
-  project read-write. Two differences: the task's `hidden/` is bound back
-  read-only, and the run's own `home/` and `xdg/` are not bound (`score/` is
-  its home instead). The network is shared, so the IdP on `127.0.0.1` is
+  project read-write. Two differences: the task's `hidden/` and the marker
+  plugin are bound read-only, and the run's own `home/` and `xdg/` are not
+  bound (`score/` is its home instead). The network is shared, so the IdP on `127.0.0.1` is
   reachable. A bwrap failure is a harness error, never a failed run.
 - **Pass:** the command exits 0 and its JUnit report shows at least one test
   and no failure, error or skip.
@@ -277,6 +373,10 @@ scored.
   calls until `--rescore`, shown at the top of the scorecard, and `score`
   exits 1. An IdP that is down stops the phase. A missing `project/` is a
   harness fault and stops it too.
+- **Known limit:** the agent's code runs in the same pytest process as the
+  hidden tests, so code written to do it could forge a passing report (patch
+  pytest, rewrite the JUnit file). Nothing in this task's prompt invites
+  that; a suspicious pass needs its transcript read.
 - `score.json` holds `passed`, `failures` (test ids or the no-report
   reason), `unscored`, `scoreAttempts`, `fatal`, `tests`, `exitCode`,
   `timedOut`, `pytestStarted`, `wallMs` and the commands; `score.log` both
@@ -287,18 +387,29 @@ scored.
 Per agent/model pair, each non-baseline arm against the baseline:
 
 - **Usable runs:** scored (passed or failed), status `ok`, `timeout` or
-  `agent_error`, not tainted. Excluded (infra, fatal, unscored), retried and
-  tainted runs are listed.
-- **Correctness:** pass rates; a loss when the arm's is more than 5 points
-  below baseline's.
-- **Tokens, time:** medians of total tokens and wall time over all usable
-  runs, failed ones included; a loss when the arm's is more than 5% above
-  baseline's. A median over a run with an unknown (`null`) value is unknown,
-  and an unknown measure is `loss: null`: it can't pass.
+  `agent_error`, with known total tokens, not tainted, not a kept-aside
+  `<id>.tainted-<n>` or `<id>.unknown-<n>` dir. Excluded (infra, fatal,
+  unscored, unknown tokens), retried and tainted runs are listed.
+- **Measures:** correctness is the difference in pass rate, codecite minus
+  baseline, in points; tokens and time are the relative difference of the
+  medians (codecite / baseline - 1) of total tokens and wall time over all
+  usable runs, failed ones included.
+- **Loss:** each measure gets a 95% percentile bootstrap interval: each arm's
+  usable runs resampled with replacement on their own, 10 000 times, from a
+  seed derived from the plan's seed and the pair, so a scorecard is
+  reproducible. A loss is an interval past the margin at its favourable end:
+  correctness when the upper bound is below -5 points, tokens or time when
+  the lower bound is above +5%. This replaces the spec's plain comparison of
+  the numbers (codecite's median more than 5% above baseline's), which at 20
+  runs per arm stops on noise most of the time; the owner chose the
+  interval. A measure with an unknown (`null`) value in either arm has no
+  interval and is `loss: null`: it can't pass.
 - **Pair verdict:** `INCOMPLETE` when either arm has fewer usable runs than
   the plan's `runs`; else `STOP` on any loss; else `INCOMPLETE` on any
   unknown measure; else `PASS`. The round is `STOP` if any pair is,
   `INCOMPLETE` if any is, else `PASS`.
+- Each measure's row shows the point estimate and its interval, e.g.
+  `+6.0% (95% CI -3.1% to +15.2%)`.
 - Also shown: IQRs, medians over passing runs only, cost, tool calls, the
-  share of runs that called `codecite`, the codecite note and the frozen
-  plan.
+  share of runs that called `codecite`, pi's X-Title label per arm, runs that
+  printed a secret, the codecite note and the frozen plan.

@@ -126,13 +126,14 @@ const tail = (output) => {
 
 /**
  * Score one run: the task's score command in `runDir/project`, with
- * TEST_IDP=idpUrl and `{hidden}` set to the task's hidden/ dir, inside the
+ * TEST_IDP=idpUrl and `{hidden}` set to IN_SANDBOX.hidden, inside the
  * round's agent sandbox (the round dir, its taintPaths and the owner's home
- * hidden; the project read-write; the export, the score command's tools, the
- * venv's Python, hidden/ and the marker plugin read-only; the network
- * shared, so the IdP on localhost is reachable). The run's own home/ is not
- * bound: scoring gets a fresh `runDir/score/` as HOME (uv's cache lives
- * there). It passes only when the command exits 0 and its JUnit report
+ * hidden; the project read-write at the agent's own /work/project; the
+ * export at /work/identity-model, the score command's tools, the venv's
+ * Python, hidden/ and the marker plugin read-only; the network shared, so
+ * the IdP on localhost is reachable). The run's own home/ is not bound:
+ * scoring gets a fresh `runDir/score/` as HOME, at /work/score (uv's cache
+ * lives there). It passes only when the command exits 0 and its JUnit report
  * (asked for via PYTEST_ADDOPTS) shows at least one test and no failure,
  * error or skip.
  *
