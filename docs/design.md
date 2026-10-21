@@ -20,7 +20,7 @@ Its core idea is reference coding: before an agent writes something non-trivial,
 - A first-class code graph (definitions, references, callers, callees, impact, paths) merged from several providers: tree-sitter, SCIP, LSP, CodeGraph and Graphify.
 - Every graph edge records which provider produced it and how much to trust it, so agents can demand exact edges for impact analysis.
 - Fully local: no server process required, no telemetry, no network access beyond fetching pinned sources.
-- Measurably fewer tokens and equal or better correctness than a grep-driven agent on real tasks.
+- No worse than a grep-driven agent on correctness, tokens or time on real tasks.
 
 **Non-goals**
 
@@ -331,22 +331,23 @@ codecite has no network listener by default and makes no outbound calls except f
 
 ## Evaluation plan
 
-codecite earns its place only if agents using it finish real tasks correctly with at least 30% fewer tokens than agents using grep; the harness exists before most features do.
+codecite earns its place only if agents using it do no worse than agents without it on correctness, tokens and time; the harness exists before most features do. The harness design is in `docs/superpowers/specs/2026-10-20-ab-eval-harness-design.md`.
 
 **Agent benchmark**
 
-- **Tasks:** 20 real tasks from the identity-model ports (TypeScript, Go, Rust) and 10 from the startup (FHIR resources, audit logging). Each has a checkable outcome: tests or shared conformance vectors pass.
-- **Arms:** the same model and prompt, once with only grep and file reads, once with codecite's MCP tools. Three runs per task per arm.
-- **Measures:** pass rate, input and output tokens, tool calls, wall time, and citation accuracy (a sampled review of whether each cited span supports what the agent claimed).
+- **Tasks:** start with one small task (protect a FastAPI app with identity-model's `TokenValidationMiddleware`, scored by hidden tests against node-oidc-provider), then real tasks replayed from the identity-model ports (TypeScript, Go, Rust) and from the startup (FHIR resources, audit logging). Each has a checkable outcome: tests or shared conformance vectors pass.
+- **Arms:** the same agent, model and prompt, once with the agent's normal tools and once with the `codecite` CLI added. Baseline with web tools and codecite's MCP tools come as further arms. Many runs per task per arm (20 by default).
+- **Agents:** Claude Code and pi over OpenRouter to start; adding an agent is one adapter.
+- **Measures:** pass rate, total tokens, cost, tool calls, wall time, and citation accuracy where a task cites specs (a sampled review of whether each cited span supports what the agent claimed).
 
 **Retrieval benchmark**
 
 - 100 labelled queries over the identity corpora, each with its known correct span.
 - Recall@10 and MRR for BM25 alone, BM25 plus vectors, and BM25 plus graph boosts.
 
-**Initial success criteria**
+**Success criteria**
 
-- At least 30% fewer total tokens with no drop in pass rate on port tasks.
+- No loss on any of correctness, tokens or time, for any agent/model pair. A loss is a pass rate more than 5 percentage points below baseline, or a median total-token count or wall time more than 5% above baseline. Any loss stops feature work until it is understood.
 - Recall@10 of at least 0.8 with BM25 alone.
 - Losses are reported alongside wins, with the tasks where retrieval hurt.
 
