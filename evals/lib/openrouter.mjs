@@ -54,3 +54,13 @@ export function estimateUsd(plan, { prices, runs = expandRuns(plan) }) {
   }
   return Math.round(usd * 1e6) / 1e6;
 }
+
+/**
+ * Throws naming every non-Claude model of the plan that OpenRouter's live
+ * model list (`prices`, from modelPrices) doesn't have, so a typo'd slug is
+ * caught at compose, not as a 404 partway through a round.
+ */
+export function checkModels(plan, prices) {
+  const unknown = [...new Set(plan.agents.filter((a) => a.agent !== 'claude').map((a) => a.model))].filter((m) => !prices.has(m));
+  if (unknown.length > 0) throw new Error(`openrouter: no such model: ${unknown.join(', ')} (not in ${API}/models)`);
+}

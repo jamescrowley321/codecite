@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { estimateUsd, keyRemainingUsd, modelPrices } from './openrouter.mjs';
+import { checkModels, estimateUsd, keyRemainingUsd, modelPrices } from './openrouter.mjs';
 
 const plan = {
   runs: 2,
@@ -70,4 +70,12 @@ test('keyRemainingUsd is null for a key with no limit', async () => {
 test('keyRemainingUsd errors name the status, never the key', async () => {
   const fetch = fakeFetch({ 'https://openrouter.ai/api/v1/key': { status: 401, body: {} } });
   await assert.rejects(keyRemainingUsd('sk-secret-123', { fetch }), (e) => /401/.test(e.message) && !e.message.includes('sk-secret-123'));
+});
+
+test('checkModels accepts listed slugs and names every unknown one', () => {
+  const prices = new Map([['a/m', { prompt: 1e-6, completion: 1e-5 }]]);
+  const plan = { agents: [{ agent: 'pi', model: 'a/m' }, { agent: 'claude', model: 'claude-x' }] };
+  assert.doesNotThrow(() => checkModels(plan, prices), 'Claude models are not OpenRouter slugs');
+  const bad = { agents: [...plan.agents, { agent: 'pi', model: 'a/typo' }, { agent: 'pi', model: 'b/gone' }] };
+  assert.throws(() => checkModels(bad, prices), /a\/typo.*b\/gone/s);
 });

@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { callRound, loadRound, redact } from './lib/call.mjs';
 import { startIdp } from './lib/idp.mjs';
-import { estimateUsd, modelPrices } from './lib/openrouter.mjs';
+import { checkModels, estimateUsd, modelPrices } from './lib/openrouter.mjs';
 import { expandRuns, freezePlan, loadPlan, loadTask, roundsDir } from './lib/plan.mjs';
 import { readSecrets } from './lib/secrets.mjs';
 import { scoreRound } from './lib/score.mjs';
@@ -38,12 +38,23 @@ function printCounts(plan) {
 }
 
 // The OpenRouter estimate needs live prices (no key); it is advisory here.
-async function printEstimate(plan) {
+function printEstimate(plan, prices) {
   try {
-    const usd = estimateUsd(plan, { prices: await modelPrices() });
+    const usd = estimateUsd(plan, { prices });
     console.log(`estimate: $${usd.toFixed(2)} on OpenRouter (Claude runs counted as $0)`);
   } catch (e) {
     console.log(`estimate: unavailable (${e.message})`);
+  }
+}
+
+// OpenRouter's live model list (no key), to check the plan's slugs. A plan
+// with no OpenRouter model needs none.
+async function livePrices(plan) {
+  if (!plan.agents.some((a) => a.agent !== 'claude')) return new Map();
+  try {
+    return await modelPrices();
+  } catch (e) {
+    throw new Error(`compose: can't fetch OpenRouter's model list to check the plan's models: ${e.message}`);
   }
 }
 
@@ -62,9 +73,11 @@ async function compose(argv) {
   const task = loadTask(spec.task);
   if (!spec.repos[task.corpus.repo]) throw new Error(`plan: repos has no path for "${task.corpus.repo}"`);
   const dir = roundsDir();
+  const prices = await livePrices(spec);
+  checkModels(spec, prices);
   if (values['dry-run']) {
     printCounts(spec);
-    await printEstimate(spec);
+    printEstimate(spec, prices);
     console.log('dry run: nothing frozen, nothing spent');
     return;
   }
