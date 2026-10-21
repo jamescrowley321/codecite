@@ -173,7 +173,8 @@ Each run gets:
 - **No web tools.** Claude Code's WebFetch and WebSearch are off in both arms,
   and pi gets no web tool. The shell still has network access, because the
   agent needs its model provider. After each run the harness scans the transcript
-  for `github.com`, `git clone`, `curl`, `wget` and `pip install` / `uv add`, and
+  for `github.com`, `git clone`, `curl`, `wget`, `pip install` / `uv add`, and any
+  path into codecite's own `evals/tasks` (reachable by absolute path), and
   marks a hit as **tainted**. Tainted runs are listed on the scorecard and left
   out of the verdict, and the round reports "incomplete" if that leaves too few
   runs (the owner's choice, over a network sandbox for round one).
@@ -196,7 +197,9 @@ The harness lives under `evals/` and follows blind-peer-review's eval shape
 3. **score:** start the IdP, run the hidden tests against each run's project, then
    build the scorecard.
 
-Each phase writes to `evals/results/<round-id>/` (git-ignored), so a round can be
+Each phase writes to a round directory outside any git repo (default
+`~/.local/state/codecite-evals/<round-id>/`), so an agent can't walk up into the
+hidden tests, and a round can be
 re-scored without re-running agents.
 
 **Adapter interface (what each agent provides):** build the command and
