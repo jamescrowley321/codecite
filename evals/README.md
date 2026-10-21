@@ -122,3 +122,33 @@ fresh for each run and never written. It passes the token to `claude -p` as
 `CLAUDE_CODE_OAUTH_TOKEN` and lists it in its spec's `secrets`, so the call
 loop redacts it from `stdout.jsonl`, `stderr.txt` and `result.json` like the
 env file's values.
+
+## Agents
+
+### pi
+
+`agents/pi.mjs` runs `pi -p --mode json --provider openrouter --model <slug>`
+with `--no-session --no-mcp --no-extensions --no-skills
+--no-prompt-templates --no-themes --no-approve --tools
+read,bash,edit,write,grep,find,ls` (the same in both arms), the prompt last
+after `--`. Its environment is built from nothing: `HOME` is the run's
+`home/`, `PI_CODING_AGENT_DIR` is `home/pi`, `OPENROUTER_API_KEY` is the evals
+key, `PI_TELEMETRY=0` and `PI_SKIP_VERSION_CHECK=1`. The agent dir holds only
+a `models.json` setting OpenRouter's `X-Title` header to
+`codecite-evals-<arm>`, so spend shows per arm on the OpenRouter dashboard
+(`PI_TELEMETRY=0` also stops pi sending its own attribution headers).
+
+pi reports what it loaded in the session's system message: the system
+prompt's `sections` and `toolsAdded`. The run is rejected (`config leaked`,
+fatal, killed at once by `earlyReject`) when that message has a section
+other than `preamble`, `tools`, `rules`, `docs`, `cwd` and `project_context`
+(for example `skills`, or `addendum` from an `APPEND_SYSTEM.md`), a tool
+outside the list above, or a context file (`AGENTS.md`, `CLAUDE.md`) outside
+the run's cwd. A replaced system prompt (`SYSTEM.md`) is not detectable from
+the stream; the empty agent dir and `--no-approve` are what keep it out.
+
+Usage is the sum of each assistant `message_end`'s `usage`; `turns` counts
+assistant messages that didn't end in error; `providerStatus` is the status
+at the head of the last assistant message's `errorMessage` when the run
+ended on an error. pi exits 0 even when the provider refused the request, so
+the status is what makes a 401 fatal.

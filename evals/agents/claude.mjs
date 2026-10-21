@@ -35,7 +35,8 @@ export const FLAGS = [
   '--no-session-persistence',
 ];
 
-function findOnPath(name, path) {
+/** The first executable `name` in the absolute dirs of `path`, else null. */
+export function findOnPath(name, path) {
   for (const dir of (path ?? '').split(delimiter)) {
     if (!dir || !isAbsolute(dir)) continue;
     const p = join(dir, name);
