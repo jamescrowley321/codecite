@@ -1,7 +1,7 @@
 // A stand-in coding agent for call.test.mjs: `node fake-agent.mjs <mode>`.
 // It prints JSON lines; the last {"type":"result"} line is what the fake
 // adapter parses. It echoes FAKE_KEY so tests can prove the harness redacts.
-import { appendFileSync, writeFileSync } from 'node:fs';
+import { accessSync, appendFileSync, constants, writeFileSync } from 'node:fs';
 
 const mode = process.argv[2];
 if (process.env.FAKE_COUNTER) appendFileSync(process.env.FAKE_COUNTER, `${mode}\n`);
@@ -38,6 +38,20 @@ switch (mode) {
     });
     setInterval(() => {}, 1000);
     break;
+  case 'peek': {
+    // Which of FAKE_PEEK's paths (newline-separated) this agent can read.
+    const readable = (process.env.FAKE_PEEK ?? '').split('\n').filter(Boolean).filter((p) => {
+      try {
+        accessSync(p, constants.R_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    writeFileSync('peek.json', JSON.stringify(readable));
+    result({ providerStatus: 200, turns: 1 }, 0);
+    break;
+  }
   case 'slow':
     setInterval(() => {}, 1000);
     break;

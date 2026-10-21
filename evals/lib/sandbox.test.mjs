@@ -1,12 +1,16 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createServer } from 'node:net';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
-import { findBwrap, hiddenRoots, opensslFiles, sandboxArgs } from './sandbox.mjs';
+import { DAEMON_SOCKETS, findBwrap, hiddenRoots, opensslFiles, sandboxArgs } from './sandbox.mjs';
 
 const BWRAP = findBwrap(process.env.PATH);
+// The defaults minus /tmp: these tests' dirs live under /tmp, so with it
+// hidden every planted path would be hidden anyway and prove nothing.
+const NOT_TMP = ['/home', '/root', '/var/tmp', '/run'];
 const skip = BWRAP ? false : 'bwrap is not on PATH; install bubblewrap to run the sandbox tests';
 
 let base, home, evalsDir, round, dirs, opts;
@@ -203,12 +207,13 @@ test("no env value reaches bwrap's argv, which any local user can read", () => {
 });
 
 test('hiddenRoots hides $HOME and the evals dir when they are outside /home', () => {
-  const roots = hiddenRoots({ home: '/srv/owner', evalsDir: '/data/evals', hide: ['/home/x/repo', '/opt/repo'], exists: () => true });
-  for (const r of ['/home', '/root', '/tmp', '/var/tmp', '/run/user', '/srv/owner', '/data/evals', '/opt/repo']) assert.ok(roots.includes(r), r);
+  const roots = hiddenRoots({ home: '/srv/owner', evalsDir: '/data/evals', hide: ['/home/x/repo', '/opt/repo'], exists: () => true, realpath: (p) => p });
+  for (const r of ['/home', '/root', '/tmp', '/var/tmp', '/run', '/srv/owner', '/data/evals', '/opt/repo']) assert.ok(roots.includes(r), r);
   assert.equal(roots.includes('/home/x/repo'), false, 'already under /home');
-  const under = hiddenRoots({ home: '/home/owner', evalsDir: '/home/owner/.local/state/codecite-evals', exists: () => true });
-  assert.deepEqual(under.sort(), ['/home', '/root', '/run/user', '/tmp', '/var/tmp']);
-  assert.equal(hiddenRoots({ home: '/home/o', evalsDir: '/home/o/e', exists: (p) => p !== '/run/user' }).includes('/run/user'), false);
+  const id = (p) => p;
+  const under = hiddenRoots({ home: '/home/owner', evalsDir: '/home/owner/.local/state/codecite-evals', exists: () => true, realpath: id });
+  assert.deepEqual(under.sort(), ['/home', '/root', '/run', '/tmp', '/var/tmp']);
+  assert.equal(hiddenRoots({ home: '/home/o', evalsDir: '/home/o/e', exists: (p) => p !== '/var/tmp', realpath: id }).includes('/var/tmp'), false);
 });
 
 test("a libcrypto's OpenSSL dir contributes its config and CA files, not its private dir", () => {
@@ -218,4 +223,79 @@ test("a libcrypto's OpenSSL dir contributes its config and CA files, not its pri
   const other = join(base, 'libz.so.1');
   writeFileSync(other, 'no dir here');
   assert.deepEqual(opensslFiles(other), []);
+});
+
+/** A fresh owner home reached through a symlink, and run dirs beside it, all outside NOT_TMP. */
+function symlinkedHome(name) {
+  const root = mkdirp(join(base, name));
+  const realHome = mkdirp(join(root, 'real-home'));
+  mkdirp(join(realHome, '.claude'));
+  writeFileSync(join(realHome, '.claude', '.credentials.json'), '{"planted":true}');
+  const link = join(root, 'home-link');
+  symlinkSync(realHome, link);
+  const run = { project: mkdirp(join(root, 'run', 'project')), home: mkdirp(join(root, 'run', 'home')), xdg: mkdirp(join(root, 'run', 'xdg')), bin: null };
+  return { root, realHome, link, run };
+}
+
+function probe(paths, runDirs, o) {
+  const script = 'for p in "$@"; do if test -r "$p"; then echo "$p"; fi; done; true';
+  const s = { cmd: '/bin/sh', args: ['-c', script, 'probe', ...paths], env: { PATH: '/usr/bin:/bin' }, cwd: runDirs.project };
+  const sb = sandboxArgs(s, runDirs, o);
+  const r = spawnSync(sb.cmd, sb.args, { encoding: 'utf8', env: sb.env });
+  assert.equal(r.status, 0, r.stderr);
+  return r.stdout.split('\n').filter(Boolean);
+}
+
+test("a symlinked $HOME hides its target, not just the link", { skip }, () => {
+  const h = symlinkedHome('symhome');
+  const o = { bwrap: BWRAP, home: h.link, evalsDir: join(h.link, 'state'), alwaysHidden: NOT_TMP };
+  const creds = join(h.realHome, '.claude', '.credentials.json');
+  assert.deepEqual(probe([creds, join(h.link, '.claude', '.credentials.json')], h.run, o), []);
+  const roots = hiddenRoots({ home: h.link, evalsDir: join(h.link, 'state'), alwaysHidden: NOT_TMP });
+  assert.ok(roots.includes(h.realHome), 'the real path is a hidden root');
+});
+
+test('a symlinked hide dir (round dir, repo) hides its target', { skip }, () => {
+  const h = symlinkedHome('symhide');
+  const realRound = mkdirp(join(h.root, 'real-round'));
+  writeFileSync(join(realRound, 'plan.json'), '{}');
+  symlinkSync(realRound, join(h.root, 'round-link'));
+  const o = { bwrap: BWRAP, home: h.link, evalsDir: join(h.link, 'state'), alwaysHidden: NOT_TMP, hide: [join(h.root, 'round-link')] };
+  assert.deepEqual(probe([join(realRound, 'plan.json')], h.run, o), []);
+});
+
+test('hiddenRoots adds the real path of every symlinked root', () => {
+  const real = { '/home': '/var/home', '/data/evals': '/data/evals' };
+  const roots = hiddenRoots({ home: '/home/o', evalsDir: '/data/evals', exists: () => true, realpath: (p) => real[p] ?? p });
+  assert.ok(roots.includes('/home') && roots.includes('/var/home'), roots.join(' '));
+});
+
+test('daemon sockets outside the hidden roots are covered', { skip }, async () => {
+  const h = symlinkedHome('sockets');
+  const sock = join(h.root, 'docker.sock');
+  const server = createServer();
+  await new Promise((res) => server.listen(sock, res));
+  try {
+    const o = { bwrap: BWRAP, home: h.link, evalsDir: join(h.link, 'state'), alwaysHidden: NOT_TMP, daemonSockets: [sock, join(h.root, 'absent.sock')] };
+    const s = { cmd: '/bin/sh', args: ['-c', `if test -S "${sock}"; then echo socket; else echo covered; fi`], env: { PATH: '/usr/bin:/bin' }, cwd: h.run.project };
+    const sb = sandboxArgs(s, h.run, o);
+    const r = spawnSync(sb.cmd, sb.args, { encoding: 'utf8', env: sb.env });
+    assert.equal(r.stdout.trim(), 'covered', r.stderr);
+    assert.equal(sb.args.join(' ').includes('absent.sock'), false, 'a socket that does not exist is skipped');
+  } finally {
+    server.close();
+  }
+});
+
+test('/run is hidden except the resolver config', { skip }, () => {
+  const r = sh('test -r /etc/resolv.conf && echo resolv-ok; for p in /run/dbus/system_bus_socket /run/snapd.socket /run/systemd/private /var/run/docker.sock; do test -e "$p" && echo "VISIBLE $p"; done; true');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /resolv-ok/);
+  assert.doesNotMatch(r.stdout, /VISIBLE/);
+});
+
+test('the default daemon socket list names the container daemons', () => {
+  for (const p of ['/run/docker.sock', '/var/run/docker.sock', '/run/containerd/containerd.sock', '/run/podman/podman.sock', '/var/snap/lxd/common/lxd/unix.socket', '/var/lib/lxd/unix.socket', '/run/incus/unix.socket']) {
+    assert.ok(DAEMON_SOCKETS.includes(p), p);
+  }
 });

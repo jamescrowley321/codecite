@@ -286,8 +286,8 @@ const isDir = (p) => {
  * The sandbox a round's run gets: sandboxArgs plus, hidden, the round dir and
  * every directory in its taintPaths (the real repos, this checkout); bound
  * read-only, the round's export; and the task's setup command (its toolchain,
- * e.g. `uv`) bound in like the agent's own install. `sandbox` ({ro, rw}) adds
- * binds, for tests.
+ * e.g. `uv`) bound in like the agent's own install. `sandbox` ({ro, rw,
+ * alwaysHidden}) adds binds or narrows the default hides, for tests only.
  */
 export function roundSandbox(spec, dirs, round, { bwrap, sandbox = {} }) {
   return sandboxArgs(spec, dirs, {
@@ -296,6 +296,7 @@ export function roundSandbox(spec, dirs, round, { bwrap, sandbox = {} }) {
     ro: [round.export, ...(sandbox.ro ?? [])].filter(Boolean),
     rw: sandbox.rw ?? [],
     tools: round.plan.taskDef.setup?.slice(0, 1) ?? [],
+    alwaysHidden: sandbox.alwaysHidden,
   });
 }
 
@@ -350,7 +351,7 @@ async function checkSpend(plan, runs, { secrets, keyRemainingUsd, modelPrices, l
  *   to the real thing: loadAdapter, keyRemainingUsd(key), modelPrices(),
  *   log(line), timeoutMs (plan.timeoutSec), killGraceMs (10 s), maxAttempts
  *   (3), basePath (PATH for prepareRun), retryFatal (false), searchPath (the
- *   PATH bwrap is looked up on), sandbox ({ro, rw}: extra binds, for tests).
+ *   PATH bwrap is looked up on), sandbox ({ro, rw, alwaysHidden}: tests only).
  * @returns {Promise<{ran: number, skipped: number, stopped: null|"fatal"|"breaker", reason: string|null}>}
  */
 export async function callRound(roundDir, deps = {}) {

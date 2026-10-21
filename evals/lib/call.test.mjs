@@ -41,6 +41,14 @@ function fakeAdapter(name) {
           FAKE_PROMPT: ctx.prompt,
           FAKE_COUNTER: join(counters, `${ctx.round.plan.roundId}.count`),
           FAKE_TERMFILE: join(dirs.project, 'got-sigterm'),
+          FAKE_PEEK: [
+            join(ctx.round.dir, 'plan.json'),
+            join(ctx.round.dir, 'round.json'),
+            join(tmp, 'real-repo', 'secret.py'),
+            join(ctx.round.dir, 'runs', 'sibling', 'answer.py'),
+            join(dirs.project, 'app', 'main.py'),
+            join(ctx.round.dir, 'identity-model', 'lib.py'),
+          ].join('\n'),
         },
         cwd: dirs.project,
       };
@@ -438,4 +446,21 @@ test("an adapter's own secrets are redacted like ctx.secrets", async () => {
   const files = filesUnder(r.dir);
   assert.ok(files.some((f) => f.endsWith('stdout.jsonl')));
   for (const f of files) assert.ok(!readFileSync(f, 'utf8').includes(EXTRA), `${f} holds the adapter's token`);
+});
+
+test('the round dir and taint dirs are hidden even outside the always-hidden roots', async () => {
+  // Every test round lives under /tmp, hidden anyway; take /tmp off the
+  // always-hidden list so only roundSandbox's own hides can cover them.
+  const r = makeRound([{ agent: 'fake', model: 'm/peek' }]);
+  mkdirSync(join(tmp, 'real-repo'), { recursive: true });
+  writeFileSync(join(tmp, 'real-repo', 'secret.py'), 'planted\n');
+  mkdirSync(join(r.dir, 'runs', 'sibling'), { recursive: true });
+  writeFileSync(join(r.dir, 'runs', 'sibling', 'answer.py'), 'planted\n');
+  writeFileSync(join(r.dir, 'identity-model', 'lib.py'), 'x = 1\n');
+  const sandbox = { ro: [dirname(FAKE_AGENT)], rw: [counters], alwaysHidden: ['/home', '/root', '/var/tmp', '/run'] };
+  await callRound(r.dir, deps({ sandbox }));
+  const [res] = results(r.dir);
+  assert.equal(res.status, 'ok', res.error);
+  const seen = JSON.parse(readFileSync(join(r.dir, 'runs', res.run.id, 'project', 'peek.json'), 'utf8'));
+  assert.deepEqual(seen, [join(r.dir, 'runs', res.run.id, 'project', 'app', 'main.py'), join(r.dir, 'identity-model', 'lib.py')]);
 });

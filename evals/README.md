@@ -73,11 +73,19 @@ unsandboxed fallback: `call` refuses to start a round when `bwrap` isn't on
 
 - **Hidden:** the host is mounted read-only, then empty tmpfs mounts cover
   `/home` (and `$HOME` if it's elsewhere), `/root`, `/tmp`, `/var/tmp`,
-  `/run/user`, `$CODECITE_EVALS_DIR`, the round dir and every directory in
-  its `taintPaths` (the real repos, this checkout), wherever they live. So
-  the owner's `~/.claude/.credentials.json`, `~/.config/codecite/evals.env`,
-  `~/.pi`, `~/.ssh`, the session bus and agent sockets, the hidden tests,
+  `/run`, `$CODECITE_EVALS_DIR`, the round dir and every directory in its
+  `taintPaths` (the real repos, this checkout), wherever they live. Each is
+  hidden at its real path too, so a `$HOME` that is a symlink (`/home ->
+  /var/home`, a home on `/data`) hides its target. So the owner's
+  `~/.claude/.credentials.json`, `~/.config/codecite/evals.env`, `~/.pi`,
+  `~/.ssh`, the session and system buses, agent sockets, the hidden tests,
   `plan.json`, `round.json` and other runs are not there.
+- **Daemon sockets:** all of `/run` is hidden because it holds the system
+  bus, systemd's and snapd's sockets, and any container daemon socket that
+  appears later. Only the resolver config that `/etc/resolv.conf` points at
+  is bound back. A container daemon socket elsewhere (`/var/snap/lxd/...`,
+  `/var/lib/lxd/unix.socket`) is covered with `/dev/null`: for a member of
+  the `docker`, `lxd` or `incus` group, reaching one is root.
 - **Bound back read-write:** only the run's `project/`, `home/` and `xdg/`,
   at their real paths. `/tmp` is a fresh, empty tmpfs per run. The run dir's
   other files (`stdout.jsonl`, `setup.log`) are not visible.

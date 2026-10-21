@@ -1,19 +1,42 @@
 // The bubblewrap sandbox every agent runs in. The host is visible read-only,
-// except the places secrets and other runs live, which are hidden under empty
-// tmpfs mounts: /home (and $HOME), /root, /tmp, /var/tmp, /run/user and the
-// evals state dir. Into that, only this run's own dirs are bound back
+// except the places secrets, sockets and other runs live, which are hidden
+// under empty tmpfs mounts: /home (and $HOME), /root, /tmp, /var/tmp, /run
+// and the evals state dir, each at its path and its real path. Container
+// daemon sockets elsewhere are covered with /dev/null. Into that, only this run's own dirs are bound back
 // read-write, and the agent's install, the task's tools and the codecite bin
 // dir read-only. The environment is exactly the adapter's (plus PWD, which
 // bwrap's --chdir sets), handed to bwrap as its own env. Network is shared:
 // agents need their provider's API.
 
 import { spawnSync } from 'node:child_process';
-import { accessSync, closeSync, constants, existsSync, lstatSync, openSync, readdirSync, readFileSync, readlinkSync, readSync } from 'node:fs';
+import { accessSync, closeSync, constants, existsSync, lstatSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 /** Hidden in every sandbox, when they exist. */
-export const ALWAYS_HIDDEN = ['/home', '/root', '/tmp', '/var/tmp', '/run/user'];
+// /run whole, not just /run/user: it holds the system bus, systemd's private
+// socket, snapd's and any container daemon's socket that appears later. The
+// resolver config (/etc/resolv.conf -> /run/systemd/resolve/...) is bound
+// back; nothing else in /run is needed.
+export const ALWAYS_HIDDEN = ['/home', '/root', '/tmp', '/var/tmp', '/run'];
+
+/** Files bound back from under the hidden roots in every sandbox. */
+export const ALWAYS_BOUND = ['/etc/resolv.conf'];
+
+/**
+ * Container daemon sockets: reaching one is root for a member of the docker,
+ * lxd or incus group. Those under /run are hidden with it; any that exists
+ * elsewhere is covered with /dev/null.
+ */
+export const DAEMON_SOCKETS = [
+  '/run/docker.sock',
+  '/var/run/docker.sock',
+  '/run/containerd/containerd.sock',
+  '/run/podman/podman.sock',
+  '/var/snap/lxd/common/lxd/unix.socket',
+  '/var/lib/lxd/unix.socket',
+  '/run/incus/unix.socket',
+];
 
 /** The evals state dir: $CODECITE_EVALS_DIR, else ~/.local/state/codecite-evals. */
 export function evalsStateDir(home = homedir()) {
@@ -66,15 +89,36 @@ const NAMESPACES = ['--die-with-parent', '--unshare-pid', '--unshare-ipc', '--un
  * The dirs hidden under tmpfs: ALWAYS_HIDDEN plus `home`, `evalsDir` and each
  * of `hide` that isn't already under one, keeping only those that exist.
  */
-export function hiddenRoots({ home = homedir(), evalsDir = evalsStateDir(home), hide = [], exists = existsSync } = {}) {
+export function hiddenRoots({
+  home = homedir(),
+  evalsDir = evalsStateDir(home),
+  hide = [],
+  exists = existsSync,
+  realpath = realpathSync,
+  alwaysHidden = ALWAYS_HIDDEN,
+} = {}) {
   const roots = [];
-  for (const p of [...ALWAYS_HIDDEN, home, evalsDir, ...hide]) {
-    if (!p || !isAbsolute(p)) continue;
-    const r = resolve(p);
-    if (!exists(r) || underAny(r, roots)) continue;
+  const add = (r) => {
+    if (underAny(r, roots)) return;
     // A later, wider root replaces the narrower ones it covers.
     for (let i = roots.length - 1; i >= 0; i--) if (isUnder(roots[i], r)) roots.splice(i, 1);
     roots.push(r);
+  };
+  for (const p of [...alwaysHidden, home, evalsDir, ...hide]) {
+    if (!p || !isAbsolute(p)) continue;
+    const r = resolve(p);
+    if (!exists(r)) continue;
+    // Both the path and where it really is: a $HOME that is a symlink to
+    // /data/owner must hide /data/owner, and the binds must see real paths
+    // as hidden. The real path first, so a wider one replaces the narrower.
+    let real;
+    try {
+      real = realpath(r);
+    } catch {
+      real = r;
+    }
+    add(real);
+    add(r);
   }
   return roots;
 }
@@ -273,6 +317,36 @@ function exposeArgs(paths, hidden) {
   return args;
 }
 
+const realOrSelf = (p) => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+};
+
+/**
+ * `--ro-bind /dev/null <sock>` for each daemon socket that exists outside
+ * the hidden roots: connecting to a character device fails.
+ */
+function socketArgs(sockets, hidden) {
+  const args = [];
+  const seen = new Set();
+  for (const sock of sockets) {
+    let real;
+    try {
+      lstatSync(sock);
+      real = realpathSync(sock);
+    } catch {
+      continue; // not there
+    }
+    if (underAny(real, hidden) || seen.has(real)) continue;
+    seen.add(real);
+    args.push('--ro-bind', '/dev/null', real);
+  }
+  return args;
+}
+
 /**
  * Wrap an adapter's {cmd, args, env, cwd} in bwrap.
  *
@@ -282,16 +356,27 @@ function exposeArgs(paths, hidden) {
  *   home), `evalsDir`, `hide` (more dirs to hide), `ro` (more paths to bind
  *   read-only, e.g. the round's export), `rw` (more paths to bind read-write;
  *   tests only), `tools` (command names the task needs, looked up on the
- *   spec's PATH).
+ *   spec's PATH), `daemonSockets` (default DAEMON_SOCKETS), `alwaysHidden`
+ *   (default ALWAYS_HIDDEN; tests only).
  * @returns {{cmd: string, args: string[], env: Record<string, string>}}  Spawn
  *   `cmd args` with exactly `env`.
  */
 export function sandboxArgs(spec, dirs, opts = {}) {
-  const { bwrap, home = homedir(), evalsDir = evalsStateDir(home), hide = [], ro = [], rw = [], tools = [] } = opts;
+  const {
+    bwrap,
+    home = homedir(),
+    evalsDir = evalsStateDir(home),
+    hide = [],
+    ro = [],
+    rw = [],
+    tools = [],
+    alwaysHidden,
+    daemonSockets = DAEMON_SOCKETS,
+  } = opts;
   if (!bwrap) throw new Error('sandbox: no bwrap path');
   const env = spec.env ?? {};
   const cwd = spec.cwd ?? dirs.project;
-  const hidden = hiddenRoots({ home, evalsDir, hide });
+  const hidden = hiddenRoots({ home, evalsDir, hide, alwaysHidden });
 
   const needs = [...commandNeeds(spec.cmd, env.PATH)];
   for (const t of tools) {
@@ -302,8 +387,12 @@ export function sandboxArgs(spec, dirs, opts = {}) {
   if (py) needs.push(py, ...commandNeeds(join(dirs.project, '.venv', 'bin', 'python'), env.PATH));
 
   const args = ['--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc'];
-  for (const h of hidden) args.push('--tmpfs', h);
-  args.push(...exposeArgs([...needs, ...ro], hidden));
+  // A tmpfs on each real path; a symlinked alias is in `hidden` only so the
+  // binds below treat paths through it as hidden (bwrap won't mount on a
+  // symlink, and the target is covered already).
+  for (const h of hidden) if (realOrSelf(h) === h) args.push('--tmpfs', h);
+  args.push(...exposeArgs([...ALWAYS_BOUND, ...needs, ...ro], hidden));
+  args.push(...socketArgs(daemonSockets, hidden));
   if (dirs.bin) args.push('--ro-bind', dirs.bin, dirs.bin);
   for (const d of [dirs.project, dirs.home, dirs.xdg, ...rw]) if (d) args.push('--bind', d, d);
   args.push(...NAMESPACES, '--chdir', cwd, '--', spec.cmd, ...(spec.args ?? []));
