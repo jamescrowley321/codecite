@@ -105,6 +105,33 @@ fn read_returns_what_a_search_result_cites() {
 }
 
 #[test]
+fn a_citation_from_the_human_search_form_reads_back() {
+    let demo = Demo::new();
+    let output = demo.run(&["search", "demo", "validate"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let text = String::from_utf8(output.stdout).unwrap();
+    let line = text
+        .lines()
+        .find(|l| l.starts_with("1. "))
+        .unwrap_or_else(|| panic!("{text}"));
+    let citation = line["1. ".len()..].split(" · ").next().unwrap();
+    assert!(citation.ends_with(":src/lib.rs#L1-L3"), "{text}");
+    let read = demo.json(&["read", "demo", citation, "--json"]);
+    assert_eq!(read["kind"], "code");
+    assert!(
+        read["citation"]
+            .as_str()
+            .unwrap()
+            .starts_with(&citation[..citation.find(':').unwrap()]),
+        "{read}"
+    );
+    assert_eq!(
+        read["text"],
+        "pub fn validate(token: &str) -> bool {\n    !token.is_empty()\n}"
+    );
+}
+
+#[test]
 fn the_human_form_and_the_line_cap() {
     let demo = Demo::new();
     let results = demo.json(&["search", "demo", "validate", "--json"]);
