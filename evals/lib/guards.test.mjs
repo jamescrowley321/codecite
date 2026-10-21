@@ -5,7 +5,13 @@ import { classify, CircuitBreaker } from './guards.mjs';
 const base = { providerStatus: null, turns: 3, rejectReason: null, spawnError: null };
 
 test('classifies a 404 as fatal', () => {
-  for (const s of [400, 401, 402, 404]) assert.equal(classify({ ...base, providerStatus: s }), 'fatal', String(s));
+  for (const s of [401, 402, 404]) assert.equal(classify({ ...base, providerStatus: s }), 'fatal', String(s));
+  assert.equal(classify({ ...base, providerStatus: 400, turns: 0 }), 'fatal');
+  assert.equal(classify({ ...base, providerStatus: 400, turns: null }), 'fatal');
+});
+
+test('a 400 after a turn describes the run: agent', () => {
+  assert.equal(classify({ ...base, providerStatus: 400, turns: 3 }), 'agent');
 });
 
 test('a rejectReason is fatal', () => {

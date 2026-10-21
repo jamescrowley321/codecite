@@ -5,7 +5,7 @@
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { callRound } from './lib/call.mjs';
+import { callRound, redact } from './lib/call.mjs';
 import { estimateUsd, modelPrices } from './lib/openrouter.mjs';
 import { expandRuns, freezePlan, loadPlan, loadTask, roundsDir } from './lib/plan.mjs';
 import { readSecrets } from './lib/secrets.mjs';
@@ -13,7 +13,7 @@ import { prepareRound, REPO_ROOT } from './lib/workspace.mjs';
 
 const USAGE = `usage:
   node evals/run.mjs compose --plan <plan.json> [--round <id>] [--codecite-bin <path>] [--dry-run]
-  node evals/run.mjs call --round <id>
+  node evals/run.mjs call --round <id> [--retry-fatal]
   node evals/run.mjs score --round <id>`;
 
 function git(...args) {
@@ -75,14 +75,21 @@ async function compose(argv) {
   console.log(`round ${roundId} prepared at ${round.dir}`);
 }
 
+// Loaded by `call`; every error printed after that is redacted with it.
+let secrets = null;
+
 async function call(argv) {
-  const { values } = parseArgs({ args: argv, options: { round: { type: 'string' } } });
+  const { values } = parseArgs({
+    args: argv,
+    options: { round: { type: 'string' }, 'retry-fatal': { type: 'boolean', default: false } },
+  });
   if (!values.round) throw new Error(`call needs --round\n${USAGE}`);
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(values.round)) throw new Error(`call: bad round id "${values.round}"`);
-  const summary = await callRound(join(roundsDir(), values.round), { secrets: readSecrets() });
+  secrets = readSecrets();
+  const summary = await callRound(join(roundsDir(), values.round), { secrets, retryFatal: values['retry-fatal'] });
   console.log(`ran ${summary.ran}, skipped ${summary.skipped}`);
   if (summary.stopped) {
-    console.error(`round stopped (${summary.stopped}): ${summary.reason}`);
+    console.error(redact(`round stopped (${summary.stopped}): ${summary.reason}`, secrets));
     process.exit(1);
   }
 }
@@ -99,6 +106,6 @@ try {
     process.exit(2);
   }
 } catch (e) {
-  console.error(e.message);
+  console.error(redact(e.message, secrets));
   process.exit(1);
 }

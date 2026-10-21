@@ -1,12 +1,16 @@
 // Failure guards: what a failed agent call means for the round, and a
 // circuit breaker for runaway failure.
 
-/** Provider statuses that mean the round's setup is wrong: stop at once. */
+/**
+ * Provider statuses that mean the round's setup is wrong: stop at once.
+ * A 400 is fatal only before any turn; after one it describes the run.
+ */
 export const FATAL_STATUSES = new Set([400, 401, 402, 404]);
 
 /**
  * What a call's outcome means:
- * - "fatal": provider status 400/401/402/404, or the adapter rejected the
+ * - "fatal": provider status 401/402/404, or 400 before any turn (turns 0
+ *   or unknown), or the adapter rejected the
  *   run (`rejectReason`, e.g. leaked user config). The round stops.
  * - "infra": provider status >= 500 before any turn, or the harness could
  *   not spawn the agent (`spawnError`). The run is retried.
@@ -16,7 +20,9 @@ export const FATAL_STATUSES = new Set([400, 401, 402, 404]);
  */
 export function classify(r) {
   if (r.rejectReason) return 'fatal';
-  if (r.providerStatus != null && FATAL_STATUSES.has(r.providerStatus)) return 'fatal';
+  if (r.providerStatus != null && FATAL_STATUSES.has(r.providerStatus)) {
+    if (!(r.providerStatus === 400 && r.turns > 0)) return 'fatal';
+  }
   if (r.spawnError) return 'infra';
   if (r.providerStatus != null && r.providerStatus >= 500 && r.turns === 0) return 'infra';
   return 'agent';

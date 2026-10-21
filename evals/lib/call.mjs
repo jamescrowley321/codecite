@@ -4,6 +4,7 @@
 // when the OpenRouter estimate exceeds the key's remaining limit.
 
 import { spawn } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { emptyAgentResult, loadAdapter as defaultLoadAdapter } from './agent.mjs';
@@ -14,6 +15,8 @@ import { requireSecret } from './secrets.mjs';
 import { taintHits } from './taint.mjs';
 import { prepareRun } from './workspace.mjs';
 
+/** Every status a result.json can hold. */
+export const STATUSES = new Set(['ok', 'timeout', 'agent_error', 'infra_error', 'fatal']);
 /** Statuses a resumed `call` skips. */
 export const DONE = new Set(['ok', 'timeout']);
 export const MAX_ATTEMPTS = 3;
@@ -58,16 +61,18 @@ function resetDir(dir) {
 }
 
 /**
- * Spawn the agent in its own process group. On timeout the group gets
+ * Spawn the agent in its own process group. On timeout, or when
+ * `earlyReject(line)` returns a reason for a stdout line, the group gets
  * SIGTERM, then SIGKILL `killGraceMs` later. Wall time runs from spawn to
  * exit. Strays left in the group are killed when the agent exits.
  */
-function spawnAgent({ cmd, args = [], env = {}, cwd, input }, { timeoutMs, killGraceMs }) {
+function spawnAgent({ cmd, args = [], env = {}, cwd, input }, { timeoutMs, killGraceMs, earlyReject }) {
   return new Promise((resolve) => {
     const out = [];
     const err = [];
     const t0 = performance.now();
     let timedOut = false;
+    let rejected = null;
     let spawnError = null;
     let exit = null;
     let done = false;
@@ -86,6 +91,7 @@ function spawnAgent({ cmd, args = [], env = {}, cwd, input }, { timeoutMs, killG
         exitCode: exit?.code ?? null,
         signal: exit?.signal ?? null,
         timedOut,
+        earlyReject: rejected,
         spawnError,
       });
     };
@@ -96,10 +102,13 @@ function spawnAgent({ cmd, args = [], env = {}, cwd, input }, { timeoutMs, killG
         // already gone
       }
     };
-    const timer = setTimeout(() => {
-      timedOut = true;
+    const stop = () => {
       killGroup('SIGTERM');
       killTimer = setTimeout(() => killGroup('SIGKILL'), killGraceMs);
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      stop();
     }, timeoutMs);
     let closeTimer;
     try {
@@ -109,7 +118,27 @@ function spawnAgent({ cmd, args = [], env = {}, cwd, input }, { timeoutMs, killG
       finish();
       return;
     }
-    child.stdout.on('data', (c) => out.push(c));
+    const decoder = new StringDecoder('utf8');
+    let pending = '';
+    child.stdout.on('data', (c) => {
+      out.push(c);
+      if (!earlyReject || rejected) return;
+      pending += decoder.write(c);
+      let nl;
+      while (!rejected && (nl = pending.indexOf('\n')) >= 0) {
+        const line = pending.slice(0, nl);
+        pending = pending.slice(nl + 1);
+        try {
+          rejected = earlyReject(line) || null;
+        } catch {
+          rejected = null;
+        }
+        if (rejected) {
+          clearTimeout(timer);
+          stop();
+        }
+      }
+    });
     child.stderr.on('data', (c) => err.push(c));
     if (input != null) {
       child.stdin.on('error', () => {});
@@ -151,7 +180,8 @@ async function attemptRun(run, round, adapter, opts) {
   const prompt = renderPrompt(plan.taskDef, arm, round);
   // A throwing adapter (e.g. a missing secret) is a setup error: stop the round.
   const spec = adapter.command(run, dirs, { prompt, secrets, plan, round });
-  const proc = await spawnAgent(spec, { timeoutMs, killGraceMs });
+  const earlyReject = typeof adapter.earlyReject === 'function' ? (line) => adapter.earlyReject(line) : null;
+  const proc = await spawnAgent(spec, { timeoutMs, killGraceMs, earlyReject });
   const stdout = redact(proc.stdout, secrets);
   const stderr = redact(proc.stderr, secrets);
   writeFileSync(join(out, 'stdout.jsonl'), stdout);
@@ -168,12 +198,13 @@ async function attemptRun(run, round, adapter, opts) {
       error = `parse: ${e.message}`;
     }
   }
+  if (proc.earlyReject) agent.rejectReason = proc.earlyReject;
 
   const kind = classify({ ...agent, spawnError: proc.spawnError });
   let status;
   if (kind === 'fatal') {
-    status = 'infra_error';
-    error = agent.rejectReason ? `fatal: run rejected: ${agent.rejectReason}` : `fatal: provider status ${agent.providerStatus}`;
+    status = 'fatal';
+    error = agent.rejectReason ? `run rejected: ${agent.rejectReason}` : `provider status ${agent.providerStatus}`;
   } else if (kind === 'infra') {
     status = 'infra_error';
     error ??= `provider status ${agent.providerStatus} before any turn`;
@@ -213,15 +244,16 @@ async function checkSpend(plan, runs, { secrets, keyRemainingUsd, modelPrices, l
 
 /**
  * Run a round's pending runs. A run whose result.json has status ok or
- * timeout is skipped, so `call` resumes. Infra failures are retried up to
- * `maxAttempts` times. Each attempt counts in the circuit breaker (ok and
- * timeout as successes).
+ * timeout is skipped, so `call` resumes. A round holding a `fatal` run
+ * refuses to resume unless `retryFatal`, which re-runs the fatal runs first.
+ * Infra failures are retried up to `maxAttempts` times. Each attempt counts
+ * in the circuit breaker; only `ok` is a success there.
  *
  * @param {string} roundDir
  * @param {object} deps  `secrets` (readSecrets()) is required; the rest default
  *   to the real thing: loadAdapter, keyRemainingUsd(key), modelPrices(),
  *   log(line), timeoutMs (plan.timeoutSec), killGraceMs (10 s), maxAttempts
- *   (3), basePath (PATH for prepareRun).
+ *   (3), basePath (PATH for prepareRun), retryFatal (false).
  * @returns {Promise<{ran: number, skipped: number, stopped: null|"fatal"|"breaker", reason: string|null}>}
  */
 export async function callRound(roundDir, deps = {}) {
@@ -234,6 +266,7 @@ export async function callRound(roundDir, deps = {}) {
     killGraceMs = KILL_GRACE_MS,
     maxAttempts = MAX_ATTEMPTS,
     basePath,
+    retryFatal = false,
   } = deps;
   if (!secrets) throw new Error('call: secrets are required');
   const round = loadRound(roundDir);
@@ -241,7 +274,14 @@ export async function callRound(roundDir, deps = {}) {
   const timeoutMs = deps.timeoutMs ?? plan.timeoutSec * 1000;
 
   const runs = expandRuns(plan);
-  const pending = runs.filter((r) => !DONE.has(priorStatus(round, r)));
+  const prior = new Map(runs.map((r) => [r.id, priorStatus(round, r)]));
+  const fatal = runs.filter((r) => prior.get(r.id) === 'fatal');
+  if (fatal.length > 0 && !retryFatal) {
+    throw new Error(
+      `call: ${fatal.map((r) => r.id).join(', ')} ended fatal; fix the cause, then pass --retry-fatal to re-run ${fatal.length === 1 ? 'it' : 'them'} first`,
+    );
+  }
+  const pending = [...fatal, ...runs.filter((r) => !DONE.has(prior.get(r.id)) && prior.get(r.id) !== 'fatal')];
   const skipped = runs.length - pending.length;
   if (skipped > 0) log(`skipping ${skipped} finished runs`);
 
@@ -257,7 +297,7 @@ export async function callRound(roundDir, deps = {}) {
     for (;;) {
       attempts++;
       outcome = await attemptRun(run, round, adapters.get(run.agent), { secrets, timeoutMs, killGraceMs, basePath });
-      breaker.record(DONE.has(outcome.result.status));
+      breaker.record(outcome.result.status === 'ok');
       if (outcome.kind !== 'infra' || attempts >= maxAttempts || breaker.tripped) break;
     }
     const result = { ...outcome.result, attempts };

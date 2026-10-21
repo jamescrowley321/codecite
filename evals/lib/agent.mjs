@@ -43,6 +43,12 @@ import { emptyUsage } from './telemetry.mjs';
  *   Throwing (e.g. requireSecret) stops the round.
  * @property {(stdout: string, stderr: string) => AgentResult} parse
  *   Gets the output with secrets already redacted. Throwing records an agent_error.
+ *   Adapters should set `rejectReason` from the agent's init event (e.g. it loaded
+ *   the owner's config, or the wrong model), which makes the run fatal.
+ * @property {(line: string) => string|null} [earlyReject]
+ *   Optional. Called with each raw stdout line while the agent runs; a non-null
+ *   reason kills the agent at once (SIGTERM, then SIGKILL) and becomes its
+ *   `rejectReason`, so a bad run stops before it spends.
  */
 
 /** An AgentResult with everything unknown, for runs whose output can't be parsed. */

@@ -40,6 +40,9 @@ function fakeAdapter(name) {
         cwd: dirs.project,
       };
     },
+    earlyReject(line) {
+      return line.includes('"earlyReject"') ? 'user config seen at init' : null;
+    },
     parse(stdout) {
       const last = stdout
         .split('\n')
@@ -171,7 +174,56 @@ test('fatal stops the round', async () => {
   assert.equal(count(r.counter), 1, 'not retried, no further runs');
   const res = results(r.dir);
   assert.equal(res.length, 1);
+  assert.equal(res[0].status, 'fatal');
+  assert.match(res[0].error, /provider status 401/);
   assert.equal(res[0].providerStatus, 401);
+});
+
+test('a round with a fatal run refuses to resume without retryFatal', async () => {
+  const r = makeRound([{ agent: 'fake', model: 'm/fatal' }], { runs: 2 });
+  await callRound(r.dir, deps());
+  await assert.rejects(callRound(r.dir, deps()), /fatal.*--retry-fatal/s);
+  assert.equal(count(r.counter), 1);
+});
+
+test('retryFatal re-runs the fatal run first', async () => {
+  const r = makeRound([{ agent: 'fake', model: 'm/ok' }], { runs: 3 });
+  await callRound(r.dir, deps());
+  // Mark the last run fatal and another one an agent_error.
+  const res = results(r.dir).sort((a, b) => a.run.seq - b.run.seq);
+  const mark = (x, status) => {
+    const f = join(r.dir, 'runs', x.run.id, 'result.json');
+    writeFileSync(f, JSON.stringify({ ...x, status }));
+  };
+  mark(res[2], 'fatal');
+  mark(res[0], 'agent_error');
+  const order = [];
+  const summary = await callRound(r.dir, deps({ retryFatal: true, log: (l) => order.push(l) }));
+  assert.equal(summary.ran, 2);
+  const ran = order.filter((l) => l.startsWith('[')).map((l) => Number(/^\[(\d+)\//.exec(l)[1]));
+  assert.deepEqual(ran, [3, 1]);
+});
+
+test('an early reject kills the agent and stops the round', async () => {
+  const r = makeRound([{ agent: 'fake', model: 'm/earlyreject' }], { runs: 2 });
+  const t0 = Date.now();
+  const summary = await callRound(r.dir, deps({ killGraceMs: 200 }));
+  assert.ok(Date.now() - t0 < 5000);
+  assert.equal(summary.stopped, 'fatal');
+  assert.match(summary.reason, /user config seen at init/);
+  const [res] = results(r.dir);
+  assert.equal(res.status, 'fatal');
+  assert.equal(res.rejectReason, 'user config seen at init');
+  const pid = Number(readFileSync(r.pidfile, 'utf8'));
+  assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
+});
+
+test('timeouts count as failures for the breaker', async () => {
+  const r = makeRound([{ agent: 'fake', model: 'm/slow' }], { runs: 11 });
+  const summary = await callRound(r.dir, deps({ timeoutMs: 100, killGraceMs: 100 }));
+  assert.equal(summary.stopped, 'breaker');
+  assert.equal(count(r.counter), 10);
+  assert.ok(results(r.dir).every((x) => x.status === 'timeout'));
 });
 
 test('a rejectReason stops the round', async () => {

@@ -24,6 +24,16 @@ switch (mode) {
     process.on('SIGTERM', () => {});
     setInterval(() => {}, 1000);
     break;
+  case 'earlyreject':
+    // Pid and the SIGTERM trap first: the harness kills on the next line.
+    if (process.env.FAKE_PIDFILE) writeFileSync(process.env.FAKE_PIDFILE, String(process.pid));
+    process.on('SIGTERM', () => {});
+    say({ type: 'init', earlyReject: true });
+    setInterval(() => {}, 1000);
+    break;
+  case 'slow':
+    setInterval(() => {}, 1000);
+    break;
   case 'fatal':
     result({ providerStatus: 401, turns: 0 }, 1);
     break;

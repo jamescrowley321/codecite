@@ -111,10 +111,12 @@ function buildRound(plan, dir, { repo, commit, repoPath, codeciteBin }) {
   rmSync(cache, { recursive: true, force: true });
   rmSync(srcRepo, { recursive: true, force: true });
 
-  // Paths a run must not touch (Task 4 flags them): the real repos, and the
-  // round's own records and other runs.
+  // Paths a run must not touch (Task 4 flags them): the real repos, this
+  // codecite checkout (the hidden tests), and the round's own records and
+  // other runs.
   const taintPaths = [
     ...Object.values(plan.repos).map((p) => resolve(expandHome(p))),
+    REPO_ROOT,
     join(dir, 'plan.json'),
     join(dir, 'round.json'),
     manifest,

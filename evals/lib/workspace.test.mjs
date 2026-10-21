@@ -196,6 +196,7 @@ test('round records its taint paths', () => {
   assert.deepEqual(saved.taintPaths, round.taintPaths);
   assert.deepEqual(round.taintPaths, [
     repo,
+    REPO_ROOT,
     join(round.dir, 'plan.json'),
     join(round.dir, 'round.json'),
     join(round.dir, 'corpus.toml'),

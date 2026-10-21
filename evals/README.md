@@ -50,7 +50,8 @@ codecite commit and the task's identity-model commit) and prepares the round:
   throwaway repo and codecite's clone cache are deleted after indexing; no
   file the runs see names the real repo.
 - `round.json`: the round's paths and `taintPaths`, the paths a run must not
-  touch (the real repos, `plan.json`, `round.json`, `corpus.toml`, `runs/`).
+  touch (the real repos, this codecite checkout, `plan.json`, `round.json`,
+  `corpus.toml`, `runs/`).
 - `bin-codecite/codecite`: built from this checkout with `cargo build
   --release`, or copied from `--codecite-bin`.
 
@@ -64,7 +65,7 @@ the corpus. The run order is shuffled by the plan's seed.
 ## Calls
 
 ```
-node evals/run.mjs call --round <id>
+node evals/run.mjs call --round <id> [--retry-fatal]
 ```
 
 `call` runs the round's runs one at a time in `seq` order. Each run's
@@ -74,26 +75,40 @@ process group, with `SIGTERM` at the plan's `timeoutSec` and `SIGKILL` 10 s
 later. `runs/<run-id>/` then holds `stdout.jsonl`, `stderr.txt` and
 `result.json`: `{run, status, wallMs, attempts, error, exitCode, signal,
 ...AgentResult without transcript, tainted}`, where `status` is `ok`,
-`timeout`, `agent_error` or `infra_error`. Every secret value is replaced by
+`timeout`, `agent_error`, `infra_error` or `fatal`. Every secret value is replaced by
 `[REDACTED]` before anything is written.
 
 - **Resume:** a run whose `result.json` says `ok` or `timeout` is skipped; any
-  other run is redone from a fresh run directory.
-- **Fatal:** provider status 400, 401, 402 or 404, or an adapter's
-  `rejectReason`, stops the round.
+  other run is redone from a fresh run directory. A round holding a `fatal`
+  run refuses to resume until you fix the cause and pass `--retry-fatal`,
+  which re-runs the fatal runs first.
+- **Fatal:** provider status 401, 402 or 404, a 400 before any turn, or an
+  adapter's `rejectReason` (from the init event, or `earlyReject` on a live
+  stdout line, which kills the agent at once) is recorded as `fatal` and
+  stops the round. A 400 after a turn is the run's own `agent_error`.
 - **Infra:** a spawn or setup failure, or a 5xx before any turn, is retried up
   to 3 times, then recorded as `infra_error`.
 - **Breaker:** the round stops once at least 10 attempts are in and 80% or
-  more of them ended in anything but `ok` or `timeout`.
+  more of them ended in anything but `ok` (timeouts count as failures here,
+  though resume still skips them).
 - **Spend:** before any run, the OpenRouter estimate for the pending runs
   (300k input and 20k output tokens per run at the model's live price;
   Claude counts as $0) must fit in the key's remaining limit, and the key
   must have a limit. `compose --dry-run` prints the same estimate.
 - **Taint:** `tainted` lists shell commands matching `github.com`, `git
   clone`, `curl`, `wget`, `pip install` or `uv add`, and shell commands or
-  file-tool paths reaching `evals/tasks`, `test_hidden`, `/reference/`,
-  `codecite-worktrees` or a `taintPaths` entry outside the run's own
-  directory. Only commands and paths are scanned, never file contents.
+  file-tool paths naming `evals/tasks`, `test_hidden`, `/reference/` or
+  `codecite-worktrees`. Each command is split into segments on `&&`, `||`,
+  `;`, `|` and newlines, with a cwd that starts at the project and follows
+  `cd`. Every word (and each non-`cd` segment's cwd) is resolved against it,
+  as is every file-tool path. A path taints when it is inside a `taintPaths`
+  entry (the real repos, this checkout, `plan.json`, `round.json`,
+  `corpus.toml`, `runs/`), or equals or contains the round dir or a
+  `taintPaths` entry (`ls ../../..`, `find /`), unless it is inside the
+  run's own directory. Only commands and paths are scanned, never file
+  contents. The scan is lexical: a path built from `$VAR`, `$(...)`, globs
+  or a script the agent wrote is not resolved, so tainting is detection,
+  not a sandbox.
 
 ## Secrets
 

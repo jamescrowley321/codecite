@@ -16,9 +16,10 @@ async function getJson(path, { fetch = globalThis.fetch, key } = {}) {
   return res.json();
 }
 
-/** The key's `limit - usage` in USD, or null when the key has no limit. */
+/** The key's remaining limit in USD (`limit_remaining`, else `limit - usage`), or null when it has no limit. */
 export async function keyRemainingUsd(key, { fetch } = {}) {
   const { data } = await getJson('/key', { fetch, key });
+  if (typeof data?.limit_remaining === 'number') return data.limit_remaining;
   if (data?.limit == null) return null;
   return data.limit - (data.usage ?? 0);
 }
@@ -34,7 +35,8 @@ export async function modelPrices({ fetch } = {}) {
 /**
  * Estimated OpenRouter spend for `runs` (default: all of the plan's): each
  * non-Claude run costs GUESS tokens at its model's price; Claude runs go
- * through a subscription and count as 0. Throws for a model with no price.
+ * through a subscription and count as 0. Throws for a model with no price
+ * or a negative one.
  * @param {object} plan
  * @param {{prices: Map<string, {prompt: number, completion: number}>, runs?: {agent: string, model: string}[]}} opts
  */
@@ -46,6 +48,8 @@ export function estimateUsd(plan, { prices, runs = expandRuns(plan) }) {
     if (!p || !Number.isFinite(p.prompt) || !Number.isFinite(p.completion)) {
       throw new Error(`openrouter: no price for ${r.model}`);
     }
+    // OpenRouter lists -1 for routers whose price is not fixed.
+    if (p.prompt < 0 || p.completion < 0) throw new Error(`openrouter: negative price for ${r.model}`);
     usd += GUESS.input * p.prompt + GUESS.output * p.completion;
   }
   return Math.round(usd * 1e6) / 1e6;

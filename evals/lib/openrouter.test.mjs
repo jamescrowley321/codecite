@@ -39,6 +39,15 @@ test('estimate refuses a model with no price', () => {
   assert.throws(() => estimateUsd(plan, { prices: new Map() }), /no price for a\/m/);
 });
 
+test('estimate refuses a negative price', () => {
+  assert.throws(() => estimateUsd(plan, { prices: new Map([['a/m', { prompt: -1, completion: -1 }]]) }), /negative price for a\/m/);
+});
+
+test('keyRemainingUsd prefers limit_remaining', async () => {
+  const fetch = fakeFetch({ 'https://openrouter.ai/api/v1/key': { body: { data: { limit: 50, usage: 12.5, limit_remaining: 30 } } } });
+  assert.equal(await keyRemainingUsd('sk-test', { fetch }), 30);
+});
+
 test('modelPrices reads the models list', async () => {
   const fetch = fakeFetch({
     'https://openrouter.ai/api/v1/models': { body: { data: [{ id: 'a/m', pricing: { prompt: '0.000001', completion: '0.00001' } }] } },
