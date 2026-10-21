@@ -31,6 +31,13 @@ switch (mode) {
     say({ type: 'init', earlyReject: true });
     setInterval(() => {}, 1000);
     break;
+  case 'term':
+    process.on('SIGTERM', () => {
+      writeFileSync(process.env.FAKE_TERMFILE, 'yes\n');
+      process.exit(0);
+    });
+    setInterval(() => {}, 1000);
+    break;
   case 'slow':
     setInterval(() => {}, 1000);
     break;

@@ -1,8 +1,8 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { callRound } from './call.mjs';
 import { emptyUsage } from './telemetry.mjs';
@@ -10,10 +10,14 @@ import { emptyUsage } from './telemetry.mjs';
 const FAKE_AGENT = fileURLToPath(new URL('./testdata/fake-agent.mjs', import.meta.url));
 const KEY = 'sk-or-v1-FAKEKEY0123456789abcdef';
 const OAUTH = 'sk-ant-oat01-FAKEOAUTH9876543210';
-let tmp, taskDir, n = 0;
+let tmp, taskDir, counters, n = 0;
 
 before(() => {
   tmp = mkdtempSync(join(tmpdir(), 'evals-call-'));
+  // Outside the rounds: the only host dir the fake agent may write, bound in
+  // through deps.sandbox like the fake agent's own script.
+  counters = join(tmp, 'counters');
+  mkdirSync(counters, { recursive: true });
   taskDir = join(tmp, 'task');
   mkdirSync(join(taskDir, 'project', 'app'), { recursive: true });
   writeFileSync(join(taskDir, 'project', 'app', 'main.py'), 'app = None\n');
@@ -27,15 +31,16 @@ function fakeAdapter(name) {
       const mode = run.model.split('/')[1];
       return {
         cmd: mode === 'missing' ? join(tmp, 'no-such-agent') : process.execPath,
-        args: [FAKE_AGENT, mode],
+        // The round dir marks the process, so a test can find it from the host.
+        args: [FAKE_AGENT, mode, ctx.round.dir],
         env: {
           PATH: dirs.path,
           HOME: dirs.home,
           FAKE_KEY: ctx.secrets.openrouter,
           FAKE_OAUTH: ctx.secrets.claudeOauth,
           FAKE_PROMPT: ctx.prompt,
-          FAKE_COUNTER: join(ctx.round.dir, '..', `${ctx.round.plan.roundId}.count`),
-          FAKE_PIDFILE: join(ctx.round.dir, '..', `${ctx.round.plan.roundId}.pid`),
+          FAKE_COUNTER: join(counters, `${ctx.round.plan.roundId}.count`),
+          FAKE_TERMFILE: join(dirs.project, 'got-sigterm'),
         },
         cwd: dirs.project,
       };
@@ -101,7 +106,22 @@ function makeRound(agents, { runs = 1 } = {}) {
   };
   writeFileSync(join(dir, 'plan.json'), JSON.stringify(plan));
   writeFileSync(join(dir, 'round.json'), JSON.stringify(round));
-  return { dir, roundId, counter: join(tmp, 'rounds', `${roundId}.count`), pidfile: join(tmp, 'rounds', `${roundId}.pid`) };
+  return { dir, roundId, counter: join(counters, `${roundId}.count`) };
+}
+
+/** Live host processes of the fake agent for round `dir`, found by its cmdline. */
+function agentsAlive(dir) {
+  const alive = [];
+  for (const pid of readdirSync('/proc').filter((e) => /^\d+$/.test(e))) {
+    let argv;
+    try {
+      argv = readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0');
+    } catch {
+      continue;
+    }
+    if (argv.includes(FAKE_AGENT) && argv.includes(dir)) alive.push(Number(pid));
+  }
+  return alive;
 }
 
 function deps(over = {}) {
@@ -111,6 +131,7 @@ function deps(over = {}) {
     keyRemainingUsd: async () => 100,
     modelPrices: async () => ({ get: () => ({ prompt: 0, completion: 0 }) }),
     log: () => {},
+    sandbox: { ro: [dirname(FAKE_AGENT)], rw: [counters] },
     ...over,
   };
 }
@@ -163,8 +184,38 @@ test('timeout kills the agent and marks timeout', async () => {
   const [res] = results(r.dir);
   assert.equal(res.status, 'timeout');
   assert.ok(res.wallMs >= 400, `wallMs ${res.wallMs}`);
-  const pid = Number(readFileSync(r.pidfile, 'utf8'));
-  assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' }, 'SIGTERM-ignoring agent was SIGKILLed');
+  assert.deepEqual(agentsAlive(r.dir), [], 'SIGTERM-ignoring agent was SIGKILLed');
+});
+
+test('timeout sends the sandboxed agent SIGTERM before SIGKILL', async () => {
+  const r = makeRound([{ agent: 'fake', model: 'm/term' }]);
+  // Long enough for node to start and trap SIGTERM even on a loaded machine.
+  await callRound(r.dir, deps({ timeoutMs: 5000, killGraceMs: 20000 }));
+  const [res] = results(r.dir);
+  assert.equal(res.status, 'timeout');
+  assert.ok(existsSync(join(r.dir, 'runs', res.run.id, 'project', 'got-sigterm')), 'the agent saw SIGTERM');
+  assert.ok(res.wallMs < 15000, `exited on SIGTERM, not after the grace: ${res.wallMs}ms`);
+  assert.deepEqual(agentsAlive(r.dir), []);
+});
+
+test('call refuses to start without bwrap and runs nothing', async () => {
+  const r = makeRound([{ agent: 'fake', model: 'm/ok' }]);
+  const empty = join(tmp, 'empty-path');
+  mkdirSync(empty, { recursive: true });
+  await assert.rejects(callRound(r.dir, deps({ searchPath: empty })), /bwrap.*not found.*bubblewrap/s);
+  assert.equal(count(r.counter), 0);
+  assert.deepEqual(results(r.dir), []);
+});
+
+test('call refuses to start when the bwrap probe fails', async () => {
+  const r = makeRound([{ agent: 'fake', model: 'm/ok' }]);
+  const fake = join(tmp, 'broken-bwrap');
+  mkdirSync(fake, { recursive: true });
+  writeFileSync(join(fake, 'bwrap'), '#!/bin/sh\necho "bwrap: No permissions to create new namespace" >&2\nexit 1\n');
+  chmodSync(join(fake, 'bwrap'), 0o755);
+  await assert.rejects(callRound(r.dir, deps({ searchPath: fake })), /bwrap probe failed.*No permissions/s);
+  assert.equal(count(r.counter), 0);
+  assert.deepEqual(results(r.dir), []);
 });
 
 test('fatal stops the round', async () => {
@@ -215,13 +266,13 @@ test('an early reject kills the agent and stops the round', async () => {
   const [res] = results(r.dir);
   assert.equal(res.status, 'fatal');
   assert.equal(res.rejectReason, 'user config seen at init');
-  const pid = Number(readFileSync(r.pidfile, 'utf8'));
-  assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
+  assert.deepEqual(agentsAlive(r.dir), []);
 });
 
 test('timeouts count as failures for the breaker', async () => {
   const r = makeRound([{ agent: 'fake', model: 'm/slow' }], { runs: 11 });
-  const summary = await callRound(r.dir, deps({ timeoutMs: 100, killGraceMs: 100 }));
+  // Time for node to start in the sandbox and count the call.
+  const summary = await callRound(r.dir, deps({ timeoutMs: 1500, killGraceMs: 100 }));
   assert.equal(summary.stopped, 'breaker');
   assert.equal(count(r.counter), 10);
   assert.ok(results(r.dir).every((x) => x.status === 'timeout'));

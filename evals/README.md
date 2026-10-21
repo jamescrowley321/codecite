@@ -6,6 +6,8 @@ tests score both. See
 `docs/superpowers/specs/2026-10-20-ab-eval-harness-design.md` for why.
 
 Node 26, ES modules, no npm dependencies. Tests: `node --test evals/`.
+`call` and its tests need [bubblewrap](https://github.com/containers/bubblewrap)
+(`bwrap`, 0.6 or later, usable unprivileged): `apt install bubblewrap`.
 
 ## Layout
 
@@ -21,6 +23,7 @@ Node 26, ES modules, no npm dependencies. Tests: `node --test evals/`.
 | `lib/secrets.mjs` | Read the keys from `~/.config/codecite/evals.env` |
 | `lib/agent.mjs` | The agent adapter contract (`AgentResult`, `command`, `parse`) and adapter loading |
 | `lib/call.mjs` | The call loop: run, retry, time out, redact, record |
+| `lib/sandbox.mjs` | The bubblewrap sandbox every agent runs in |
 | `lib/guards.mjs` | Fatal/infra/agent classification and the circuit breaker |
 | `lib/taint.mjs` | Flag runs that fetched code or touched hidden or other runs' paths |
 | `lib/openrouter.mjs` | The key's remaining limit and the round's cost estimate |
@@ -62,6 +65,51 @@ drop every directory that holds a `codecite`, `~/.cargo/bin` and this repo's
 `target/`; the codecite arm then prepends `bin-codecite` and gets a copy of
 the corpus. The run order is shuffled by the plan's seed.
 
+## Sandbox
+
+Every agent runs inside `bwrap` (`lib/sandbox.mjs`). There is no
+unsandboxed fallback: `call` refuses to start a round when `bwrap` isn't on
+`PATH` or a probe of the sandbox's namespace setup fails.
+
+- **Hidden:** the host is mounted read-only, then empty tmpfs mounts cover
+  `/home` (and `$HOME` if it's elsewhere), `/root`, `/tmp`, `/var/tmp`,
+  `/run/user`, `$CODECITE_EVALS_DIR`, the round dir and every directory in
+  its `taintPaths` (the real repos, this checkout), wherever they live. So
+  the owner's `~/.claude/.credentials.json`, `~/.config/codecite/evals.env`,
+  `~/.pi`, `~/.ssh`, the session bus and agent sockets, the hidden tests,
+  `plan.json`, `round.json` and other runs are not there.
+- **Bound back read-write:** only the run's `project/`, `home/` and `xdg/`,
+  at their real paths. `/tmp` is a fresh, empty tmpfs per run. The run dir's
+  other files (`stdout.jsonl`, `setup.log`) are not visible.
+- **Bound back read-only:** the round's `identity-model/` export,
+  `bin-codecite/` (codecite arm only: the arms' sandboxes differ by that one
+  bind), and what the commands need, found from the command itself: its
+  real path and every symlink on the way (`~/.local/bin/claude` ->
+  `~/.local/share/claude/versions/<v>`); for an ELF, its loader and the
+  libraries the loader lists (Homebrew's node needs about 50 under
+  `/home/linuxbrew`), and for a libcrypto, the `openssl.cnf`, `cert.pem` and
+  `certs/` of the OPENSSLDIR compiled into it (not its `private/`), without
+  which Homebrew's node can't verify TLS; for a script, its shebang interpreter (`env node` is
+  looked up on the run's `PATH`) and its node package (pi's
+  `@earendil-works/pi-coding-agent`). The same goes for the task's setup
+  command (`uv`) and the project venv's base Python (from `pyvenv.cfg`), so
+  the agent can run the project. Nothing else under any hidden dir is bound.
+- **Namespaces:** `--unshare-pid`, `--unshare-ipc`, `--unshare-uts`,
+  `--new-session` (no TIOCSTI into the owner's terminal) and
+  `--die-with-parent`. The network is shared: agents need their provider's
+  API.
+- **Environment:** bwrap is spawned with exactly the adapter's env and
+  passes it on, plus the `PWD` its `--chdir` sets. Values never go in
+  bwrap's argv (`--setenv`), which `/proc` shows every local user.
+- **Kill:** on timeout or an early reject the call loop sends `SIGTERM` to
+  every process inside the sandbox (found under bwrap in `/proc`: the agent
+  has its own session, out of bwrap's group) but not to bwrap, which would
+  die at once and take the agent with it. `SIGKILL` goes to bwrap's group 10 s
+  later; killing bwrap ends its pid namespace and everything left in it.
+
+Taint scanning stays as a second layer: it catches a run that tried to reach
+the hidden paths or fetch code, even though the sandbox kept them out.
+
 ## Calls
 
 ```
@@ -70,8 +118,8 @@ node evals/run.mjs call --round <id> [--retry-fatal]
 
 `call` runs the round's runs one at a time in `seq` order. Each run's
 adapter (`agents/<agent>.mjs`, contract in `lib/agent.mjs`) turns the run
-into a command; the agent gets exactly the adapter's environment, in its own
-process group, with `SIGTERM` at the plan's `timeoutSec` and `SIGKILL` 10 s
+into a command; the agent runs in the sandbox above with exactly the
+adapter's environment, with `SIGTERM` at the plan's `timeoutSec` and `SIGKILL` 10 s
 later. `runs/<run-id>/` then holds `stdout.jsonl`, `stderr.txt` and
 `result.json`: `{run, status, wallMs, attempts, error, exitCode, signal,
 ...AgentResult without transcript, tainted}`, where `status` is `ok`,
@@ -86,7 +134,8 @@ later. `runs/<run-id>/` then holds `stdout.jsonl`, `stderr.txt` and
   adapter's `rejectReason` (from the init event, or `earlyReject` on a live
   stdout line, which kills the agent at once) is recorded as `fatal` and
   stops the round. A 400 after a turn is the run's own `agent_error`.
-- **Infra:** a spawn or setup failure, a 5xx before any turn, or an adapter's
+- **Infra:** a spawn or setup failure (a missing agent command, or bwrap
+  failing before the agent starts), a 5xx before any turn, or an adapter's
   `endedOnError` before any turn (any status, or none), is retried up to 3
   times, then recorded as `infra_error`. `endedOnError` after a turn is
   `agent_error`, even when the agent exited 0.
@@ -109,8 +158,8 @@ later. `runs/<run-id>/` then holds `stdout.jsonl`, `stderr.txt` and
   `taintPaths` entry (`ls ../../..`, `find /`), unless it is inside the
   run's own directory. Only commands and paths are scanned, never file
   contents. The scan is lexical: a path built from `$VAR`, `$(...)`, globs
-  or a script the agent wrote is not resolved, so tainting is detection,
-  not a sandbox.
+  or a script the agent wrote is not resolved, so tainting is detection
+  only; the sandbox is what keeps those paths out of reach.
 
 ## Secrets
 
@@ -124,6 +173,10 @@ fresh for each run and never written. It passes the token to `claude -p` as
 `CLAUDE_CODE_OAUTH_TOKEN` and lists it in its spec's `secrets`, so the call
 loop redacts it from `stdout.jsonl`, `stderr.txt` and `result.json` like the
 env file's values.
+
+Both files are read by the harness, outside the sandbox. Inside it, neither
+exists: an agent holds only the one access token (or key) in its own
+environment, never the refresh token or the other agent's key.
 
 ## Agents
 

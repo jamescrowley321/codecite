@@ -339,6 +339,7 @@ codecite earns its place only if agents using it do no worse than agents without
 - **Arms:** the same agent, model and prompt, once with the agent's normal tools and once with the `codecite` CLI added. Baseline with web tools and codecite's MCP tools come as further arms. Many runs per task per arm (20 by default).
 - **Agents:** Claude Code and pi over OpenRouter to start; adding an agent is one adapter.
 - **Measures:** pass rate, total tokens, cost, tool calls, wall time, and citation accuracy where a task cites specs (a sampled review of whether each cited span supports what the agent claimed).
+- **Isolation:** every agent runs inside a bubblewrap sandbox: the host read-only, the owner's home, `/tmp`, the evals state dir, the codecite checkouts and the round's own records hidden, and only the run's own directories, the identity-model export, the agent's install and the task's toolchain bound back in. The network is shared, for the model provider. No agent can read the owner's credentials, the hidden tests or another run, because an agent that reads a secret has already sent it to its provider. Scanning transcripts for fetched code and hidden paths stays as a second layer; detection alone, the harness design's first choice, can't undo a leak.
 
 **Retrieval benchmark**
 

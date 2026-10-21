@@ -1,16 +1,19 @@
 // The call phase: run every planned run through its agent adapter, serially
 // in seq order, and record each result. Stops on a fatal provider error or
 // rejected run, on runaway failure (circuit breaker), and refuses to start
-// when the OpenRouter estimate exceeds the key's remaining limit.
+// when the OpenRouter estimate exceeds the key's remaining limit. Every agent
+// runs inside the bubblewrap sandbox (sandbox.mjs); there is no unsandboxed
+// fallback.
 
 import { spawn } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { accessSync, constants, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { emptyAgentResult, loadAdapter as defaultLoadAdapter } from './agent.mjs';
 import { CircuitBreaker, classify } from './guards.mjs';
 import { estimateUsd, keyRemainingUsd as orKeyRemaining, modelPrices as orModelPrices } from './openrouter.mjs';
 import { expandRuns, renderPrompt } from './plan.mjs';
+import { descendants, findBwrap, probeBwrap, sandboxArgs } from './sandbox.mjs';
 import { requireSecret } from './secrets.mjs';
 import { taintHits } from './taint.mjs';
 import { prepareRun } from './workspace.mjs';
@@ -70,10 +73,11 @@ function resetDir(dir) {
 }
 
 /**
- * Spawn the agent in its own process group. On timeout, or when
- * `earlyReject(line)` returns a reason for a stdout line, the group gets
- * SIGTERM, then SIGKILL `killGraceMs` later. Wall time runs from spawn to
- * exit. Strays left in the group are killed when the agent exits.
+ * Spawn the sandboxed agent (bwrap) in its own process group. On timeout, or
+ * when `earlyReject(line)` returns a reason for a stdout line, every process
+ * inside the sandbox gets SIGTERM, then bwrap's group SIGKILL `killGraceMs`
+ * later; killing bwrap ends its pid namespace, which kills everything left
+ * inside. Wall time runs from spawn to exit.
  */
 function spawnAgent({ cmd, args = [], env = {}, cwd, input }, { timeoutMs, killGraceMs, earlyReject }) {
   return new Promise((resolve) => {
@@ -104,15 +108,32 @@ function spawnAgent({ cmd, args = [], env = {}, cwd, input }, { timeoutMs, killG
         spawnError,
       });
     };
-    const killGroup = (sig) => {
+    const signal = (pid, sig) => {
       try {
-        if (child?.pid) process.kill(-child.pid, sig);
+        process.kill(pid, sig);
       } catch {
         // already gone
       }
     };
+    // SIGKILL: bwrap's group and everything under it. Killing bwrap ends its
+    // pid namespace, so nothing inside survives.
+    const killGroup = (sig) => {
+      if (!child?.pid) return;
+      for (const pid of descendants(child.pid)) signal(pid, sig);
+      signal(-child.pid, sig);
+    };
+    // SIGTERM goes to the agent's processes only, not to bwrap: bwrap dies
+    // on it at once and takes the namespace with it, so the agent would never
+    // get its grace. The agent has its own session (--new-session), out of
+    // bwrap's group, so it is found by walking bwrap's descendants.
+    const terminate = () => {
+      if (!child?.pid) return;
+      const inside = descendants(child.pid).filter((pid) => !isBwrap(pid));
+      if (inside.length === 0) signal(-child.pid, 'SIGTERM');
+      for (const pid of inside) signal(pid, 'SIGTERM');
+    };
     const stop = () => {
-      killGroup('SIGTERM');
+      terminate();
       killTimer = setTimeout(() => killGroup('SIGKILL'), killGraceMs);
     };
     const timer = setTimeout(() => {
@@ -174,7 +195,7 @@ function spawnAgent({ cmd, args = [], env = {}, cwd, input }, { timeoutMs, killG
  * is everything to redact from this run's output; writes stdout/stderr.
  */
 async function attemptRun(run, round, adapter, opts) {
-  const { secrets, timeoutMs, killGraceMs, basePath } = opts;
+  const { secrets, timeoutMs, killGraceMs, basePath, bwrap, sandbox } = opts;
   const { plan } = round;
   const out = join(round.dir, 'runs', run.id);
   await resetDir(out);
@@ -194,7 +215,7 @@ async function attemptRun(run, round, adapter, opts) {
   const spec = adapter.command(run, dirs, { prompt, secrets, plan, round });
   const hidden = runSecrets(secrets, spec);
   const earlyReject = typeof adapter.earlyReject === 'function' ? (line) => adapter.earlyReject(line) : null;
-  const proc = await spawnAgent(spec, { timeoutMs, killGraceMs, earlyReject });
+  const proc = await spawnSandboxed(spec, dirs, round, { bwrap, sandbox, timeoutMs, killGraceMs, earlyReject });
   const stdout = redact(proc.stdout, hidden);
   const stderr = redact(proc.stderr, hidden);
   writeFileSync(join(out, 'stdout.jsonl'), stdout);
@@ -245,6 +266,63 @@ async function attemptRun(run, round, adapter, opts) {
   };
 }
 
+const isBwrap = (pid) => {
+  try {
+    return readFileSync(`/proc/${pid}/comm`, 'utf8').trim() === 'bwrap';
+  } catch {
+    return false;
+  }
+};
+
+const isDir = (p) => {
+  try {
+    return statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * The sandbox a round's run gets: sandboxArgs plus, hidden, the round dir and
+ * every directory in its taintPaths (the real repos, this checkout); bound
+ * read-only, the round's export; and the task's setup command (its toolchain,
+ * e.g. `uv`) bound in like the agent's own install. `sandbox` ({ro, rw}) adds
+ * binds, for tests.
+ */
+export function roundSandbox(spec, dirs, round, { bwrap, sandbox = {} }) {
+  return sandboxArgs(spec, dirs, {
+    bwrap,
+    hide: [round.dir, ...(round.taintPaths ?? []).filter(isDir)],
+    ro: [round.export, ...(sandbox.ro ?? [])].filter(Boolean),
+    rw: sandbox.rw ?? [],
+    tools: round.plan.taskDef.setup?.slice(0, 1) ?? [],
+  });
+}
+
+/**
+ * Run `spec` inside roundSandbox. A missing command, or bwrap failing before
+ * the agent starts, is a spawn error.
+ */
+async function spawnSandboxed(spec, dirs, round, { bwrap, sandbox = {}, ...run }) {
+  const failed = (spawnError) => ({ stdout: '', stderr: '', wallMs: 0, exitCode: null, signal: null, timedOut: false, earlyReject: null, spawnError });
+  try {
+    accessSync(spec.cmd, constants.X_OK);
+  } catch (e) {
+    return failed(`${e.code ?? 'error'}: ${spec.cmd} is not an executable file`);
+  }
+  let sb;
+  try {
+    sb = roundSandbox(spec, dirs, round, { bwrap, sandbox });
+  } catch (e) {
+    return failed(`sandbox: ${e.message}`);
+  }
+  const proc = await spawnAgent({ cmd: sb.cmd, args: sb.args, env: sb.env, cwd: spec.cwd ?? dirs.project, input: spec.input }, run);
+  // bwrap's own errors (a bind it couldn't make) come before any agent output.
+  const bwrapError = /^bwrap: .*/.exec(proc.stderr)?.[0];
+  if (!proc.spawnError && proc.exitCode !== 0 && proc.stdout === '' && bwrapError) proc.spawnError = bwrapError;
+  return proc;
+}
+
 function strip({ transcript, ...rest }) {
   return rest;
 }
@@ -271,7 +349,8 @@ async function checkSpend(plan, runs, { secrets, keyRemainingUsd, modelPrices, l
  * @param {object} deps  `secrets` (readSecrets()) is required; the rest default
  *   to the real thing: loadAdapter, keyRemainingUsd(key), modelPrices(),
  *   log(line), timeoutMs (plan.timeoutSec), killGraceMs (10 s), maxAttempts
- *   (3), basePath (PATH for prepareRun), retryFatal (false).
+ *   (3), basePath (PATH for prepareRun), retryFatal (false), searchPath (the
+ *   PATH bwrap is looked up on), sandbox ({ro, rw}: extra binds, for tests).
  * @returns {Promise<{ran: number, skipped: number, stopped: null|"fatal"|"breaker", reason: string|null}>}
  */
 export async function callRound(roundDir, deps = {}) {
@@ -285,9 +364,15 @@ export async function callRound(roundDir, deps = {}) {
     maxAttempts = MAX_ATTEMPTS,
     basePath,
     retryFatal = false,
+    searchPath = process.env.PATH,
+    sandbox,
   } = deps;
   if (!secrets) throw new Error('call: secrets are required');
   const round = loadRound(roundDir);
+  const bwrap = findBwrap(searchPath);
+  if (!bwrap) throw new Error('call: bwrap not found on PATH; every agent runs in a bubblewrap sandbox, so install bubblewrap (apt install bubblewrap)');
+  const probe = probeBwrap(bwrap);
+  if (probe) throw new Error(`call: bwrap probe failed, so agents can't be sandboxed: ${probe}`);
   const { plan } = round;
   const timeoutMs = deps.timeoutMs ?? plan.timeoutSec * 1000;
 
@@ -314,7 +399,7 @@ export async function callRound(roundDir, deps = {}) {
     let outcome;
     for (;;) {
       attempts++;
-      outcome = await attemptRun(run, round, adapters.get(run.agent), { secrets, timeoutMs, killGraceMs, basePath });
+      outcome = await attemptRun(run, round, adapters.get(run.agent), { secrets, timeoutMs, killGraceMs, basePath, bwrap, sandbox });
       breaker.record(outcome.result.status === 'ok');
       if (outcome.kind !== 'infra' || attempts >= maxAttempts || breaker.tripped) break;
     }
