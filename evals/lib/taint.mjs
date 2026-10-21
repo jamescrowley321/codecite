@@ -66,6 +66,7 @@ export function simpleCommands(cmd) {
   const out = [];
   let words = [];
   let word = null;
+  let inBacktick = false;
   const endWord = () => {
     if (word !== null) words.push(word);
     word = null;
@@ -100,6 +101,12 @@ export function simpleCommands(cmd) {
       // A group's `{` or `}` stands alone; `{}` (xargs, find) is a word.
       endCmd();
     } else if ('\n;|&()`'.includes(c) || (c === '$' && cmd[i + 1] === '(')) {
+      // An opening `$(` or backtick leaves a `$(` marker in the outer word,
+      // so `curl $(cat url.txt)` keeps a target it can't read (and taints),
+      // while `localhost:8000/$(...)` still reads as loopback.
+      const opens = (c === '$') || (c === '`' && !inBacktick);
+      if (c === '`') inBacktick = !inBacktick;
+      if (opens) word = `${word ?? ''}$(`;
       endCmd();
       if (c === '$') i++;
       if ((c === '|' || c === '&') && cmd[i + 1] === c) i++;
@@ -118,7 +125,7 @@ export function simpleCommands(cmd) {
 }
 
 // Shell words that start a command after them.
-const KEYWORDS = new Set(['if', 'then', 'else', 'elif', 'do', 'while', 'until', '!', 'time']);
+const KEYWORDS = new Set(['if', 'then', 'else', 'elif', 'do', 'while', 'until', '!']);
 // Commands that run the next word as a command, with their options that take a value.
 const WRAPPERS = {
   sudo: new Set(['-u', '--user', '-g', '--group', '-U', '--other-user', '-C', '--close-from', '-h', '--host', '-p', '--prompt', '-r', '--role', '-t', '--type', '-T', '--command-timeout', '-D', '--chdir']),
@@ -126,7 +133,7 @@ const WRAPPERS = {
   timeout: new Set(['-s', '--signal', '-k', '--kill-after']),
   command: new Set(),
   nohup: new Set(),
-  time: new Set(['-f', '--format', '-o', '--output']),
+  time: new Set(['-f', '--format', '-o', '--output']), // -p, -v are flags
   nice: new Set(['-n', '--adjustment']),
   stdbuf: new Set(['-i', '--input', '-o', '--output', '-e', '--error']),
   exec: new Set(['-a']),
@@ -138,6 +145,15 @@ const VALUED = {
   curl: new Set(['-d', '--data', '--data-raw', '--data-binary', '--data-urlencode', '--data-ascii', '--json', '-H', '--header', '-F', '--form', '--form-string', '-u', '--user', '-A', '--user-agent', '-e', '--referer', '-X', '--request', '-o', '--output', '-b', '--cookie', '-c', '--cookie-jar', '-K', '--config', '-m', '--max-time', '--connect-timeout', '-w', '--write-out', '-T', '--upload-file', '-D', '--dump-header', '--retry', '--retry-delay', '-x', '--proxy', '-r', '--range', '-E', '--cert', '--cacert', '--key', '--oauth2-bearer', '--resolve', '--connect-to', '--interface']),
   wget: new Set(['-O', '--output-document', '-o', '--output-file', '-a', '--append-output', '-P', '--directory-prefix', '--header', '-U', '--user-agent', '-t', '--tries', '-T', '--timeout', '--post-data', '--post-file', '--body-data', '--body-file', '--method', '-e', '--execute', '--user', '--password']),
 };
+
+// Long options that take no value: the word after one is a target.
+const BOOLEAN = {
+  curl: new Set(['--compressed', '--insecure', '--location', '--location-trusted', '--silent', '--fail', '--fail-with-body', '--show-error', '--http1.0', '--http1.1', '--http2', '--http2-prior-knowledge', '--http3', '--include', '--head', '--verbose', '--get', '--globoff', '--ipv4', '--ipv6', '--no-buffer', '--no-keepalive', '--remote-name', '--remote-header-name', '--retry-connrefused', '--retry-all-errors', '--progress-bar', '--no-progress-meter', '--tcp-nodelay', '--tlsv1.2', '--tlsv1.3', '--ssl', '--ssl-reqd', '--anyauth', '--basic', '--digest', '--negotiate', '--ntlm', '--raw', '--create-dirs', '--path-as-is', '--disable', '--list-only', '--append', '--junk-session-cookies']),
+  wget: new Set(['--no-check-certificate', '--quiet', '--verbose', '--no-verbose', '--continue', '--timestamping', '--server-response', '--spider', '--recursive', '--no-parent', '--mirror', '--page-requisites', '--convert-links', '--no-clobber', '--inet4-only', '--inet6-only', '--no-cache', '--no-cookies', '--content-disposition', '--trust-server-names', '--auth-no-challenge', '--https-only', '--show-progress', '--no-proxy', '--ignore-length', '--save-headers', '--force-directories', '--no-directories']),
+};
+// What a target looks like: a URL, an IPv4 address, host:port, or a bare
+// host name (a word of letters, digits, dots and dashes).
+const LOOKS_LIKE_TARGET = /:\/\/|^\d{1,3}(\.\d{1,3}){3}|^[\w.-]+:\d+|^[a-z0-9][a-z0-9.-]*(\/|$)/i;
 
 function hostOf(url) {
   try {
@@ -199,10 +215,11 @@ function fetchesOutside(words, depth = 0) {
     }
     if (x.startsWith('-')) {
       if (VALUED[tool].has(x)) j++;
-      else if (x.startsWith('--') && !x.includes('=')) {
-        // An unknown long option may take a value: skip one that isn't a target.
+      else if (x.startsWith('--') && !x.includes('=') && !BOOLEAN[tool].has(x)) {
+        // An unknown long option may take a value: skip the next word only
+        // when it can't be a target (not a URL, IPv4, host:port or name).
         const next = str(j + 1);
-        if (next && !next.startsWith('-') && !/:\/\//.test(next) && !BARE_LOOPBACK.test(next) && !(BARE_HOST.test(next) && !FILE_EXT.test(next.split('/')[0]))) j++;
+        if (next && !next.startsWith('-') && !LOOKS_LIKE_TARGET.test(next)) j++;
       }
       continue;
     }

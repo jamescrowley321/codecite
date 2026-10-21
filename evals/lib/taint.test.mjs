@@ -114,6 +114,15 @@ test('a fetch hidden in substitutions, subshells, groups, keywords, sh -c or wra
     'xargs -I {} curl {} < u.txt',
     'echo "$(curl -s https://example.org/x)"',
     'curl -s --oauth2-bearer tok example.org',
+    'curl $(cat url.txt)',
+    'curl `cat url.txt`',
+    'curl -s $(cat url.txt) -o x',
+    'curl --compressed 93.184.216.34',
+    'curl --insecure 1.2.3.4:8443/x',
+    'wget --no-check-certificate 1.2.3.4/x',
+    'curl -fsSL --retry-connrefused 1.1.1.1',
+    'curl --http1.1 pypi',
+    'time -p curl example.org',
   ];
   for (const c of bad) assert.equal(hits([c]).length, 1, c);
 });
@@ -130,6 +139,9 @@ test('the earlier false positives, 0.0.0.0 and an unknown option on a loopback c
     'echo $(curl -s http://localhost:8000/health)',
     "bash -c 'curl -s http://127.0.0.1:8000/'",
     'timeout -s KILL 5 curl -s http://127.0.0.1:8000/',
+    'curl -s localhost:8000/$(cat id.txt)',
+    'curl --compressed -s http://127.0.0.1:8000/',
+    'time -p curl -s http://localhost:8000/',
   ];
   for (const c of ok) assert.deepEqual(hits([c]), [], c);
 });
