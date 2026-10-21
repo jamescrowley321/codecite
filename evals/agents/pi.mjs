@@ -153,7 +153,8 @@ export default {
     };
     // The prompt goes last, after `--`, so it is a message and never a flag.
     const args = ['-p', ...FLAGS, '--model', run.model, ...ISOLATION, '--', ctx.prompt];
-    return { cmd, args, env, cwd: dirs.project };
+    // auth.json goes once pi exits, so no round dir keeps the key.
+    return { cmd, args, env, cwd: dirs.project, secretFiles: [join(hostAgentDir, 'auth.json')] };
   },
 
   earlyReject(line) {

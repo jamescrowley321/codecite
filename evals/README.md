@@ -288,7 +288,9 @@ read,bash,edit,write,grep,find,ls` (the same in both arms), the prompt last
 after `--`. Its environment is built from nothing: `HOME` is `/work/home`,
 `PI_CODING_AGENT_DIR` is `/work/home/pi`, `PI_TELEMETRY=0` and
 `PI_SKIP_VERSION_CHECK=1`; no key. The agent dir holds only an `auth.json`
-(mode 0600) with the evals key as pi's `openrouter` API-key credential, and a
+(mode 0600) with the evals key as pi's `openrouter` API-key credential
+(deleted once pi exits, via the spec's `secretFiles`, so no round dir keeps
+the key), and a
 `models.json` setting OpenRouter's `X-Title` header to an opaque per-arm
 label (`eval-<8 hex>`, from the round id and arm), so spend shows per arm on
 the OpenRouter dashboard while the agent, which can read the file, can't

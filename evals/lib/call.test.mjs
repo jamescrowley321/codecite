@@ -527,6 +527,23 @@ test('a run whose output held a secret is flagged, and call reports every such r
   assert.deepEqual((await callRound(r.dir, deps({ loadAdapter: async () => quiet }))).secretRuns, [byModel['m/ok'].run.id]);
 });
 
+test("an adapter's secret files are removed once the agent exits", async () => {
+  const base = fakeAdapter('fake');
+  let file;
+  const adapter = {
+    ...base,
+    command(run, dirs, ctx) {
+      file = join(dirs.host.home, 'auth.json');
+      writeFileSync(file, JSON.stringify({ key: ctx.secrets.openrouter }), { mode: 0o600 });
+      return { ...base.command(run, dirs, ctx), secretFiles: [file] };
+    },
+  };
+  const r = makeRound([{ agent: 'fake', model: 'm/ok' }]);
+  await callRound(r.dir, deps({ loadAdapter: async () => adapter }));
+  assert.equal(existsSync(file), false);
+  for (const f of filesUnder(r.dir)) assert.ok(!readFileSync(f, 'utf8').includes(KEY), `${f} holds the key`);
+});
+
 test('the round dir and taint dirs are hidden even outside the always-hidden roots', async () => {
   // Every test round lives under /tmp, hidden anyway; take /tmp off the
   // always-hidden list so only roundSandbox's own hides can cover them.

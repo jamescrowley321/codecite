@@ -266,6 +266,7 @@ async function attemptRun(run, round, adapter, opts) {
   const hidden = runSecrets(secrets, spec);
   const earlyReject = typeof adapter.earlyReject === 'function' ? (line) => adapter.earlyReject(line) : null;
   const proc = await spawnSandboxed(spec, dirs, round, { bwrap, sandbox, timeoutMs, killGraceMs, earlyReject });
+  for (const f of Array.isArray(spec.secretFiles) ? spec.secretFiles : []) rmSync(f, { force: true });
   const stdout = redact(proc.stdout, hidden);
   const stderr = redact(proc.stderr, hidden);
   // The agent's environment holds its credential; a run that printed it

@@ -237,6 +237,7 @@ test('agent dir holds only models.json and a private auth.json with the key', ()
     const auth = JSON.parse(readFileSync(join(agentDir, 'auth.json'), 'utf8'));
     assert.deepEqual(auth, { openrouter: { type: 'api_key', key: 'or-test-123' } });
     assert.equal(statSync(join(agentDir, 'auth.json')).mode & 0o077, 0, 'auth.json is 0600');
+    assert.deepEqual(spec.secretFiles, [join(agentDir, 'auth.json')], 'the harness deletes it after the run');
     const models = JSON.parse(readFileSync(join(agentDir, 'models.json'), 'utf8'));
     const title = models.providers.openrouter.headers['X-Title'];
     // Per arm, so OpenRouter splits spend by arm, but opaque: the agent can
