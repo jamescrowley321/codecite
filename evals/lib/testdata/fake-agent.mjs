@@ -81,7 +81,8 @@ switch (mode) {
     result({ providerStatus: 200, turns: 1, tokens: null }, 0);
     break;
   case 'taint':
-    result({ providerStatus: 200, turns: 3, reads: ['app/main.py'], shell: ['cat ../../../plan.json'] }, 0);
+    // The round's host path (argv[3]): hidden in the sandbox, but the attempt taints.
+    result({ providerStatus: 200, turns: 3, reads: ['app/main.py'], shell: [`cat ${process.argv[3]}/plan.json`] }, 0);
     break;
   default:
     process.stderr.write(`fake-agent: unknown mode ${mode}\n`);

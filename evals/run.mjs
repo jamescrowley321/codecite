@@ -92,6 +92,11 @@ async function call(argv) {
   secrets = readSecrets();
   const summary = await callRound(join(roundsDir(), values.round), { secrets, retryFatal: values['retry-fatal'] });
   console.log(`ran ${summary.ran}, skipped ${summary.skipped}`);
+  if (summary.secretRuns.length > 0) {
+    console.error(
+      `WARNING: ${summary.secretRuns.length} run(s) printed a secret, which went to the model provider (redacted on disk): ${summary.secretRuns.join(', ')}. Rotate the OpenRouter key (OPENROUTER_EVAL_API_KEY) and log in to Claude Code again.`,
+    );
+  }
   if (summary.stopped) {
     console.error(redact(`round stopped (${summary.stopped}): ${summary.reason}`, secrets));
     process.exit(1);

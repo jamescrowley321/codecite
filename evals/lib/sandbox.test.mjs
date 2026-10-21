@@ -191,7 +191,11 @@ test('the sandbox args carry the isolation flags and set no unshared network', (
   }
   assert.equal(sb.args.includes('--unshare-net'), false);
   assert.equal(sb.args.includes('--unshare-all'), false);
-  assert.deepEqual(sb.args.slice(0, 3), ['--ro-bind', '/', '/']);
+  // The host's / one entry at a time (so mount points under /work can be
+  // made), never one bind of /, and / read-only again at the end.
+  assert.ok(!sb.args.join('\0').includes('--ro-bind\0/\0/\0'), 'no bind of / itself');
+  assert.ok(sb.args.join('\0').includes('--ro-bind\0/usr\0/usr'));
+  assert.ok(sb.args.join('\0').includes('--remount-ro\0/\0'));
   const i = sb.args.indexOf('--chdir');
   assert.equal(sb.args[i + 1], dirs.project);
   // The command and its args come last, after `--`.

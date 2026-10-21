@@ -8,17 +8,19 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadRound, roundSandbox } from './call.mjs';
 import { expandRuns } from './plan.mjs';
-import { findBwrap, findOnPath, probeBwrap } from './sandbox.mjs';
+import { findBwrap, findOnPath, IN_SANDBOX, probeBwrap } from './sandbox.mjs';
 import { cleanPath } from './workspace.mjs';
 
 /** Run statuses whose project is scored (and that count toward a verdict). */
 export const SCORED = new Set(['ok', 'timeout', 'agent_error']);
 export const SCORE_TIMEOUT_MS = 600_000;
 
-/** The task's score command with `{hidden}` set to its hidden/ dir. */
-export function scoreCommand(task) {
+/**
+ * The task's score command with `{hidden}` set to where its hidden/ dir is
+ * bound in the scoring sandbox (default IN_SANDBOX.hidden).
+ */
+export function scoreCommand(task, hidden = IN_SANDBOX.hidden) {
   if (!Array.isArray(task.score) || task.score.length === 0) throw new Error(`score: task ${task.id ?? task.dir} has no score command`);
-  const hidden = resolve(task.dir, task.hidden);
   return task.score.map((a) => a.replaceAll('{hidden}', hidden));
 }
 
@@ -173,11 +175,15 @@ export async function scoreRun(runDir, task, idpUrl, opts = {}) {
   const argv = scoreCommand(task);
   const warm = Array.isArray(task.scoreWarm) && task.scoreWarm.length > 0 ? task.scoreWarm : null;
 
+  // Host paths, and where the scoring sandbox sees them: the project and
+  // export at the agent's own in-sandbox paths (its venv and lock name them),
+  // a fresh score home, hidden/ and the marker plugin read-only.
   const home = join(runDir, 'score');
   rmSync(home, { recursive: true, force: true });
   mkdirSync(home, { recursive: true });
   const report = join(home, 'report.xml');
   const started = join(home, 'started');
+  const at = IN_SANDBOX;
   const logs = [];
   const record = (fields) => {
     const { passed, failures, unscored } = fields;
@@ -190,16 +196,16 @@ export async function scoreRun(runDir, task, idpUrl, opts = {}) {
   const path = cleanPath(basePath);
   const env = {
     PATH: path,
-    HOME: home,
-    XDG_CACHE_HOME: join(home, '.cache'),
-    XDG_CONFIG_HOME: join(home, '.config'),
+    HOME: at.score,
+    XDG_CACHE_HOME: join(at.score, '.cache'),
+    XDG_CONFIG_HOME: join(at.score, '.config'),
     LANG: 'C.UTF-8',
     TEST_IDP: idpUrl,
     PYTHONDONTWRITEBYTECODE: '1',
     UV_PYTHON_DOWNLOADS: 'never',
     UV_NO_PROGRESS: '1',
   };
-  const dirs = { project, home, xdg: null, bin: null };
+  const dirs = { project: at.project, home: at.score, xdg: null, bin: null, host: { project, home, xdg: null, bin: null } };
   // The agent's sandbox for this task: the same hides, export and tool binds.
   const scoringRound = { ...round, plan: { ...round.plan, taskDef: task } };
   const sandboxed = (cmdArgv, extraEnv, cwd) => {
@@ -208,9 +214,10 @@ export async function scoreRun(runDir, task, idpUrl, opts = {}) {
     const spec = { cmd, args: cmdArgv.slice(1), env: { ...env, ...extraEnv }, cwd };
     return roundSandbox(spec, dirs, scoringRound, {
       bwrap,
-      sandbox: { ro: [hidden, PLUGIN_DIR, ...(sandbox.ro ?? [])], rw: sandbox.rw ?? [], alwaysHidden: sandbox.alwaysHidden },
+      sandbox: { ro: [[hidden, at.hidden], [PLUGIN_DIR, at.plugin], ...(sandbox.ro ?? [])], rw: sandbox.rw ?? [], alwaysHidden: sandbox.alwaysHidden },
     });
   };
+  // `cwd` is the host dir bwrap starts in; the sandbox's own is the spec's.
   const run = async (sb, cwd, label) => {
     const proc = await spawnScore(sb, cwd, timeoutMs);
     logs.push(`== ${label}\n`, proc.output, proc.output.endsWith('\n') || !proc.output ? '' : '\n');
@@ -228,14 +235,14 @@ export async function scoreRun(runDir, task, idpUrl, opts = {}) {
   // outside the agent's project, so PyPI and the network are known good.
   if (warm) {
     const py = venvBasePython(project);
-    const w = await run(sandboxed(warm, py ? { UV_PYTHON: py } : {}, home), home, 'warm');
+    const w = await run(sandboxed(warm, py ? { UV_PYTHON: py } : {}, at.score), home, 'warm');
     if (w.timedOut) return unscoredRecord(`warm step timed out after ${Math.round(timeoutMs / 1000)} s`, { warmExitCode: w.exitCode });
     if (w.exitCode !== 0) return unscoredRecord(`warm step failed (exit ${w.exitCode ?? w.signal})${tail(w.output)}`, { warmExitCode: w.exitCode });
   }
 
   // Agent stage: the score command in the agent's project.
   const proc = await run(
-    sandboxed(argv, { PYTEST_ADDOPTS: `-p ${PLUGIN} --junitxml=${report}`, PYTHONPATH: PLUGIN_DIR, CODECITE_SCORE_STARTED: started }, project),
+    sandboxed(argv, { PYTEST_ADDOPTS: `-p ${PLUGIN} --junitxml=${join(at.score, 'report.xml')}`, PYTHONPATH: at.plugin, CODECITE_SCORE_STARTED: join(at.score, 'started') }, at.project),
     project,
     'score',
   );

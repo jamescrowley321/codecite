@@ -9,14 +9,14 @@ import { startIdp } from './idp.mjs';
 import { loadTask } from './plan.mjs';
 import { findBwrap, findOnPath } from './sandbox.mjs';
 import { parseJunit, scoreCommand, scoreRound, scoreRun } from './score.mjs';
-import { cleanPath, REPO_ROOT } from './workspace.mjs';
+import { cleanPath, prepareRun, REPO_ROOT } from './workspace.mjs';
 
 const BWRAP = findBwrap(process.env.PATH);
 const noBwrap = BWRAP ? false : 'bwrap is not on PATH; install bubblewrap to run the scoring tests';
 
-test('scoreCommand substitutes {hidden}', () => {
+test('scoreCommand substitutes {hidden} with its in-sandbox path', () => {
   const task = { dir: '/t', hidden: 'hidden', score: ['uv', 'run', 'pytest', '-q', '{hidden}', '--x={hidden}/a'] };
-  assert.deepEqual(scoreCommand(task), ['uv', 'run', 'pytest', '-q', '/t/hidden', '--x=/t/hidden/a']);
+  assert.deepEqual(scoreCommand(task), ['uv', 'run', 'pytest', '-q', '/work/hidden', '--x=/work/hidden/a']);
   assert.throws(() => scoreCommand({ dir: '/t', hidden: 'hidden' }), /score/);
 });
 
@@ -107,9 +107,10 @@ test("scoring can't read the owner's secrets or other runs, and reads hidden/ re
   // Exit codes only: nothing planted is ever printed.
   const script = [
     'for p in "$@"; do if test -r "$p"; then echo "LEAK $p"; fi; done',
-    `test -r "${join(taskDir, 'hidden', 'test_probe.py')}" && echo HIDDEN-READABLE`,
-    `touch "${join(taskDir, 'hidden', 'x')}" 2>/dev/null && echo HIDDEN-WRITABLE`,
+    'test -r "{hidden}/test_probe.py" && echo HIDDEN-READABLE',
+    'touch "{hidden}/x" 2>/dev/null && echo HIDDEN-WRITABLE',
     'touch made-by-score && echo PROJECT-WRITABLE',
+    'pwd',
     'echo "IDP=$TEST_IDP SENTINEL=${LEAK_SENTINEL:-none}"',
     'exit 3',
   ].join('\n');
@@ -118,7 +119,7 @@ test("scoring can't read the owner's secrets or other runs, and reads hidden/ re
     hidden: 'hidden',
     setup: [],
     scoreWarm: ['/bin/true'],
-    score: ['/bin/sh', '-c', script, 'probe', planted, join(roundDir, 'plan.json'), join(roundDir, 'runs', 'sibling', 'project', 'answer.py'), join(runDir, 'home', 'agent-home.txt'), join(taskDir, 'reference', 'main.py'), join(homedir(), '.config', 'codecite', 'evals.env'), join(homedir(), '.claude', '.credentials.json')],
+    score: ['/bin/sh', '-c', script, 'probe', planted, join(taskDir, 'hidden', 'test_probe.py'), join(roundDir, 'plan.json'), join(roundDir, 'runs', 'sibling', 'project', 'answer.py'), join(runDir, 'home', 'agent-home.txt'), join(taskDir, 'reference', 'main.py'), join(homedir(), '.config', 'codecite', 'evals.env'), join(homedir(), '.claude', '.credentials.json')],
   };
   const round = { dir: roundDir, export: null, taintPaths: [taskDir], plan: { taskDef: task } };
   const idp = await fakeIdp();
@@ -135,6 +136,7 @@ test("scoring can't read the owner's secrets or other runs, and reads hidden/ re
   assert.match(log, /HIDDEN-READABLE/, log);
   assert.doesNotMatch(log, /HIDDEN-WRITABLE/, log);
   assert.match(log, /PROJECT-WRITABLE/, log);
+  assert.match(log, /^\/work\/project$/m, 'scoring runs at the agent\'s in-sandbox project path');
   assert.match(log, new RegExp(`IDP=${idp.url} SENTINEL=none`), log);
   assert.ok(existsSync(join(runDir, 'project', 'made-by-score')));
   // No JUnit report and pytest never started: the run failed.
@@ -394,16 +396,13 @@ test('the reference passes and the starting project fails', { skip: realSkip, ti
   });
   assert.equal(archive.status, 0, archive.stderr);
 
+  // Each project prepared as a run's is: copied, the placeholder set, and
+  // `uv sync` run in the sandbox at the in-sandbox paths scoring uses.
+  const round = { dir: roundDir, export: exportDir, taintPaths: [REPO_ROOT], plan: { arms: [{ name: 'baseline' }], taskDef: task } };
   const prepare = (id, mainPy) => {
-    const runDir = join(roundDir, 'runs', id);
-    const project = join(runDir, 'project');
-    cpSync(join(task.dir, task.project), project, { recursive: true, filter: (s) => !/(^|\/)(\.venv|__pycache__)$/.test(s) });
-    const pyproject = join(project, 'pyproject.toml');
-    writeFileSync(pyproject, readFileSync(pyproject, 'utf8').replaceAll('@IDENTITY_MODEL@', exportDir));
-    if (mainPy) cpSync(mainPy, join(project, 'app', 'main.py'));
-    const sync = spawnSync(UV, ['sync', '--quiet'], { cwd: project, encoding: 'utf8', env: { ...process.env, PATH: cleanPath() } });
-    assert.equal(sync.status, 0, sync.stderr);
-    return runDir;
+    const dirs = prepareRun({ id, arm: 'baseline' }, round, { basePath: process.env.PATH, bwrap: BWRAP });
+    if (mainPy) cpSync(mainPy, join(dirs.host.project, 'app', 'main.py'));
+    return dirs.out;
   };
   const refDir = prepare('reference', join(task.dir, 'reference', 'app', 'main.py'));
   const startDir = prepare('start', null);
@@ -419,7 +418,6 @@ test('the reference passes and the starting project fails', { skip: realSkip, ti
     return;
   }
   try {
-    const round = { dir: roundDir, export: exportDir, taintPaths: [REPO_ROOT], plan: { taskDef: task } };
     const ref = await scoreRun(refDir, task, idp.url, { round, bwrap: BWRAP });
     assert.deepEqual(ref, { passed: true, failures: [] }, readFileSync(join(refDir, 'score.log'), 'utf8').slice(-3000));
     const start = await scoreRun(startDir, task, idp.url, { round, bwrap: BWRAP });

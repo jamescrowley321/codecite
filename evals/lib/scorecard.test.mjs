@@ -319,6 +319,7 @@ test('loadRecords and renderScorecard', () => {
     assert.match(md, /`pi-m_x-codecite-2`: token usage unknown/, 'an unknown-token run is listed as excluded');
     assert.match(md, /## Secrets in transcripts[\s\S]*rotate[\s\S]*`pi-m_x-baseline-3`/, 'runs that echoed a secret are listed with a rotate warning');
     assert.match(md, /95% CI/, 'each measure shows its interval');
+    assert.match(md, /`baseline` = `eval-[0-9a-f]{8}`, `codecite` = `eval-[0-9a-f]{8}`/, 'the X-Title of each arm is mapped back');
     assert.match(md, /pi-m_x-baseline-2/, 'retried runs are listed');
     assert.match(md, /pi-m_x-codecite-3.*infra_error/, 'excluded runs are listed with their status');
     assert.match(md, /pi-m_x-codecite-4`: unscored \(warm step failed \(exit 2\): error: Failed to fetch pytest\), a fatal scoring error after 3 attempts/, 'unscored runs are listed with the reason');

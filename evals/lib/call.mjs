@@ -7,13 +7,13 @@
 
 import { spawn } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
-import { accessSync, constants, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { accessSync, constants, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { emptyAgentResult, loadAdapter as defaultLoadAdapter } from './agent.mjs';
 import { CircuitBreaker, classify } from './guards.mjs';
 import { estimateUsd, keyRemainingUsd as orKeyRemaining, modelPrices as orModelPrices } from './openrouter.mjs';
 import { expandRuns, renderPrompt } from './plan.mjs';
-import { descendants, findBwrap, probeBwrap, sandboxArgs } from './sandbox.mjs';
+import { descendants, findBwrap, IN_SANDBOX, probeBwrap, roundSandbox } from './sandbox.mjs';
 import { requireSecret } from './secrets.mjs';
 import { taintHits } from './taint.mjs';
 import { prepareRun } from './workspace.mjs';
@@ -31,6 +31,8 @@ export const MAX_ATTEMPTS = 3;
 export const BACKOFF_MS = [5_000, 20_000, 60_000];
 export const KILL_GRACE_MS = 10_000;
 export const REDACTED = '[REDACTED]';
+
+export { roundSandbox };
 
 /**
  * ctx.secrets plus the extra values an adapter's spec says it used (a token
@@ -84,6 +86,25 @@ export function redoReason(result) {
   const t = result.usage?.totalTokens;
   if (typeof t !== 'number' || !Number.isFinite(t)) return 'unknown';
   return null;
+}
+
+/**
+ * Every run dir of the round (kept-aside ones too) whose result.json says a
+ * secret was redacted from its output: the agent printed its credential,
+ * which then went to the model provider.
+ */
+export function secretRuns(roundDir) {
+  const runs = join(roundDir, 'runs');
+  if (!existsSync(runs)) return [];
+  return readdirSync(runs)
+    .sort()
+    .filter((d) => {
+      try {
+        return JSON.parse(readFileSync(join(runs, d, 'result.json'), 'utf8')).secretInTranscript === true;
+      } catch {
+        return false;
+      }
+    });
 }
 
 /** Move a run's dir aside as `<id>.<why>-<n>`, n one more than any kept so far. */
@@ -232,14 +253,14 @@ async function attemptRun(run, round, adapter, opts) {
 
   let dirs;
   try {
-    dirs = prepareRun(run, round, { basePath });
+    dirs = prepareRun(run, round, { basePath, bwrap, sandbox });
   } catch (e) {
     mkdirSync(out, { recursive: true });
-    return { kind: 'infra', result: { ...base, error: e.message, ...strip(emptyAgentResult()), tainted: [] }, secrets };
+    return { kind: 'infra', result: { ...base, error: e.message, ...strip(emptyAgentResult()), tainted: [], secretInTranscript: false }, secrets };
   }
 
   const arm = plan.arms.find((a) => a.name === run.arm);
-  const prompt = renderPrompt(plan.taskDef, arm, round);
+  const prompt = renderPrompt(plan.taskDef, arm);
   // A throwing adapter (e.g. a missing secret) is a setup error: stop the round.
   const spec = adapter.command(run, dirs, { prompt, secrets, plan, round });
   const hidden = runSecrets(secrets, spec);
@@ -247,6 +268,10 @@ async function attemptRun(run, round, adapter, opts) {
   const proc = await spawnSandboxed(spec, dirs, round, { bwrap, sandbox, timeoutMs, killGraceMs, earlyReject });
   const stdout = redact(proc.stdout, hidden);
   const stderr = redact(proc.stderr, hidden);
+  // The agent's environment holds its credential; a run that printed it
+  // (`env`, `printenv`) sent it to the model provider. Redaction cleans the
+  // files only, so the run is flagged and the key should be rotated.
+  const secretInTranscript = stdout !== proc.stdout || stderr !== proc.stderr;
   writeFileSync(join(out, 'stdout.jsonl'), stdout);
   writeFileSync(join(out, 'stderr.txt'), stderr);
 
@@ -284,13 +309,15 @@ async function attemptRun(run, round, adapter, opts) {
     error ??= `agent exited ${proc.exitCode ?? proc.signal}`;
   }
 
+  // The agent's paths are in-sandbox ones: its cwd is /work/project and
+  // everything under /work is its own.
   const tainted = taintHits(
     { shellCommands: agent.shellCommands ?? [], readPaths: agent.readPaths ?? [] },
-    { taintPaths: round.taintPaths ?? [], ownRunDir: out, cwd: spec.cwd ?? dirs.project },
+    { taintPaths: round.taintPaths ?? [], ownRunDir: IN_SANDBOX.root, cwd: spec.cwd ?? dirs.project },
   );
   return {
     kind,
-    result: { ...base, status, wallMs: proc.wallMs, exitCode: proc.exitCode, signal: proc.signal, error, ...strip(agent), tainted },
+    result: { ...base, status, wallMs: proc.wallMs, exitCode: proc.exitCode, signal: proc.signal, error, ...strip(agent), tainted, secretInTranscript },
     secrets: hidden,
   };
 }
@@ -302,32 +329,6 @@ const isBwrap = (pid) => {
     return false;
   }
 };
-
-const isDir = (p) => {
-  try {
-    return statSync(p).isDirectory();
-  } catch {
-    return false;
-  }
-};
-
-/**
- * The sandbox a round's run gets: sandboxArgs plus, hidden, the round dir and
- * every directory in its taintPaths (the real repos, this checkout); bound
- * read-only, the round's export; and the task's setup command (its toolchain,
- * e.g. `uv`) bound in like the agent's own install. `sandbox` ({ro, rw,
- * alwaysHidden}) adds binds or narrows the default hides, for tests only.
- */
-export function roundSandbox(spec, dirs, round, { bwrap, sandbox = {} }) {
-  return sandboxArgs(spec, dirs, {
-    bwrap,
-    hide: [round.dir, ...(round.taintPaths ?? []).filter(isDir)],
-    ro: [round.export, ...(sandbox.ro ?? [])].filter(Boolean),
-    rw: sandbox.rw ?? [],
-    tools: round.plan.taskDef.setup?.slice(0, 1) ?? [],
-    alwaysHidden: sandbox.alwaysHidden,
-  });
-}
 
 /**
  * Run `spec` inside roundSandbox. A missing command, or bwrap failing before
@@ -346,7 +347,8 @@ async function spawnSandboxed(spec, dirs, round, { bwrap, sandbox = {}, ...run }
   } catch (e) {
     return failed(`sandbox: ${e.message}`);
   }
-  const proc = await spawnAgent({ cmd: sb.cmd, args: sb.args, env: sb.env, cwd: spec.cwd ?? dirs.project, input: spec.input }, run);
+  // bwrap itself starts in the host project dir; --chdir puts the agent at spec.cwd.
+  const proc = await spawnAgent({ cmd: sb.cmd, args: sb.args, env: sb.env, cwd: dirs.host?.project ?? dirs.project, input: spec.input }, run);
   // bwrap's own errors (a bind it couldn't make) come before any agent output.
   const bwrapError = /^bwrap: .*/.exec(proc.stderr)?.[0];
   if (!proc.spawnError && proc.exitCode !== 0 && proc.stdout === '' && bwrapError) proc.spawnError = bwrapError;
@@ -381,7 +383,8 @@ async function checkSpend(plan, runs, { secrets, keyRemainingUsd, modelPrices, l
  *   log(line), timeoutMs (plan.timeoutSec), killGraceMs (10 s), maxAttempts
  *   (3), basePath (PATH for prepareRun), retryFatal (false), searchPath (the
  *   PATH bwrap is looked up on), sandbox ({ro, rw, alwaysHidden}: tests only).
- * @returns {Promise<{ran: number, skipped: number, stopped: null|"fatal"|"breaker", reason: string|null}>}
+ * @returns {Promise<{ran: number, skipped: number, stopped: null|"fatal"|"breaker", reason: string|null, secretRuns: string[]}>}
+ *   `secretRuns`: every run of the round whose output held a secret (see secretRuns()).
  */
 export async function callRound(roundDir, deps = {}) {
   const {
@@ -448,11 +451,12 @@ export async function callRound(roundDir, deps = {}) {
     writeFileSync(join(round.dir, 'runs', run.id, 'result.json'), redact(`${JSON.stringify(result, null, 2)}\n`, outcome.secrets));
     ran++;
     const taint = result.tainted.length ? ` TAINTED(${result.tainted.length})` : '';
-    log(`[${run.seq}/${runs.length}] ${run.id} ${result.status} ${result.wallMs ?? '-'}ms${taint}`);
-    if (outcome.kind === 'fatal') return { ran, skipped, stopped: 'fatal', reason: redact(`${run.id}: ${result.error}`, outcome.secrets) };
+    const leak = result.secretInTranscript ? ' SECRET-IN-OUTPUT' : '';
+    log(`[${run.seq}/${runs.length}] ${run.id} ${result.status} ${result.wallMs ?? '-'}ms${taint}${leak}`);
+    if (outcome.kind === 'fatal') return { ran, skipped, stopped: 'fatal', reason: redact(`${run.id}: ${result.error}`, outcome.secrets), secretRuns: secretRuns(round.dir) };
     if (breaker.tripped) {
-      return { ran, skipped, stopped: 'breaker', reason: `${breaker.failed} of ${breaker.calls} calls failed` };
+      return { ran, skipped, stopped: 'breaker', reason: `${breaker.failed} of ${breaker.calls} calls failed`, secretRuns: secretRuns(round.dir) };
     }
   }
-  return { ran, skipped, stopped: null, reason: null };
+  return { ran, skipped, stopped: null, reason: null, secretRuns: secretRuns(round.dir) };
 }

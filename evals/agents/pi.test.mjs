@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import pi, { TOOLS, configLeak } from './pi.mjs';
+import { armLabel } from '../lib/plan.mjs';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 const STREAM = fixture('pi-stream.jsonl');
@@ -35,14 +36,16 @@ function fakeDirs({ codecite = false } = {}) {
     writeFileSync(join(bin, 'codecite'), '#!/bin/sh\n');
     chmodSync(join(bin, 'codecite'), 0o755);
   }
-  const dirs = { out: root, project: join(root, 'project'), home: join(root, 'home'), xdg: join(root, 'xdg'), bin };
-  for (const d of [dirs.project, dirs.home, dirs.xdg]) mkdirSync(d);
-  dirs.path = bin ? [bin, sys].join(delimiter) : sys;
+  // The agent's view (neutral in-sandbox paths) and the host dirs behind it.
+  const host = { project: join(root, 'project'), home: join(root, 'home'), xdg: join(root, 'xdg'), bin };
+  for (const d of [host.project, host.home, host.xdg]) mkdirSync(d);
+  const dirs = { out: root, project: '/work/project', home: '/work/home', xdg: '/work/xdg', bin: bin ? '/work/bin' : null, host };
+  dirs.path = bin ? ['/work/bin', sys].join(delimiter) : sys;
   return dirs;
 }
 
 const RUN = { id: 'r1', agent: 'pi', model: 'deepseek/deepseek-v4.1-flash', arm: 'baseline', rep: 1, seq: 1 };
-const CTX = { prompt: 'Fix the bug.', secrets: { openrouter: 'or-test-123', claudeOauth: null }, plan: {}, round: {} };
+const CTX = { prompt: 'Fix the bug.', secrets: { openrouter: 'or-test-123', claudeOauth: null }, plan: { roundId: 'r9' }, round: {} };
 
 test('sums usage across assistant messages', () => {
   const r = pi.parse(STREAM, '');
@@ -210,11 +213,12 @@ test('command runs pi with the isolation flags and the same tools in both arms',
   assert.deepEqual(a.args, b.args);
 });
 
-test('env is built from nothing, with the key only in env', () => {
+test('env is built from nothing, and holds no key: pi reads it from auth.json', () => {
   const dirs = fakeDirs();
   const spec = pi.command(RUN, dirs, CTX);
-  assert.equal(spec.env.OPENROUTER_API_KEY, 'or-test-123');
-  assert.equal(spec.env.HOME, dirs.home);
+  assert.equal(spec.env.OPENROUTER_API_KEY, undefined);
+  assert.ok(!Object.values(spec.env).includes('or-test-123'), 'no env value is the key');
+  assert.equal(spec.env.HOME, '/work/home');
   assert.equal(spec.env.PI_CODING_AGENT_DIR, join(dirs.home, 'pi'));
   assert.equal(spec.env.PATH, dirs.path);
   assert.equal(spec.cwd, dirs.project);
@@ -222,17 +226,29 @@ test('env is built from nothing, with the key only in env', () => {
   assert.ok(!spec.args.some((a) => a.includes('or-test-123')));
 });
 
-test('agent dir is empty except models.json', () => {
+test('agent dir holds only models.json and a private auth.json with the key', () => {
+  const titles = [];
   for (const arm of ['baseline', 'codecite']) {
     const dirs = fakeDirs({ codecite: arm === 'codecite' });
     const spec = pi.command({ ...RUN, arm }, dirs, CTX);
-    const agentDir = spec.env.PI_CODING_AGENT_DIR;
-    assert.deepEqual(readdirSync(agentDir), ['models.json']);
+    assert.equal(spec.env.PI_CODING_AGENT_DIR, '/work/home/pi');
+    const agentDir = join(dirs.host.home, 'pi');
+    assert.deepEqual(readdirSync(agentDir).sort(), ['auth.json', 'models.json']);
+    const auth = JSON.parse(readFileSync(join(agentDir, 'auth.json'), 'utf8'));
+    assert.deepEqual(auth, { openrouter: { type: 'api_key', key: 'or-test-123' } });
+    assert.equal(statSync(join(agentDir, 'auth.json')).mode & 0o077, 0, 'auth.json is 0600');
     const models = JSON.parse(readFileSync(join(agentDir, 'models.json'), 'utf8'));
-    assert.equal(models.providers.openrouter.headers['X-Title'], `codecite-evals-${arm}`);
+    const title = models.providers.openrouter.headers['X-Title'];
+    // Per arm, so OpenRouter splits spend by arm, but opaque: the agent can
+    // read models.json, and nothing it sees may name its arm.
+    assert.equal(title, armLabel('r9', arm));
+    assert.match(title, /^eval-[0-9a-f]{8}$/);
+    assert.ok(!/baseline|codecite|r9/.test(JSON.stringify(models)), JSON.stringify(models));
+    titles.push(title);
     assert.deepEqual(Object.keys(models.providers), ['openrouter']);
     assert.ok(!JSON.stringify(models).includes('or-test-123'));
   }
+  assert.notEqual(titles[0], titles[1]);
 });
 
 test("the owner's ~/.pi is never referenced", () => {

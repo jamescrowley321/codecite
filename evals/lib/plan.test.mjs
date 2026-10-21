@@ -73,14 +73,15 @@ test('ids are unique', () => {
   assert.ok(runs.some((r) => r.id === 'pi-google_gemini-4-argon-codecite-1'));
 });
 
-test('renderPrompt: arms identical up to the appended note', () => {
+test('renderPrompt: arms identical up to the appended note, the export at its in-sandbox path', () => {
   const task = { promptText: 'Source at `{identity_model}`.\nDo it.\n' };
-  const round = { export: '/r/identity-model' };
+  // The round's host export path never reaches the prompt: it names the round.
+  const round = { export: '/state/codecite-evals/r1/identity-model' };
   const base = renderPrompt(task, { name: 'baseline' }, round);
   const cc = renderPrompt(task, { name: 'codecite', codecite: true, note: 'Corpus at `{identity_model}`.' }, round);
-  assert.equal(base, 'Source at `/r/identity-model`.\nDo it.\n');
+  assert.equal(base, 'Source at `/work/identity-model`.\nDo it.\n');
   assert.ok(cc.startsWith(base));
-  assert.equal(cc.slice(base.length), '\nCorpus at `/r/identity-model`.\n');
+  assert.equal(cc.slice(base.length), '\nCorpus at `/work/identity-model`.\n');
 });
 
 test('freezePlan writes plan.json under the rounds dir', () => {
@@ -97,6 +98,14 @@ test('freezePlan writes plan.json under the rounds dir', () => {
     assert.equal(saved.identityModelCommit, '9458d60f4f2f20227bddf2594fd7d10cba66ea0a');
     assert.match(saved.taskDef.promptText, /\{identity_model\}/);
     assert.deepEqual(saved, plan);
+    // The task is frozen with the plan: copied into the round, which runs
+    // and scoring read from, never the live checkout.
+    const frozen = join(dir, 'r1', 'task');
+    assert.equal(saved.taskDef.dir, frozen);
+    for (const f of ['task.json', 'prompt.md', 'project/app/main.py', 'project/pyproject.toml', 'hidden/test_hidden.py', 'hidden/conftest.py', 'reference/app/main.py', 'check.sh']) {
+      assert.ok(existsSync(join(frozen, f)), f);
+    }
+    assert.equal(existsSync(join(frozen, 'project', '.venv')), false);
     assert.throws(() => freezePlan(loadPlan(writeSpec(spec())), { codeciteCommit: 'abc', roundId: 'r1' }), /exists/);
   } finally {
     if (old === undefined) delete process.env.CODECITE_EVALS_DIR;

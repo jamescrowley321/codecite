@@ -144,28 +144,43 @@ test('baseline PATH has no codecite', () => {
   assert.notEqual(which(dirs.path).status, 0);
   const entries = dirs.path.split(delimiter);
   assert.ok(!entries.includes(round.binCodecite));
+  assert.ok(!entries.includes('/work/bin'));
   assert.ok(!entries.includes(join(homedir(), '.cargo', 'bin')));
   assert.ok(!entries.some((e) => e.startsWith(join(REPO_ROOT, 'target'))));
   assert.equal(dirs.bin, null);
-  assert.equal(existsSync(join(dirs.xdg, 'codecite')), false);
+  assert.equal(dirs.host.bin, null);
+  assert.equal(existsSync(join(dirs.host.xdg, 'codecite')), false);
 });
 
-test('codecite PATH finds the round codecite and nothing else differs', () => {
+test('codecite PATH puts the bin dir at its neutral path and nothing else differs', () => {
   const basePath = [fakeDevBin, process.env.PATH].join(delimiter);
   const base = prepareRun({ ...runs.find((r) => r.arm === 'baseline'), id: 'b-path' }, round, { basePath });
   const cc = prepareRun({ ...runs.find((r) => r.arm === 'codecite'), id: 'c-path' }, round, { basePath });
-  assert.equal(which(cc.path).stdout.trim(), join(round.binCodecite, 'codecite'));
-  assert.equal(cc.path, [round.binCodecite, base.path].join(delimiter));
-  assert.ok(existsSync(join(cc.xdg, 'codecite', 'eval.db')));
+  assert.equal(cc.bin, '/work/bin');
+  assert.equal(cc.host.bin, round.binCodecite);
+  assert.equal(cc.path, ['/work/bin', base.path].join(delimiter));
+  assert.ok(existsSync(join(cc.host.xdg, 'codecite', 'eval.db')));
+  // The agent's view is the same in both arms but for bin.
+  for (const k of ['project', 'home', 'xdg']) assert.equal(cc[k], base[k], k);
 });
 
-test('placeholder replaced', () => {
+test('placeholder replaced with the export at its in-sandbox path; setup ran there', () => {
   const dirs = prepareRun({ ...runs[0], id: 'placeholder' }, round, { basePath: process.env.PATH });
-  const toml = readFileSync(join(dirs.project, 'pyproject.toml'), 'utf8');
-  assert.equal(toml, `path = "${round.export}/py"\n`);
-  assert.equal(readFileSync(join(dirs.project, 'setup-ran'), 'utf8'), 'ran\n');
-  assert.ok(existsSync(dirs.home));
+  const toml = readFileSync(join(dirs.host.project, 'pyproject.toml'), 'utf8');
+  assert.equal(toml, 'path = "/work/identity-model/py"\n');
+  assert.equal(readFileSync(join(dirs.host.project, 'setup-ran'), 'utf8'), 'ran\n');
+  assert.deepEqual([dirs.project, dirs.home, dirs.xdg], ['/work/project', '/work/home', '/work/xdg']);
+  assert.ok(existsSync(dirs.host.home));
   assert.ok(dirs.out.startsWith(round.dir));
+});
+
+test('setup runs in the sandbox: it sees the neutral paths, not the round', () => {
+  const plan = { ...round.plan, taskDef: { ...round.plan.taskDef, setup: ['sh', '-c', `pwd > where; test -e "${round.dir}/plan.json" && echo LEAK >> where; ls /work/identity-model >> where; true`] } };
+  const dirs = prepareRun({ ...runs[0], id: 'setup-where' }, { ...round, plan }, { basePath: process.env.PATH });
+  const where = readFileSync(join(dirs.host.project, 'where'), 'utf8');
+  assert.match(where, /^\/work\/project\n/);
+  assert.doesNotMatch(where, /LEAK/);
+  assert.match(where, /src/, 'the export is bound for setup');
 });
 
 function walk(dir, base = dir, out = []) {
@@ -198,6 +213,7 @@ test('round records its taint paths', () => {
   assert.deepEqual(round.taintPaths, [
     repo,
     REPO_ROOT,
+    join(round.dir, 'task'),
     join(round.dir, 'plan.json'),
     join(round.dir, 'round.json'),
     join(round.dir, 'corpus.toml'),

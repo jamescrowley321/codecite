@@ -2,16 +2,37 @@
 // except the places secrets, sockets and other runs live, which are hidden
 // under empty tmpfs mounts: /home (and $HOME), /root, /tmp, /var/tmp, /run
 // and the evals state dir, each at its path and its real path. Container
-// daemon sockets elsewhere are covered with /dev/null. Into that, only this run's own dirs are bound back
-// read-write, and the agent's install, the task's tools and the codecite bin
-// dir read-only. The environment is exactly the adapter's (plus PWD, which
-// bwrap's --chdir sets), handed to bwrap as its own env. Network is shared:
-// agents need their provider's API.
+// daemon sockets elsewhere are covered with /dev/null. Into that, only this
+// run's own dirs are bound back read-write, at the neutral IN_SANDBOX paths
+// (/work/project, ...), and the agent's install, the task's tools and the
+// codecite bin dir read-only. The environment is exactly the adapter's (plus
+// PWD, which bwrap's --chdir sets), handed to bwrap as its own env. Network
+// is shared: agents need their provider's API.
 
 import { spawnSync } from 'node:child_process';
-import { accessSync, closeSync, constants, existsSync, lstatSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync } from 'node:fs';
+import { accessSync, closeSync, constants, existsSync, lstatSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+
+/**
+ * Where a run's dirs appear inside the sandbox: fixed, neutral paths, the
+ * same for every arm, run and round, so nothing the agent sees (its cwd,
+ * env, prompt, PATH) names the arm, the run, the round or the evals dir.
+ * `bin` (codecite) is bound only in the codecite arm. `hidden`, `score`
+ * and `plugin` are scoring's; `uvCache` is the run setup's.
+ */
+export const IN_SANDBOX = Object.freeze({
+  root: '/work',
+  project: '/work/project',
+  home: '/work/home',
+  xdg: '/work/xdg',
+  bin: '/work/bin',
+  export: '/work/identity-model',
+  hidden: '/work/hidden',
+  score: '/work/score',
+  plugin: '/work/score-plugin',
+  uvCache: '/work/uv-cache',
+});
 
 /** Hidden in every sandbox, when they exist. */
 // /run whole, not just /run/user: it holds the system bus, systemd's private
@@ -348,18 +369,44 @@ function socketArgs(sockets, hidden) {
 }
 
 /**
+ * The host's `/`, read-only, one top-level entry at a time (each dir bound,
+ * each symlink recreated) instead of one bind of `/`: the sandbox's own root
+ * stays a tmpfs, so bwrap can make mount points that don't exist on the host
+ * (the IN_SANDBOX paths under /work). `/` is remounted read-only after the
+ * binds. /dev and /proc are the sandbox's own; `skip` names entries not to
+ * take from the host.
+ */
+export function rootArgs(skip = [IN_SANDBOX.root.slice(1)]) {
+  const args = [];
+  for (const e of readdirSync('/', { withFileTypes: true })) {
+    if (['dev', 'proc', ...skip].includes(e.name)) continue;
+    const p = `/${e.name}`;
+    if (e.isSymbolicLink()) args.push('--symlink', readlinkSync(p), p);
+    else if (e.isDirectory()) args.push('--ro-bind', p, p);
+    else if (e.isFile()) args.push('--ro-bind', p, p);
+  }
+  return args;
+}
+
+/** A bind spec as [src, dest]: a path is bound at itself. */
+const pair = (b) => (Array.isArray(b) ? b : [b, b]);
+
+/**
  * Wrap an adapter's {cmd, args, env, cwd} in bwrap.
  *
- * @param {object} spec  The adapter's AgentCommand.
- * @param {object} dirs  prepareRun's {out, project, home, xdg, bin}.
+ * @param {object} spec  The adapter's AgentCommand; `cwd` is in-sandbox.
+ * @param {object} dirs  The run's {project, home, xdg, bin} as the agent sees
+ *   them, and in `dirs.host` where they are on the host (prepareRun's
+ *   shape); each host dir is bound at its in-sandbox path. Without
+ *   `dirs.host`, every dir is bound at its own path.
  * @param {object} opts  `bwrap` (its path; required), `home` (the owner's
  *   home), `evalsDir`, `hide` (more dirs to hide), `ro` (more paths to bind
- *   read-only, e.g. the round's export), `rw` (more paths to bind read-write;
- *   tests only), `tools` (command names the task needs, looked up on the
- *   spec's PATH), `daemonSockets` (default DAEMON_SOCKETS), `alwaysHidden`
- *   (default ALWAYS_HIDDEN; tests only).
+ *   read-only, each a path or [hostPath, inSandboxPath], e.g. the round's
+ *   export), `rw` (the same, read-write), `tools` (command names the task
+ *   needs, looked up on the spec's PATH), `daemonSockets` (default
+ *   DAEMON_SOCKETS), `alwaysHidden` (default ALWAYS_HIDDEN; tests only).
  * @returns {{cmd: string, args: string[], env: Record<string, string>}}  Spawn
- *   `cmd args` with exactly `env`.
+ *   `cmd args` with exactly `env`, from the host dir `dirs.host.project`.
  */
 export function sandboxArgs(spec, dirs, opts = {}) {
   const {
@@ -375,6 +422,7 @@ export function sandboxArgs(spec, dirs, opts = {}) {
   } = opts;
   if (!bwrap) throw new Error('sandbox: no bwrap path');
   const env = spec.env ?? {};
+  const host = dirs.host ?? dirs;
   const cwd = spec.cwd ?? dirs.project;
   const hidden = hiddenRoots({ home, evalsDir, hide, alwaysHidden });
 
@@ -383,23 +431,58 @@ export function sandboxArgs(spec, dirs, opts = {}) {
     const p = findOnPath(t, env.PATH);
     if (p) needs.push(...commandNeeds(p, env.PATH));
   }
-  const py = venvPython(dirs.project);
-  if (py) needs.push(py, ...commandNeeds(join(dirs.project, '.venv', 'bin', 'python'), env.PATH));
+  const py = host.project ? venvPython(host.project) : null;
+  if (py) needs.push(py, ...commandNeeds(join(host.project, '.venv', 'bin', 'python'), env.PATH));
 
-  const args = ['--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc'];
+  // Same-path read-only paths go through exposeArgs (which follows their
+  // symlinks); those bound elsewhere are bound as they are.
+  const roPairs = ro.filter(Boolean).map(pair);
+  const roSame = roPairs.filter(([s, d]) => s === d).map(([s]) => s);
+  const roMoved = roPairs.filter(([s, d]) => s !== d);
+
+  const args = [...rootArgs(), '--dev', '/dev', '--proc', '/proc'];
   // A tmpfs on each real path; a symlinked alias is in `hidden` only so the
   // binds below treat paths through it as hidden (bwrap won't mount on a
   // symlink, and the target is covered already).
   for (const h of hidden) if (realOrSelf(h) === h) args.push('--tmpfs', h);
-  args.push(...exposeArgs([...ALWAYS_BOUND, ...needs, ...ro], hidden));
+  args.push(...exposeArgs([...ALWAYS_BOUND, ...needs, ...roSame], hidden));
   args.push(...socketArgs(daemonSockets, hidden));
-  if (dirs.bin) args.push('--ro-bind', dirs.bin, dirs.bin);
-  for (const d of [dirs.project, dirs.home, dirs.xdg, ...rw]) if (d) args.push('--bind', d, d);
-  args.push(...NAMESPACES, '--chdir', cwd, '--', spec.cmd, ...(spec.args ?? []));
+  for (const [s, d] of roMoved) args.push('--ro-bind', s, d);
+  if (host.bin) args.push('--ro-bind', host.bin, dirs.bin ?? host.bin);
+  for (const k of ['project', 'home', 'xdg']) if (host[k]) args.push('--bind', host[k], dirs[k] ?? host[k]);
+  for (const [s, d] of rw.filter(Boolean).map(pair)) args.push('--bind', s, d);
+  args.push('--remount-ro', '/', ...NAMESPACES, '--chdir', cwd, '--', spec.cmd, ...(spec.args ?? []));
   // bwrap gets exactly the adapter's env and passes it on as is. Not
   // --clearenv/--setenv: the values (secrets) would sit in bwrap's argv,
   // which /proc shows every local user.
   return { cmd: bwrap, args, env: Object.fromEntries(Object.entries(env).map(([k, v]) => [k, String(v)])) };
+}
+
+const isDir = (p) => {
+  try {
+    return statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * The sandbox a round's run gets: sandboxArgs plus, hidden, the round dir and
+ * every directory in its taintPaths (the real repos, this checkout); bound
+ * read-only at IN_SANDBOX.export, the round's export; and the task's setup
+ * command (its toolchain, e.g. `uv`) bound in like the agent's own install.
+ * `sandbox` ({ro, rw, alwaysHidden}) adds binds or narrows the default
+ * hides (scoring's hidden tests; tests).
+ */
+export function roundSandbox(spec, dirs, round, { bwrap, sandbox = {} }) {
+  return sandboxArgs(spec, dirs, {
+    bwrap,
+    hide: [round.dir, ...(round.taintPaths ?? []).filter(isDir)],
+    ro: [round.export ? [round.export, IN_SANDBOX.export] : null, ...(sandbox.ro ?? [])].filter(Boolean),
+    rw: sandbox.rw ?? [],
+    tools: round.plan.taskDef.setup?.slice(0, 1) ?? [],
+    alwaysHidden: sandbox.alwaysHidden,
+  });
 }
 
 /**

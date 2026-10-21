@@ -46,8 +46,10 @@ function fakeAdapter(name) {
             join(ctx.round.dir, 'round.json'),
             join(tmp, 'real-repo', 'secret.py'),
             join(ctx.round.dir, 'runs', 'sibling', 'answer.py'),
-            join(dirs.project, 'app', 'main.py'),
+            join(dirs.host.project, 'app', 'main.py'),
             join(ctx.round.dir, 'identity-model', 'lib.py'),
+            join(dirs.project, 'app', 'main.py'),
+            '/work/identity-model/lib.py',
           ].join('\n'),
         },
         cwd: dirs.project,
@@ -505,6 +507,26 @@ test("an adapter's own secrets are redacted like ctx.secrets", async () => {
   for (const f of files) assert.ok(!readFileSync(f, 'utf8').includes(EXTRA), `${f} holds the adapter's token`);
 });
 
+test('a run whose output held a secret is flagged, and call reports every such run', async () => {
+  const base = fakeAdapter('fake');
+  const quiet = {
+    ...base,
+    command(run, dirs, ctx) {
+      const spec = base.command(run, dirs, ctx);
+      const { FAKE_KEY, FAKE_OAUTH, ...env } = spec.env;
+      return run.model === 'm/ok' ? spec : { ...spec, env };
+    },
+  };
+  const r = makeRound([{ agent: 'fake', model: 'm/ok' }, { agent: 'fake', model: 'm/peek' }]);
+  const summary = await callRound(r.dir, deps({ loadAdapter: async () => quiet }));
+  const byModel = Object.fromEntries(results(r.dir).map((x) => [x.run.model, x]));
+  assert.equal(byModel['m/ok'].secretInTranscript, true, 'the fake agent echoes its key');
+  assert.equal(byModel['m/peek'].secretInTranscript, false);
+  assert.deepEqual(summary.secretRuns, [byModel['m/ok'].run.id]);
+  // A resume that runs nothing still reports them.
+  assert.deepEqual((await callRound(r.dir, deps({ loadAdapter: async () => quiet }))).secretRuns, [byModel['m/ok'].run.id]);
+});
+
 test('the round dir and taint dirs are hidden even outside the always-hidden roots', async () => {
   // Every test round lives under /tmp, hidden anyway; take /tmp off the
   // always-hidden list so only roundSandbox's own hides can cover them.
@@ -519,5 +541,6 @@ test('the round dir and taint dirs are hidden even outside the always-hidden roo
   const [res] = results(r.dir);
   assert.equal(res.status, 'ok', res.error);
   const seen = JSON.parse(readFileSync(join(r.dir, 'runs', res.run.id, 'project', 'peek.json'), 'utf8'));
-  assert.deepEqual(seen, [join(r.dir, 'runs', res.run.id, 'project', 'app', 'main.py'), join(r.dir, 'identity-model', 'lib.py')]);
+  // Only the run's own dirs at their neutral paths: no host path of the round.
+  assert.deepEqual(seen, ['/work/project/app/main.py', '/work/identity-model/lib.py']);
 });

@@ -13,6 +13,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadRound } from './call.mjs';
+import { armLabel } from './plan.mjs';
 import { mulberry32 } from './rng.mjs';
 import { SCORED } from './score.mjs';
 
@@ -358,6 +359,10 @@ export function renderScorecard(round) {
     `Task \`${plan.task ?? plan.taskDef?.id}\`; planned runs per agent/model/arm: ${plan.runs}; codecite \`${plan.codeciteCommit ?? UNKNOWN}\`${dirty}; identity-model \`${plan.identityModelCommit ?? UNKNOWN}\`; frozen ${plan.frozenAt ?? UNKNOWN}.`,
     '',
   );
+  if ((plan.agents ?? []).some((a) => a.agent === 'pi')) {
+    const labels = plan.arms.map((a) => `\`${a.name}\` = \`${armLabel(plan.roundId, a.name)}\``).join(', ');
+    out.push(`OpenRouter attribution (pi's X-Title, opaque so the agent can't read its arm from it): ${labels}.`, '');
+  }
   for (const p of pairs) out.push(pairSection(p), '');
 
   out.push('## Runs', '');

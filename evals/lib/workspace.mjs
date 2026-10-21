@@ -4,9 +4,10 @@
 import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
-import { delimiter, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, delimiter, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertOutsideGit } from './plan.mjs';
+import { findBwrap, findOnPath, IN_SANDBOX, roundSandbox } from './sandbox.mjs';
 
 export const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
 const PLACEHOLDER = '@IDENTITY_MODEL@';
@@ -112,11 +113,12 @@ function buildRound(plan, dir, { repo, commit, repoPath, codeciteBin }) {
   rmSync(srcRepo, { recursive: true, force: true });
 
   // Paths a run must not touch (Task 4 flags them): the real repos, this
-  // codecite checkout (the hidden tests), and the round's own records and
-  // other runs.
+  // codecite checkout (the hidden tests), the round's frozen task (hidden
+  // tests, reference), and the round's own records and other runs.
   const taintPaths = [
     ...Object.values(plan.repos).map((p) => resolve(expandHome(p))),
     REPO_ROOT,
+    join(dir, 'task'),
     join(dir, 'plan.json'),
     join(dir, 'round.json'),
     manifest,
@@ -158,49 +160,91 @@ function substitute(dir, value) {
 }
 
 /**
- * Prepare one run's directories under <round>/runs/<run.id>: a fresh project
- * (placeholder substituted, setup run before the clock starts), a clean home,
- * its own XDG_DATA_HOME, and its PATH. Only the codecite arm gets the corpus
- * and bin-codecite. Returns {out, project, home, xdg, bin, path}.
+ * The interpreter `uv` would pick for `project` on the host and the install
+ * it lives in (sys.base_prefix), so a sandboxed `uv sync` can be given both:
+ * the owner's uv-managed Pythons live under the hidden home. Null when
+ * there is none.
  */
-export function prepareRun(runSpec, round, { basePath = process.env.PATH } = {}) {
+function hostPython(uv, project, env) {
+  const find = spawnSync(uv, ['python', 'find'], { cwd: project, encoding: 'utf8', env });
+  const python = find.status === 0 ? find.stdout.trim() : '';
+  if (!python || !isAbsolute(python)) return null;
+  const prefix = spawnSync(python, ['-c', 'import sys; print(sys.base_prefix)'], { encoding: 'utf8', env: { PATH: env.PATH } });
+  const root = prefix.status === 0 ? prefix.stdout.trim() : '';
+  return { python, root: root && isAbsolute(root) ? root : null };
+}
+
+/**
+ * Run the task's setup command (e.g. `uv sync`) in the run's sandbox, at
+ * the same in-sandbox paths the agent gets, so the environment it builds
+ * (the venv's scripts, the path deps on the export) is valid there. A `uv`
+ * setup gets the host's Python bound in, and a per-round uv cache
+ * (<round>/uv-cache) bound only here, never for the agent.
+ */
+function runSetup(task, dirs, round, { shared, bwrap, sandbox = {} }) {
+  const cmd = findOnPath(task.setup[0], shared);
+  if (!cmd) throw new Error(`setup: \`${task.setup[0]}\` not found on PATH (${shared})`);
+  const env = { PATH: shared, HOME: IN_SANDBOX.home, LANG: 'C.UTF-8' };
+  const ro = [...(sandbox.ro ?? [])];
+  const rw = [...(sandbox.rw ?? [])];
+  if (basename(cmd) === 'uv') {
+    const cache = join(round.dir, 'uv-cache');
+    mkdirSync(cache, { recursive: true });
+    rw.push([cache, IN_SANDBOX.uvCache]);
+    Object.assign(env, { UV_CACHE_DIR: IN_SANDBOX.uvCache, UV_LINK_MODE: 'copy', UV_PYTHON_DOWNLOADS: 'never', UV_NO_PROGRESS: '1' });
+    const py = hostPython(cmd, dirs.host.project, { ...process.env, PATH: shared });
+    if (py) {
+      env.UV_PYTHON = py.python;
+      ro.push(py.python, ...(py.root ? [py.root] : []));
+    }
+  }
+  const spec = { cmd, args: task.setup.slice(1), env, cwd: dirs.project };
+  const sb = roundSandbox(spec, dirs, round, { bwrap, sandbox: { ...sandbox, ro, rw } });
+  return spawnSync(sb.cmd, sb.args, { cwd: dirs.host.project, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: sb.env });
+}
+
+/**
+ * Prepare one run's directories under <round>/runs/<run.id>: a fresh project
+ * (placeholder set to the export's in-sandbox path, setup run in the
+ * sandbox before the clock starts), a clean home, its own XDG_DATA_HOME,
+ * and its PATH. Only the codecite arm gets the corpus and bin-codecite.
+ *
+ * Returns the dirs as the agent sees them, at the neutral IN_SANDBOX paths
+ * (the same for every arm and run): {out, project, home, xdg, bin, path},
+ * plus `host`: {project, home, xdg, bin} where they are on the host. `bin`
+ * is null in the baseline arm; PATH differs between the arms only by it.
+ * `bwrap` defaults to the one on PATH; `sandbox` ({ro, rw, alwaysHidden})
+ * is for tests.
+ */
+export function prepareRun(runSpec, round, { basePath = process.env.PATH, bwrap = findBwrap(process.env.PATH), sandbox } = {}) {
   const arm = round.plan.arms.find((a) => a.name === runSpec.arm);
   if (!arm) throw new Error(`run ${runSpec.id}: unknown arm "${runSpec.arm}"`);
   const task = round.plan.taskDef;
   const out = join(round.dir, 'runs', runSpec.id);
   if (existsSync(out)) throw new Error(`run ${runSpec.id}: ${out} already exists`);
 
-  const project = join(out, 'project');
-  const home = join(out, 'home');
-  const xdg = join(out, 'xdg');
-  cpSync(join(task.dir, task.project), project, {
+  const host = { project: join(out, 'project'), home: join(out, 'home'), xdg: join(out, 'xdg'), bin: arm.codecite ? round.binCodecite : null };
+  cpSync(join(task.dir, task.project), host.project, {
     recursive: true,
     filter: (src) => !/(^|\/)(\.venv|__pycache__)$/.test(src),
   });
-  substitute(project, round.export);
-  mkdirSync(home, { recursive: true });
+  substitute(host.project, IN_SANDBOX.export);
+  mkdirSync(host.home, { recursive: true });
+  if (arm.codecite) cpSync(round.xdg, host.xdg, { recursive: true });
+  else mkdirSync(host.xdg, { recursive: true });
 
   const shared = cleanPath(basePath);
-  let bin = null;
-  if (arm.codecite) {
-    cpSync(round.xdg, xdg, { recursive: true });
-    bin = round.binCodecite;
-  } else {
-    mkdirSync(xdg, { recursive: true });
-  }
+  const bin = arm.codecite ? IN_SANDBOX.bin : null;
   const path = bin ? [bin, shared].filter(Boolean).join(delimiter) : shared;
+  const dirs = { out, project: IN_SANDBOX.project, home: IN_SANDBOX.home, xdg: IN_SANDBOX.xdg, bin, path, host };
 
   if (task.setup.length > 0) {
-    const r = spawnSync(task.setup[0], task.setup.slice(1), {
-      cwd: project,
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
-      env: { ...process.env, PATH: shared },
-    });
+    if (!bwrap) throw new Error(`run ${runSpec.id}: setup runs in the sandbox, and bwrap is not on PATH`);
+    const r = runSetup(task, dirs, round, { shared, bwrap, sandbox });
     writeFileSync(join(out, 'setup.log'), `${r.stdout ?? ''}${r.stderr ?? ''}`);
     if (r.error || r.status !== 0) {
       throw new Error(`run ${runSpec.id}: setup ${task.setup.join(' ')} failed; see ${join(out, 'setup.log')}`);
     }
   }
-  return { out, project, home, xdg, bin, path };
+  return dirs;
 }

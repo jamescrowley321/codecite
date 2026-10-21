@@ -1,12 +1,14 @@
 // Plans: validate a plan spec, freeze it into a round, expand it into runs,
 // and render each arm's prompt.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mulberry32, shuffle } from './rng.mjs';
+import { IN_SANDBOX } from './sandbox.mjs';
 
 export const TASKS_DIR = fileURLToPath(new URL('../tasks/', import.meta.url));
 
@@ -96,13 +98,20 @@ export function loadTask(id, tasksDir = TASKS_DIR) {
   return { ...def, dir, promptText: readFileSync(join(dir, def.prompt), 'utf8') };
 }
 
-/** Freeze a spec into <roundsDir>/<roundId>/plan.json and return the frozen Plan. */
+/**
+ * Freeze a spec into <roundsDir>/<roundId>/plan.json and return the frozen
+ * Plan. The task dir (task.json, prompt, project/, hidden/, reference/, ...)
+ * is copied into <round>/task and taskDef.dir points there, so runs and
+ * scoring never read the live checkout. The round dir is hidden from agents.
+ */
 export function freezePlan(spec, { codeciteCommit, codeciteDirty = false, roundId, tasksDir = TASKS_DIR }) {
   validatePlan(spec);
   if (!isStr(roundId) || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(roundId)) fail('roundId', 'must be [A-Za-z0-9._-]+');
   if (!isStr(codeciteCommit)) fail('codeciteCommit', 'is missing');
-  const taskDef = loadTask(spec.task, tasksDir);
-  if (!spec.repos[taskDef.corpus.repo]) fail('repos', `has no path for "${taskDef.corpus.repo}"`);
+  const live = loadTask(spec.task, tasksDir);
+  if (!spec.repos[live.corpus.repo]) fail('repos', `has no path for "${live.corpus.repo}"`);
+  const dir = join(roundsDir(), roundId);
+  const taskDef = { ...live, dir: join(dir, 'task') };
   const plan = {
     ...spec,
     roundId,
@@ -112,7 +121,6 @@ export function freezePlan(spec, { codeciteCommit, codeciteDirty = false, roundI
     identityModelCommit: taskDef.corpus.commit,
     taskDef,
   };
-  const dir = join(roundsDir(), roundId);
   mkdirSync(dir, { recursive: true });
   try {
     writeFileSync(join(dir, 'plan.json'), `${JSON.stringify(plan, null, 2)}\n`, { flag: 'wx' });
@@ -120,7 +128,17 @@ export function freezePlan(spec, { codeciteCommit, codeciteDirty = false, roundI
     if (e.code === 'EEXIST') throw new Error(`plan: round ${roundId} already exists at ${dir}`);
     throw e;
   }
+  cpSync(live.dir, taskDef.dir, { recursive: true, filter: (src) => !/(^|\/)(\.venv|__pycache__|node_modules|\.pytest_cache)$/.test(src) });
   return plan;
+}
+
+/**
+ * An arm's opaque attribution label (pi's OpenRouter X-Title): stable per
+ * round and arm, so OpenRouter splits spend by arm, but naming neither, since
+ * the agent can read it. The scorecard prints the mapping.
+ */
+export function armLabel(roundId, arm) {
+  return `eval-${createHash('sha256').update(`${roundId}\0${arm}`).digest('hex').slice(0, 8)}`;
 }
 
 /** All runs of a plan, in a seeded shuffled order. */
@@ -136,9 +154,13 @@ export function expandRuns(plan) {
   return shuffle(runs, mulberry32(plan.seed)).map((r, i) => ({ ...r, seq: i + 1 }));
 }
 
-/** The prompt for one arm: the task prompt, plus a blank line and the arm's note. */
-export function renderPrompt(task, arm, round) {
-  const sub = (s) => s.replaceAll('{identity_model}', round.export);
+/**
+ * The prompt for one arm: the task prompt, plus a blank line and the arm's
+ * note. `{identity_model}` is the export's in-sandbox path, the same for
+ * every round (never the round's host path, which names the round).
+ */
+export function renderPrompt(task, arm) {
+  const sub = (s) => s.replaceAll('{identity_model}', IN_SANDBOX.export);
   const base = sub(task.promptText);
   if (!arm.note) return base;
   const note = sub(arm.note);

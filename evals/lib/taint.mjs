@@ -27,6 +27,10 @@ const HIDDEN = [
   ['test_hidden', /test_hidden/],
   ['/reference/', /\/reference(\/|$)/],
   ['codecite-worktrees', /codecite-worktrees/],
+  // The mount table's source column names the host dirs behind /work (the
+  // round, the run, the arm); /proc/mounts and df don't show it.
+  ['mountinfo', /mountinfo/],
+  ['findmnt', /\bfindmnt\b/],
 ];
 
 const isUnder = (p, dir) => {
