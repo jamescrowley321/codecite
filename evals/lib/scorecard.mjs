@@ -1,17 +1,28 @@
 // The no-loss scorecard: per agent/model pair, the codecite arm against the
-// baseline on correctness, tokens and time, and the round's verdict. A loss
-// is codecite's pass rate more than 5 points below baseline's, or its median
-// total tokens or median wall time more than 5% above. Unknown (null) never
-// passes a measure.
+// baseline on correctness, tokens and time, and the round's verdict. Each
+// measure is a difference between the arms: pass rate in points
+// (codecite - baseline), and median total tokens and median wall time as a
+// relative difference (codecite / baseline - 1). A 95% percentile bootstrap
+// interval over the usable runs (each arm resampled on its own, seeded from
+// the plan's seed) judges it: a loss only when even the interval's
+// favourable bound is past the margin, i.e. the pass rate's upper bound is
+// more than 5 points below 0, or the tokens' or time's lower bound more than
+// 5% above. This replaces the spec's plain comparison of the numbers
+// (Ruling R19). Unknown (null) never passes a measure.
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadRound } from './call.mjs';
+import { mulberry32 } from './rng.mjs';
 import { SCORED } from './score.mjs';
 
 export const MARGIN_PCT = 5;
 export const MARGIN_PTS = 5;
-// Float slack, so exactly 5% is not a loss.
+/** Bootstrap resamples per measure. */
+export const RESAMPLES = 10_000;
+/** The interval's coverage. */
+export const CONFIDENCE = 0.95;
+// Float slack, so a bound of exactly 5% is not a loss.
 const EPS = 1e-9;
 
 /**
@@ -28,6 +39,9 @@ const EPS = 1e-9;
  * @property {number|null} costUsd
  * @property {number|null} toolCalls
  * @property {number|null} codeciteCalls
+ * @property {boolean} superseded  a run dir a resume kept aside (`<id>.tainted-N`, `<id>.unknown-N`)
+ * @property {boolean} tokensUnknown  scored-status run whose total tokens are unknown: redone on resume
+ * @property {boolean} secretInTranscript  a secret was redacted from this run's output
  */
 
 const known = (xs) => xs.length > 0 && xs.every((x) => typeof x === 'number' && Number.isFinite(x));
@@ -37,8 +51,48 @@ function quantile(sorted, q) {
   const pos = (sorted.length - 1) * q;
   const lo = Math.floor(pos);
   const hi = Math.ceil(pos);
+  // Equal ends (Infinity included) need no interpolation.
+  if (sorted[lo] === sorted[hi]) return sorted[lo];
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
 }
+
+const medianOf = (xs) => quantile([...xs].sort((a, b) => a - b), 0.5);
+
+/** A seed for one pair's measure: FNV-1a over the parts, mixed with the plan's seed. */
+export function measureSeed(planSeed, ...parts) {
+  let h = 0x811c9dc5 ^ (Number(planSeed) >>> 0);
+  for (const ch of parts.join('|')) {
+    h ^= ch.codePointAt(0);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
+}
+
+/**
+ * A percentile bootstrap interval for `stat(baseline, codecite)`: each arm
+ * resampled with replacement on its own, `resamples` times, from a
+ * mulberry32 stream seeded with `seed`. Returns [lower, upper] at
+ * CONFIDENCE, or null when either arm is empty or holds an unknown.
+ */
+export function bootstrapCi(b, c, stat, { seed, resamples = RESAMPLES } = {}) {
+  if (!known(b) || !known(c)) return null;
+  const rand = mulberry32(seed ?? 0);
+  const sb = new Array(b.length);
+  const sc = new Array(c.length);
+  const out = new Float64Array(resamples);
+  for (let k = 0; k < resamples; k++) {
+    for (let i = 0; i < b.length; i++) sb[i] = b[Math.floor(rand() * b.length)];
+    for (let i = 0; i < c.length; i++) sc[i] = c[Math.floor(rand() * c.length)];
+    out[k] = stat(sb, sc);
+  }
+  out.sort();
+  const tail = (1 - CONFIDENCE) / 2;
+  return [quantile(out, tail), quantile(out, 1 - tail)];
+}
+
+/** Codecite's median relative to baseline's, in percent; 0 vs 0 is 0, anything vs 0 is +Infinity. */
+const relPct = (mb, mc) => (mb === 0 ? (mc === 0 ? 0 : Infinity) : ((mc - mb) * 100) / mb);
+const rateOf = (xs) => (xs.reduce((a, x) => a + x, 0) * 100) / xs.length;
 
 /** The median, or null when `xs` is empty or holds an unknown. */
 export function median(xs) {
@@ -60,30 +114,27 @@ const sum = (xs) => (known(xs) ? xs.reduce((a, b) => a + b, 0) : null);
  * not tainted. infra_error and fatal never count.
  */
 export function usableRuns(records) {
-  return records.filter((r) => SCORED.has(r.status) && typeof r.passed === 'boolean' && !(r.tainted?.length > 0));
+  return records.filter(
+    (r) => SCORED.has(r.status) && typeof r.passed === 'boolean' && !(r.tainted?.length > 0) && !r.superseded && typeof r.totalTokens === 'number' && Number.isFinite(r.totalTokens),
+  );
 }
 
 const passRate = (rs) => (rs.length === 0 ? null : (rs.filter((r) => r.passed).length * 100) / rs.length);
 
-function pctMeasure(field, ub, uc) {
-  const b = median(ub.map((r) => r[field]));
-  const c = median(uc.map((r) => r[field]));
-  let deltaPct = null;
-  let loss = null;
-  if (b != null && c != null) {
-    if (b === 0) {
-      deltaPct = c === 0 ? 0 : null;
-      loss = c > 0;
-    } else {
-      deltaPct = ((c - b) * 100) / b;
-      loss = deltaPct > MARGIN_PCT + EPS;
-    }
-  }
+function pctMeasure(field, ub, uc, seed, resamples) {
+  const xb = ub.map((r) => r[field]);
+  const xc = uc.map((r) => r[field]);
+  const b = median(xb);
+  const c = median(xc);
+  const deltaPct = b != null && c != null ? relPct(b, c) : null;
+  const ci = bootstrapCi(xb, xc, (sb, sc) => relPct(medianOf(sb), medianOf(sc)), { seed, resamples });
+  const loss = ci == null ? null : ci[0] > MARGIN_PCT + EPS;
   const passing = (rs) => median(rs.filter((r) => r.passed).map((r) => r[field]));
   return {
     baseline: b,
     codecite: c,
     deltaPct,
+    ci,
     loss,
     iqrBaseline: iqr(ub.map((r) => r[field])),
     iqrCodecite: iqr(uc.map((r) => r[field])),
@@ -104,18 +155,22 @@ function callRate(rs) {
  * @param {RunRecord[]} baseline
  * @param {RunRecord[]} codecite
  * @param {number} plannedRuns
+ * @param {{seed?: number, resamples?: number}} [opts]  `seed` (default 0) seeds every
+ *   measure's bootstrap (comparePlan derives it from the plan's seed and the pair).
  * @returns {{verdict: "PASS"|"STOP"|"INCOMPLETE", reasons: string[], runs: {baseline: number, codecite: number},
  *   correctness: object, tokens: object, time: object, cost: object, toolCalls: object, codeciteCallRate: object}}
  */
-export function comparePair(baseline, codecite, plannedRuns) {
+export function comparePair(baseline, codecite, plannedRuns, { seed = 0, resamples = RESAMPLES } = {}) {
   const ub = usableRuns(baseline);
   const uc = usableRuns(codecite);
   const rb = passRate(ub);
   const rc = passRate(uc);
   const deltaPts = rb == null || rc == null ? null : rc - rb;
-  const correctness = { baseline: rb, codecite: rc, deltaPts, loss: deltaPts == null ? null : deltaPts < -MARGIN_PTS - EPS };
-  const tokens = pctMeasure('totalTokens', ub, uc);
-  const time = pctMeasure('wallMs', ub, uc);
+  const passes = (rs) => rs.map((r) => (r.passed ? 1 : 0));
+  const cci = bootstrapCi(passes(ub), passes(uc), (sb, sc) => rateOf(sc) - rateOf(sb), { seed: measureSeed(seed, 'correctness'), resamples });
+  const correctness = { baseline: rb, codecite: rc, deltaPts, ci: cci, loss: cci == null ? null : cci[1] < -MARGIN_PTS - EPS };
+  const tokens = pctMeasure('totalTokens', ub, uc, measureSeed(seed, 'tokens'), resamples);
+  const time = pctMeasure('wallMs', ub, uc, measureSeed(seed, 'time'), resamples);
 
   const reasons = [];
   let verdict;
@@ -184,8 +239,13 @@ export function loadRecords(roundDir) {
     if (!result) continue;
     const score = readJson(join(runsDir, id, 'score.json'));
     const run = result.run ?? {};
+    const totalTokens = num(result.usage?.totalTokens);
     records.push({
-      id: run.id ?? id,
+      // The dir name: a kept-aside run (`<id>.tainted-1`) shares its run's id.
+      id,
+      superseded: run.id != null && id !== run.id,
+      tokensUnknown: SCORED.has(result.status) && totalTokens == null,
+      secretInTranscript: result.secretInTranscript === true,
       agent: run.agent ?? null,
       model: run.model ?? null,
       arm: run.arm ?? null,
@@ -200,7 +260,7 @@ export function loadRecords(roundDir) {
       unscored: typeof score?.unscored === 'string' ? score.unscored : null,
       scoreFatal: score?.passed === null && score?.fatal === true,
       scoreAttempts: num(score?.scoreAttempts),
-      totalTokens: num(result.usage?.totalTokens),
+      totalTokens,
       costUsd: num(result.usage?.costUsd),
       wallMs: num(result.wallMs),
       toolCalls: num(result.toolCalls),
@@ -216,7 +276,8 @@ export function comparePlan(plan, records) {
   for (const { agent, model } of plan.agents) {
     const of = (arm) => records.filter((r) => r.agent === agent && r.model === model && r.arm === arm);
     for (const arm of plan.arms.filter((a) => a.name !== 'baseline')) {
-      pairs.push({ agent, model, arm: arm.name, ...comparePair(of('baseline'), of(arm.name), plan.runs) });
+      const seed = measureSeed(plan.seed ?? 0, agent, model, arm.name);
+      pairs.push({ agent, model, arm: arm.name, ...comparePair(of('baseline'), of(arm.name), plan.runs, { seed }) });
     }
   }
   return pairs;
@@ -233,6 +294,9 @@ const pct = (n) => (n == null ? UNKNOWN : `${n.toFixed(1)}%`);
 const signed = (n, unit) => (n == null ? UNKNOWN : `${n > 0 ? '+' : ''}${n.toFixed(1)}${unit}`);
 const lossText = (l) => (l === true ? '**loss**' : l === false ? 'no' : `${UNKNOWN} (can't pass)`);
 const range = (r, f) => (r == null ? UNKNOWN : `${f(r[0])} – ${f(r[1])}`);
+const bound = (n, unit) => (n === Infinity ? '+inf' : n === -Infinity ? '-inf' : signed(n, unit));
+/** A point estimate with its interval: `+6.0% (95% CI -3.1% to +15.2%)`. */
+const withCi = (n, ci, unit) => (n == null ? UNKNOWN : `${bound(n, unit)} (95% CI ${ci == null ? UNKNOWN : `${bound(ci[0], unit)} to ${bound(ci[1], unit)}`})`);
 
 /** A fenced block whose fence is longer than any backtick run in `text`. */
 function fenced(text, lang = '') {
@@ -244,11 +308,11 @@ function fenced(text, lang = '') {
 function pairSection(p) {
   const rows = [
     ['Usable runs', p.runs.baseline, p.runs.codecite, '', ''],
-    ['Pass rate', pct(p.correctness.baseline), pct(p.correctness.codecite), signed(p.correctness.deltaPts, ' pts'), lossText(p.correctness.loss)],
-    ['Median total tokens', int(p.tokens.baseline), int(p.tokens.codecite), signed(p.tokens.deltaPct, '%'), lossText(p.tokens.loss)],
+    ['Pass rate', pct(p.correctness.baseline), pct(p.correctness.codecite), withCi(p.correctness.deltaPts, p.correctness.ci, ' pts'), lossText(p.correctness.loss)],
+    ['Median total tokens', int(p.tokens.baseline), int(p.tokens.codecite), withCi(p.tokens.deltaPct, p.tokens.ci, '%'), lossText(p.tokens.loss)],
     ['Total tokens IQR', range(p.tokens.iqrBaseline, int), range(p.tokens.iqrCodecite, int), '', ''],
     ['Median total tokens, passing runs', int(p.tokens.passingBaseline), int(p.tokens.passingCodecite), '', ''],
-    ['Median wall time', secs(p.time.baseline), secs(p.time.codecite), signed(p.time.deltaPct, '%'), lossText(p.time.loss)],
+    ['Median wall time', secs(p.time.baseline), secs(p.time.codecite), withCi(p.time.deltaPct, p.time.ci, '%'), lossText(p.time.loss)],
     ['Wall time IQR', range(p.time.iqrBaseline, secs), range(p.time.iqrCodecite, secs), '', ''],
     ['Median wall time, passing runs', secs(p.time.passingBaseline), secs(p.time.passingCodecite), '', ''],
     ['Median cost per run', usd(p.cost.baseline), usd(p.cost.codecite), '', ''],
@@ -286,7 +350,7 @@ export function renderScorecard(round) {
     );
   }
   out.push(
-    `The rule: per agent/model pair, the codecite arm must not lose to the baseline. A loss is a pass rate more than ${MARGIN_PTS} points lower, or median total tokens or median wall time more than ${MARGIN_PCT}% higher. Any loss is STOP. A pair with fewer than ${plan.runs} usable runs in an arm, or an unknown measure, is INCOMPLETE. Usable runs are scored runs with status ok, timeout or agent_error that are not tainted; medians cover all of them, failed runs included.`,
+    `The rule: per agent/model pair, the codecite arm must not lose to the baseline. Each measure is a difference (codecite - baseline): pass rate in points, median total tokens and median wall time in percent of baseline's median. Each carries a ${Math.round(CONFIDENCE * 100)}% percentile bootstrap interval (${RESAMPLES.toLocaleString('en-US')} resamples of each arm's usable runs, seeded from the plan's seed). A loss is an interval that is past the margin even at its favourable end: a pass rate whose upper bound is more than ${MARGIN_PTS} points below baseline's, or tokens or time whose lower bound is more than ${MARGIN_PCT}% above. This replaces a plain comparison of the numbers, which stops on noise. Any loss is STOP. A pair with fewer than ${plan.runs} usable runs in an arm, or an unknown measure, is INCOMPLETE. Usable runs are scored runs with status ok, timeout or agent_error, with known tokens, that are not tainted; medians cover all of them, failed runs included. A tainted run or one with unknown tokens is redone when \`call\` resumes, and the old one stays listed below.`,
     '',
   );
   const dirty = plan.codeciteDirty ? ' (dirty tree)' : '';
@@ -314,7 +378,14 @@ export function renderScorecard(round) {
   if (excluded.length === 0) out.push('None.');
   for (const r of excluded) {
     const fatalNote = r.scoreFatal ? `, a fatal scoring error after ${r.scoreAttempts ?? '?'} attempts` : '';
-    const why = !SCORED.has(r.status) ? r.status : r.unscored ? `unscored (${cell(r.unscored)})${fatalNote}` : 'not scored';
+    const redo = r.superseded ? 'redone' : 'redone when call resumes';
+    const why = !SCORED.has(r.status)
+      ? r.status
+      : r.tokensUnknown
+        ? `token usage unknown (${r.status}; ${redo})`
+        : r.unscored
+          ? `unscored (${cell(r.unscored)})${fatalNote}`
+          : 'not scored';
     out.push(`- \`${r.id}\`: ${why}${r.error ? `: ${cell(r.error)}` : ''} (attempts ${r.attempts})`);
   }
   out.push('');
@@ -326,9 +397,21 @@ export function renderScorecard(round) {
   out.push('');
 
   const tainted = records.filter((r) => r.tainted.length > 0);
-  out.push('## Tainted runs (left out of the verdict)', '');
+  out.push('## Tainted runs (left out of the verdict, redone when call resumes)', '');
   if (tainted.length === 0) out.push('None.');
   for (const r of tainted) out.push(`- \`${r.id}\`: ${r.tainted.map((h) => `\`${cell(typeof h === 'string' ? h : JSON.stringify(h))}\``).join(', ')}`);
+  out.push('');
+
+  const leaked = records.filter((r) => r.secretInTranscript);
+  out.push('## Secrets in transcripts', '');
+  if (leaked.length === 0) out.push('None.');
+  else {
+    out.push(
+      `**${leaked.length} run${leaked.length === 1 ? '' : 's'} printed a secret** (redacted on disk, but the agent's output went to its model provider): rotate the OpenRouter key and log in to Claude Code again.`,
+      '',
+    );
+    for (const r of leaked) out.push(`- \`${r.id}\``);
+  }
   out.push('');
 
   out.push('## Codecite note', '');

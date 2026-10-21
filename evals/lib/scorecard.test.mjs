@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { comparePair, iqr, loadRecords, median, renderScorecard, roundVerdict, usableRuns } from './scorecard.mjs';
+import { bootstrapCi, comparePair, comparePlan, iqr, loadRecords, median, renderScorecard, roundVerdict, usableRuns } from './scorecard.mjs';
+import { mulberry32 } from './rng.mjs';
 
 /** n synthetic usable runs: every one passing, 100k tokens, 60 s. */
 function runs(n, over = {}) {
@@ -36,9 +37,75 @@ test('pass when equal', () => {
   assert.equal(r.verdict, 'PASS');
   assert.equal(r.correctness.loss, false);
   assert.equal(r.correctness.deltaPts, 0);
+  assert.deepEqual(r.correctness.ci, [0, 0]);
   assert.equal(r.tokens.loss, false);
   assert.equal(r.tokens.deltaPct, 0);
+  assert.deepEqual(r.tokens.ci, [0, 0]);
   assert.equal(r.time.loss, false);
+});
+
+/** n values around `mid`, spread +-`spread` (a fraction), from a fixed seed. */
+function noisy(n, mid, spread, seed = 11) {
+  const rand = mulberry32(seed);
+  return Array.from({ length: n }, () => Math.round(mid * (1 + spread * (2 * rand() - 1))));
+}
+
+test('identical noisy samples PASS', () => {
+  const tokens = noisy(20, 100_000, 0.5);
+  const times = noisy(20, 60_000, 0.5, 12);
+  const arm = () => runs(20, (i) => ({ totalTokens: tokens[i], wallMs: times[i], passed: i % 3 !== 0 }));
+  const r = comparePair(arm(), arm(), 20, { seed: 1 });
+  assert.equal(r.verdict, 'PASS', r.reasons.join('; '));
+  assert.equal(r.tokens.deltaPct, 0);
+  assert.ok(r.tokens.ci[0] < 0 && r.tokens.ci[1] > 0, `tokens CI ${r.tokens.ci}`);
+  assert.ok(r.correctness.ci[0] < 0 && r.correctness.ci[1] > 0, `correctness CI ${r.correctness.ci}`);
+});
+
+test('a clear 20% token increase with low noise is a STOP', () => {
+  const b = noisy(20, 100_000, 0.02);
+  const c = noisy(20, 120_000, 0.02, 13);
+  const r = comparePair(runs(20, (i) => ({ totalTokens: b[i] })), runs(20, (i) => ({ totalTokens: c[i] })), 20, { seed: 1 });
+  assert.ok(r.tokens.ci[0] > 5, `lower bound ${r.tokens.ci[0]}`);
+  assert.equal(r.tokens.loss, true);
+  assert.equal(r.verdict, 'STOP');
+});
+
+test('a 6% median increase inside wide noise is not a loss (the plain comparison said STOP)', () => {
+  const b = noisy(20, 100_000, 0.5);
+  const c = b.map((x) => Math.round(x * 1.06));
+  const r = comparePair(runs(20, (i) => ({ totalTokens: b[i] })), runs(20, (i) => ({ totalTokens: c[i] })), 20, { seed: 1 });
+  assert.ok(Math.abs(r.tokens.deltaPct - 6) < 0.01, `point estimate ${r.tokens.deltaPct}`);
+  assert.ok(r.tokens.ci[0] < 5, `lower bound ${r.tokens.ci[0]}`);
+  assert.equal(r.tokens.loss, false);
+  assert.equal(r.verdict, 'PASS');
+});
+
+test('the bootstrap is reproducible from its seed', () => {
+  const b = noisy(20, 100_000, 0.5);
+  const c = noisy(20, 104_000, 0.5, 14);
+  const pair = (seed) => comparePair(runs(20, (i) => ({ totalTokens: b[i] })), runs(20, (i) => ({ totalTokens: c[i] })), 20, { seed });
+  assert.deepEqual(pair(7).tokens.ci, pair(7).tokens.ci);
+  assert.notDeepEqual(pair(7).tokens.ci, pair(8).tokens.ci);
+  const stat = (x, y) => median(y) - median(x);
+  assert.deepEqual(bootstrapCi(b, c, stat, { seed: 3 }), bootstrapCi(b, c, stat, { seed: 3 }));
+});
+
+test('comparePlan seeds each pair from the plan seed', () => {
+  const recs = (arm) => noisy(20, 100_000, 0.5, arm === 'baseline' ? 21 : 22).map((t, i) => ({ ...runs(1)[0], id: `${arm}-${i}`, agent: 'pi', model: 'm', arm, totalTokens: t }));
+  const plan = (seed) => ({ seed, runs: 20, agents: [{ agent: 'pi', model: 'm' }], arms: [{ name: 'baseline' }, { name: 'codecite' }] });
+  const records = [...recs('baseline'), ...recs('codecite')];
+  assert.deepEqual(comparePlan(plan(5), records)[0].tokens.ci, comparePlan(plan(5), records)[0].tokens.ci);
+  assert.notDeepEqual(comparePlan(plan(5), records)[0].tokens.ci, comparePlan(plan(6), records)[0].tokens.ci);
+});
+
+test('bootstrapCi with an unknown value is null, so the measure can not pass', () => {
+  assert.equal(bootstrapCi([1, null, 3], [1, 2, 3], (x, y) => median(y) - median(x), { seed: 1 }), null);
+  assert.equal(bootstrapCi([], [1], (x, y) => 0, { seed: 1 }), null);
+  const r = comparePair(runs(20), runs(20, (i) => ({ wallMs: i === 3 ? null : 60_000 })), 20);
+  assert.equal(r.time.ci, null);
+  assert.equal(r.time.loss, null);
+  assert.equal(r.verdict, 'INCOMPLETE');
+  assert.match(r.reasons.join(' '), /time unknown/);
 });
 
 test('stop on 6% more tokens', () => {
@@ -62,12 +129,21 @@ test('pass on 4% more time', () => {
   assert.equal(r.verdict, 'PASS');
 });
 
-test('stop on 10 points lower pass rate', () => {
-  // 18 of 20 pass: 90% against 100%.
+test('10 points lower pass rate inside the noise of 20 runs is not a loss', () => {
+  // 18 of 20 pass: 90% against 100%; resampling reaches 0 points often.
   const r = comparePair(runs(20), runs(20, (i) => ({ passed: i >= 2 })), 20);
   assert.equal(r.correctness.baseline, 100);
   assert.equal(r.correctness.codecite, 90);
   assert.equal(r.correctness.deltaPts, -10);
+  assert.ok(r.correctness.ci[1] >= -5, `upper bound ${r.correctness.ci[1]}`);
+  assert.equal(r.correctness.loss, false);
+});
+
+test('stop on a clearly lower pass rate', () => {
+  // 10 of 20 pass: 50% against 100%.
+  const r = comparePair(runs(20), runs(20, (i) => ({ passed: i >= 10 })), 20);
+  assert.equal(r.correctness.deltaPts, -50);
+  assert.ok(r.correctness.ci[1] < -5, `upper bound ${r.correctness.ci[1]}`);
   assert.equal(r.correctness.loss, true);
   assert.equal(r.verdict, 'STOP');
 });
@@ -84,18 +160,19 @@ test('incomplete when an arm is short', () => {
   assert.equal(r.runs.codecite, 19);
 });
 
-test('null tokens never pass', () => {
+test('a run with unknown tokens is excluded, so its arm is short', () => {
+  // Redone on resume (call keeps the old one aside); until then INCOMPLETE.
   const r = comparePair(runs(20), runs(20, (i) => ({ totalTokens: i === 3 ? null : 100_000 })), 20);
-  assert.equal(r.tokens.codecite, null);
-  assert.equal(r.tokens.deltaPct, null);
-  assert.equal(r.tokens.loss, null);
-  assert.notEqual(r.verdict, 'PASS');
+  assert.equal(r.runs.codecite, 19);
+  assert.equal(r.tokens.codecite, 100_000);
   assert.equal(r.verdict, 'INCOMPLETE');
-  assert.match(r.reasons.join(' '), /tokens/);
+  assert.match(r.reasons.join(' '), /codecite has 19 of 20 usable runs/);
 });
 
-test('a null median and a loss is still STOP', () => {
-  const r = comparePair(runs(20), runs(20, { totalTokens: null, wallMs: 90_000 }), 20);
+test('an unknown measure and a loss is still STOP', () => {
+  const r = comparePair(runs(20), runs(20, { wallMs: null, totalTokens: 150_000 }), 20);
+  assert.equal(r.time.loss, null);
+  assert.equal(r.tokens.loss, true);
   assert.equal(r.verdict, 'STOP');
 });
 
@@ -119,6 +196,8 @@ test('usable runs: ok, timeout and agent_error, scored and untainted', () => {
     ...runs(1, { status: 'fatal', passed: null }),
     ...runs(1, { status: 'ok', passed: null }), // never scored
     ...runs(1, { status: 'ok', tainted: ['wget y'] }),
+    ...runs(1, { status: 'ok', totalTokens: null }), // redone on resume
+    ...runs(1, { status: 'ok', superseded: true }), // a kept-aside dir
   ];
   assert.deepEqual(
     usableRuns(recs).map((r) => r.status),
@@ -127,9 +206,9 @@ test('usable runs: ok, timeout and agent_error, scored and untainted', () => {
 });
 
 test('failed and timed-out runs count in the medians', () => {
-  const codecite = runs(20, (i) => (i < 10 ? { status: 'timeout', passed: false, totalTokens: 300_000 } : {}));
+  const codecite = runs(20, (i) => (i < 15 ? { status: 'timeout', passed: false, totalTokens: 300_000 } : {}));
   const r = comparePair(runs(20), codecite, 20);
-  assert.equal(r.tokens.codecite, 200_000);
+  assert.equal(r.tokens.codecite, 300_000);
   assert.equal(r.tokens.passingCodecite, 100_000, 'the passing-only median is shown beside it');
   assert.equal(r.verdict, 'STOP');
 });
@@ -208,10 +287,20 @@ test('loadRecords and renderScorecard', () => {
     rec('codecite', 2, { totalTokens: null }),
     rec('codecite', 3, { status: 'infra_error', passed: null, attempts: 3 }),
     rec('codecite', 4, { passed: null, unscored: 'warm step failed (exit 2): error: Failed to fetch pytest', scoreFatal: true }),
+    // Kept aside by a resume: a tainted and an unknown-token run of rep 1.
+    { ...rec('codecite', 1, { tainted: ['shell (wget): wget x'] }), id: 'pi-m_x-codecite-1.tainted-1' },
+    { ...rec('codecite', 1, { totalTokens: null }), id: 'pi-m_x-codecite-1.unknown-1' },
+    rec('baseline', 3, { secretInTranscript: true }),
+    rec('codecite', 5),
   ]);
   try {
     const records = loadRecords(dir);
-    assert.equal(records.length, 6);
+    assert.equal(records.length, 10);
+    const aside = records.find((r) => r.id === 'pi-m_x-codecite-1.tainted-1');
+    assert.equal(aside.superseded, true);
+    assert.equal(aside.arm, 'codecite');
+    assert.equal(records.find((r) => r.id === 'pi-m_x-codecite-1').superseded, false);
+    assert.equal(records.find((r) => r.id === 'pi-m_x-codecite-1.unknown-1').tokensUnknown, true);
     const r4 = records.find((r) => r.id === 'pi-m_x-codecite-4');
     assert.equal(r4.passed, null);
     assert.match(r4.unscored, /Failed to fetch/);
@@ -225,6 +314,11 @@ test('loadRecords and renderScorecard', () => {
     assert.match(md, /^# /);
     assert.match(md, /Verdict: \*\*INCOMPLETE\*\*/);
     assert.match(md, /pi-m_x-codecite-1/, 'tainted runs are listed');
+    assert.match(md, /`pi-m_x-codecite-1\.tainted-1`: `shell \(wget\): wget x`/, 'a tainted run kept aside is listed as tainted');
+    assert.match(md, /`pi-m_x-codecite-1\.unknown-1`: token usage unknown/, 'an unknown-token run kept aside is listed');
+    assert.match(md, /`pi-m_x-codecite-2`: token usage unknown/, 'an unknown-token run is listed as excluded');
+    assert.match(md, /## Secrets in transcripts[\s\S]*rotate[\s\S]*`pi-m_x-baseline-3`/, 'runs that echoed a secret are listed with a rotate warning');
+    assert.match(md, /95% CI/, 'each measure shows its interval');
     assert.match(md, /pi-m_x-baseline-2/, 'retried runs are listed');
     assert.match(md, /pi-m_x-codecite-3.*infra_error/, 'excluded runs are listed with their status');
     assert.match(md, /pi-m_x-codecite-4`: unscored \(warm step failed \(exit 2\): error: Failed to fetch pytest\), a fatal scoring error after 3 attempts/, 'unscored runs are listed with the reason');
