@@ -3,6 +3,7 @@
 // imports the agent's code), and record score.json beside result.json.
 
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadRound, roundSandbox } from './call.mjs';
@@ -274,8 +275,34 @@ export async function scoreRun(runDir, task, idpUrl, opts = {}) {
     if (parsed.tests === 0) failures.push('no tests ran');
     if (proc.exitCode !== 0 && failures.length === 0) failures.push(`exit ${proc.exitCode ?? proc.signal}`);
   }
-  const passed = !proc.timedOut && proc.exitCode === 0 && parsed != null && parsed.tests > 0 && failures.length === 0;
-  return record({ passed, failures, tests: parsed?.tests ?? null, ...procFields });
+  const testsPassed = !proc.timedOut && proc.exitCode === 0 && parsed != null && parsed.tests > 0 && failures.length === 0;
+  const checks = runChecks(task, project);
+  if (checks.error) return unscoredRecord(`checks failed to run: ${checks.error}`, procFields);
+  for (const c of checks.list ?? []) if (!c.passed) failures.push(`check ${c.name}: ${c.detail}`);
+  const passed = testsPassed && (checks.list ?? []).every((c) => c.passed);
+  return record({ passed, failures, testsPassed, checks: checks.list, tests: parsed?.tests ?? null, ...procFields });
+}
+
+/**
+ * The task's deterministic checks (`task.checks`, a Python script) on the
+ * agent's project against the task's start project: {list} of
+ * {name, passed, detail}, {list: null} for a task without checks, or {error}.
+ * The script reads the code with `ast` and never runs it, so it runs on the
+ * host with an isolated Python (-I), outside the sandbox.
+ */
+export function runChecks(task, project) {
+  if (!task.checks) return { list: null };
+  const script = resolve(task.dir, task.checks);
+  const start = resolve(task.dir, task.project);
+  const r = spawnSync('python3', ['-I', script, start, project], { encoding: 'utf8', timeout: 60_000 });
+  if (r.status !== 0) return { error: `exit ${r.status ?? r.signal}: ${(r.stderr || '').trim().split('\n').pop()?.slice(0, 300) ?? ''}` };
+  try {
+    const list = JSON.parse(r.stdout).checks;
+    if (!Array.isArray(list)) throw new Error('no checks array');
+    return { list: list.map((c) => ({ name: String(c.name), passed: c.passed === true, detail: String(c.detail ?? '') })) };
+  } catch (e) {
+    return { error: `bad output: ${e.message}` };
+  }
 }
 
 /** Null when the IdP's discovery document answers 200, else what went wrong. */
@@ -322,24 +349,25 @@ export async function scoreRound(roundDir, { idpUrl, rescore = false, log = cons
       return null;
     }
   };
-  for (const run of expandRuns(round.plan)) {
+  // Runs are independent and share one IdP, so score `concurrency` at once.
+  const scoreOne = async (run) => {
     const runDir = join(round.dir, 'runs', run.id);
     let status;
     try {
       status = JSON.parse(readFileSync(join(runDir, 'result.json'), 'utf8')).status;
     } catch {
       skipped++;
-      continue; // never called
+      return; // never called
     }
     const prior = readScore(runDir);
     if (!SCORED.has(status) || (!rescore && typeof prior?.passed === 'boolean')) {
       skipped++;
-      continue;
+      return;
     }
     if (!rescore && prior?.fatal === true) {
       skipped++;
       fatal.push(run.id);
-      continue;
+      return;
     }
     let attempts = !rescore && prior?.passed === null ? (prior.scoreAttempts ?? 0) : 0;
     let r;
@@ -364,10 +392,15 @@ export async function scoreRound(roundDir, { idpUrl, rescore = false, log = cons
       unscored++;
       fatal.push(run.id);
       log(`${run.id} could not be scored after ${attempts} attempts: a fatal scoring error`);
-      continue;
+      return;
     }
     scored++;
     log(`${run.id} ${r.passed ? 'passed' : `failed (${r.failures.length}: ${r.failures.slice(0, 3).join('; ')})`}`);
-  }
+    };
+  const queue = expandRuns(round.plan);
+  const concurrency = opts.concurrency ?? round.plan.concurrency ?? 1;
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, 8)) }, async () => {
+    for (let run = queue.shift(); run; run = queue.shift()) await scoreOne(run);
+  }));
   return { scored, unscored, skipped, fatal };
 }

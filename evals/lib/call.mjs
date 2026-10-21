@@ -443,7 +443,40 @@ export async function callRound(roundDir, deps = {}) {
 
   const breaker = new CircuitBreaker({ min: 10, ratio: 0.8 });
   let ran = 0;
-  for (const run of pending) {
+  // Up to `concurrency` runs at once, at most `maxPerModel` of one model, so
+  // one provider's rate limit slows only its own runs. A rate-limited run ends
+  // infra_error and the next call redoes it; fatal and breaker stop new runs.
+  const concurrency = deps.concurrency ?? plan.concurrency ?? 1;
+  const maxPerModel = deps.maxPerModel ?? plan.maxPerModel ?? concurrency;
+  const queue = [...pending];
+  const active = new Map();
+  let stop = null;
+  const next = () => {
+    const i = queue.findIndex((r) => (active.get(r.model) ?? 0) < maxPerModel);
+    return i < 0 ? null : queue.splice(i, 1)[0];
+  };
+  const wakers = new Set();
+  const wake = () => { for (const w of wakers) w(); wakers.clear(); };
+  const worker = async () => {
+    for (;;) {
+      if (stop) return;
+      const run = next();
+      if (!run) {
+        if (queue.length === 0) return;
+        await new Promise((res) => wakers.add(res));
+        continue;
+      }
+      active.set(run.model, (active.get(run.model) ?? 0) + 1);
+      try {
+        const s = await callOne(run);
+        if (s && !stop) stop = s;
+      } finally {
+        active.set(run.model, active.get(run.model) - 1);
+        wake();
+      }
+    }
+  };
+  const callOne = async (run) => {
     if (redo.get(run.id)) keepAside(round, run, redo.get(run.id));
     let attempts = 0;
     let outcome;
@@ -466,18 +499,15 @@ export async function callRound(roundDir, deps = {}) {
     const leak = result.secretInTranscript ? ' SECRET-IN-OUTPUT' : '';
     log(`[${run.seq}/${runs.length}] ${run.id} ${result.status} ${result.wallMs ?? '-'}ms${taint}${leak}`);
     if (outcome.result.rateLimited && outcome.kind === 'infra') {
-      return {
-        ran,
-        skipped,
-        stopped: 'rate_limit',
-        reason: `${run.id}: the provider's rate or usage limit persisted over ${attempts} attempts; wait for it to reset, then run call again to resume (the run is redone)`,
-        secretRuns: secretRuns(round.dir),
-      };
+      const reason = `${run.id}: the provider's rate or usage limit persisted over ${attempts} attempts; wait for it to reset, then run call again to resume (the run is redone)`;
+      if (concurrency === 1) return { stopped: 'rate_limit', reason };
+      log(reason);
+      return null;
     }
-        if (outcome.kind === 'fatal') return { ran, skipped, stopped: 'fatal', reason: redact(`${run.id}: ${result.error}`, outcome.secrets), secretRuns: secretRuns(round.dir) };
-    if (breaker.tripped) {
-      return { ran, skipped, stopped: 'breaker', reason: `${breaker.failed} of ${breaker.calls} calls failed`, secretRuns: secretRuns(round.dir) };
-    }
-  }
-  return { ran, skipped, stopped: null, reason: null, secretRuns: secretRuns(round.dir) };
+    if (outcome.kind === 'fatal') return { stopped: 'fatal', reason: redact(`${run.id}: ${result.error}`, outcome.secrets) };
+    if (breaker.tripped) return { stopped: 'breaker', reason: `${breaker.failed} of ${breaker.calls} calls failed` };
+    return null;
+  };
+  await Promise.all(Array.from({ length: Math.max(1, concurrency) }, worker));
+  return { ran, skipped, stopped: stop?.stopped ?? null, reason: stop?.reason ?? null, secretRuns: secretRuns(round.dir) };
 }

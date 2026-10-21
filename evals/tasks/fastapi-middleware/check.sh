@@ -120,4 +120,7 @@ else
   status=1
 fi
 
+echo "== planted bad solutions (each must fail its check)" >&2
+"$HERE/planted.sh" || status=1
+
 exit "$status"

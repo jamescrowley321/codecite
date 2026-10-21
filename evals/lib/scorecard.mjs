@@ -210,7 +210,34 @@ export function comparePair(baseline, codecite, plannedRuns, { seed = 0, resampl
     },
     toolCalls: { baseline: median(ub.map((r) => r.toolCalls)), codecite: median(uc.map((r) => r.toolCalls)) },
     codeciteCallRate: { baseline: callRate(ub), codecite: callRate(uc) },
+    testsRate: { baseline: rateWhere(ub, (r) => r.testsPassed), codecite: rateWhere(uc, (r) => r.testsPassed) },
+    checkRates: checkRates(ub, uc),
+    judge: judgeMeasures(ub, uc),
   };
+}
+
+// Reported, never part of the verdict: hidden tests alone, each
+// deterministic check, and the judge's median scores.
+const rateWhere = (rs, f) => (rs.length === 0 ? null : (rs.filter(f).length * 100) / rs.length);
+
+function checkRates(ub, uc) {
+  const names = [...new Set([...ub, ...uc].flatMap((r) => (r.checks ?? []).map((c) => c.name)))];
+  const rate = (rs, n) => {
+    const known = rs.filter((r) => r.checks);
+    return known.length === 0 ? null : (known.filter((r) => r.checks.find((c) => c.name === n)?.passed).length * 100) / known.length;
+  };
+  return names.map((name) => ({ name, baseline: rate(ub, name), codecite: rate(uc, name) }));
+}
+
+export const JUDGE_CRITERIA = ['instructions', 'library', 'hygiene'];
+
+function judgeMeasures(ub, uc) {
+  const of = (rs, c) => rs.map((r) => r.judge?.[c]).filter((x) => typeof x === 'number');
+  return JUDGE_CRITERIA.map((c) => {
+    const b = of(ub, c);
+    const k = of(uc, c);
+    return { name: c, baseline: median(b), codecite: median(k), meanBaseline: b.length ? b.reduce((x, y) => x + y, 0) / b.length : null, meanCodecite: k.length ? k.reduce((x, y) => x + y, 0) / k.length : null, n: [b.length, k.length] };
+  });
 }
 
 /** STOP if any pair STOPs, INCOMPLETE if any is incomplete (or there are none), else PASS. */
@@ -239,6 +266,7 @@ export function loadRecords(roundDir) {
     const result = readJson(join(runsDir, id, 'result.json'));
     if (!result) continue;
     const score = readJson(join(runsDir, id, 'score.json'));
+    const judge = readJson(join(runsDir, id, 'judge.json'));
     const run = result.run ?? {};
     const totalTokens = num(result.usage?.totalTokens);
     records.push({
@@ -257,6 +285,9 @@ export function loadRecords(roundDir) {
       attempts: num(result.attempts) ?? 1,
       tainted: Array.isArray(result.tainted) ? result.tainted : [],
       passed: typeof score?.passed === 'boolean' ? score.passed : null,
+      testsPassed: typeof score?.testsPassed === 'boolean' ? score.testsPassed : typeof score?.passed === 'boolean' ? score.passed : null,
+      checks: Array.isArray(score?.checks) ? score.checks : null,
+      judge: judge && !judge.error ? Object.fromEntries(JUDGE_CRITERIA.map((c) => [c, num(judge[c]?.score)])) : null,
       failures: Array.isArray(score?.failures) ? score.failures : [],
       unscored: typeof score?.unscored === 'string' ? score.unscored : null,
       scoreFatal: score?.passed === null && score?.fatal === true,
@@ -291,6 +322,7 @@ const cell = (s) => String(s).replaceAll('|', '\\|').replaceAll('\n', ' ');
 const int = (n) => (n == null ? UNKNOWN : Math.round(n).toLocaleString('en-US'));
 const secs = (ms) => (ms == null ? UNKNOWN : `${(ms / 1000).toFixed(1)} s`);
 const usd = (n) => (n == null ? UNKNOWN : `$${n.toFixed(Math.abs(n) >= 1 ? 2 : 4)}`);
+const judgeCell = (m, mean) => (m == null ? UNKNOWN : `${m} / ${mean.toFixed(2)}`);
 const pct = (n) => (n == null ? UNKNOWN : `${n.toFixed(1)}%`);
 const signed = (n, unit) => (n == null ? UNKNOWN : `${n > 0 ? '+' : ''}${n.toFixed(1)}${unit}`);
 const lossText = (l) => (l === true ? '**loss**' : l === false ? 'no' : `${UNKNOWN} (can't pass)`);
@@ -309,7 +341,7 @@ function fenced(text, lang = '') {
 function pairSection(p) {
   const rows = [
     ['Usable runs', p.runs.baseline, p.runs.codecite, '', ''],
-    ['Pass rate', pct(p.correctness.baseline), pct(p.correctness.codecite), withCi(p.correctness.deltaPts, p.correctness.ci, ' pts'), lossText(p.correctness.loss)],
+    ['Pass rate (tests and checks)', pct(p.correctness.baseline), pct(p.correctness.codecite), withCi(p.correctness.deltaPts, p.correctness.ci, ' pts'), lossText(p.correctness.loss)],
     ['Median total tokens', int(p.tokens.baseline), int(p.tokens.codecite), withCi(p.tokens.deltaPct, p.tokens.ci, '%'), lossText(p.tokens.loss)],
     ['Total tokens IQR', range(p.tokens.iqrBaseline, int), range(p.tokens.iqrCodecite, int), '', ''],
     ['Median total tokens, passing runs', int(p.tokens.passingBaseline), int(p.tokens.passingCodecite), '', ''],
@@ -320,6 +352,9 @@ function pairSection(p) {
     ['Total cost', usd(p.cost.totalBaseline), usd(p.cost.totalCodecite), '', ''],
     ['Median tool calls', int(p.toolCalls.baseline), int(p.toolCalls.codecite), '', ''],
     ['Runs that called codecite', pct(p.codeciteCallRate.baseline), pct(p.codeciteCallRate.codecite), '', ''],
+    ...(p.checkRates?.length ? [['Hidden tests pass', pct(p.testsRate.baseline), pct(p.testsRate.codecite), '', '']] : []),
+    ...(p.checkRates ?? []).map((c) => [`Check ${c.name}`, pct(c.baseline), pct(c.codecite), '', '']),
+    ...(p.judge ?? []).filter((j) => j.n[0] + j.n[1] > 0).map((j) => [`Judge ${j.name} (1-5, median / mean)`, judgeCell(j.baseline, j.meanBaseline), judgeCell(j.codecite, j.meanCodecite), '', '']),
   ];
   const lines = [
     `## ${p.agent} ${p.model}: ${p.arm} vs baseline — **${p.verdict}**`,

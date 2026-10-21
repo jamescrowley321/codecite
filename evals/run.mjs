@@ -11,6 +11,7 @@ import { freezeIdp, idpDirFor, startIdp } from './lib/idp.mjs';
 import { checkModels, estimateUsd, modelPrices } from './lib/openrouter.mjs';
 import { expandRuns, freezePlan, loadPlan, loadTask, roundsDir } from './lib/plan.mjs';
 import { readSecrets } from './lib/secrets.mjs';
+import { judgeRound } from './lib/judge.mjs';
 import { scoreRound } from './lib/score.mjs';
 import { comparePlan, loadRecords, renderScorecard, roundVerdict } from './lib/scorecard.mjs';
 import { prepareRound, REPO_ROOT } from './lib/workspace.mjs';
@@ -18,7 +19,9 @@ import { prepareRound, REPO_ROOT } from './lib/workspace.mjs';
 const USAGE = `usage:
   node evals/run.mjs compose --plan <plan.json> [--round <id>] [--codecite-bin <path>] [--dry-run]
   node evals/run.mjs call --round <id> [--retry-fatal]
-  node evals/run.mjs score --round <id> [--rescore]`;
+  node evals/run.mjs score --round <id> [--rescore]
+  node evals/run.mjs judge --round <id> [--rejudge]
+  node evals/run.mjs quick [--plan <plan.json>] [--round <id>]`;
 
 function git(...args) {
   const r = spawnSync('git', ['-C', REPO_ROOT, ...args], { encoding: 'utf8' });
@@ -148,11 +151,57 @@ async function score(argv) {
   }
 }
 
+// The LLM judge grades each scored run's diff, blind to its arm, then the
+// scorecard is written again with its scores (reported, not in the verdict).
+async function judge(argv) {
+  const { values } = parseArgs({ args: argv, options: { round: { type: 'string' }, rejudge: { type: 'boolean', default: false } } });
+  if (!values.round) throw new Error(`judge needs --round\n${USAGE}`);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(values.round)) throw new Error(`judge: bad round id "${values.round}"`);
+  secrets = readSecrets();
+  const dir = join(roundsDir(), values.round);
+  const { judged, failed } = await judgeRound(dir, { secrets, rejudge: values.rejudge });
+  console.log(`judged ${judged}, unjudged ${failed}`);
+  const { plan } = loadRound(dir);
+  const records = loadRecords(dir);
+  writeFileSync(join(dir, 'scorecard.md'), renderScorecard({ plan, records, pairs: comparePlan(plan, records) }));
+  console.log(`scorecard at ${join(dir, 'scorecard.md')}`);
+}
+
+// compose, call (twice: the second redoes tainted, unknown-token and
+// rate-limited runs), score and judge, timing each phase.
+async function quick(argv) {
+  const { values } = parseArgs({ args: argv, options: { plan: { type: 'string', default: join(REPO_ROOT, 'evals', 'plans', 'quick.json') }, round: { type: 'string' } } });
+  const round = values.round ?? `quick-${new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-')}`;
+  const t0 = Date.now();
+  const phase = async (name, fn) => {
+    const t = Date.now();
+    try {
+      await fn();
+    } catch (e) {
+      console.error(`${name}: ${e.message}`);
+    }
+    console.log(`== ${name} took ${((Date.now() - t) / 60000).toFixed(1)} min`);
+  };
+  const keepGoing = (fn) => async (...a) => {
+    const exit = process.exit;
+    process.exit = (code) => { throw new Error(`exited ${code}`); };
+    try { await fn(...a); } finally { process.exit = exit; }
+  };
+  await phase('compose', () => compose(['--plan', values.plan, '--round', round]));
+  await phase('call', keepGoing(() => call(['--round', round])));
+  await phase('call (redo)', keepGoing(() => call(['--round', round])));
+  await phase('score', keepGoing(() => score(['--round', round])));
+  await phase('judge', () => judge(['--round', round]));
+  console.log(`quick round ${round} took ${((Date.now() - t0) / 60000).toFixed(1)} min`);
+}
+
 const [command, ...rest] = process.argv.slice(2);
 try {
   if (command === 'compose') await compose(rest);
   else if (command === 'call') await call(rest);
   else if (command === 'score') await score(rest);
+  else if (command === 'judge') await judge(rest);
+  else if (command === 'quick') await quick(rest);
   else {
     console.error(USAGE);
     process.exit(2);
