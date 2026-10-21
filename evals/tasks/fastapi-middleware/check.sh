@@ -56,13 +56,20 @@ prepare() {
 
 TOTAL_TESTS=7
 
+# The score command, exactly as task.json has it (the harness's score phase
+# runs the same array), with {hidden} set to this task's hidden tests.
+mapfile -t SCORE_CMD < <(python3 -c '
+import json, sys
+for a in json.load(open(sys.argv[1]))["score"]:
+    print(a.replace("{hidden}", sys.argv[2]))
+' "$HERE/task.json" "$HERE/hidden")
+
 # Run the task's score command; print the number of tests that did not pass
 # (failures, errors, and tests that never ran because collection broke).
 score() {
   local dest="$1" out
   set +e
-  out="$(cd "$dest" && uv run --quiet --with pytest --with httpx \
-    pytest -q -p no:cacheprovider "$HERE/hidden" 2>&1)"
+  out="$(cd "$dest" && "${SCORE_CMD[@]}" 2>&1)"
   set -e
   printf '%s\n' "$out" >&2
   local passed

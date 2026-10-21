@@ -27,6 +27,9 @@ Node 26, ES modules, no npm dependencies. Tests: `node --test evals/`.
 | `lib/guards.mjs` | Fatal/infra/agent classification and the circuit breaker |
 | `lib/taint.mjs` | Flag runs that fetched code or touched hidden or other runs' paths |
 | `lib/openrouter.mjs` | The key's remaining limit and the round's cost estimate |
+| `lib/idp.mjs` | Start the eval IdP for the score phase |
+| `lib/score.mjs` | Run the hidden tests against each run's project, sandboxed |
+| `lib/scorecard.mjs` | The no-loss comparison and the Markdown scorecard |
 | `agents/<name>.mjs` | One adapter per agent; the plan's `agent` names it |
 
 ## Rounds
@@ -218,3 +221,56 @@ adapter sets `endedOnError` whenever the last assistant message ended in
 error: a fatal status stays fatal, an error before any turn (a 429, a
 connection error) is infra and retried, and one after a turn is
 `agent_error`, never `ok`.
+
+## Scoring
+
+```
+node evals/run.mjs score --round <id> [--rescore]
+```
+
+`score` holds no secrets. It starts the IdP (`fixtures/node-oidc`, with this
+Node on a free loopback port), scores every run whose `result.json` status is
+`ok`, `timeout` or `agent_error` and that has no `score.json` yet (all of
+them with `--rescore`), then writes `<round>/scorecard.md` and prints each
+pair's verdict and the round's. `infra_error` and `fatal` runs are not
+scored.
+
+- **Command:** the frozen plan's `taskDef.score`, with `{hidden}` set to the
+  task's `hidden/` dir, run in the run's `project/` (the task's conftest puts
+  the cwd on `sys.path`). The environment is built from nothing: the cleaned
+  `PATH`, `TEST_IDP`, `HOME` and the XDG cache at a fresh `runs/<id>/score/`
+  (uv's cache, so `--with pytest` downloads there),
+  `PYTHONDONTWRITEBYTECODE=1`, and `PYTEST_ADDOPTS=--junitxml=score/report.xml`.
+- **Sandbox:** the score command imports the agent's code, so it runs in the
+  same bubblewrap sandbox as the agent (`roundSandbox`): the same hides (the
+  owner's home, `/tmp`, `/run`, the round dir, its `taintPaths`), the export
+  and the tools (uv, the venv's base Python, their CA files) read-only, the
+  project read-write. Two differences: the task's `hidden/` is bound back
+  read-only, and the run's own `home/` and `xdg/` are not bound (`score/` is
+  its home instead). The network is shared, so the IdP on `127.0.0.1` is
+  reachable. A bwrap failure is a harness error, never a failed run.
+- **Pass:** the command exits 0 and its JUnit report shows at least one test
+  and no failure, error or skip. A missing report (the agent's code ended the
+  process early) fails. `score.json` holds `passed`, `failures` (test ids),
+  `tests`, `exitCode`, `timedOut`, `wallMs` and the command; `score.log` the
+  output.
+
+### The scorecard
+
+Per agent/model pair, each non-baseline arm against the baseline:
+
+- **Usable runs:** scored, status `ok`, `timeout` or `agent_error`, not
+  tainted. Excluded, retried and tainted runs are listed.
+- **Correctness:** pass rates; a loss when the arm's is more than 5 points
+  below baseline's.
+- **Tokens, time:** medians of total tokens and wall time over all usable
+  runs, failed ones included; a loss when the arm's is more than 5% above
+  baseline's. A median over a run with an unknown (`null`) value is unknown,
+  and an unknown measure is `loss: null`: it can't pass.
+- **Pair verdict:** `INCOMPLETE` when either arm has fewer usable runs than
+  the plan's `runs`; else `STOP` on any loss; else `INCOMPLETE` on any
+  unknown measure; else `PASS`. The round is `STOP` if any pair is,
+  `INCOMPLETE` if any is, else `PASS`.
+- Also shown: IQRs, medians over passing runs only, cost, tool calls, the
+  share of runs that called `codecite`, the codecite note and the frozen
+  plan.

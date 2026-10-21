@@ -3,18 +3,22 @@
 // See evals/README.md.
 
 import { spawnSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { callRound, redact } from './lib/call.mjs';
+import { callRound, loadRound, redact } from './lib/call.mjs';
+import { startIdp } from './lib/idp.mjs';
 import { estimateUsd, modelPrices } from './lib/openrouter.mjs';
 import { expandRuns, freezePlan, loadPlan, loadTask, roundsDir } from './lib/plan.mjs';
 import { readSecrets } from './lib/secrets.mjs';
+import { scoreRound } from './lib/score.mjs';
+import { comparePlan, loadRecords, renderScorecard, roundVerdict } from './lib/scorecard.mjs';
 import { prepareRound, REPO_ROOT } from './lib/workspace.mjs';
 
 const USAGE = `usage:
   node evals/run.mjs compose --plan <plan.json> [--round <id>] [--codecite-bin <path>] [--dry-run]
   node evals/run.mjs call --round <id> [--retry-fatal]
-  node evals/run.mjs score --round <id>`;
+  node evals/run.mjs score --round <id> [--rescore]`;
 
 function git(...args) {
   const r = spawnSync('git', ['-C', REPO_ROOT, ...args], { encoding: 'utf8' });
@@ -94,14 +98,37 @@ async function call(argv) {
   }
 }
 
+// No secrets: start the IdP, run the hidden tests against each unscored run
+// (all of them with --rescore) in the sandbox, then write the scorecard.
+async function score(argv) {
+  const { values } = parseArgs({
+    args: argv,
+    options: { round: { type: 'string' }, rescore: { type: 'boolean', default: false } },
+  });
+  if (!values.round) throw new Error(`score needs --round\n${USAGE}`);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(values.round)) throw new Error(`score: bad round id "${values.round}"`);
+  const dir = join(roundsDir(), values.round);
+  const idp = await startIdp();
+  let summary;
+  try {
+    summary = await scoreRound(dir, { idpUrl: idp.url, rescore: values.rescore });
+  } finally {
+    await idp.stop();
+  }
+  console.log(`scored ${summary.scored}, skipped ${summary.skipped}`);
+  const { plan } = loadRound(dir);
+  const records = loadRecords(dir);
+  writeFileSync(join(dir, 'scorecard.md'), renderScorecard({ plan, records }));
+  for (const p of comparePlan(plan, records)) console.log(`${p.agent} ${p.model} ${p.arm}: ${p.verdict}${p.reasons.length ? ` (${p.reasons.join('; ')})` : ''}`);
+  console.log(`verdict: ${roundVerdict(comparePlan(plan, records))}; scorecard at ${join(dir, 'scorecard.md')}`);
+}
+
 const [command, ...rest] = process.argv.slice(2);
 try {
   if (command === 'compose') await compose(rest);
   else if (command === 'call') await call(rest);
-  else if (command === 'score') {
-    console.error(`${command}: not implemented yet`);
-    process.exit(2);
-  } else {
+  else if (command === 'score') await score(rest);
+  else {
     console.error(USAGE);
     process.exit(2);
   }
