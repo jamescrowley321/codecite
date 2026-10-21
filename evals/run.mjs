@@ -7,7 +7,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { callRound, loadRound, redact } from './lib/call.mjs';
-import { startIdp } from './lib/idp.mjs';
+import { freezeIdp, idpDirFor, startIdp } from './lib/idp.mjs';
 import { checkModels, estimateUsd, modelPrices } from './lib/openrouter.mjs';
 import { expandRuns, freezePlan, loadPlan, loadTask, roundsDir } from './lib/plan.mjs';
 import { readSecrets } from './lib/secrets.mjs';
@@ -88,6 +88,7 @@ async function compose(argv) {
     roundId,
   });
   const round = prepareRound(plan, join(dir, roundId), { codeciteBin: values['codecite-bin'] });
+  if (plan.taskDef.idp) freezeIdp(round.dir);
   printCounts(plan);
   console.log(`round ${roundId} prepared at ${round.dir}`);
 }
@@ -126,7 +127,7 @@ async function score(argv) {
   if (!values.round) throw new Error(`score needs --round\n${USAGE}`);
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(values.round)) throw new Error(`score: bad round id "${values.round}"`);
   const dir = join(roundsDir(), values.round);
-  const idp = await startIdp();
+  const idp = await startIdp({ dir: idpDirFor(dir) });
   let summary;
   try {
     summary = await scoreRound(dir, { idpUrl: idp.url, rescore: values.rescore });

@@ -55,6 +55,9 @@ commit) and prepares the round:
   `hidden/`, `reference/`), which the frozen plan's `taskDef.dir` points at.
   Runs and scoring read the task from here, never from the live checkout, so
   editing `evals/tasks/` after compose doesn't change a round.
+- `idp/`: a copy of the task's IdP fixture (`fixtures/node-oidc`, with its
+  installed `node_modules`; run `npm ci` there before compose), which `score`
+  starts instead of the live one.
 - `identity-model/`: identity-model at the pinned commit, fetched from the
   local repo named in the plan's `repos` into a throwaway repo and copied out
   of its checkout with no `.git`, read-only.
@@ -143,6 +146,15 @@ unsandboxed fallback: `call` refuses to start a round when `bwrap` isn't on
 - **Environment:** bwrap is spawned with exactly the adapter's env and
   passes it on, plus the `PWD` its `--chdir` sets. Values never go in
   bwrap's argv (`--setenv`), which `/proc` shows every local user.
+- **Argv:** bwrap is pid 1 inside the sandbox, so its argv is any agent
+  process's `/proc/1/cmdline` (`ps` shows it). Its binds name the round, the
+  run and its arm, so `spawnSandbox` hands them over on a pipe (`--args 3`):
+  its argv is only `bwrap --args 3 -- <command>`.
+- **Secret files:** a file an adapter needs that holds a secret (pi's
+  `auth.json`) is its spec's `dataFiles`: bwrap copies it from a pipe into its
+  own tmpfs (`--bind-data`, mode 0600), so it never touches the host's disk,
+  even if the harness dies mid-run. The empty mount point bwrap leaves is
+  deleted after the run.
 - **Kill:** on timeout or an early reject the call loop sends `SIGTERM` to
   every process inside the sandbox (found under bwrap in `/proc`: the agent
   has its own session, out of bwrap's group) but not to bwrap, which would
@@ -190,6 +202,13 @@ secret value is replaced by `[REDACTED]` before anything is written;
   adapter's `rejectReason` (from the init event, or `earlyReject` on a live
   stdout line, which kills the agent at once) is recorded as `fatal` and
   stops the round. A 400 after a turn is the run's own `agent_error`.
+- **Rate limits:** a run that ends on the provider's rate or usage limit (a
+  429; for Claude also a rejected `rate_limit_event` or the usage-limit text
+  in its error result) is infra however many turns it took, never a failed
+  run: retried with backoff and left out of the breaker. When the limit
+  outlasts the retries, the run is recorded `infra_error` and the round stops
+  (`rate_limit`): wait for the limit to reset, then run `call` again, which
+  redoes it.
 - **Infra:** a spawn or setup failure (a missing agent command, or bwrap
   failing before the agent starts), a 5xx before any turn, or an adapter's
   `endedOnError` before any turn (any status, or none: pi's 429, Claude Code's
@@ -206,9 +225,14 @@ secret value is replaced by `[REDACTED]` before anything is written;
 - **Taint:** `tainted` lists shell commands matching `github.com`,
   `githubusercontent.com`, `git clone`, `pip install` (so `uv pip install`
   and `python -m pip install` too: the spec lists it and the prompt says "no
-  new packages") or `uv add`; a `curl` or `wget` that names anything but
-  loopback (`127.0.0.0/8`, `localhost`, `::1`) or names no host it can read
-  (`curl $URL`); and shell commands or file-tool paths naming `evals/tasks`,
+  new packages") or `uv add`; a `curl` or `wget` run as the command (its
+  first word, after `VAR=value` and wrappers such as `sudo`, `env`,
+  `timeout`; so `which curl`, `curl --version` and `grep curl` don't count)
+  against anything but loopback (`127.0.0.0/8`, `localhost`, `::1`), or
+  against a target it can't read (`curl $URL`, anything fed by `xargs`).
+  Commands are split quote-aware for this, so a quoted `-d "a=b&c=d"` stays
+  whole, and option values (`-d`, `-H`, `-o`, ...) and redirection targets are
+  never read as hosts; and shell commands or file-tool paths naming `evals/tasks`,
   `test_hidden`, `/reference/`, `codecite-worktrees`, `mountinfo` or
   `findmnt`. Each command is split into segments on `&&`, `||`, `;`, `|`,
   `&` and newlines, with a cwd that starts at `/work/project` and follows
@@ -289,7 +313,7 @@ after `--`. Its environment is built from nothing: `HOME` is `/work/home`,
 `PI_CODING_AGENT_DIR` is `/work/home/pi`, `PI_TELEMETRY=0` and
 `PI_SKIP_VERSION_CHECK=1`; no key. The agent dir holds only an `auth.json`
 (mode 0600) with the evals key as pi's `openrouter` API-key credential
-(deleted once pi exits, via the spec's `secretFiles`, so no round dir keeps
+(handed to bwrap on a pipe, see *Secret files*, so no round dir ever holds
 the key), and a
 `models.json` setting OpenRouter's `X-Title` header to an opaque per-arm
 label (`eval-<8 hex>`, from the round id and arm), so spend shows per arm on

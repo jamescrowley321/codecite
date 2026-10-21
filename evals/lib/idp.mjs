@@ -3,12 +3,30 @@
 // reaches it over the shared network.
 
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { cpSync, existsSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { REPO_ROOT } from './workspace.mjs';
 
 export const IDP_DIR = join(REPO_ROOT, 'evals', 'fixtures', 'node-oidc');
+
+/**
+ * Freeze the IdP with the round, as compose does the task: copy the fixture
+ * (provider.js, its lockfile and installed node_modules) into <round>/idp,
+ * so scoring never runs the live checkout's. Returns the copy's dir.
+ */
+export function freezeIdp(roundDir, { from = IDP_DIR } = {}) {
+  if (!existsSync(join(from, 'node_modules'))) throw new Error(`idp: no node_modules in ${from}; run npm ci there before compose`);
+  const dest = join(roundDir, 'idp');
+  cpSync(from, dest, { recursive: true, verbatimSymlinks: true });
+  return dest;
+}
+
+/** The IdP a round scores against: its frozen copy, else (a round frozen before that) the live fixture. */
+export function idpDirFor(roundDir) {
+  const frozen = join(roundDir, 'idp');
+  return existsSync(join(frozen, 'provider.js')) ? frozen : IDP_DIR;
+}
 
 function freePort() {
   return new Promise((resolve, reject) => {
