@@ -5,7 +5,7 @@ use anyhow::{Context as _, bail};
 /// A span that answers a query, as written in the queries file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Answer {
-    /// A spec section, or one step of it: `rfc9449#section-4.3` or
+    /// A spec section by number, or one step of it: `rfc9449#section-4.3` or
     /// `rfc9449#section-4.3/step-8`.
     Spec {
         /// The document's name.
@@ -32,7 +32,10 @@ impl Answer {
         if target.is_empty() || fragment.is_empty() {
             bail!("answer `{label}` is missing its target or fragment");
         }
-        if let Some(line) = fragment.strip_prefix('L') {
+        if let Some(line) = fragment
+            .strip_prefix('L')
+            .filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+        {
             let line = line
                 .parse()
                 .with_context(|| format!("answer `{label}` has a bad line number"))?;
@@ -40,6 +43,15 @@ impl Answer {
                 path: target.to_owned(),
                 line,
             });
+        }
+        // Search cites a section by number, never by the page's own anchor
+        // (`#IDTokenValidation`), so a label written that way could never
+        // match.
+        if !fragment.starts_with("section-") {
+            bail!(
+                "answer `{label}` is neither `#L<line>` nor `#section-<number>`; \
+                 write a spec section by the number search cites"
+            );
         }
         Ok(Answer::Spec {
             document: target.to_owned(),
@@ -192,6 +204,8 @@ mod tests {
         assert!(Answer::parse("rfc9449").is_err());
         assert!(Answer::parse("#section-1").is_err());
         assert!(Answer::parse("a.py#Lx").is_err());
+        assert!(Answer::parse("openid-connect-core-1_0#IDTokenValidation").is_err());
+        assert!(Answer::parse("openid-connect-rpinitiated-1_0#Logout").is_err());
     }
 
     #[test]

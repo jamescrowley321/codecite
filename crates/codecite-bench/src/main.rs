@@ -108,7 +108,8 @@ fn main() -> anyhow::Result<()> {
     check(&file)?;
     let codecite = match cli.codecite {
         Some(path) => path,
-        None => std::env::current_exe()?.with_file_name("codecite"),
+        None => std::env::current_exe()?
+            .with_file_name(format!("codecite{}", std::env::consts::EXE_SUFFIX)),
     };
 
     let mut outcomes = Vec::new();
