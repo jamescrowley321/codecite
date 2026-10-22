@@ -4,8 +4,8 @@
 
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join, relative, resolve } from 'node:path';
 import { loadRound, redact } from './call.mjs';
 import { expandRuns } from './plan.mjs';
 import { requireSecret } from './secrets.mjs';
@@ -48,7 +48,12 @@ const SCHEMA = {
 export function runDiff(task, runDir) {
   const start = resolve(task.dir, task.project, 'app');
   const final = join(runDir, 'project', 'app');
-  const r = spawnSync('diff', ['-ruN', '--exclude=__pycache__', '--exclude=*.pyc', start, final], { encoding: 'utf8', maxBuffer: 16 << 20 });
+  // The agent wrote `final`, and a symlink it planted there can point at any
+  // host file, which a diff would send to the judge. A solution never needs
+  // one, so the run goes unjudged; --no-dereference backs that up.
+  const links = readdirSync(final, { recursive: true, withFileTypes: true }).filter((e) => e.isSymbolicLink());
+  if (links.length) throw new Error(`judge: app/ holds symlinks, which are never diffed: ${links.map((e) => relative(final, join(e.parentPath, e.name))).join(', ')}`);
+  const r = spawnSync('diff', ['-ruN', '--no-dereference', '--exclude=__pycache__', '--exclude=*.pyc', start, final], { encoding: 'utf8', maxBuffer: 16 << 20 });
   if (r.status !== 0 && r.status !== 1) throw new Error(`judge: diff failed: ${r.stderr.trim()}`);
   // Host paths become a/app and b/app; the `diff` command lines and the file
   // times go, since they say nothing about the change.
@@ -120,11 +125,12 @@ export async function judgeRound(roundDir, { secrets, model = JUDGE_MODEL, concu
   let failed = 0;
   const one = async (run) => {
     const dir = join(round.dir, 'runs', run.id);
-    const diff = runDiff(task, dir);
-    const diffSha = createHash('sha256').update(`${RUBRIC_VERSION}\n${model}\n${diff}`).digest('hex');
-    const cached = join(cacheDir, `${diffSha}.json`);
+    let diffSha = null;
     let out;
     try {
+      const diff = runDiff(task, dir);
+      diffSha = createHash('sha256').update(`${RUBRIC_VERSION}\n${model}\n${diff}`).digest('hex');
+      const cached = join(cacheDir, `${diffSha}.json`);
       const hit = existsSync(cached) ? JSON.parse(readFileSync(cached, 'utf8')) : null;
       const { grade, costUsd } = hit ?? (await askJudge({ key, model, prompt, diff, fetchImpl }));
       if (!hit) writeFileSync(cached, `${JSON.stringify({ grade, costUsd }, null, 2)}\n`);
