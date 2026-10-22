@@ -17,6 +17,9 @@ pub use error::{Error, Result};
 mod keyword;
 pub use keyword::{Keyword, UnknownKeyword, requirement_keywords};
 
+mod role;
+pub use role::Role;
+
 mod store;
 pub use store::{
     ChunkRecord, Corpora, CorpusInfo, DEFAULT_MAX_AGE_DAYS, DEFAULT_MAX_LINES, DocumentRecord,

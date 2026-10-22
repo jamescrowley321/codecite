@@ -210,6 +210,8 @@ impl CodeChunker {
             out.push(Chunk {
                 kind: match kind {
                     SymbolKind::Function | SymbolKind::Method => ChunkKind::Function,
+                    SymbolKind::Variable => ChunkKind::Variable,
+                    SymbolKind::TypeAlias => ChunkKind::TypeAlias,
                     _ => ChunkKind::Class,
                 },
                 start_line: def.start_line,
@@ -263,6 +265,7 @@ impl Definition {
                 format!("{name}(+{disambiguator}).")
             }
             Some(SymbolKind::Function | SymbolKind::Method) => format!("{name}()."),
+            Some(SymbolKind::Variable) => format!("{name}."),
             _ => format!("{name}#"),
         }
     }
@@ -279,11 +282,27 @@ fn definitions(query: &Query, root: Node<'_>, source: &[u8], last: u32) -> Vec<D
     while let Some(m) = matches.next() {
         let mut node = None;
         let mut is_scope = false;
+        // The kind a @variable or @alias capture sets, whatever its node.
+        let mut captured_kind = None;
         let mut name = None;
         let mut receiver = None;
+        let mut defined_elsewhere = false;
         for capture in m.captures() {
             match names[capture.index as usize] {
                 "function" | "type" => node = Some(capture.node),
+                "variable" => {
+                    node = Some(capture.node);
+                    captured_kind = Some(SymbolKind::Variable);
+                }
+                "alias" => {
+                    node = Some(capture.node);
+                    captured_kind = Some(SymbolKind::TypeAlias);
+                }
+                "value" => {
+                    let value = capture.node;
+                    defined_elsewhere = DEFINED_ELSEWHERE.contains(&value.kind())
+                        || (value.kind() == "class" && value.child_by_field_name("name").is_some());
+                }
                 "scope" => {
                     node = Some(capture.node);
                     is_scope = true;
@@ -301,6 +320,9 @@ fn definitions(query: &Query, root: Node<'_>, source: &[u8], last: u32) -> Vec<D
         let (Some(node), Some(name)) = (node, name) else {
             continue;
         };
+        if defined_elsewhere {
+            continue;
+        }
         let text = |n: Node<'_>| n.utf8_text(source).unwrap_or_default().to_string();
         let name = if is_scope { type_name(name) } else { name };
         found.push((
@@ -309,7 +331,7 @@ fn definitions(query: &Query, root: Node<'_>, source: &[u8], last: u32) -> Vec<D
                 kind: if is_scope {
                     None
                 } else {
-                    Some(symbol_kind(node))
+                    Some(captured_kind.unwrap_or_else(|| symbol_kind(node)))
                 },
                 name: text(name),
                 receiver: receiver.map(text),
@@ -350,6 +372,17 @@ fn definitions(query: &Query, root: Node<'_>, source: &[u8], last: u32) -> Vec<D
     }
     defs
 }
+
+/// The kinds of value node that the language's query already captures as
+/// their own definition, so a @variable or @alias holding one is skipped: a
+/// function assigned to a name, or a Go struct or interface. A named class
+/// expression is skipped too; an anonymous one is the variable's.
+const DEFINED_ELSEWHERE: [&str; 4] = [
+    "arrow_function",
+    "function_expression",
+    "struct_type",
+    "interface_type",
+];
 
 /// The kind of a captured definition node.
 fn symbol_kind(node: Node<'_>) -> SymbolKind {
