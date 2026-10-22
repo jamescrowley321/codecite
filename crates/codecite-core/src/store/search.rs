@@ -3,7 +3,7 @@
 //! result cited.
 
 use rusqlite::functions::FunctionFlags;
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 
 use super::Store;
@@ -153,22 +153,6 @@ impl Store {
     pub fn search(&self, query: &SearchQuery<'_>) -> Result<Vec<SearchResult>> {
         let fts = fts_query(query.text).ok_or(Error::EmptyQuery)?;
         self.check_fresh(query.allow_stale)?;
-        self.conn.create_scalar_function(
-            "codecite_role_weight",
-            2,
-            FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
-            |ctx| {
-                let path: String = ctx.get(0)?;
-                let source_kind: String = ctx.get(1)?;
-                Ok(Role::of(&path, &source_kind).weight())
-            },
-        )?;
-        self.conn.create_scalar_function(
-            "codecite_name_key",
-            1,
-            FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
-            |ctx| Ok(ctx.get::<Option<String>>(0)?.map(|name| name_key(&name))),
-        )?;
         let mut names = String::from(NAME_SEPARATOR);
         for name in self.boosted_names(query.text)? {
             names.push_str(&name);
@@ -244,8 +228,7 @@ impl Store {
     }
 
     /// The [`query_names`] that at least one and at most
-    /// [`MAX_NAME_DEFINITIONS`] symbols have. Needs the `codecite_name_key`
-    /// function that [`Store::search`] registers.
+    /// [`MAX_NAME_DEFINITIONS`] symbols have.
     fn boosted_names(&self, text: &str) -> Result<Vec<String>> {
         let mut count = self.conn.prepare_cached(
             "SELECT count(*) FROM symbol WHERE codecite_name_key(display_name) = ?1",
@@ -280,6 +263,28 @@ impl Store {
             .file_stem()
             .map_or_else(String::new, |s| s.to_string_lossy().into_owned())
     }
+}
+
+/// Registers the SQL functions [`Store::search`] ranks with, once per
+/// connection: `codecite_role_weight(path, source_kind)` and
+/// `codecite_name_key(name)`.
+pub(super) fn register_functions(conn: &Connection) -> rusqlite::Result<()> {
+    conn.create_scalar_function(
+        "codecite_role_weight",
+        2,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |ctx| {
+            let path: String = ctx.get(0)?;
+            let source_kind: String = ctx.get(1)?;
+            Ok(Role::of(&path, &source_kind).weight())
+        },
+    )?;
+    conn.create_scalar_function(
+        "codecite_name_key",
+        1,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |ctx| Ok(ctx.get::<Option<String>>(0)?.map(|name| name_key(&name))),
+    )
 }
 
 /// Turns the user's text into an FTS5 query, or `None` when it has no
@@ -322,7 +327,8 @@ fn query_names(text: &str) -> Vec<String> {
     if names.len() > 1 {
         names.push(names.concat());
     }
-    names.dedup();
+    let mut seen = std::collections::HashSet::new();
+    names.retain(|name| seen.insert(name.clone()));
     names
 }
 
@@ -759,6 +765,7 @@ mod tests {
             ["tokenvalidation", "middleware", "tokenvalidationmiddleware"]
         );
         assert!(query_names("--").is_empty());
+        assert_eq!(query_names("foo bar foo"), ["foo", "bar", "foobarfoo"]);
     }
 
     #[test]

@@ -394,6 +394,16 @@ mod tests {
                 ("function", 10, 10, "f()."),
             ])
         );
+        // A grouped `const` holds its specs directly; only `var` has a list.
+        let grouped = "package deps\nconst (\n\tX = 1\n\tY = 2\n)\n";
+        assert_eq!(
+            outline("deps/consts.go", grouped),
+            expect(&[
+                ("window", 1, 2, ""),
+                ("variable", 3, 3, "X."),
+                ("variable", 4, 4, "Y."),
+            ])
+        );
     }
 
     #[test]
