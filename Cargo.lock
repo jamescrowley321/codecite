@@ -221,6 +221,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "codecite-bench"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "codecite-core"
 version = "0.0.1"
 dependencies = [
