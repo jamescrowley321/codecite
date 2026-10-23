@@ -24,6 +24,13 @@ test('runDiff refuses a run whose app/ holds a symlink, and never reads its targ
     rmSync(join(run, 'project', 'app', 'leak.py'));
     symlinkSync(root, join(run, 'project', 'app', 'pkg', 'up'));
     assert.throws(() => runDiff(task, run), /pkg\/up/);
+    // app/ itself swapped for a link to a host directory.
+    rmSync(join(run, 'project', 'app'), { recursive: true });
+    const host = join(root, 'host');
+    mkdirSync(host);
+    writeFileSync(join(host, 'id_ed25519'), 'PRIVATE-KEY-planted\n');
+    symlinkSync(host, join(run, 'project', 'app'));
+    assert.throws(() => runDiff(task, run), (e) => /project\/app is a symlink/.test(e.message) && !e.message.includes('PRIVATE-KEY'));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

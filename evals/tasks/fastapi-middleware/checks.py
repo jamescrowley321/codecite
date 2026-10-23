@@ -61,6 +61,13 @@ def refers_to(expr, names, modules, wanted):
     return False
 
 
+def first_arg(call, keyword):
+    """The call's first positional argument, or its `keyword` argument."""
+    if call.args:
+        return call.args[0]
+    return next((k.value for k in call.keywords if k.arg == keyword), None)
+
+
 def check_middleware(trees):
     for path, tree in trees.items():
         if tree is None:
@@ -69,19 +76,23 @@ def check_middleware(trees):
         if not names and not modules:
             continue
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Call) or not node.args:
+            if not isinstance(node, ast.Call):
                 continue
             func = node.func
             fname = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else None
-            if fname in ("add_middleware", "Middleware") and refers_to(node.args[0], names, modules, "TokenValidationMiddleware"):
+            if fname not in ("add_middleware", "Middleware"):
+                continue
+            cls = first_arg(node, "middleware_class" if fname == "add_middleware" else "cls")
+            if cls is not None and refers_to(cls, names, modules, "TokenValidationMiddleware"):
                 return True, f"{path.name}: {fname}(TokenValidationMiddleware, ...)"
     return False, "no add_middleware(...) or Middleware(...) with identity-model's TokenValidationMiddleware"
 
 
 def route_path(decorator):
     if isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute) and decorator.func.attr in ("get", "api_route"):
-        if decorator.args and isinstance(decorator.args[0], ast.Constant):
-            return decorator.args[0].value
+        path = first_arg(decorator, "path")
+        if isinstance(path, ast.Constant):
+            return path.value
     return None
 
 
@@ -97,25 +108,34 @@ def check_current_user(trees):
             if not any(route_path(d) == "/me" for d in node.decorator_list):
                 continue
             found_me = True
-            args = node.args.args + node.args.kwonlyargs
-            for a in args:
-                if a.annotation is not None and any(refers_to(n, names, modules, "CurrentUser") for n in ast.walk(a.annotation)):
-                    return True, f"{path.name}: {node.name}({a.arg}: CurrentUser)"
+            # Defaults align with the last positional parameters; kw_defaults
+            # with kwonlyargs (None where a parameter has no default).
+            positional = node.args.posonlyargs + node.args.args
+            defaults = [None] * (len(positional) - len(node.args.defaults)) + node.args.defaults
+            for a, default in zip(positional + node.args.kwonlyargs, defaults + node.args.kw_defaults):
+                for expr in (a.annotation, default):
+                    if expr is not None and any(refers_to(n, names, modules, "CurrentUser") for n in ast.walk(expr)):
+                        return True, f"{path.name}: {node.name}({a.arg}: CurrentUser)"
     if not found_me:
         return False, "no /me route found"
-    return False, "the /me handler takes no parameter annotated with identity-model's CurrentUser"
+    return False, "the /me handler takes no parameter annotated with, or defaulting to, identity-model's CurrentUser"
+
+
+def is_environ(expr):
+    """`os.environ`, or `environ` imported from os."""
+    return (isinstance(expr, ast.Attribute) and expr.attr == "environ") or (isinstance(expr, ast.Name) and expr.id == "environ")
 
 
 def env_reads(tree):
     """String keys read through os.environ[...], os.environ.get(...) or os.getenv(...)."""
     keys = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Attribute) and node.value.attr == "environ":
+        if isinstance(node, ast.Subscript) and is_environ(node.value):
             if isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, str):
                 keys.add(node.slice.value)
         elif isinstance(node, ast.Call) and node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
             f = node.func
-            if isinstance(f, ast.Attribute) and (f.attr == "getenv" or (f.attr == "get" and isinstance(f.value, ast.Attribute) and f.value.attr == "environ")):
+            if isinstance(f, ast.Attribute) and (f.attr == "getenv" or (f.attr == "get" and is_environ(f.value))):
                 keys.add(node.args[0].value)
             elif isinstance(f, ast.Name) and f.id == "getenv":
                 keys.add(node.args[0].value)
@@ -196,16 +216,19 @@ def files(project: Path):
 def check_scope(start: Path, final: Path):
     a, b = files(start), files(final)
     problems = []
+    # Docs may change or be added (agents document the new settings);
+    # pyproject.toml is deps-unchanged's (its path is substituted per run).
+    def guarded(rel):
+        return not rel.startswith("app/") and not rel.endswith(".md")
     for rel, p in a.items():
         if rel not in b:
             problems.append(f"deleted {rel}")
-        # Docs may change (agents document the new settings); pyproject.toml is
-        # deps-unchanged's (its path is substituted per run).
-        elif not rel.startswith("app/") and not rel.endswith(".md") and rel != "pyproject.toml" and p.read_bytes() != b[rel].read_bytes():
+        elif guarded(rel) and rel != "pyproject.toml" and p.read_bytes() != b[rel].read_bytes():
             problems.append(f"changed {rel}")
+    problems += [f"added {rel}" for rel in sorted(b.keys() - a.keys()) if guarded(rel)]
     if problems:
         return False, "; ".join(problems[:5])
-    return True, "no start file deleted, and none outside app/ changed but docs"
+    return True, "no start file deleted, and none outside app/ added or changed but docs"
 
 
 def main():

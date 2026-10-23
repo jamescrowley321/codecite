@@ -4,8 +4,8 @@
 
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
 import { loadRound, redact } from './call.mjs';
 import { expandRuns } from './plan.mjs';
 import { requireSecret } from './secrets.mjs';
@@ -50,7 +50,12 @@ export function runDiff(task, runDir) {
   const final = join(runDir, 'project', 'app');
   // The agent wrote `final`, and a symlink it planted there can point at any
   // host file, which a diff would send to the judge. A solution never needs
-  // one, so the run goes unjudged; --no-dereference backs that up.
+  // one, so the run goes unjudged; --no-dereference backs that up. app/ (and
+  // project/, which the agent could also swap) are checked first, since
+  // readdirSync would follow them.
+  for (const dir of [dirname(final), final]) {
+    if (lstatSync(dir).isSymbolicLink()) throw new Error(`judge: ${relative(runDir, dir)} is a symlink, which is never diffed`);
+  }
   const links = readdirSync(final, { recursive: true, withFileTypes: true }).filter((e) => e.isSymbolicLink());
   if (links.length) throw new Error(`judge: app/ holds symlinks, which are never diffed: ${links.map((e) => relative(final, join(e.parentPath, e.name))).join(', ')}`);
   const r = spawnSync('diff', ['-ruN', '--no-dereference', '--exclude=__pycache__', '--exclude=*.pyc', start, final], { encoding: 'utf8', maxBuffer: 16 << 20 });
