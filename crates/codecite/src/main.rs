@@ -179,7 +179,7 @@ fn check_corpus_name(corpus: &str) -> anyhow::Result<()> {
 }
 
 /// `codecite search`: opens the corpus read-only and prints its results,
-/// as JSON or in a short human form.
+/// as JSON or in a short text form.
 fn search(corpus: &str, query: &SearchQuery<'_>, json: bool) -> anyhow::Result<()> {
     let dirs = project_dirs()?;
     let store = Store::open_corpus(dirs.data_dir(), corpus)?;
@@ -188,7 +188,7 @@ fn search(corpus: &str, query: &SearchQuery<'_>, json: bool) -> anyhow::Result<(
 }
 
 /// `codecite read`: opens the corpus read-only and prints the cited text,
-/// as JSON or in its human form.
+/// as JSON or in its text form.
 fn read(corpus: &str, citation: &str, options: &ReadOptions, json: bool) -> anyhow::Result<()> {
     let dirs = project_dirs()?;
     let store = Store::open_corpus(dirs.data_dir(), corpus)?;
@@ -262,23 +262,23 @@ fn write_results(
         serde_json::to_writer_pretty(&mut *out, results)?;
         writeln!(out)?;
     } else {
-        out.write_all(human(results).as_bytes())?;
+        out.write_all(text(results).as_bytes())?;
     }
     out.flush()
 }
 
-/// The most characters of a snippet line the human form shows.
+/// The most characters of a snippet line the text form shows.
 const HUMAN_SNIPPET_CHARS: usize = 120;
 
-/// How many hex characters of a code citation's commit the human form
+/// How many hex characters of a code citation's commit the text form
 /// shows. `codecite read` accepts the abbreviation.
 const HUMAN_COMMIT_CHARS: usize = 12;
 
-/// The short human form of the results. A header carries the license class
+/// The short text form of the results. A header carries the license class
 /// and `indexed_at` when every result shares them; otherwise each result's
 /// line does. Per result: one line with its rank, citation, kind, symbol
 /// and score, then its snippet's first non-blank line.
-fn human(results: &[SearchResult]) -> String {
+fn text(results: &[SearchResult]) -> String {
     use std::fmt::Write as _;
 
     let Some(first) = results.first() else {
@@ -606,12 +606,12 @@ code · adapt · indexed 2026-10-20T06:00:00Z
     }
 
     #[test]
-    fn the_human_form_puts_shared_fields_in_one_header() {
+    fn the_text_form_puts_shared_fields_in_one_header() {
         let mut dirty = code("src/b.rs", None, "\n  \n    let x = 1;  \nmore");
         dirty.dirty = Some(true);
         dirty.score = 1.0;
         assert_eq!(
-            human(&[
+            text(&[
                 code("src/a.rs", Some("validate"), "fn validate() {\n    a();\n}"),
                 dirty
             ]),
@@ -623,35 +623,35 @@ code · adapt · indexed 2026-10-20T06:00:00Z
 "
         );
         assert_eq!(
-            human(&[code("a.rs", None, "x")]),
+            text(&[code("a.rs", None, "x")]),
             "1 result · adapt · indexed 2026-10-20T06:00:00Z
 1. app@0123456789ab:a.rs#L1-L5 · function · 2.5
    x
 "
         );
-        assert_eq!(human(&[]), "no results\n");
+        assert_eq!(text(&[]), "no results\n");
     }
 
     #[test]
-    fn the_human_form_puts_differing_fields_on_each_line() {
+    fn the_text_form_puts_differing_fields_on_each_line() {
         let mut quote = code("b.rs", None, "  \n\t\n");
         quote.license_class = "quote".into();
         let mut later = code("c.rs", None, "y");
         later.indexed_at = "2026-10-21T06:00:00Z".into();
         assert_eq!(
-            human(&[code("a.rs", None, "x"), quote]),
+            text(&[code("a.rs", None, "x"), quote]),
             "1. app@0123456789ab:a.rs#L1-L5 · function · 2.5 · adapt · indexed 2026-10-20T06:00:00Z
    x
 2. app@0123456789ab:b.rs#L1-L5 · function · 2.5 · quote · indexed 2026-10-20T06:00:00Z
 "
         );
-        let out = human(&[code("a.rs", None, "x"), later]);
+        let out = text(&[code("a.rs", None, "x"), later]);
         assert!(out.starts_with("1. "), "{out}");
         assert!(out.contains("indexed 2026-10-21T06:00:00Z\n"), "{out}");
     }
 
     #[test]
-    fn the_human_form_keeps_spec_and_other_citations_whole() {
+    fn the_text_form_keeps_spec_and_other_citations_whole() {
         let spec = SearchResult {
             citation: "rfc9449@sha256:0123456789ab#section-4.3/step-2".into(),
             kind: "step".into(),
@@ -666,7 +666,7 @@ code · adapt · indexed 2026-10-20T06:00:00Z
         short.citation = "app@0123456:a.rs#L1-L5".into();
         let mut not_hex = code("a.rs", None, "x");
         not_hex.citation = format!("app@{}g:a.rs#L1-L5", &SHA[..39]);
-        let out = human(&[spec, short, not_hex]);
+        let out = text(&[spec, short, not_hex]);
         assert!(
             out.contains(
                 "1. rfc9449@sha256:0123456789ab#section-4.3/step-2 · step · 12.3 · quote ·"
@@ -681,13 +681,13 @@ code · adapt · indexed 2026-10-20T06:00:00Z
     }
 
     #[test]
-    fn the_human_form_cuts_a_long_snippet_line() {
+    fn the_text_form_cuts_a_long_snippet_line() {
         let long = "é".repeat(130);
-        let out = human(&[code("a.rs", None, &long)]);
+        let out = text(&[code("a.rs", None, &long)]);
         let line = out.lines().nth(2).unwrap();
         assert_eq!(line, format!("   {}…", "é".repeat(120)));
         let exact = "a".repeat(120);
-        let out = human(&[code("a.rs", None, &exact)]);
+        let out = text(&[code("a.rs", None, &exact)]);
         assert_eq!(out.lines().nth(2).unwrap(), format!("   {exact}"));
     }
 
@@ -719,7 +719,7 @@ code · adapt · indexed 2026-10-20T06:00:00Z
     }
 
     #[test]
-    fn the_human_form_escapes_control_characters() {
+    fn the_text_form_escapes_control_characters() {
         let result = SearchResult {
             citation: format!("app@{SHA}:a\u{1b}.md#L1-L1"),
             kind: "section".into(),
@@ -730,7 +730,7 @@ code · adapt · indexed 2026-10-20T06:00:00Z
             dirty: None,
             snippet: "# Title\u{1b}]52;c;ZWNobyBoaQ==\u{7}\tend".into(),
         };
-        let out = human(&[result]);
+        let out = text(&[result]);
         assert!(
             !out.chars()
                 .any(|c| c.is_control() && c != '\n' && c != '\t')
