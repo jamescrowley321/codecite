@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, bail};
 use clap::{Parser, Subcommand};
 use codecite_core::{
-    DEFAULT_MAX_LINES, DEFAULT_SEARCH_LIMIT, ReadOptions, ReadResult, SearchQuery, SearchResult,
-    SearchResults, Store, is_corpus_name,
+    DEFAULT_MAX_LINES, DEFAULT_SEARCH_LIMIT, MAX_READ_LINES, MAX_SEARCH_LIMIT, ReadOptions,
+    ReadResult, SearchQuery, SearchResult, SearchResults, Store, is_corpus_name,
 };
 use codecite_index::{Clones, Fetcher, LicenseClass, Manifest, Source, WalkOptions, index_corpus};
 
@@ -46,8 +46,8 @@ enum Command {
         /// Only files whose path matches this glob; `*` matches `/` too.
         #[arg(long)]
         path: Option<String>,
-        /// The most results to print.
-        #[arg(long, default_value_t = DEFAULT_SEARCH_LIMIT, value_parser = clap::value_parser!(u32).range(1..))]
+        /// The most results to print, at most 50.
+        #[arg(long, default_value_t = DEFAULT_SEARCH_LIMIT, value_parser = clap::value_parser!(u32).range(1..=i64::from(MAX_SEARCH_LIMIT)))]
         limit: u32,
         /// Print the results as JSON: `{"results": [...]}`, as the MCP
         /// `search` tool returns them.
@@ -64,8 +64,8 @@ enum Command {
         /// A code or spec citation, as search prints it, as a spec URL, or
         /// as people write it: `RFC 9449 §4.3`, `OIDC Core §3.1.3.7 step 13`.
         citation: String,
-        /// The most lines of text to print.
-        #[arg(long, default_value_t = DEFAULT_MAX_LINES, value_parser = clap::value_parser!(u32).range(1..))]
+        /// The most lines of text to print, at most 500.
+        #[arg(long, default_value_t = DEFAULT_MAX_LINES, value_parser = clap::value_parser!(u32).range(1..=i64::from(MAX_READ_LINES)))]
         max_lines: u32,
         /// Print the result as JSON, as the MCP `read` tool returns it.
         #[arg(long)]
@@ -506,8 +506,13 @@ mod tests {
         assert_eq!(path.as_deref(), Some("src/*"));
         assert_eq!(limit, 3);
         assert!(json && allow_stale);
-        let zero = ["codecite", "search", "identity", "jti", "--limit", "0"];
-        assert!(Cli::try_parse_from(zero).is_err());
+        // From 1 to the cap the MCP tool has too.
+        for limit in ["0", "51", "4000000000"] {
+            let args = ["codecite", "search", "identity", "jti", "--limit", limit];
+            assert!(Cli::try_parse_from(args).is_err(), "{limit}");
+        }
+        let most = ["codecite", "search", "identity", "jti", "--limit", "50"];
+        assert!(Cli::try_parse_from(most).is_ok());
     }
 
     #[test]
@@ -552,8 +557,12 @@ mod tests {
         };
         assert_eq!(max_lines, 5);
         assert!(json && allow_stale);
-        let zero = ["codecite", "read", "identity", "§4.3", "--max-lines", "0"];
-        assert!(Cli::try_parse_from(zero).is_err());
+        for lines in ["0", "501"] {
+            let args = ["codecite", "read", "identity", "§4.3", "--max-lines", lines];
+            assert!(Cli::try_parse_from(args).is_err(), "{lines}");
+        }
+        let most = ["codecite", "read", "identity", "§4.3", "--max-lines", "500"];
+        assert!(Cli::try_parse_from(most).is_ok());
     }
 
     #[test]

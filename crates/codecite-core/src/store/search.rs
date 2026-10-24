@@ -18,6 +18,10 @@ pub const MAX_SNIPPET_LINES: usize = 40;
 /// the CLI's `--limit` and the MCP `search` tool's `limit` default.
 pub const DEFAULT_SEARCH_LIMIT: u32 = 5;
 
+/// The most results a search may ask for: the CLI's `--limit` and the MCP
+/// `search` tool's `limit` refuse more.
+pub const MAX_SEARCH_LIMIT: u32 = 50;
+
 /// How many days an index stays fresh when its manifest doesn't say.
 pub const DEFAULT_MAX_AGE_DAYS: u32 = 30;
 

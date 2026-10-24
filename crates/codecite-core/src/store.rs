@@ -13,12 +13,12 @@ mod corpora;
 pub use corpora::{Corpora, CorpusInfo, corpora};
 
 mod read;
-pub use read::{DEFAULT_MAX_LINES, QUOTE_INSTRUCTION, ReadOptions, ReadResult};
+pub use read::{DEFAULT_MAX_LINES, MAX_READ_LINES, QUOTE_INSTRUCTION, ReadOptions, ReadResult};
 
 mod search;
 pub use search::{
-    DEFAULT_MAX_AGE_DAYS, DEFAULT_SEARCH_LIMIT, Freshness, MAX_SNIPPET_LINES, SearchQuery,
-    SearchResult, SearchResults,
+    DEFAULT_MAX_AGE_DAYS, DEFAULT_SEARCH_LIMIT, Freshness, MAX_SEARCH_LIMIT, MAX_SNIPPET_LINES,
+    SearchQuery, SearchResult, SearchResults,
 };
 
 mod write;
@@ -183,11 +183,12 @@ impl Store {
         Store::open_read_only(&path)
     }
 
-    /// Opens `corpus` as [`Store::open_corpus`] does or, when it is `None`,
-    /// the one corpus `dir` holds. With none or several to choose from,
-    /// that is [`Error::NoCorpusNamed`], listing them: never a guess.
+    /// Opens `corpus` as [`Store::open_corpus`] does or, when it is `None`
+    /// or empty, the one corpus `dir` holds. With none or several to
+    /// choose from, that is [`Error::NoCorpusNamed`], listing them: never a
+    /// guess.
     pub fn open_corpus_or_only(dir: &Path, corpus: Option<&str>) -> Result<Store> {
-        if let Some(corpus) = corpus {
+        if let Some(corpus) = corpus.filter(|name| !name.is_empty()) {
             return Store::open_corpus(dir, corpus);
         }
         match known_corpora(dir)?.as_slice() {
@@ -824,6 +825,10 @@ mod tests {
         );
         drop(Store::open_read_write(&dir.join("specs.db")).unwrap());
         let store = Store::open_corpus_or_only(&dir, None).unwrap();
+        assert_eq!(store.path(), dir.join("specs.db"));
+        drop(store);
+        // An empty name is no name.
+        let store = Store::open_corpus_or_only(&dir, Some("")).unwrap();
         assert_eq!(store.path(), dir.join("specs.db"));
         drop(store);
         drop(Store::open_read_write(&dir.join("identity.db")).unwrap());

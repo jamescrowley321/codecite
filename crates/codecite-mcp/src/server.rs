@@ -5,14 +5,14 @@ use std::num::NonZeroU32;
 use std::path::PathBuf;
 
 use codecite_core::{
-    Corpora, DEFAULT_MAX_LINES, DEFAULT_SEARCH_LIMIT, ReadOptions, ReadResult, SearchQuery,
-    SearchResults, Store,
+    Corpora, DEFAULT_MAX_LINES, DEFAULT_SEARCH_LIMIT, MAX_READ_LINES, MAX_SEARCH_LIMIT,
+    ReadOptions, ReadResult, SearchQuery, SearchResults, Store,
 };
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::{ServerHandler, ServiceExt as _, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::Result;
 
@@ -22,8 +22,8 @@ use crate::Result;
 pub struct SearchParams {
     /// What to search for: words, identifiers or both.
     pub query: String,
-    /// The corpus to search, as `corpora` lists it. Omitted, the only
-    /// corpus there is.
+    /// The corpus to search, as `corpora` lists it. Omitted or empty, the
+    /// only corpus there is.
     #[serde(default)]
     pub corpus: Option<String>,
     /// Only files in this language, such as `rust` or `markdown`.
@@ -32,8 +32,9 @@ pub struct SearchParams {
     /// Only files whose path matches this glob; `*` matches `/` too.
     #[serde(default)]
     pub path: Option<String>,
-    /// The most results to return.
-    #[serde(default = "default_limit")]
+    /// The most results to return, at most 50.
+    #[serde(default = "default_limit", deserialize_with = "search_limit")]
+    #[schemars(range(min = 1, max = MAX_SEARCH_LIMIT))]
     pub limit: NonZeroU32,
     /// Search an index older than its maximum age instead of refusing it.
     #[serde(default)]
@@ -47,12 +48,13 @@ pub struct ReadParams {
     /// A code or spec citation, as `search` returns it, as a spec URL, or
     /// as people write it: `RFC 9449 §4.3`, `OIDC Core §3.1.3.7 step 13`.
     pub citation: String,
-    /// The corpus to read from, as `corpora` lists it. Omitted, the only
-    /// corpus there is.
+    /// The corpus to read from, as `corpora` lists it. Omitted or empty,
+    /// the only corpus there is.
     #[serde(default)]
     pub corpus: Option<String>,
-    /// The most lines of text to return.
-    #[serde(default = "default_max_lines")]
+    /// The most lines of text to return, at most 500.
+    #[serde(default = "default_max_lines", deserialize_with = "read_lines")]
+    #[schemars(range(min = 1, max = MAX_READ_LINES))]
     pub max_lines: NonZeroU32,
     /// Read an index older than its maximum age instead of refusing it.
     #[serde(default)]
@@ -71,6 +73,44 @@ fn default_max_lines() -> NonZeroU32 {
     NonZeroU32::new(DEFAULT_MAX_LINES).expect("the default is not zero")
 }
 
+/// A search `limit`: from 1 to [`MAX_SEARCH_LIMIT`].
+fn search_limit<'de, D: Deserializer<'de>>(de: D) -> Result<NonZeroU32, D::Error> {
+    at_most(de, MAX_SEARCH_LIMIT)
+}
+
+/// A read's `max_lines`: from 1 to [`MAX_READ_LINES`].
+fn read_lines<'de, D: Deserializer<'de>>(de: D) -> Result<NonZeroU32, D::Error> {
+    at_most(de, MAX_READ_LINES)
+}
+
+/// A nonzero count no larger than `max`. A larger one fails to
+/// deserialize, so the call fails before any corpus is opened, as a zero
+/// does.
+fn at_most<'de, D: Deserializer<'de>>(de: D, max: u32) -> Result<NonZeroU32, D::Error> {
+    let n = NonZeroU32::deserialize(de)?;
+    if n.get() > max {
+        return Err(serde::de::Error::custom(format!(
+            "invalid value: integer `{n}`, expected at most {max}"
+        )));
+    }
+    Ok(n)
+}
+
+/// What a tool's structured content is: its result, or a tool error.
+/// Both are in the output schema the tool advertises, as an `anyOf`, so a
+/// client that checks structured content against it accepts either. The
+/// variants are untagged: each serializes as its own JSON, so a result is
+/// the same JSON the CLI prints.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+#[serde(untagged)]
+#[schemars(extend("type" = "object"))]
+pub enum Output<T> {
+    /// The tool's result.
+    Ok(T),
+    /// What went wrong instead.
+    Err(ToolError),
+}
+
 /// A failed tool call's structured content: `{"error": {...}}`.
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct ToolError {
@@ -81,14 +121,16 @@ pub struct ToolError {
 /// What went wrong in a tool call, for an agent to act on.
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct ErrorInfo {
-    /// The error's kind in snake_case, such as `unknown_corpus` or
-    /// `ambiguous_document`: [`codecite_core::Error::kind`].
+    /// The error's kind in snake_case, such as `unknown_corpus`,
+    /// `stale_index` or `ambiguous_document`; `internal` when the query
+    /// stopped unexpectedly.
     pub kind: String,
     /// The message the CLI prints, followed by its causes.
     pub message: String,
     /// What the caller could have meant: corpora, names, versions or
     /// pinned citations. Left out when there are none.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    // `default` tells the schema the field may be left out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub candidates: Vec<String>,
 }
 
@@ -106,10 +148,16 @@ impl From<&codecite_core::Error> for ToolError {
 
 /// What a tool returns: its result, or a tool error with structured
 /// content. rmcp sends an `Err` as a result with `isError: true`, so the
-/// agent sees the error instead of a failed request. The tools spell the
-/// type out, since `#[tool]` reads the output schema from the
-/// `Result<Json<T>, _>` it sees and can't look through an alias.
-type ToolResult<T> = Result<Json<T>, Json<ToolError>>;
+/// agent sees the error instead of a failed request. Both sides are an
+/// [`Output`], whose schema rmcp advertises as the tool's output schema.
+/// The tools spell the type out, since `#[tool]` reads the output schema
+/// from the `Result<Json<T>, _>` it sees and can't look through an alias.
+type ToolResult<T> = Result<Json<Output<T>>, Json<Output<T>>>;
+
+/// A tool error, as the `Err` side of a [`ToolResult`].
+fn tool_error<T>(error: ToolError) -> ToolResult<T> {
+    Err(Json(Output::Err(error)))
+}
 
 /// Runs `query`, a blocking call into the store, on tokio's blocking pool
 /// and turns its result into a tool result.
@@ -125,15 +173,15 @@ where
     F: FnOnce() -> codecite_core::Result<T> + Send + 'static,
 {
     match tokio::task::spawn_blocking(query).await {
-        Ok(Ok(value)) => Ok(Json(value)),
-        Ok(Err(err)) => Err(Json(ToolError::from(&err))),
-        Err(join) => Err(Json(ToolError {
+        Ok(Ok(value)) => Ok(Json(Output::Ok(value))),
+        Ok(Err(err)) => tool_error(ToolError::from(&err)),
+        Err(join) => tool_error(ToolError {
             error: ErrorInfo {
                 kind: "internal".into(),
                 message: format!("the query stopped unexpectedly: {join}"),
                 candidates: Vec::new(),
             },
-        })),
+        }),
     }
 }
 
@@ -163,7 +211,7 @@ impl Server {
     #[tool(
         description = "List the corpora this server can search: each one's age, size, source count and whether it is stale. A stale corpus is refused unless a query allows it."
     )]
-    async fn corpora(&self) -> Result<Json<Corpora>, Json<ToolError>> {
+    async fn corpora(&self) -> Result<Json<Output<Corpora>>, Json<Output<Corpora>>> {
         let dir = self.data_dir.clone();
         blocking(move || codecite_core::corpora(&dir)).await
     }
@@ -175,7 +223,7 @@ impl Server {
     async fn search(
         &self,
         Parameters(params): Parameters<SearchParams>,
-    ) -> Result<Json<SearchResults>, Json<ToolError>> {
+    ) -> Result<Json<Output<SearchResults>>, Json<Output<SearchResults>>> {
         let dir = self.data_dir.clone();
         // `params` moves into the closure, which owns it on the blocking
         // pool; `SearchQuery` borrows from it there.
@@ -200,7 +248,7 @@ impl Server {
     async fn read(
         &self,
         Parameters(params): Parameters<ReadParams>,
-    ) -> Result<Json<ReadResult>, Json<ToolError>> {
+    ) -> Result<Json<Output<ReadResult>>, Json<Output<ReadResult>>> {
         let dir = self.data_dir.clone();
         blocking(move || {
             let store = Store::open_corpus_or_only(&dir, params.corpus.as_deref())?;
@@ -458,9 +506,11 @@ mod tests {
         assert_eq!(names, ["corpora", "read", "search"]);
         let corpora = tools.iter().find(|t| t.name == "corpora").unwrap();
         assert_eq!(corpora.input_schema.get("type").unwrap(), "object");
-        // The output schema comes from `Corpora`'s Rust type.
+        // The output schema comes from `Corpora`'s Rust type, or a tool
+        // error.
         let output = Value::Object((*corpora.output_schema.clone().unwrap()).clone());
-        assert_eq!(output["properties"]["corpora"]["type"], "array");
+        assert_eq!(output["type"], "object");
+        assert_eq!(output["anyOf"].as_array().unwrap().len(), 2, "{output}");
 
         let structured = session.ok("corpora", json!({})).await;
         assert_eq!(structured["corpora"][0]["corpus"], "demo");
@@ -492,14 +542,15 @@ mod tests {
         // The CLI's default, so a call and the command it mirrors agree.
         assert_eq!(input["properties"]["limit"]["default"], 5);
         assert_eq!(input["properties"]["limit"]["minimum"], 1);
-        assert_eq!(output["properties"]["results"]["type"], "array");
+        assert_eq!(input["properties"]["limit"]["maximum"], 50);
+        assert!(output["$defs"]["SearchResults"].is_object(), "{output}");
         let (input, output) = schema("read");
         assert_eq!(input["required"], json!(["citation"]));
         assert_eq!(input["properties"]["max_lines"]["default"], 80);
-        assert!(
-            output["properties"].get("instruction").is_some(),
-            "{output}"
-        );
+        assert_eq!(input["properties"]["max_lines"]["minimum"], 1);
+        assert_eq!(input["properties"]["max_lines"]["maximum"], 500);
+        let read = &output["$defs"]["ReadResult"];
+        assert!(read["properties"].get("instruction").is_some(), "{output}");
         session.stop().await;
     }
 
@@ -664,7 +715,13 @@ mod tests {
             ("search", json!({"query": "validate", "limit": 0})),
             ("search", json!({"query": "validate", "limit": -1})),
             ("search", json!({})),
+            ("search", json!({"query": "validate", "limit": 51})),
+            (
+                "search",
+                json!({"query": "validate", "limit": 4_000_000_000_u64}),
+            ),
             ("read", json!({"citation": "§4.3", "max_lines": 0})),
+            ("read", json!({"citation": "§4.3", "max_lines": 501})),
             ("read", json!({"citation": "§4.3", "corpus_name": "demo"})),
         ] {
             let result = session.call(tool, arguments.clone()).await;
@@ -675,6 +732,97 @@ mod tests {
                 "{tool} {arguments}: {text}"
             );
         }
+        session.stop().await;
+    }
+
+    #[tokio::test]
+    async fn the_caps_themselves_are_accepted() {
+        let dir = fixture();
+        let session = Session::start(dir.path()).await;
+        let found = session
+            .ok("search", json!({"query": "validate", "limit": 50}))
+            .await;
+        assert_eq!(found["results"].as_array().unwrap().len(), 1);
+        let citation = format!("app@{HEAD}:src/lib.rs#L1-L3");
+        let read = session
+            .ok("read", json!({"citation": citation, "max_lines": 500}))
+            .await;
+        assert_eq!(read["truncated"], false);
+        session.stop().await;
+    }
+
+    #[tokio::test]
+    async fn an_empty_corpus_name_is_no_corpus_named() {
+        let dir = fixture();
+        let session = Session::start(dir.path()).await;
+        let found = session
+            .ok("search", json!({"query": "validate", "corpus": ""}))
+            .await;
+        assert_eq!(found, store_search(dir.path(), "validate"));
+        let read = json!({"citation": "RFC 9449 §4.3", "corpus": ""});
+        assert_eq!(session.ok("read", read).await["kind"], "section");
+        session.stop().await;
+        // With two corpora, an empty name is the same as none.
+        write_corpus(dir.path(), "specs");
+        let session = Session::start(dir.path()).await;
+        let err = session
+            .err("search", json!({"query": "validate", "corpus": ""}))
+            .await;
+        assert_eq!(err["kind"], "no_corpus_named");
+        session.stop().await;
+    }
+
+    /// Every result a tool sends, success or error, fits the output schema
+    /// it advertises: a client that checks structured content against the
+    /// schema, as the MCP spec says it may, accepts both.
+    #[tokio::test]
+    async fn every_result_fits_its_tools_output_schema() {
+        let dir = fixture();
+        let session = Session::start(dir.path()).await;
+        let tools = session.client.list_all_tools().await.unwrap();
+        let validator = |name: &str| {
+            let tool = tools.iter().find(|t| t.name == name).unwrap();
+            let schema = Value::Object((*tool.output_schema.clone().unwrap()).clone());
+            jsonschema::validator_for(&schema).unwrap()
+        };
+        let citation = format!("app@{HEAD}:src/lib.rs#L1-L3");
+        let calls = [
+            ("corpora", json!({}), false),
+            ("search", json!({"query": "validate"}), false),
+            ("search", json!({"query": "zzzz"}), false),
+            (
+                "search",
+                json!({"query": "validate", "corpus": "dmeo"}),
+                true,
+            ),
+            ("search", json!({"query": "  !! "}), true),
+            ("read", json!({"citation": "RFC 9449 §4.3"}), false),
+            ("read", json!({"citation": citation}), false),
+            ("read", json!({"citation": "§4.3"}), true),
+            ("read", json!({"citation": "RFC 9449 §04.3"}), true),
+            ("read", json!({"citation": "hello world"}), true),
+        ];
+        for (tool, arguments, is_error) in calls {
+            let result = session.call(tool, arguments.clone()).await;
+            assert_eq!(result.is_error, Some(is_error), "{tool} {arguments}");
+            let content = structured(result);
+            assert_eq!(content.get("error").is_some(), is_error, "{content}");
+            let errors: Vec<String> = validator(tool)
+                .iter_errors(&content)
+                .map(|e| e.to_string())
+                .collect();
+            assert!(errors.is_empty(), "{tool} {arguments}: {errors:?}");
+        }
+        session.stop().await;
+
+        // And the corpora tool's error, from a broken data directory.
+        let file = dir.path().join("data");
+        std::fs::write(&file, "x").unwrap();
+        let session = Session::start(&file).await;
+        let result = session.call("corpora", json!({})).await;
+        assert_eq!(result.is_error, Some(true));
+        let content = structured(result);
+        assert!(validator("corpora").is_valid(&content), "{content}");
         session.stop().await;
     }
 

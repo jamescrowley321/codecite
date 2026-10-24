@@ -17,6 +17,11 @@ use crate::{
 /// How many lines `read` returns when the caller doesn't say.
 pub const DEFAULT_MAX_LINES: u32 = 80;
 
+/// The most lines a read may ask for: the CLI's `--max-lines` and the MCP
+/// `read` tool's `max_lines` refuse more, which keeps one answer's size
+/// bounded.
+pub const MAX_READ_LINES: u32 = 500;
+
 /// The most candidates an error lists.
 const MAX_CANDIDATES: usize = 5;
 
