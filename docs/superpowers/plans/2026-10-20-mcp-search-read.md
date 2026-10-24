@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - One JSON per operation: `SearchResults` and `ReadResult` are the result types of both the CLI and the tools, and the tools' output schemas are generated from them. The tool text and the CLI's `--json` stdout are both `serde_json::Value::to_string` (compact, keys sorted); the CLI adds a newline.
-- `search` inputs: `query`, `corpus?`, `language?`, `path?`, `limit` (default 10, at least 1), `allow_stale` (default false). `read` inputs: `citation`, `corpus?`, `max_lines` (default 80, at least 1), `allow_stale` (default false). Unknown fields are refused. Arguments that don't deserialize are rmcp's tool error `failed to deserialize parameters: …`, before any corpus is opened.
+- `search` inputs: `query`, `corpus?`, `language?`, `path?`, `limit` (default `DEFAULT_SEARCH_LIMIT`, 5, the CLI's since #84; at least 1), `allow_stale` (default false). `read` inputs: `citation`, `corpus?`, `max_lines` (default 80, at least 1), `allow_stale` (default false). Unknown fields are refused. Arguments that don't deserialize are rmcp's tool error `failed to deserialize parameters: …`, before any corpus is opened.
 - An omitted `corpus` is the data directory's only corpus. With none or several, the error is `NoCorpusNamed` listing them: "name a corpus; known corpora: a, b", or with none the `UnknownCorpus` tail "no corpus has been indexed yet; run codecite index".
 - A tool error's structured content is `{"error": {"kind", "message", "candidates"?}}`: `kind` from `Error::kind`, `message` the error and its causes joined by `: ` (the CLI's message, with `BadCitation`'s parse error), `candidates` from `Error::candidates`, left out when empty. A panicked or cancelled query is kind `internal`.
 - A `read` result from a `quote` source has `instruction`: "Quote this text exactly, with its citation; never paraphrase it." (`QUOTE_INSTRUCTION`). Other classes have none, and the field is left out.
@@ -21,6 +21,15 @@
 - `#[tool]` reads the output schema from a literal `Result<Json<T>, _>` return type, so the tools spell it out instead of using the `ToolResult` alias.
 - The workspace forbids `unsafe_code` and warns on `missing_docs`; every public item gets a doc comment.
 - Gates: `cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo deny check`.
+
+## Changes on main since this plan was written
+
+The diffs below were written against b76bfa1. Rebased onto main after #84, #96 and #99, the code wins where they disagree:
+
+- The CLI's `search --limit` default is 5 (#84), not 10. Both front ends take it from a new `codecite_core::DEFAULT_SEARCH_LIMIT`, so the tool's `limit` default is 5 and the tests that assume 10 assume 5.
+- `SearchResult` has a `role` field and doc links to `Role` and `NAME_BOOST` (#96). Those docs lose their link brackets, like `snippet`'s, and the `search` tool's description names `role`.
+- `crates/codecite-bench` (#99) parses `search --json`; it reads `{"results": [...]}` and refuses the bare array.
+- `docs/usage.md` (#64) describes the tools too; the README and design hunks are applied by hand to the rewritten text.
 
 ## Review Focus
 
