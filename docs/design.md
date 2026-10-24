@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-10-20
+last_verified: 2026-10-24
 ---
 
 # codecite — design
@@ -124,7 +124,7 @@ flowchart LR
 
 `codecite-mcp` serves MCP over stdio with `rmcp` on a single-threaded `tokio` runtime. Its tools are `rmcp` `#[tool]` methods: an input schema is generated from the tool's parameter type and an output schema from its result type (`schemars`), and the result types are the ones `codecite-core` returns to the CLI, so both print the same JSON. A tool runs its SQLite work on `tokio`'s blocking pool. stdout carries only MCP messages; anything else goes to stderr. A failed operation is a tool result with `isError` and the error's message and causes, so the agent can read it; an unknown tool or malformed request is a JSON-RPC error.
 
-All five publish to crates.io at one shared version, `workspace.package.version`. The internal crates require each other's exact version, since Cargo reads a `0.0.x` requirement as `=0.0.x`, so a release bumps all five together. `cargo publish --workspace` packages, verifies and uploads them in dependency order (`codecite-core`, then `codecite-index`, `codecite-lsp` and `codecite-mcp`, then `codecite`). Each package carries the root `README.md`, `LICENSE` and `NOTICE`; the crates link the last two as symlinks, which Cargo packages as files. Corpus manifests are not packaged: `codecite index <corpus>` reads `corpora/<corpus>.toml` from the current directory, or the file `--manifest` names.
+All five are laid out to publish to crates.io at one shared version, `workspace.package.version`; none is published yet, and publishing is #110. The internal crates require each other's exact version, since Cargo reads a `0.0.x` requirement as `=0.0.x`, so a release bumps all five together. `cargo publish --workspace` packages, verifies and uploads them in dependency order (`codecite-core`, then `codecite-index`, `codecite-lsp` and `codecite-mcp`, then `codecite`). Each package carries the root `README.md`, `LICENSE` and `NOTICE`; the crates link the last two as symlinks, which Cargo packages as files. Corpus manifests are not packaged: `codecite index <corpus>` reads `corpora/<corpus>.toml` from the current directory, or the file `--manifest` names.
 
 ## Data model
 
@@ -446,8 +446,9 @@ codecite has no network listener by default and makes no outbound calls except f
 - **Supply chain:** a pinned toolchain and a minimal dependency set.
   - Actions are pinned by commit SHA. Dependabot bumps them, `cargo` and `npm` after a 7-day cooldown.
   - PRs to `main` are gated on `cargo-deny` (its advisories check reads RustSec, the database `cargo-audit` uses), zizmor, gitleaks, OSV-Scanner, dependency review and CodeQL, as required checks in oss-admin.
-  - An embedding model is pinned by Hugging Face commit and per-file sha256, and fetched through the document fetcher (#109).
-  - Release signing, SBOM and provenance are #110. Until #110 lands, releases are published by hand and are not signed.
+  - When codecite ships an embedding model, it is pinned by Hugging Face commit and per-file sha256 and fetched through the document fetcher (#109).
+  - Publishing, release signing, SBOM and provenance are #110; there are no releases before it.
+  - The repository reports vulnerabilities privately (`SECURITY.md`, GitHub private vulnerability reporting).
 
 ## Evaluation plan
 
@@ -458,7 +459,7 @@ codecite earns its place only if agents using it do no worse than agents without
 - **Tasks:** start with one small task (protect a FastAPI app with identity-model's `TokenValidationMiddleware`, scored by hidden tests against node-oidc-provider), then real tasks replayed from the identity-model ports (TypeScript, Go, Rust) and from the startup (FHIR resources, audit logging). Each has a checkable outcome: tests or shared conformance vectors pass.
 - **Arms:** the same agent, model and prompt, once with the agent's normal tools and once with the `codecite` CLI added. Baseline with web tools and codecite's MCP tools come as further arms. Many runs per task per arm (10 epochs by default).
 - **Agents:** pi, over a panel of models on OpenRouter (`evals/inspect/panel.sh`). OpenRouter picks each model's host within the account's privacy settings (zero data retention, an allowed-provider list); the panel pins none.
-- **Measures:** pass rate, total tokens, cost, tool calls, wall time, and citation accuracy where a task cites specs (a sampled review of whether each cited span supports what the agent claimed).
+- **Measures:** the verdict uses pass rate, total tokens and wall time, which Inspect records for every sample. `report.py` reports those three. Cost, tool calls, and citation accuracy where a task cites specs (a sampled review of whether each cited span supports what the agent claimed), join the report when a task needs them.
 - **Isolation:** every sample runs in a fresh Docker sandbox built from one image: the task's project with its dependencies installed, identity-model's source at the task's pinned commit, and codecite with the corpus already indexed. The baseline arm deletes codecite before the agent starts, so the arms differ only by the codecite note and the binary on `PATH`. The sandbox shares the IdP's network namespace and has no route out. No agent can read the owner's files, the hidden tests (copied in only after the agent exits) or another sample.
 - **Credentials:** none in the sandbox. pi's model calls leave through Inspect's agent bridge, which holds the OpenRouter key on the host and records every call and its tokens.
 
@@ -472,7 +473,7 @@ codecite earns its place only if agents using it do no worse than agents without
 **Success criteria**
 
 - No loss on any of correctness, tokens or time, for any agent/model pair. Each measure is a difference between the arms: pass rate in points (codecite minus baseline), and median total tokens and median wall time relative to baseline's median (codecite / baseline - 1). Each gets a 95% percentile bootstrap interval over the usable runs (each arm resampled on its own, 10 000 times, with a fixed seed, so a scorecard is reproducible). A loss is an interval past the margin at its favourable end: the pass rate's upper bound more than 5 points below 0, or the tokens' or time's lower bound more than 5% above 0. This replaces the harness design's plain comparison of the numbers, which at 20 runs per arm stops on noise most of the time (the owner's decision). Any loss stops feature work until it is understood. A pair short of the planned usable runs in an arm, or with an unknown measure, is incomplete, not a pass.
-- Usable runs are scored samples: passed, failed, or timed out (an agent past its 600 s limit fails, scored on what it left behind). A provider error (pi's last turn ending in an error, or pi exiting non-zero) is infrastructure, not the agent's work: the sample errors, Inspect retries it up to twice, and an errored sample is never scored. `evals/inspect/report.py` computes the verdicts.
+- Usable runs are scored samples: passed or failed. An agent past its 600 s limit, or whose sandbox fails while it runs, fails and is scored on what it left behind, since retrying would keep only the runs that survive (#117 separates the two in the scorecard). Hidden tests or checks that hang fail the same way. A provider error that pi reports (its last turn ending in an error, or pi exiting non-zero) is infrastructure, not the agent's work: the sample errors, Inspect retries it up to twice, and an errored sample is never scored. `evals/inspect/report.py` computes the verdicts.
 - Recall@10 of at least 0.8 with BM25 alone.
 - Losses are reported alongside wins, with the tasks where retrieval hurt.
 
