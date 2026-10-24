@@ -105,6 +105,7 @@ jobs:
     # Two conditions, and BOTH matter: an explicit @claude mention, and the person
     # who wrote it being the owner, an org member, or a repo collaborator. See
     # "WHO CAN TRIGGER IT" above for why that test lives here, not in the action.
+    # NOTE: keep this expression in sync with the concurrency group key below.
     if: |
       (github.event_name == 'pull_request' && github.event.pull_request.draft == false && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) ||
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude') && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
@@ -137,7 +138,7 @@ jobs:
     #      @claude, an outsider toggling their PR draft->ready while a
     #      maintainer-requested review runs) gets a group unique to its own
     #      run, so even if GitHub resolved concurrency before `if:`, it could
-    #      cancel nothing. Keep this key in step with the `if:` below: if it
+    #      cancel nothing. Keep this key in step with the `if:` above: if it
     #      drifts wider, a skipped run can cancel a review again; if it drifts
     #      narrower, a real re-trigger runs alongside instead of superseding.
     #

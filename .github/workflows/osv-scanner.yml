@@ -20,6 +20,7 @@ jobs:
       security-events: write
       contents: read
       actions: read
+      pull-requests: read # resolve PR diff bounds for the scan
 
   # Full scan on push and schedule: uploads SARIF to the Security tab.
   # fail-on-vuln: false so an advisory already on main doesn't turn main red;
