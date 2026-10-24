@@ -25,6 +25,9 @@ import models
 
 def main(db, queries_path, reranker, first, second, k):
     k = int(k)
+    slug = f"{reranker.replace('/', '_')}-{first}-{second}-{k}"
+    if (OUT / f"rr-{slug}.json").exists():
+        return print(f"{slug}: cached")
     qs = queries(queries_path)
     text = {c["cite"]: unit(c, True) for c in spec_chunks(db) if c["current"]}
     lex = json.loads((OUT / f"{first}.json").read_text())
@@ -37,7 +40,6 @@ def main(db, queries_path, reranker, first, second, k):
         s = np.array(list(m.rerank(q["text"], [text[c] for c in cands], batch_size=16)))
         times.append(time.time() - t)
         out[q["id"]] = [cands[i] for i in np.argsort(-s, kind="stable")]
-    slug = f"{reranker.replace('/', '_')}-{first}-{second}-{k}"
     (OUT / f"rr-{slug}.json").write_text(json.dumps(out))
     print(f"{slug}: median {1000 * np.median(times):.0f} ms, p90 {1000 * np.percentile(times, 90):.0f} ms"
           f" per query, {np.mean([len(v) for v in out.values()]):.0f} candidates")

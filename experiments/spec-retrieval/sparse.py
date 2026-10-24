@@ -47,7 +47,8 @@ def main(db, queries_path, names):
                  for i, v in json.loads(cache.read_text())]
         else:
             t = time.time()
-            D = list(m.embed([unit(c, True) for c in chunks], batch_size=16))
+            # One chunk at a time: at batch 16 this 8k-context model was OOM-killed under 12 GB.
+            D = list(m.embed([unit(c, True) for c in chunks], batch_size=1))
             cache.write_text(json.dumps([[e.indices.tolist(), e.values.tolist()] for e in D]))
             print(f"{name}: expanded {len(chunks)} chunks in {time.time() - t:.0f}s, "
                   f"{np.mean([len(e.indices) for e in D]):.0f} terms per chunk")

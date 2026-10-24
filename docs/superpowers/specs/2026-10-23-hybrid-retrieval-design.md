@@ -3,7 +3,7 @@
 This answers #95: what codecite should add to BM25 so agents find spec
 sections they describe in their own words. It builds on the embeddings spike
 (#112, with its scoring fix #115). Every number here comes from scripts in
-`evals/retrieval/embeddings-spike/`.
+`experiments/spec-retrieval/`.
 
 ## Results
 
@@ -149,17 +149,16 @@ None are filed yet; James decides.
 
 ## Reproduce
 
-From `evals/retrieval/embeddings-spike/`, after the spike README's steps
-(index, `uv sync --locked`, `models.py verify`, `embed.py`, `fusion.py`):
+From `experiments/spec-retrieval/` (its README has the setup):
 
 ```bash
-uv run --locked python -I lexical.py ~/.local/share/codecite/identity-bench.db ../queries.toml
-uv run --locked python -I lexical.py ~/.local/share/codecite/identity-bench.db ../queries.toml rewrites.json
-uv run --locked python -I rewrite.py ../../../target/release/codecite
-uv run --locked python -I rerank.py ~/.local/share/codecite/identity-bench.db ../queries.toml \
-  Xenova/ms-marco-MiniLM-L-6-v2 lex-baseline vec-snowflake_snowflake-arctic-embed-m 20
-uv run --locked python -I options.py ../queries.toml --markdown
+uv sync --locked
+uv run --locked python -I models.py verify
+./run-all.sh
 ```
+
+`run-all.sh` runs every experiment in order and snapshots the results into
+`results/` (`table.md`, `per-query.csv`, and every ranked list in `lists/`).
 
 `lexical.py` rebuilds codecite's FTS5 table and reproduces `bm25-spec50.json`
 exactly before changing anything.

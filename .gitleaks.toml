@@ -11,6 +11,6 @@ id = "generic-api-key"
 [[rules.allowlists]]
 description = "sha256 digests in the embeddings spike's model lock"
 condition = "AND"
-paths = ['''^evals/retrieval/embeddings-spike/models\.lock\.json$''']
+paths = ['''^experiments/spec-retrieval/models\.lock\.json$''']
 regexTarget = "secret"
 regexes = ['''^[0-9a-f]{64}$''']
