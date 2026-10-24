@@ -31,11 +31,25 @@ jobs:
           # Exactly deny.toml's [licenses] allow list. Keep the two in step.
           allow-licenses: >-
             Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, ISC, Unicode-3.0, Zlib
-          # deny.toml's [licenses] exceptions, one purl per crate.
+          # deny.toml's [licenses] exceptions, one purl per crate. Then the
+          # Python packages of the eval and experiment tooling (evals/,
+          # experiments/), whose licenses (MPL-2.0, MIT-CMU, PSF-2.0 and
+          # compound expressions) fall outside the Rust list. That tooling runs
+          # only on the maintainer's machine and never ships with the binary.
           allow-dependencies-licenses: >-
             pkg:cargo/option-ext,
             pkg:cargo/webpki-roots,
             pkg:cargo/cssparser,
             pkg:cargo/cssparser-macros,
             pkg:cargo/dtoa-short,
-            pkg:cargo/selectors
+            pkg:cargo/selectors,
+            pkg:pypi/aiohappyeyeballs,
+            pkg:pypi/certifi,
+            pkg:pypi/mmh3,
+            pkg:pypi/numpy,
+            pkg:pypi/pathlib-abc,
+            pkg:pypi/pillow,
+            pkg:pypi/protobuf,
+            pkg:pypi/regex,
+            pkg:pypi/tqdm,
+            pkg:pypi/typing-extensions
