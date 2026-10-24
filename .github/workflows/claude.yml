@@ -205,6 +205,22 @@ jobs:
           path: .review-plugin
           persist-credentials: false
 
+      # The review prompt for a pull_request event; empty for every other event
+      # (see the `prompt` input below). Event values arrive through env, never
+      # spliced into the script.
+      - id: prompt
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: |
+          {
+            echo 'text<<PROMPT_EOF'
+            echo "Run a blind peer review on pull request #$PR_NUMBER in $REPO (base branch $BASE), then post the complete review — the per-lens table, the PASS/BLOCK verdict, and the closing caveat — as a single PR comment: write it to a file with the Write tool, then run \`gh pr comment $PR_NUMBER --repo $REPO --body-file <that file>\` as its own command. The review does not count as delivered until that comment exists."
+            echo 'PROMPT_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - id: claude
         uses: anthropics/claude-code-action@58985842b834ed26087302ba27d07bc24ca8697a # v1
         with:
@@ -221,7 +237,13 @@ jobs:
           # goes nowhere. Unless Claude itself posts, a finished review
           # evaporates and the run still reports success — which is exactly how
           # the first two live runs failed silently.
-          prompt: ${{ github.event_name == 'pull_request' && 'Run a blind peer review on this pull request, then post the complete review — the per-lens table, the PASS/BLOCK verdict, and the closing caveat — as a single PR comment using `gh pr comment`. The review does not count as delivered until that comment exists.' || '' }}
+          #
+          # The PR number, repository and base are spelled out because the
+          # checkout is a detached merge ref: `gh pr view` with no argument
+          # finds no PR there, and Claude spent its denials working the number
+          # out. Every automatic run from #84 to #103 finished "success" with no
+          # comment. A local run given the number posted on the first try.
+          prompt: ${{ steps.prompt.outputs.text }}
 
           # Pinned: this reads the tag checked out above, not the marketplace's
           # default branch. See that step for why.
@@ -310,5 +332,10 @@ jobs:
           echo
           echo "### Denials and errors"
           grep -coiE '"is_error"[[:space:]]*:[[:space:]]*true' "$EXECUTION_FILE" || true
-          grep -oiE '(permission[^"]{0,40}deni|not allowed|requires approval)[^"]{0,80}' \
-            "$EXECUTION_FILE" | sort -u | head -20 || true
+          # The denied calls themselves, from the result's permission_denials:
+          # tool name and the first 80 characters of the command's first line.
+          # The old grep matched the field names and printed "permission_denials".
+          jq -r '.. | objects | select(.type? == "result") | .permission_denials[]?
+                 | "\(.tool_name): \((.tool_input.command // .tool_input.file_path // "")
+                   | tostring | split("\n")[0] | .[0:80])"' \
+            "$EXECUTION_FILE" 2>/dev/null | head -20 || true
