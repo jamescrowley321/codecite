@@ -1,0 +1,27 @@
+# The sandbox and the IdP the hidden tests take tokens from. The sandbox
+# shares the IdP's network namespace, so the IdP is on its loopback
+# (identity-model allows plain-HTTP discovery only there), and that network
+# has no route out.
+services:
+  default:
+    build: build
+    image: codecite-eval-sandbox
+    init: true
+    network_mode: "service:idp"
+    depends_on:
+      idp:
+        condition: service_healthy
+  idp:
+    build: ../fixtures/node-oidc
+    image: codecite-eval-idp
+    environment:
+      - ISSUER=http://127.0.0.1:9011
+    networks: [eval]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9011/.well-known/openid-configuration"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+networks:
+  eval:
+    internal: true

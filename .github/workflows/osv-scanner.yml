@@ -1,0 +1,36 @@
+name: OSV-Scanner
+
+# Scans Cargo.lock and the eval fixture's package-lock.json against the OSV
+# database. No `branches:` filter on pull_request, so stacked PRs are scanned too.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "53 7 * * 1" # weekly, Monday 07:53 UTC
+
+permissions: {}
+
+jobs:
+  # PR diff scan: fails only on vulnerabilities the PR newly introduces.
+  scan-pr:
+    if: ${{ github.event_name == 'pull_request' }}
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+      pull-requests: read # resolve PR diff bounds for the scan
+
+  # Full scan on push and schedule: uploads SARIF to the Security tab.
+  # fail-on-vuln: false so an advisory already on main doesn't turn main red;
+  # cargo deny's advisories check is where those get triaged.
+  scan-scheduled:
+    if: ${{ github.event_name != 'pull_request' }}
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    with:
+      fail-on-vuln: false

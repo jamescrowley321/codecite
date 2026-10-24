@@ -1,0 +1,35 @@
+name: Dependency Review
+
+# Fails a PR that adds a dependency with a known high-severity vulnerability,
+# at review time rather than after Dependabot alerts. It diffs the PR's
+# lockfiles and workflow actions.
+#
+# Vulnerabilities only. Licenses of what ships are cargo-deny's job
+# (deny.toml); the Python and npm lockfiles under evals/ and experiments/ are
+# local tooling that is never distributed, so their licenses aren't gated.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+# The job name is a required-check context in oss-admin terraform/codecite.
+jobs:
+  dependency-review:
+    name: dependency-review
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # post the summary comment
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Dependency review
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+          license-check: false

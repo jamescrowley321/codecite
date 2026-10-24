@@ -1,0 +1,9 @@
+# Planted test fixtures, ignored by fingerprint (commit:path:rule:line) so a
+# real secret added beside them still fails the scan.
+#
+# A fake OpenRouter key the eval sandbox test checks never reaches bwrap's argv.
+a304f6a8e52f48a2991e6640e644f927873c5bce:evals/lib/sandbox.test.mjs:generic-api-key:218
+# A private-key header in a file the source walker test checks is skipped.
+d6b6d5885f1a1fc7327766629a0b12399c855cd5:crates/codecite-index/src/walk.rs:private-key:520
+# The same fixture quoted in that feature's plan.
+d6b6d5885f1a1fc7327766629a0b12399c855cd5:docs/superpowers/plans/2026-10-19-local-source-walk.md:private-key:699

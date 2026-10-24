@@ -1,0 +1,10 @@
+{
+  "providers": {
+    "inspect": {
+      "baseUrl": "http://localhost:13131/v1",
+      "api": "openai-completions",
+      "apiKey": "inspect",
+      "models": [{ "id": "inspect", "contextWindow": 200000, "maxTokens": 32000 }]
+    }
+  }
+}
