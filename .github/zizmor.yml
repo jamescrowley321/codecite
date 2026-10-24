@@ -1,0 +1,10 @@
+# zizmor configuration. Each ignore says why the finding is safe here.
+rules:
+  dangerous-triggers:
+    ignore:
+      # issue_comment (and the other comment and review triggers) are how
+      # `@claude` works on PRs; removing them removes that. They are safe here
+      # because every trigger in claude.yml runs only when the author's
+      # association is OWNER, MEMBER or COLLABORATOR (the job `if:` at
+      # claude.yml:108-113), so a stranger's comment runs nothing.
+      - claude.yml
