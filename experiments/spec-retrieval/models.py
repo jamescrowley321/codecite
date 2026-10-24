@@ -19,7 +19,9 @@ LOCK = HERE / "models.lock.json"
 CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "codecite-spike" / "hf"
 # The files fastembed reads besides the model itself.
 SIDE_FILES = ["config.json", "tokenizer.json", "tokenizer_config.json",
-              "special_tokens_map.json", "preprocessor_config.json"]
+              "special_tokens_map.json", "preprocessor_config.json",
+              # Sparse models: the inference-free query side's IDF weights.
+              "idf.json"]
 
 
 def _cache():
@@ -42,17 +44,19 @@ def _git_blob_id(p):
 
 
 def _source(model):
-    from fastembed import TextEmbedding
-    try:
-        models = TextEmbedding._list_supported_models()
-    except AttributeError as e:
-        raise SystemExit(
-            f"fastembed private API changed ({e}). "
-            f"This script is pinned to fastembed==0.9.0; regenerate the lockfile with care."
-        ) from e
-    for m in models:
-        if m.model == model:
-            return m.sources.hf, m.model_file
+    from fastembed import LateInteractionTextEmbedding, SparseTextEmbedding, TextEmbedding
+    from fastembed.rerank.cross_encoder import TextCrossEncoder
+    for cls in (TextEmbedding, TextCrossEncoder, SparseTextEmbedding, LateInteractionTextEmbedding):
+        try:
+            supported = cls._list_supported_models()
+        except AttributeError as e:
+            raise SystemExit(
+                f"fastembed private API changed ({e}). "
+                f"This script is pinned to fastembed==0.9.0; regenerate the lockfile with care."
+            ) from e
+        for m in supported:
+            if m.model == model:
+                return m.sources.hf, m.model_file
     raise SystemExit(f"unknown fastembed model: {model}")
 
 

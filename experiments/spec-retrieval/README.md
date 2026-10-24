@@ -1,12 +1,33 @@
-# Embeddings spike (#95)
+# Spec retrieval experiments (#95)
 
-A throwaway spike, kept so its numbers can be reproduced. It asks whether local
-embedding vectors, merged with codecite's BM25 search, find spec sections that
-BM25 misses, without costing code search anything.
+Experiments on finding spec sections that BM25 misses, without costing code
+search anything: embeddings (the spike, #112), lexical variants, simulated agent
+query rewrites, rerankers and learned sparse expansion. Kept with their data so
+they can be re-run or scaled up. The design they back is
+`docs/superpowers/specs/2026-10-23-hybrid-retrieval-design.md`.
 
-Corpus: `identity-bench` (`../identity-bench.toml`), 2,162 spec chunks. Queries:
-the 100 labelled queries in `../queries.toml`, scored as `codecite-bench` scores
-them. codecite at `22391b0`.
+Corpus: `identity-bench` (`evals/retrieval/identity-bench.toml`), 2,162 spec
+chunks. Queries: the 100 labelled queries in `evals/retrieval/queries.toml`,
+scored as `codecite-bench` scores them. codecite at `22391b0`.
+
+## What's here
+
+| | |
+|---|---|
+| `bench.py` | Shared: spec chunks, codecite search, scoring, RRF |
+| `embed.py` | Dense embeddings per model; `--context` puts the doc title and section path first |
+| `fusion.py` | The spike's fusion variants over codecite's results |
+| `lexical.py` | Rebuilds codecite's FTS5 table (reproduces it exactly), then Porter, stopwords, a title column |
+| `rewrite.py`, `rewrites.json`, `rewrite-input/` | Simulated agent query rewrites, with the exact prompt and inputs |
+| `rerank.py` | Cross-encoders over spec candidates |
+| `sparse.py` | Doc-only learned sparse expansion, scored from an inverted index |
+| `options.py` | The design's table; asserts code results never move |
+| `snapshot.py` | Copies every ranked list to `results/`, with the table and per-query ranks |
+| `run-all.sh` | Every step above, in order |
+| `titles.py` | Each spec's title (codecite doesn't store it yet) |
+| `models.py`, `models.lock.json` | Pinned, hash-checked model downloads |
+| `survey.md` | The literature and tooling survey, with sources |
+| `results/` | Committed results: `table.md`, `per-query.csv`, `lists/` (every ranked list) |
 
 ## Results
 
@@ -29,18 +50,23 @@ plain RRF.
 
 `fusion.py` prints every model and variant.
 
+The later experiments' results are in the design spec and `results/table.md`.
+
 ## Reproduce
 
 ```bash
 cargo build --release --locked -p codecite
 target/release/codecite index identity-bench --manifest evals/retrieval/identity-bench.toml
-cd evals/retrieval/embeddings-spike
+cd experiments/spec-retrieval
 uv sync --locked
 uv run --locked python -I models.py verify     # fetch the pinned models, check every hash
-uv run --locked python -I embed.py ~/.local/share/codecite/identity-bench.db ../queries.toml \
-  BAAI/bge-small-en-v1.5 sentence-transformers/all-MiniLM-L6-v2 snowflake/snowflake-arctic-embed-s
-uv run --locked python -I fusion.py ../queries.toml ../../../target/release/codecite
+./run-all.sh                                   # every experiment, then snapshot.py
 ```
+
+`run-all.sh` runs each step under a memory cap, one at a time. Steps cache in
+`out/` (gitignored) and skip what is cached; delete a file there to re-run it. The embedding caches (`out/*.npy`,
+35 MB) rebuild from the pinned models in about 3 minutes per model; a copy of the
+last run's is kept outside the repo in `~/.local/share/codecite-spike/out/`.
 
 Run anything heavy under a memory cap, for example
 `systemd-run --user --scope -p MemoryMax=16G -p MemorySwapMax=0 uv run ...`.
