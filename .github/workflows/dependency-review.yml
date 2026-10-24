@@ -1,0 +1,41 @@
+name: Dependency Review
+
+# Fails a PR that adds a dependency with a known high-severity vulnerability
+# or a license deny.toml doesn't allow, at review time rather than after
+# Dependabot alerts. It diffs the PR's lockfiles and workflow actions.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+# The job name is a required-check context in oss-admin terraform/codecite.
+jobs:
+  dependency-review:
+    name: dependency-review
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # post the summary comment
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Dependency review
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+          # Exactly deny.toml's [licenses] allow list. Keep the two in step.
+          allow-licenses: >-
+            Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, ISC, Unicode-3.0, Zlib
+          # deny.toml's [licenses] exceptions, one purl per crate.
+          allow-dependencies-licenses: >-
+            pkg:cargo/option-ext,
+            pkg:cargo/webpki-roots,
+            pkg:cargo/cssparser,
+            pkg:cargo/cssparser-macros,
+            pkg:cargo/dtoa-short,
+            pkg:cargo/selectors
