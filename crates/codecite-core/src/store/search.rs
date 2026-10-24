@@ -378,26 +378,35 @@ fn blend<T>(
     }
     let reserve = (limit / 3).min(SPEC_SLOTS).min(spec.len());
     let head = limit - reserve;
-    // (overall rank, held for a spec, result), best first.
-    let mut ranked: Vec<(usize, bool, T)> = Vec::with_capacity(code.len() + spec.len());
-    let mut by_score: Vec<(bool, usize, T)> = code
+    // (held for a spec, result), best first.
+    let mut by_score: Vec<(bool, bool, T)> = code
         .into_iter()
-        .map(|r| (false, 0, r))
-        .chain(spec.into_iter().enumerate().map(|(i, r)| (true, i, r)))
+        .map(|r| (false, false, r))
+        .chain(
+            spec.into_iter()
+                .enumerate()
+                .map(|(i, r)| (true, i < reserve, r)),
+        )
         .collect();
     by_score.sort_by(|a, b| score(&b.2).total_cmp(&score(&a.2)).then(a.0.cmp(&b.0)));
-    for (rank, (is_spec, spec_rank, r)) in by_score.into_iter().enumerate() {
-        let held = is_spec && spec_rank < reserve;
-        let rank = if held {
-            rank.min(head + spec_rank)
-        } else {
-            rank
-        };
-        ranked.push((rank, held, r));
+    // The first `head` by score, then the held spec results that missed
+    // them, then the next best.
+    let mut slots: Vec<Option<(bool, bool, T)>> = by_score.into_iter().map(Some).collect();
+    let mut merged = Vec::with_capacity(limit);
+    for slot in slots.iter_mut().take(head) {
+        merged.extend(slot.take());
     }
-    // A held spec result goes before the code result at its new rank.
-    ranked.sort_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)));
-    ranked.into_iter().take(limit).map(|(_, _, r)| r).collect()
+    let held = slots.iter_mut().filter(|s| s.as_ref().is_some_and(|s| s.1));
+    let held: Vec<_> = held.filter_map(Option::take).collect();
+    let rest = slots.into_iter().flatten();
+    let mut tail: Vec<_> = held
+        .into_iter()
+        .chain(rest)
+        .take(limit - merged.len())
+        .collect();
+    tail.sort_by(|a, b| score(&b.2).total_cmp(&score(&a.2)).then(a.0.cmp(&b.0)));
+    merged.extend(tail);
+    merged.into_iter().map(|(_, _, r)| r).collect()
 }
 
 /// Turns the user's text into an FTS5 query, or `None` when it has no
@@ -951,7 +960,14 @@ mod tests {
         let high = vec![r(true, 9.5)];
         let blended = blend(code.clone(), high, 3, true, |x| x.1);
         assert_eq!(blended, [r(false, 10.0), r(true, 9.5), r(false, 9.0)]);
+        // At limit 10, all three held slots go to the three best specs.
+        let code: Vec<_> = (0..20).map(|i| r(false, 100.0 - f64::from(i))).collect();
+        let spec: Vec<_> = (0..5).map(|i| r(true, 3.0 - f64::from(i) * 0.5)).collect();
+        let blended = blend(code.clone(), spec.clone(), 10, true, |x| x.1);
+        assert_eq!(blended[..7], code[..7]);
+        assert_eq!(blended[7..], spec[..3]);
         // A query that names nothing alternates, spec first.
+        let code: Vec<_> = (0..5).map(|i| r(false, 10.0 - f64::from(i))).collect();
         let spec = vec![r(true, 1.0), r(true, 0.5)];
         let blended = blend(code.clone(), spec, 4, false, |x| x.1);
         assert_eq!(
