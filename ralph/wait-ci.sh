@@ -68,7 +68,7 @@ if [[ -n "$failed" ]]; then
     # which would otherwise fill the tail and hide the finding.
     gh run view "$id" -R "$repo" --log-failed \
       | sed -E 's/^[^\t]*\t[^\t]*\t[^ ]* //' \
-      | grep -vE 'artifact|Uploaded bytes|blob storage|SHA256 digest' \
+      | { grep -vE 'artifact|Uploaded bytes|blob storage|SHA256 digest' || true; } \
       | tail -n 150
   done
   exit 1

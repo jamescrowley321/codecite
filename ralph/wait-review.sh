@@ -41,11 +41,11 @@ for _ in $(seq 1 8); do
     gate=$(gh run view "$id" -R "$repo" --json jobs --jq '.jobs[] | select(.name == "Merge Gate")')
     # Which gate step failed tells a BLOCK from a review that never finished.
     step() { jq -r --arg n "$1" '.steps[] | select(.name == $n) | .conclusion' <<< "$gate"; }
-    if [[ -z "$gate" || $(jq -r .conclusion <<< "$gate") == skipped ]]; then
+    if [[ $(jq -r .conclusion <<< "$run") == cancelled ]]; then
+      :  # superseded; the newer run shows up on a later poll
+    elif [[ -z "$gate" || $(jq -r .conclusion <<< "$gate") == skipped ]]; then
       echo "REVIEW_FAILED run $id ran no Merge Gate (lenses disabled by RUN_LENSES?)"
       exit 3
-    elif [[ $(jq -r .conclusion <<< "$run") == cancelled ]]; then
-      :  # superseded; the newer run shows up on a later poll
     elif [[ $(step "Fail closed when prerequisites did not succeed") == failure ]]; then
       echo "REVIEW_FAILED run $id: a lens or its preflight did not finish (see the run)"
       exit 3
@@ -60,7 +60,7 @@ for _ in $(seq 1 8); do
     if [[ -n "${verdict:-}" ]]; then
       # Every lens review on this commit, as the review-fix phase reads them.
       gh api "repos/$repo/pulls/$pr/reviews" --paginate --jq \
-        ".[] | select(.commit_id == \"$sha\" and (.body | contains(\"blind-peer-review:rendered-v1\")))
+        ".[] | select(.commit_id == \"$sha\" and ((.body // \"\") | contains(\"blind-peer-review:rendered-v1\")))
          | \"\(.body)\n\n---\n\"" \
         | python3 -I -c 'import html, sys; sys.stdout.write(html.unescape(sys.stdin.read()))' > "$out"
       echo "FOUND $verdict"
