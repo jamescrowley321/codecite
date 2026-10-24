@@ -20,6 +20,7 @@ server. Read `docs/design.md` before any non-trivial change.
 | A/B agent eval and retrieval benchmark | `evals/` (see `evals/README.md`) |
 | Experiments and spikes, with their scripts and results | `experiments/<topic>/` — kept for re-running or scaling up |
 | Autonomous loop over the open issues | `ralph/` (see `ralph/README.md`) |
+| Working issues in Claude Code cloud sessions | `docs/cloud-sessions.md` |
 
 Specs and plans are committed with the PR that implements them and frozen once
 it merges. Do not go back and update them; update `docs/design.md` instead.
