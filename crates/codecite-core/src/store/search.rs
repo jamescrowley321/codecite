@@ -5,7 +5,7 @@
 use rusqlite::functions::FunctionFlags;
 use rusqlite::{Connection, OptionalExtension, params};
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::Store;
 use crate::{Error, Result, Role, text_terms};
@@ -40,6 +40,20 @@ const NAME_BOOST: f64 = 3.0;
 /// many helpers are named after (`app`, `user`, `get`) is not.
 const MAX_NAME_DEFINITIONS: u32 = 3;
 
+/// The most slots at the end of a result list held for the best spec
+/// results when the query names a symbol and code fills the rest.
+const SPEC_SLOTS: usize = 3;
+
+/// Which sources a search covers: specs (document sources) or code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum Scope {
+    /// Only spec sections and steps.
+    Spec,
+    /// Only code: repositories and local directories.
+    Code,
+}
+
 /// A search: the text, the filters and how many results to return.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SearchQuery<'a> {
@@ -50,6 +64,8 @@ pub struct SearchQuery<'a> {
     /// Only documents whose path matches this glob (SQLite `GLOB`: `*`
     /// matches any run of characters, `/` included, and case matters).
     pub path: Option<&'a str>,
+    /// Only specs or only code. Without it, a search covers both.
+    pub only: Option<Scope>,
     /// The most results to return.
     pub limit: u32,
     /// Search an index older than its maximum age instead of refusing it.
@@ -82,8 +98,9 @@ pub struct SearchResult {
     /// `docs` or `spec`.
     pub role: &'static str,
     /// The ranking score, higher first: BM25 times the role's weight, times
-    /// a boost when the query names the chunk's symbol. Results come in
-    /// this order.
+    /// a boost when the query names the chunk's symbol. Spec and code
+    /// results each come in this order; how the two are merged is up to
+    /// `Store::search`, since their scores are not on one scale.
     pub score: f64,
     /// How agents may use the source: `adapt`, `approach_only` or `quote`.
     pub license_class: String,
@@ -166,38 +183,59 @@ impl Store {
     /// [`MAX_NAME_DEFINITIONS`] symbols have that name. Only the current
     /// version of each document is searched.
     ///
+    /// Spec and code results are ranked separately, because their BM25
+    /// scores are not on one scale: a short constants file that repeats a
+    /// term outscores the long section that defines it. The two lists are
+    /// then merged. When the query names a symbol, results keep score
+    /// order, except that the best spec results, up to [`SPEC_SLOTS`] and a
+    /// third of `query.limit`, are lifted into the last slots. Otherwise the
+    /// two alternate, spec first. `query.only` searches just one of them.
+    ///
     /// A query with no letter or digit is [`Error::EmptyQuery`]. An index
     /// older than its maximum age is [`Error::StaleIndex`] unless
     /// `query.allow_stale` is set.
     pub fn search(&self, query: &SearchQuery<'_>) -> Result<Vec<SearchResult>> {
         let fts = fts_query(query.text).ok_or(Error::EmptyQuery)?;
         self.check_fresh(query.allow_stale)?;
+        let boosted = self.boosted_names(query.text)?;
+        let named = !boosted.is_empty();
         let mut names = String::from(NAME_SEPARATOR);
-        for name in self.boosted_names(query.text)? {
+        for name in boosted {
             names.push_str(&name);
             names.push(NAME_SEPARATOR);
         }
+        let only_spec = query.only.map(|scope| scope == Scope::Spec);
 
         let (w_symbol, w_path, w_text) = COLUMN_WEIGHTS;
+        // The best `?8` of each kind, specs after code.
         let mut stmt = self.conn.prepare_cached(
-            "SELECT c.kind, c.start_line, c.end_line, c.number, p.number, c.text,
-               d.path, d.dirty, s.name, s.kind, s.revision, s.license_class, s.indexed_at,
-               sym.display_name,
-               -bm25(chunk_fts, ?3, ?4, ?5)
-                 * codecite_role_weight(d.path, s.kind)
-                 * CASE WHEN instr(?2, char(31) || codecite_name_key(sym.display_name) || char(31)) > 0
-                        THEN ?9 ELSE 1.0 END AS score
-             FROM chunk_fts
-             JOIN chunk c ON c.id = chunk_fts.rowid
-             JOIN document d ON d.id = c.document_id
-             JOIN source s ON s.id = d.source_id
-             LEFT JOIN chunk p ON p.id = c.parent_id
-             LEFT JOIN symbol sym ON sym.id = c.symbol_id
-             WHERE chunk_fts MATCH ?1 AND s.is_current
-               AND (?6 IS NULL OR d.language = ?6)
-               AND (?7 IS NULL OR d.path GLOB ?7)
-             ORDER BY score DESC, c.id
-             LIMIT ?8",
+            "WITH m AS (
+               SELECT c.id AS cid, c.kind, c.start_line, c.end_line, c.number,
+                 p.number AS parent_number, c.text, d.path, d.dirty, s.name,
+                 s.kind AS source_kind, s.revision, s.license_class, s.indexed_at,
+                 sym.display_name,
+                 -bm25(chunk_fts, ?3, ?4, ?5)
+                   * codecite_role_weight(d.path, s.kind)
+                   * CASE WHEN instr(?2, char(31) || codecite_name_key(sym.display_name) || char(31)) > 0
+                          THEN ?9 ELSE 1.0 END AS score,
+                 s.kind = 'document' AS is_spec
+               FROM chunk_fts
+               JOIN chunk c ON c.id = chunk_fts.rowid
+               JOIN document d ON d.id = c.document_id
+               JOIN source s ON s.id = d.source_id
+               LEFT JOIN chunk p ON p.id = c.parent_id
+               LEFT JOIN symbol sym ON sym.id = c.symbol_id
+               WHERE chunk_fts MATCH ?1 AND s.is_current
+                 AND (?6 IS NULL OR d.language = ?6)
+                 AND (?7 IS NULL OR d.path GLOB ?7)
+                 AND (?10 IS NULL OR (s.kind = 'document') = ?10)
+             )
+             SELECT kind, start_line, end_line, number, parent_number, text, path, dirty,
+               name, source_kind, revision, license_class, indexed_at, display_name, score
+             FROM (SELECT *, row_number() OVER (PARTITION BY is_spec ORDER BY score DESC, cid) AS kind_rank
+                   FROM m)
+             WHERE kind_rank <= ?8
+             ORDER BY is_spec, kind_rank",
         )?;
         let rows = stmt.query_map(
             params![
@@ -210,6 +248,7 @@ impl Store {
                 query.path,
                 query.limit,
                 NAME_BOOST,
+                only_spec,
             ],
             |row| {
                 let kind: String = row.get(0)?;
@@ -243,7 +282,12 @@ impl Store {
                 })
             },
         )?;
-        Ok(rows.collect::<rusqlite::Result<_>>()?)
+        let (spec, code): (Vec<_>, Vec<_>) = rows
+            .collect::<rusqlite::Result<Vec<SearchResult>>>()?
+            .into_iter()
+            .partition(|r| r.role == Role::Spec.as_str());
+        let limit = usize::try_from(query.limit).unwrap_or(usize::MAX);
+        Ok(blend(code, spec, limit, named, |r| r.score))
     }
 
     /// The [`query_names`] that at least one and at most
@@ -304,6 +348,67 @@ pub(super) fn register_functions(conn: &Connection) -> rusqlite::Result<()> {
         FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
         |ctx| Ok(ctx.get::<Option<String>>(0)?.map(|name| name_key(&name))),
     )
+}
+
+/// Merges code and spec results, each best first, into at most `limit`.
+///
+/// When the query `named` a symbol, the order is by `score`, with ties to
+/// code, except that the best `reserve` spec results move up into the last
+/// `reserve` slots if they would fall below them. Otherwise the two kinds
+/// alternate, spec first, and whichever runs out first leaves the rest to
+/// the other.
+fn blend<T>(
+    code: Vec<T>,
+    spec: Vec<T>,
+    limit: usize,
+    named: bool,
+    score: impl Fn(&T) -> f64,
+) -> Vec<T> {
+    // Sized by the results, not the caller's limit, which may be huge.
+    let room = limit.min(code.len() + spec.len());
+    if !named {
+        let mut merged = Vec::with_capacity(room);
+        let (mut code, mut spec) = (code.into_iter(), spec.into_iter());
+        while merged.len() < limit {
+            match (spec.next(), code.next()) {
+                (None, None) => break,
+                (s, c) => merged.extend(s.into_iter().chain(c)),
+            }
+        }
+        merged.truncate(limit);
+        return merged;
+    }
+    let reserve = (limit / 3).min(SPEC_SLOTS).min(spec.len());
+    let head = limit - reserve;
+    // (held for a spec, result), best first.
+    let mut by_score: Vec<(bool, bool, T)> = code
+        .into_iter()
+        .map(|r| (false, false, r))
+        .chain(
+            spec.into_iter()
+                .enumerate()
+                .map(|(i, r)| (true, i < reserve, r)),
+        )
+        .collect();
+    by_score.sort_by(|a, b| score(&b.2).total_cmp(&score(&a.2)).then(a.0.cmp(&b.0)));
+    // The first `head` by score, then the held spec results that missed
+    // them, then the next best.
+    let mut slots: Vec<Option<(bool, bool, T)>> = by_score.into_iter().map(Some).collect();
+    let mut merged = Vec::with_capacity(room);
+    for slot in slots.iter_mut().take(head) {
+        merged.extend(slot.take());
+    }
+    let held = slots.iter_mut().filter(|s| s.as_ref().is_some_and(|s| s.1));
+    let held: Vec<_> = held.filter_map(Option::take).collect();
+    let rest = slots.into_iter().flatten();
+    let mut tail: Vec<_> = held
+        .into_iter()
+        .chain(rest)
+        .take(limit - merged.len())
+        .collect();
+    tail.sort_by(|a, b| score(&b.2).total_cmp(&score(&a.2)).then(a.0.cmp(&b.0)));
+    merged.extend(tail);
+    merged.into_iter().map(|(_, _, r)| r).collect()
 }
 
 /// Turns the user's text into an FTS5 query, or `None` when it has no
@@ -443,6 +548,7 @@ mod tests {
             text,
             language: None,
             path: None,
+            only: None,
             limit: 10,
             allow_stale: false,
         }
@@ -774,6 +880,110 @@ mod tests {
             ..query("validate")
         };
         assert!(f.citations(&nothing).is_empty());
+    }
+
+    #[test]
+    fn only_keeps_spec_or_code_results() {
+        let f = fixture();
+        let specs = SearchQuery {
+            only: Some(Scope::Spec),
+            ..query("validate jti")
+        };
+        assert_eq!(
+            f.citations(&specs),
+            ["rfc9449@sha256:1a2b3c4d5e6f#section-4.3/step-2"]
+        );
+        let code = SearchQuery {
+            only: Some(Scope::Code),
+            ..query("validate jti")
+        };
+        let citations = f.citations(&code);
+        assert!(!citations.is_empty());
+        assert!(
+            citations.iter().all(|c| c.starts_with("app@")),
+            "{citations:?}"
+        );
+    }
+
+    /// A store where short code chunks that repeat `token_type_hint`
+    /// outscore the long spec section that defines it once.
+    fn buried_spec() -> (tempfile::TempDir, Store) {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open_read_write(&dir.path().join("demo.db")).unwrap();
+        let app = store.upsert_source(&code_source("app")).unwrap();
+        for i in 0..4 {
+            let path = format!("src/c{i}.py");
+            let text = "token_type_hint = 'token_type_hint'";
+            let doc = file(
+                &path,
+                "python",
+                false,
+                vec![chunk("window", (1, 1), text, None)],
+            );
+            store.write_document(app, &doc).unwrap();
+        }
+        let defines = "The client MAY pass a token_type_hint parameter. \
+            The authorization server looks up the token and revokes it; \
+            an unknown hint is ignored and the server searches all types.";
+        let doc = file(
+            "src/other.py",
+            "python",
+            false,
+            vec![chunk("window", (1, 1), "def unrelated(): pass", None)],
+        );
+        store.write_document(app, &doc).unwrap();
+        let spec_id = store.upsert_source(&spec_source(SHA256, true)).unwrap();
+        store.write_document(spec_id, &spec(defines)).unwrap();
+        store.set_indexed_at(30).unwrap();
+        (dir, store)
+    }
+
+    #[test]
+    fn a_spec_section_is_not_buried_under_code_that_repeats_its_term() {
+        let (_dir, store) = buried_spec();
+        let results = store.search(&query("token_type_hint")).unwrap();
+        assert_eq!(results[0].role, "spec", "{results:?}");
+        // On score alone, every code chunk beats it.
+        let mut code = results.iter().filter(|r| r.role != "spec");
+        assert!(code.clone().count() > 1);
+        assert!(code.all(|r| r.score > results[0].score), "{results:?}");
+    }
+
+    #[test]
+    fn a_query_that_names_a_symbol_keeps_score_order_with_a_spec_slot() {
+        // Named results keep score order but hold the last slots for the
+        // best spec results.
+        let r = |spec: bool, score: f64| (spec, score);
+        let code: Vec<_> = (0..5).map(|i| r(false, 10.0 - f64::from(i))).collect();
+        let spec = vec![r(true, 1.0)];
+        let blended = blend(code.clone(), spec.clone(), 3, true, |x| x.1);
+        assert_eq!(blended, [r(false, 10.0), r(false, 9.0), r(true, 1.0)]);
+        // A spec that already makes the cut keeps its place.
+        let high = vec![r(true, 9.5)];
+        let blended = blend(code.clone(), high, 3, true, |x| x.1);
+        assert_eq!(blended, [r(false, 10.0), r(true, 9.5), r(false, 9.0)]);
+        // At limit 10, all three held slots go to the three best specs.
+        let code: Vec<_> = (0..20).map(|i| r(false, 100.0 - f64::from(i))).collect();
+        let spec: Vec<_> = (0..5).map(|i| r(true, 3.0 - f64::from(i) * 0.5)).collect();
+        let blended = blend(code.clone(), spec.clone(), 10, true, |x| x.1);
+        assert_eq!(blended[..7], code[..7]);
+        assert_eq!(blended[7..], spec[..3]);
+        // A query that names nothing alternates, spec first.
+        let code: Vec<_> = (0..5).map(|i| r(false, 10.0 - f64::from(i))).collect();
+        let spec = vec![r(true, 1.0), r(true, 0.5)];
+        let blended = blend(code.clone(), spec, 4, false, |x| x.1);
+        assert_eq!(
+            blended,
+            [r(true, 1.0), r(false, 10.0), r(true, 0.5), r(false, 9.0)]
+        );
+        // With one kind, it is that kind in order.
+        assert_eq!(blend(code.clone(), vec![], 2, false, |x| x.1), code[..2]);
+        assert_eq!(blend(vec![], code.clone(), 2, true, |x| x.1), code[..2]);
+        // A huge limit returns what there is without reserving room for it.
+        for named in [true, false] {
+            let blended = blend(code.clone(), vec![], usize::MAX, named, |x| x.1);
+            assert_eq!(blended, code);
+        }
     }
 
     #[test]
