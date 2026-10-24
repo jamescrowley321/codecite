@@ -4,6 +4,7 @@
 use std::fmt;
 
 use rusqlite::{OptionalExtension, params};
+use schemars::JsonSchema;
 use serde::Serialize;
 
 use super::Store;
@@ -15,6 +16,11 @@ use crate::{
 
 /// How many lines `read` returns when the caller doesn't say.
 pub const DEFAULT_MAX_LINES: u32 = 80;
+
+/// The most lines a read may ask for: the CLI's `--max-lines` and the MCP
+/// `read` tool's `max_lines` refuse more, which keeps one answer's size
+/// bounded.
+pub const MAX_READ_LINES: u32 = 500;
 
 /// The most candidates an error lists.
 const MAX_CANDIDATES: usize = 5;
@@ -37,9 +43,13 @@ impl Default for ReadOptions {
     }
 }
 
+/// What a `quote` read tells the agent to do with its text.
+pub const QUOTE_INSTRUCTION: &str =
+    "Quote this text exactly, with its citation; never paraphrase it.";
+
 /// The text a citation points at, in the shape the CLI prints as JSON and
 /// the MCP server returns.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct ReadResult {
     /// The canonical citation of the text, always with its pinned version:
     /// `repo@<full sha>:path#L10-L42`, or
@@ -66,6 +76,11 @@ pub struct ReadResult {
     pub text: String,
     /// Whether the text stops before the end of what was cited.
     pub truncated: bool,
+    /// What the license asks of the agent, when it asks more than
+    /// `license_class` says: a `quote` source's text is to be quoted
+    /// exactly, with its citation, and never paraphrased.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instruction: Option<String>,
 }
 
 impl fmt::Display for ReadResult {
@@ -229,6 +244,7 @@ impl Store {
             dirty: Some(dirty),
             text,
             truncated,
+            instruction: instruction(&source.license_class),
         })
     }
 
@@ -359,6 +375,7 @@ impl Store {
             dirty: None,
             text,
             truncated,
+            instruction: instruction(&source.license_class),
         })
     }
 
@@ -598,6 +615,11 @@ fn file_lines(text: &str) -> Vec<&str> {
         .collect()
 }
 
+/// The instruction a result from a source of `license_class` carries.
+fn instruction(license_class: &str) -> Option<String> {
+    (license_class == "quote").then(|| QUOTE_INSTRUCTION.into())
+}
+
 /// The first `max_lines` of `lines` joined, and whether any were left out.
 fn cap(lines: &[&str], max_lines: u32) -> (String, bool) {
     let max = usize::try_from(max_lines.max(1)).unwrap_or(usize::MAX);
@@ -811,6 +833,7 @@ mod tests {
         assert_eq!(r.text, "    check();\n}");
         assert_eq!((r.dirty, r.truncated), (Some(true), false));
         assert_eq!(r.license_class, "adapt");
+        assert_eq!(r.instruction, None);
         assert_eq!((r.title, r.strength), (None, None));
         let r = f.ok(&format!("app@{HEAD}:src/lib.rs#L5"));
         assert_eq!(r.text, "pub fn check() {}");
@@ -888,6 +911,8 @@ mod tests {
         assert!(r.text.starts_with("4.3.  Checking DPoP Proofs\n"));
         assert_eq!(r.strength, Some(vec![]));
         assert_eq!((r.license_class.as_str(), r.dirty), ("quote", None));
+        // A quote source's text comes with the instruction to quote it.
+        assert_eq!(r.instruction.as_deref(), Some(QUOTE_INSTRUCTION));
         let r = f.ok("rfc9449@sha256:1a2b3c4d5e6f#section-4.3/step-12");
         assert_eq!(
             r.citation,
@@ -1088,6 +1113,7 @@ mod tests {
             [
                 "citation",
                 "indexed_at",
+                "instruction",
                 "kind",
                 "license_class",
                 "strength",
@@ -1099,6 +1125,7 @@ mod tests {
         let code = serde_json::to_value(f.ok("app@0123456:src/lib.rs#L1")).unwrap();
         assert_eq!(code["dirty"], true);
         assert!(code.get("strength").is_none());
+        assert!(code.get("instruction").is_none());
 
         let mut r = f.ok("Core 3.1.3.7(13)");
         r.indexed_at = "2026-10-20T06:00:00Z".into();

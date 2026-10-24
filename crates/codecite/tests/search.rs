@@ -86,14 +86,16 @@ impl Demo {
             .unwrap()
     }
 
-    /// Runs `codecite search demo <args> --json` and parses its output.
+    /// Runs `codecite search demo <args> --json` and returns the results it
+    /// prints, `{"results": [...]}`.
     fn json(&self, args: &[&str]) -> Vec<serde_json::Value> {
         let mut all = vec!["search", "demo"];
         all.extend(args);
         all.push("--json");
         let output = self.run(&all);
         assert!(output.status.success(), "{}", stderr(&output));
-        serde_json::from_slice(&output.stdout).unwrap()
+        let mut printed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        serde_json::from_value(printed["results"].take()).unwrap()
     }
 
     fn db(&self) -> PathBuf {

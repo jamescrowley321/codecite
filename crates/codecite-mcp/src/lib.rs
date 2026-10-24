@@ -4,4 +4,4 @@ mod error;
 pub use error::{Error, Result};
 
 mod server;
-pub use server::{Server, serve_stdio};
+pub use server::{ErrorInfo, Output, ReadParams, SearchParams, Server, ToolError, serve_stdio};

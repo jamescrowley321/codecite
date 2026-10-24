@@ -1,13 +1,13 @@
 //! The `codecite` command-line tool.
 
 use std::fs;
-use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, bail};
 use clap::{Parser, Subcommand};
 use codecite_core::{
-    DEFAULT_MAX_LINES, ReadOptions, ReadResult, SearchQuery, SearchResult, Store, is_corpus_name,
+    DEFAULT_MAX_LINES, DEFAULT_SEARCH_LIMIT, MAX_READ_LINES, MAX_SEARCH_LIMIT, ReadOptions,
+    ReadResult, SearchQuery, SearchResult, SearchResults, Store, is_corpus_name,
 };
 use codecite_index::{Clones, Fetcher, LicenseClass, Manifest, Source, WalkOptions, index_corpus};
 
@@ -46,10 +46,11 @@ enum Command {
         /// Only files whose path matches this glob; `*` matches `/` too.
         #[arg(long)]
         path: Option<String>,
-        /// The most results to print.
-        #[arg(long, default_value_t = 5, value_parser = clap::value_parser!(u32).range(1..))]
+        /// The most results to print, at most 50.
+        #[arg(long, default_value_t = DEFAULT_SEARCH_LIMIT, value_parser = clap::value_parser!(u32).range(1..=i64::from(MAX_SEARCH_LIMIT)))]
         limit: u32,
-        /// Print the results as a JSON array.
+        /// Print the results as JSON: `{"results": [...]}`, as the MCP
+        /// `search` tool returns them.
         #[arg(long)]
         json: bool,
         /// Search an index older than its manifest's `max_age_days`.
@@ -63,10 +64,10 @@ enum Command {
         /// A code or spec citation, as search prints it, as a spec URL, or
         /// as people write it: `RFC 9449 §4.3`, `OIDC Core §3.1.3.7 step 13`.
         citation: String,
-        /// The most lines of text to print.
-        #[arg(long, default_value_t = DEFAULT_MAX_LINES, value_parser = clap::value_parser!(u32).range(1..))]
+        /// The most lines of text to print, at most 500.
+        #[arg(long, default_value_t = DEFAULT_MAX_LINES, value_parser = clap::value_parser!(u32).range(1..=i64::from(MAX_READ_LINES)))]
         max_lines: u32,
-        /// Print the result as a JSON object.
+        /// Print the result as JSON, as the MCP `read` tool returns it.
         #[arg(long)]
         json: bool,
         /// Read an index older than its manifest's `max_age_days`.
@@ -184,7 +185,7 @@ fn search(corpus: &str, query: &SearchQuery<'_>, json: bool) -> anyhow::Result<(
     let dirs = project_dirs()?;
     let store = Store::open_corpus(dirs.data_dir(), corpus)?;
     let results = store.search(query)?;
-    to_stdout(|out| write_results(out, &results, json))
+    to_stdout(|out| write_results(out, results, json))
 }
 
 /// `codecite read`: opens the corpus read-only and prints the cited text,
@@ -200,11 +201,8 @@ fn read(corpus: &str, citation: &str, options: &ReadOptions, json: bool) -> anyh
 /// them, byte for byte.
 fn corpora() -> anyhow::Result<()> {
     let dirs = project_dirs()?;
-    let corpora = codecite_core::corpora(dirs.data_dir())?;
-    // rmcp writes a tool's text as `serde_json::Value::to_string`, which
-    // sorts the keys; going through a `Value` here prints the same bytes.
-    let json = serde_json::to_value(&corpora)?.to_string();
-    to_stdout(|out| writeln!(out, "{json}"))
+    let corpora = serde_json::to_value(codecite_core::corpora(dirs.data_dir())?)?;
+    to_stdout(|out| write_json(out, corpora))
 }
 
 /// `codecite mcp`: serves the corpora in the data directory to one MCP
@@ -233,6 +231,13 @@ fn to_stdout(
     }
 }
 
+/// Writes `value` to `out` as the MCP server's tools write their text.
+/// rmcp writes it as `serde_json::Value::to_string`, compact with sorted
+/// keys, so going through a `Value` here prints the same bytes.
+fn write_json(out: &mut impl std::io::Write, value: serde_json::Value) -> std::io::Result<()> {
+    writeln!(out, "{value}")
+}
+
 /// Writes a read result to `out`: as JSON, or its `Display` form with
 /// control characters escaped line by line.
 fn write_read(
@@ -241,8 +246,7 @@ fn write_read(
     json: bool,
 ) -> std::io::Result<()> {
     if json {
-        serde_json::to_writer_pretty(&mut *out, result)?;
-        writeln!(out)?;
+        write_json(out, serde_json::to_value(result)?)?;
     } else {
         for line in result.to_string().lines() {
             writeln!(out, "{}", escape_controls(line))?;
@@ -251,18 +255,18 @@ fn write_read(
     out.flush()
 }
 
-/// Writes the results to `out`. Unlike `println!`, which panics when stdout
+/// Writes the results to `out`, as `{"results": [...]}` JSON or in the
+/// short human form. Unlike `println!`, which panics when stdout
 /// is closed, a failed write comes back as an error.
 fn write_results(
     out: &mut impl std::io::Write,
-    results: &[SearchResult],
+    results: Vec<SearchResult>,
     json: bool,
 ) -> std::io::Result<()> {
     if json {
-        serde_json::to_writer_pretty(&mut *out, results)?;
-        writeln!(out)?;
+        write_json(out, serde_json::to_value(SearchResults { results })?)?;
     } else {
-        out.write_all(human(results).as_bytes())?;
+        out.write_all(human(&results).as_bytes())?;
     }
     out.flush()
 }
@@ -502,8 +506,13 @@ mod tests {
         assert_eq!(path.as_deref(), Some("src/*"));
         assert_eq!(limit, 3);
         assert!(json && allow_stale);
-        let zero = ["codecite", "search", "identity", "jti", "--limit", "0"];
-        assert!(Cli::try_parse_from(zero).is_err());
+        // From 1 to the cap the MCP tool has too.
+        for limit in ["0", "51", "4000000000"] {
+            let args = ["codecite", "search", "identity", "jti", "--limit", limit];
+            assert!(Cli::try_parse_from(args).is_err(), "{limit}");
+        }
+        let most = ["codecite", "search", "identity", "jti", "--limit", "50"];
+        assert!(Cli::try_parse_from(most).is_ok());
     }
 
     #[test]
@@ -548,8 +557,12 @@ mod tests {
         };
         assert_eq!(max_lines, 5);
         assert!(json && allow_stale);
-        let zero = ["codecite", "read", "identity", "§4.3", "--max-lines", "0"];
-        assert!(Cli::try_parse_from(zero).is_err());
+        for lines in ["0", "501"] {
+            let args = ["codecite", "read", "identity", "§4.3", "--max-lines", lines];
+            assert!(Cli::try_parse_from(args).is_err(), "{lines}");
+        }
+        let most = ["codecite", "read", "identity", "§4.3", "--max-lines", "500"];
+        assert!(Cli::try_parse_from(most).is_ok());
     }
 
     #[test]
@@ -574,6 +587,7 @@ mod tests {
             dirty: Some(false),
             text: "# Title\u{1b}]52;c;ZWNobyBoaQ==\u{7}\n\tend".into(),
             truncated: false,
+            instruction: None,
         };
         let mut out = Vec::new();
         write_read(&mut out, &result, false).unwrap();
@@ -709,15 +723,15 @@ code · adapt · indexed 2026-10-20T06:00:00Z
     #[test]
     fn a_closed_stdout_is_an_error_not_a_panic() {
         for json in [true, false] {
-            let err = write_results(&mut ClosedPipe, &[], json).unwrap_err();
+            let err = write_results(&mut ClosedPipe, Vec::new(), json).unwrap_err();
             assert_eq!(err.kind(), std::io::ErrorKind::BrokenPipe);
         }
         let mut out = Vec::new();
-        write_results(&mut out, &[], false).unwrap();
+        write_results(&mut out, Vec::new(), false).unwrap();
         assert_eq!(out, b"no results\n");
         let mut out = Vec::new();
-        write_results(&mut out, &[], true).unwrap();
-        assert_eq!(out, b"[]\n");
+        write_results(&mut out, Vec::new(), true).unwrap();
+        assert_eq!(out, b"{\"results\":[]}\n");
     }
 
     #[test]

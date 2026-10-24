@@ -23,7 +23,7 @@ flowchart LR
 | `codecite search <corpus> "<query>"` | Ranked results, each with its citation, license class and when it was indexed. Identifiers match however they are written (`validate token` finds `validateToken`) |
 | `codecite read <corpus> <citation>` | The exact text a citation points at, under its pinned citation. Accepts the canonical forms search prints and the ones people write: `RFC 9449 §4.3`, `OIDC Core §3.1.3.7 step 13`, a spec URL |
 | `codecite corpora` | The indexed corpora as JSON, with each one's age, size, source count and staleness |
-| `codecite mcp` | An MCP server over stdio. Each tool returns the same JSON as the command of the same name; `tools/list` names the ones this build serves |
+| `codecite mcp` | An MCP server over stdio. Its tools `corpora`, `search` and `read` return the same JSON as the commands of the same name (with `--json` for `search` and `read`), byte for byte, and an error is a tool error with its kind and candidates |
 
 A citation that doesn't resolve to exactly one span is an error listing the
 candidates, never a guess, and an index older than its manifest's

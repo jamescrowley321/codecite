@@ -182,9 +182,17 @@ Claude Code:
 claude mcp add codecite -- codecite mcp
 ```
 
-The server's tools return the same JSON as the CLI commands of the same name,
-so anything an agent sees can be reproduced from a terminal. `tools/list`
-names the tools this build serves.
+The server's tools, `corpora`, `search` and `read`, return the same JSON as
+the CLI commands of the same name print (with `--json` for `search` and
+`read`), byte for byte, so anything an agent sees can be reproduced from a
+terminal. `search` and `read` take an optional `corpus`; left out or empty,
+it is the only corpus in the data directory. `limit` is at most 50 and
+`max_lines` at most 500, for the tools and the CLI alike. An unknown corpus, a stale index or a
+citation that isn't in the corpus is a tool error whose structured content is
+`{"error": {"kind", "message", "candidates"}}`; each tool's output schema
+admits both its result and this error. A `read` of a spec, whose
+license class is `quote`, carries an `instruction` to quote the text exactly
+with its citation.
 
 ## The identity corpus
 
