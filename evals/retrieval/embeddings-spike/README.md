@@ -16,13 +16,16 @@ plain RRF.
 | | spec: plain words (22) | spec: keyword (18) | spec: requirement (15) | code: symbol / usage / behaviour (15 each) | all | MRR |
 |---|---|---|---|---|---|---|
 | BM25, codecite today | 0.00 | 0.89 | 0.53 | 1.00 / 0.80 / 0.47 | 0.58 | 0.34 |
-| all-MiniLM-L6-v2, keep BM25's top spec hit, RRF for the rest | 0.18 | 0.83 | 0.67 | 1.00 / 0.80 / 0.47 | **0.63** | 0.35 |
-| Same model, plain RRF over code and spec | 0.27 | 0.83 | 0.60 | 0.80 / 0.60 / 0.27 | 0.55 | 0.30 |
+| snowflake-arctic-embed-m, vectors fill the spec slots | 0.41 | 0.72 | 0.73 | 1.00 / 0.80 / 0.47 | **0.67** | 0.38 |
+| bge-base-en-v1.5, keep BM25's top 2 spec hits, RRF for the rest | 0.14 | 0.89 | 0.80 | 1.00 / 0.80 / 0.47 | 0.65 | 0.35 |
+| all-MiniLM-L6-v2, keep BM25's top spec hit, RRF for the rest | 0.18 | 0.78 | 0.73 | 1.00 / 0.80 / 0.47 | 0.63 | 0.35 |
+| all-MiniLM-L6-v2, plain RRF over code and spec | 0.32 | 0.78 | 0.73 | 0.80 / 0.40 / 0.20 | 0.53 | 0.30 |
 
-- **Vectors are the only thing that finds plain-words spec questions.** BM25 gets 0 of 22. Vectors alone, with no fusion, get up to 0.32.
-- **Keeping code safe costs one keyword query.** Every variant that keeps code's slots loses one: 0.89 → 0.83. A top 10 holds about five spec results, and any slot given to vectors pushes out a BM25 hit.
+- **Vectors are the only thing that finds plain-words spec questions.** BM25 gets 0 of 22. arctic-embed-m in the spec slots gets 0.41, but gives up three keyword queries (0.89 → 0.72).
+- **Code-safe fusion trades plain-words for keyword.** A top 10 holds about four spec results, and any slot given to vectors pushes out a BM25 hit. Keeping BM25's top two spec hits keeps keyword at 0.89 but leaves plain words at 0.14.
 - **Gating on BM25's score doesn't work.** BM25 scores plain-words queries as high as keyword ones (best spec score 15.6–25.8), so the gate never fires where it's needed.
 - **Long context earns nothing.** nomic-embed-text-v1.5 (8,192 tokens) does no better than the 512-token models, and at batch 32 it OOM-killed the machine. The small models are 23–130 MB and embed the corpus in about 3 minutes on a CPU.
+- **Citations follow codecite's.** A spec chunk is cited by section number (`#section-3.2.2.9/step-3`), as `search` cites it and the labels name it, and only current document versions are searched. An earlier run cited the page's anchors (`#ImplicitTokenValidation/step-3`) and searched old versions too, so every vector hit in an OpenID spec scored as a miss and the vector rows read low.
 
 `fusion.py` prints every model and variant.
 

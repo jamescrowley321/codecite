@@ -54,6 +54,8 @@ def main(db, queries_path, names):
         Q = np.array(list(m.embed([qp + q["text"] for q in qs])))
         Q = Q / np.linalg.norm(Q, axis=1, keepdims=True)
         sims = Q @ E.T
+        # Old versions are embedded (the caches hold every row) but never searched.
+        sims[:, [i for i, c in enumerate(chunks) if not c["current"]]] = -2
         vec = {q["id"]: [chunks[i]["cite"] for i in np.argsort(-sims[qi])[:TOP]]
                for qi, q in enumerate(qs)}
         (OUT / f"vec-{slug}.json").write_text(json.dumps(vec))

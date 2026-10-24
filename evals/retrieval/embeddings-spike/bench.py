@@ -15,18 +15,24 @@ def queries(path):
 
 
 def spec_chunks(db):
-    """Every spec section and step, with the citation codecite gives it."""
+    """Every spec section and step, old versions included, with the citation
+    codecite gives it: by section number, as `spec_citation` in search.rs does,
+    not by the page's anchor. Rows keep the order the embedding caches were
+    written in; search only the `current` ones."""
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     rows = con.execute("""
         select c.id, s.name, substr(s.revision,1,12), c.kind, c.number, c.anchor,
-               p.anchor, coalesce(c.title, p.title, ''), c.text
+               p.anchor, coalesce(c.title, p.title, ''), c.text, p.number, s.is_current,
+               p.title
         from chunk c join document d on d.id=c.document_id join source s on s.id=d.source_id
         left join chunk p on p.id=c.parent_id
         where s.kind='document'""").fetchall()
     out = []
-    for cid, name, rev, kind, number, anchor, panchor, title, text in rows:
-        frag = anchor if kind == "section" else f"{panchor}/step-{number}"
-        out.append(dict(id=cid, cite=f"{name}@sha256:{rev}#{frag}", title=title, text=text))
+    for cid, name, rev, kind, number, _, _, title, text, pnumber, current, ptitle in rows:
+        frag = f"section-{pnumber}/step-{number}" if kind == "step" else f"section-{number}"
+        out.append(dict(id=cid, cite=f"{name}@sha256:{rev}#{frag}", title=title, text=text,
+                        doc=name, parent_title=ptitle if kind == "step" else None,
+                        current=bool(current)))
     return out
 
 
