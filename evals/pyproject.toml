@@ -1,0 +1,8 @@
+[project]
+name = "codecite-evals"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "inspect-ai>=0.3.283",
+    "openai>=3.37.0",
+]
