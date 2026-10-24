@@ -18,6 +18,7 @@ server. Read `docs/design.md` before any non-trivial change.
 | Design for one open question | `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` |
 | Steps for one issue | `docs/superpowers/plans/YYYY-MM-DD-<topic>.md` |
 | A/B agent eval and retrieval benchmark | `evals/` (see `evals/README.md`) |
+| Experiments and spikes, with their scripts and results | `experiments/<topic>/` — kept for re-running or scaling up |
 | Autonomous loop over the open issues | `ralph/` (see `ralph/README.md`) |
 
 Specs and plans are committed with the PR that implements them and frozen once

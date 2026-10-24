@@ -17,8 +17,8 @@ def queries(path):
 def spec_chunks(db):
     """Every spec section and step, old versions included, with the citation
     codecite gives it: by section number, as `spec_citation` in search.rs does,
-    not by the page's anchor. Rows come in chunk id order, the order the
-    embedding caches were written in; search only the `current` ones."""
+    not by the page's anchor. Rows keep the order the embedding caches were
+    written in; search only the `current` ones."""
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     rows = con.execute("""
         select c.id, s.name, substr(s.revision,1,12), c.kind, c.number, c.anchor,
@@ -83,15 +83,15 @@ def hit(answer, cite):
 
 
 def scores(qs, ranked):
-    """{class: (Recall@1, Recall@10, MRR)}, plus "all"."""
-    by = {}
+    """{class: (Recall@1, Recall@10, MRR)}, plus "all"; a class with no queries scores 0."""
+    by = {c: [] for c in CLASSES}
     for q in qs:
         rank = next((i + 1 for i, c in enumerate(ranked[q["id"]][:DEPTH])
                      if any(hit(a, c) for a in q["answers"])), None)
         for key in (q["class"], "all"):
             by.setdefault(key, []).append(rank)
     return {k: (sum(r == 1 for r in v) / len(v), sum(r is not None for r in v) / len(v),
-                sum(1 / r for r in v if r) / len(v)) for k, v in by.items()}
+                sum(1 / r for r in v if r) / len(v)) if v else (0, 0, 0) for k, v in by.items()}
 
 
 def rrf(weighted, k):
