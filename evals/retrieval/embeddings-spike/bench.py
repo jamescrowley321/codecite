@@ -17,8 +17,8 @@ def queries(path):
 def spec_chunks(db):
     """Every spec section and step, old versions included, with the citation
     codecite gives it: by section number, as `spec_citation` in search.rs does,
-    not by the page's anchor. Rows keep the order the embedding caches were
-    written in; search only the `current` ones."""
+    not by the page's anchor. Rows come in chunk id order, the order the
+    embedding caches were written in; search only the `current` ones."""
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     rows = con.execute("""
         select c.id, s.name, substr(s.revision,1,12), c.kind, c.number, c.anchor,
@@ -26,7 +26,9 @@ def spec_chunks(db):
                p.title
         from chunk c join document d on d.id=c.document_id join source s on s.id=d.source_id
         left join chunk p on p.id=c.parent_id
-        where s.kind='document'""").fetchall()
+        where s.kind='document'
+        order by c.id""").fetchall()
+    con.close()
     out = []
     for cid, name, rev, kind, number, _, _, title, text, pnumber, current, ptitle in rows:
         frag = f"section-{pnumber}/step-{number}" if kind == "step" else f"section-{number}"
@@ -74,8 +76,10 @@ def hit(answer, cite):
     target, _, frag = answer.partition("#")
     if frag.startswith("section-"):
         return c[0] == "spec" and c[1] == target and (c[2] == frag or c[2].startswith(frag + "/"))
-    line = int(frag[1:])
-    return c[0] == "code" and c[1] == target and c[2][0] <= line <= c[2][1]
+    if c[0] != "code" or not frag.startswith("L"):
+        return False
+    line = int(frag[1:].partition("-L")[0])
+    return c[1] == target and c[2][0] <= line <= c[2][1]
 
 
 def scores(qs, ranked):

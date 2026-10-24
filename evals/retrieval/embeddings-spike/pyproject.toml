@@ -12,3 +12,7 @@ dependencies = [
 
 [tool.uv]
 package = false
+# fastembed 0.9.0 (the latest) caps pillow below 13, and every 12.x has known
+# CVEs. The spike embeds only text, so it never decodes an image; force the
+# patched pillow.
+override-dependencies = ["pillow>=13"]

@@ -43,6 +43,9 @@ def main(db, queries_path, names):
         cache = OUT / f"emb-{slug}.npy"
         if cache.exists():
             E = np.load(cache)
+            if len(E) != len(chunks):
+                raise SystemExit(f"{cache} has {len(E)} rows but the corpus has {len(chunks)} "
+                                 f"spec chunks; delete it and re-embed")
         else:
             t = time.time()
             batch = 1 if name in LONG_CONTEXT else 32

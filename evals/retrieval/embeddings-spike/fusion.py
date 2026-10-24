@@ -27,8 +27,9 @@ def refill(base, stream):
                 while nxt in out:
                     nxt = next(stream)
                 out.append(nxt)
-            except StopIteration:
-                break
+            except StopIteration:  # stream ran dry: keep BM25's hit
+                if c not in out:
+                    out.append(c)
         else:
             out.append(c)
     return out
