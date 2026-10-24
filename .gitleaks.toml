@@ -1,0 +1,16 @@
+# gitleaks config: the default rules plus narrow allowlists. Scope each one to
+# a rule, a file and a value shape, so a real secret beside them still fails.
+# (A top-level [[allowlists]] with `paths` skips the whole file, AND or not.)
+[extend]
+useDefault = true
+
+# The embeddings spike's model lock maps file names to sha256 digests, and
+# generic-api-key fires on keys like "tokenizer.json" beside a 64-hex value.
+[[rules]]
+id = "generic-api-key"
+[[rules.allowlists]]
+description = "sha256 digests in the embeddings spike's model lock"
+condition = "AND"
+paths = ['''^evals/retrieval/embeddings-spike/models\.lock\.json$''']
+regexTarget = "secret"
+regexes = ['''^[0-9a-f]{64}$''']
