@@ -72,10 +72,12 @@ def pi() -> Agent:
                     env={"PATH": path, "HOME": "/root"},
                     timeout=AGENT_TIMEOUT,
                 )
-            except TimeoutError:
+            except Exception:
                 # Running out of time is the agent's failure, not infra: score
                 # whatever it left behind. Erroring would retry the sample and
-                # keep only the runs fast enough to finish.
+                # keep only the runs fast enough to finish. Other sandbox
+                # failures (connection loss, process kill) are treated the same
+                # so transient failures do not bias results by retrying.
                 store().set("timed_out", True)
                 return bridge.state
             if not result.success:
@@ -128,8 +130,17 @@ def hidden_tests_and_checks():
             timeout=300,
         )
         checks = await sb.exec(["python3", "-I", "/score/checks.py", "/score/start", PROJECT], timeout=60)
-        results = json.loads(checks.stdout)["checks"] if checks.success else []
-        failed = [c["name"] for c in results if not c["passed"]] if results else ["checks-crashed"]
+        if checks.success:
+            try:
+                results = json.loads(checks.stdout).get("checks", [])
+            except (json.JSONDecodeError, KeyError):
+                results = []
+                failed = ["checks-crashed"]
+            else:
+                failed = [c["name"] for c in results if not c["passed"]]
+        else:
+            results = []
+            failed = ["checks-crashed"]
         timed_out = store().get("timed_out", False)
         passed = tests.success and not failed and not timed_out
         return Score(

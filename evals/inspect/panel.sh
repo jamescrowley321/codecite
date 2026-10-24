@@ -2,7 +2,7 @@
 # Run the A/B panel: every model through pi, one model at a time (parallel
 # sandbox starts collide on network creation). OpenRouter picks the host
 # within the account's privacy settings (ZDR, allowed providers).
-set -uo pipefail
+set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 EPOCHS="${EPOCHS:-10}"
 # The models blind-peer-review measured in its latest round
