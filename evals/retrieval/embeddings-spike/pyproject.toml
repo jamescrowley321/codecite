@@ -1,0 +1,14 @@
+[project]
+name = "codecite-embeddings-spike"
+version = "0"
+description = "Throwaway spike for #95: embeddings and fusion over codecite-bench's labelled queries"
+requires-python = ">=3.14"
+dependencies = [
+    "fastembed==0.9.0",
+    "huggingface-hub==1.33.0",
+    "numpy==2.5.4",
+    "onnxruntime==1.31.0",
+]
+
+[tool.uv]
+package = false
