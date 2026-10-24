@@ -20,11 +20,10 @@ concurrency:
   group: blind-peer-review-${{ github.ref }}
   cancel-in-progress: true
 
+# Each job adds what it uses. Only the lens jobs post (a PR review per lens);
+# the action never writes check runs, so no job is granted `checks: write`.
 permissions:
   contents: read
-  pull-requests: write
-  checks: write
-  issues: read
 
 jobs:
   config:
@@ -58,7 +57,7 @@ jobs:
     if: >-
       vars.RUN_LENSES == 'true' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      github.actor != 'dependabot[bot]'
+      github.event.pull_request.user.login != 'dependabot[bot]'
     permissions:
       checks: read
       contents: read
@@ -79,6 +78,10 @@ jobs:
     needs: [config, preflight]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read # the policy lens reads the PR thread
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.config.outputs.matrix) }}
@@ -116,12 +119,12 @@ jobs:
       pull-requests: read
     steps:
       - name: Record exempt PR
-        if: github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]'
+        if: github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login == 'dependabot[bot]'
         run: echo "Blind peer review is intentionally exempt for PRs from other repositories and Dependabot."
       - name: Fail closed when prerequisites did not succeed
         if: >-
           github.event.pull_request.head.repo.full_name == github.repository &&
-          github.actor != 'dependabot[bot]' &&
+          github.event.pull_request.user.login != 'dependabot[bot]' &&
           (needs.config.result != 'success' || needs.preflight.result != 'success' || needs.review.result != 'success')
         env:
           CONFIG_RESULT: ${{ needs.config.result }}
@@ -133,7 +136,7 @@ jobs:
       - name: Adjudicate lenses
         if: >-
           github.event.pull_request.head.repo.full_name == github.repository &&
-          github.actor != 'dependabot[bot]' &&
+          github.event.pull_request.user.login != 'dependabot[bot]' &&
           needs.config.result == 'success' && needs.preflight.result == 'success' && needs.review.result == 'success'
         uses: jamescrowley321/blind-peer-review@439e22c6dcfdaefc6c1713d9f5b3d259ee38cf19 # v3.10.0
         with:
