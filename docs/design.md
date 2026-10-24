@@ -457,7 +457,9 @@ codecite earns its place only if agents using it do no worse than agents without
 
 **Retrieval benchmark**
 
-- 100 labelled queries over the identity corpora, each with its known correct span.
+- 100 labelled queries over the identity corpora, each with its known correct span, in `evals/retrieval/queries.toml`. About half are spec queries: by keyword, in plain language that shares no distinctive term with the answer, and asking which requirements apply. The rest are code queries by symbol, by behaviour and by usage, including queries agents typed in eval runs.
+- The corpus is `evals/retrieval/identity-bench.toml`: the identity corpus with identity-model pinned at the commit the labels were written against.
+- `codecite-bench` runs each query through a `codecite` binary and prints Recall@1, Recall@10 and MRR per class, with every query whose answer isn't first. A spec result counts when it is the labelled section or a step in it; a code result when its lines hold the labelled line. CI runs it on every PR and posts the table to the job summary.
 - Recall@10 and MRR for BM25 alone, BM25 plus vectors, and BM25 plus graph boosts.
 
 **Success criteria**

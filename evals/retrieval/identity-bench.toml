@@ -1,0 +1,414 @@
+# The retrieval benchmark's corpus: the identity corpus with identity-model
+# pinned at the commit the labels in queries.toml were written against.
+# A label's line numbers are only right at this commit; moving it means
+# relabelling the code queries.
+#
+# Index it with `codecite index identity-bench --manifest
+# evals/retrieval/identity-bench.toml`, then run `codecite-bench`.
+
+name = "identity-bench"
+
+[[source]]
+kind = "git"
+name = "identity-model"
+url = "https://github.com/jamescrowley321/identity-model"
+commit = "9458d60f4f2f20227bddf2594fd7d10cba66ea0a"
+license = "Apache-2.0"
+use = "adapt"
+
+[[source]]
+kind = "document"
+name = "openid-connect-core-1_0"
+url = "https://openid.net/specs/openid-connect-core-1_0.html"
+sha256 = "4d016752a645e8a3c259baa4173b5a90cb6c82898ce868fc8444adde262a5aed"
+license = "OpenID Foundation"
+use = "quote"
+current = true
+aliases = ["OIDC Core", "Core", "OpenID Connect Core", "OpenID Connect Core 1.0"]
+
+# Core 1.0 as first published (February 2014), before errata.
+[[source]]
+kind = "document"
+name = "openid-connect-core-1_0"
+url = "https://openid.net/specs/openid-connect-core-1_0-final.html"
+sha256 = "c9a06af238e2d3a43f5a9243bf45b1c68d8068df0341a10b480c68987d482a55"
+license = "OpenID Foundation"
+use = "quote"
+current = false
+
+[[source]]
+kind = "document"
+name = "openid-connect-discovery-1_0"
+url = "https://openid.net/specs/openid-connect-discovery-1_0.html"
+sha256 = "0401a07b35de50e914e195aa2c3c64cc4f6542464381c885d24a2623fbf75ec2"
+license = "OpenID Foundation"
+use = "quote"
+current = true
+aliases = ["OIDC Discovery", "Discovery", "OpenID Connect Discovery 1.0"]
+
+[[source]]
+kind = "document"
+name = "openid-connect-registration-1_0"
+url = "https://openid.net/specs/openid-connect-registration-1_0.html"
+sha256 = "c151a4abab7704f2efa9b00530dcfeeefb3de6acbdbdf5ba05c9903f1de2a318"
+license = "OpenID Foundation"
+use = "quote"
+current = true
+aliases = ["OIDC Registration", "OIDC Dynamic Client Registration", "OpenID Connect Dynamic Client Registration 1.0"]
+
+[[source]]
+kind = "document"
+name = "openid-connect-rpinitiated-1_0"
+url = "https://openid.net/specs/openid-connect-rpinitiated-1_0.html"
+sha256 = "246432dafaa5556d896fa9b9ae4284b213ff6921b33478ed3b46bd6bd4aab804"
+license = "OpenID Foundation"
+use = "quote"
+current = true
+aliases = ["RP-Initiated Logout", "OIDC RP-Initiated Logout", "OpenID Connect RP-Initiated Logout 1.0"]
+
+[[source]]
+kind = "document"
+name = "openid-connect-backchannel-1_0"
+url = "https://openid.net/specs/openid-connect-backchannel-1_0.html"
+sha256 = "3b5c933d5269047b39a65166d5c4d8ff6852b06451f54ed2531b8f97299fdc50"
+license = "OpenID Foundation"
+use = "quote"
+current = true
+aliases = ["Back-Channel Logout", "OIDC Back-Channel Logout", "Back-Channel Logout 1.0", "OpenID Connect Back-Channel Logout 1.0"]
+
+# Back-Channel Logout 1.0 before errata set 1 (September 2022).
+[[source]]
+kind = "document"
+name = "openid-connect-backchannel-1_0"
+url = "https://openid.net/specs/openid-connect-backchannel-1_0-final.html"
+sha256 = "02343424f9e52edf8c78173540e25da913ad2784ea292dbf7980222ab1b18a22"
+license = "OpenID Foundation"
+use = "quote"
+current = false
+
+# The latest Basic Client Profile draft, current so that draft 32 can be pinned as older.
+[[source]]
+kind = "document"
+name = "openid-connect-basic-1_0"
+url = "https://openid.net/specs/openid-connect-basic-1_0.html"
+sha256 = "a75b730ccbf22213e5e6c9fef7341fa8147bfbfa5141cc8c045d849d46d1910d"
+license = "OpenID Foundation"
+use = "quote"
+current = true
+aliases = ["OIDC Basic", "Basic Client Profile", "OpenID Connect Basic Client Implementer's Guide 1.0"]
+
+# Basic Client Profile draft 32 (December 2013).
+[[source]]
+kind = "document"
+name = "openid-connect-basic-1_0"
+url = "https://openid.net/specs/openid-connect-basic-1_0-32.html"
+sha256 = "ea3b745387c6589d5d57f59e5b145ee292960b7c38f736e706be17bfcd4f8c03"
+license = "OpenID Foundation"
+use = "quote"
+current = false
+
+[[source]]
+kind = "document"
+name = "fapi-security-profile-2_0"
+url = "https://openid.net/specs/fapi-security-profile-2_0.html"
+sha256 = "26a49ad19b1f2b19ecc1cd9b825b4d5012f5e03a5dc8cb0dbd26462d39da465c"
+license = "OpenID Foundation"
+use = "quote"
+current = true
+aliases = ["FAPI 2.0 Security Profile", "FAPI Security Profile 2.0"]
+
+[[source]]
+kind = "document"
+name = "fapi-message-signing-2_0"
+url = "https://openid.net/specs/fapi-message-signing-2_0.html"
+sha256 = "dc59c7d55017078967d4f230b2a1858686325c8cc5339bf5a6e79b806bee59b3"
+license = "OpenID Foundation"
+use = "quote"
+current = true
+aliases = ["FAPI 2.0 Message Signing", "FAPI Message Signing 2.0"]
+
+# IETF RFCs, from rfc-editor.org. RFC 2119 and RFC 8174 define the requirement keywords.
+
+[[source]]
+kind = "document"
+name = "rfc2119"
+url = "https://www.rfc-editor.org/rfc/rfc2119.html"
+sha256 = "3eb4d7bb487a09ec3936e386d1b61a620a9f5716f701f27676ff1564d18d2a5a"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["BCP 14"]
+updated_by = "rfc8174"
+
+[[source]]
+kind = "document"
+name = "rfc6749"
+url = "https://www.rfc-editor.org/rfc/rfc6749.html"
+sha256 = "535362fa3b4ca668d4734c244c6ed8c811f2ccd7ea1612a4201e5d8922a74b4e"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["OAuth 2.0"]
+updated_by = "rfc9700"
+
+[[source]]
+kind = "document"
+name = "rfc6750"
+url = "https://www.rfc-editor.org/rfc/rfc6750.html"
+sha256 = "c458bb43ff32efb811466120efdec411010cdde537e59948342240a32dcd5a1c"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["Bearer Token Usage"]
+updated_by = "rfc9700"
+
+[[source]]
+kind = "document"
+name = "rfc7009"
+url = "https://www.rfc-editor.org/rfc/rfc7009.html"
+sha256 = "af01723527d58beb02d56c236d4cec1e9b702da239e9a91920e9ecc839c01d8f"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["Token Revocation"]
+
+[[source]]
+kind = "document"
+name = "rfc7515"
+url = "https://www.rfc-editor.org/rfc/rfc7515.html"
+sha256 = "88fcf41b04710963f704f3dedb64425abacdd34308660f1d35688a2ac3ba0bd5"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["JWS"]
+
+[[source]]
+kind = "document"
+name = "rfc7517"
+url = "https://www.rfc-editor.org/rfc/rfc7517.html"
+sha256 = "d0d5d43a2b55352c60da26cfbcffd12632ee1e45182347a67af9858fb37c3c01"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["JWK"]
+
+[[source]]
+kind = "document"
+name = "rfc7518"
+url = "https://www.rfc-editor.org/rfc/rfc7518.html"
+sha256 = "2fe340b744196a10cc9472ab8987c8cd972d10f2c597b7e292c6dedd00c2bf13"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["JWA"]
+updated_by = "rfc9864"
+
+[[source]]
+kind = "document"
+name = "rfc7519"
+url = "https://www.rfc-editor.org/rfc/rfc7519.html"
+sha256 = "d0ca0d6c6f8b7dfcad6e13c55086694d7ee69665bb828dcac6362d1587b4b53b"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["JWT"]
+updated_by = "rfc8725"
+
+[[source]]
+kind = "document"
+name = "rfc7521"
+url = "https://www.rfc-editor.org/rfc/rfc7521.html"
+sha256 = "cf1310a91c058bdea561904df387ae54b732c2e254d2c0d9c1a6eedefda63843"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["Assertion Framework"]
+
+[[source]]
+kind = "document"
+name = "rfc7523"
+url = "https://www.rfc-editor.org/rfc/rfc7523.html"
+sha256 = "718fd1261b19af816ac064386f5373d63ed2b7891a0bb057ebbe29f628202f24"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["JWT Client Authentication"]
+
+[[source]]
+kind = "document"
+name = "rfc7591"
+url = "https://www.rfc-editor.org/rfc/rfc7591.html"
+sha256 = "a946f977f181ea69b2c7566584fa7b6fac90a158828ef4cf8168f87be6b2c90a"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["OAuth Dynamic Client Registration"]
+
+[[source]]
+kind = "document"
+name = "rfc7592"
+url = "https://www.rfc-editor.org/rfc/rfc7592.html"
+sha256 = "ddc32ae10ca972ef33f42e1b1ec7216579da53be84d5df19abf83465d33dffeb"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["OAuth Dynamic Client Registration Management"]
+
+[[source]]
+kind = "document"
+name = "rfc7636"
+url = "https://www.rfc-editor.org/rfc/rfc7636.html"
+sha256 = "1dd39bd17081e0ed18c2cf304b87c79061c51e505d2ff5e12ffbd0d182fe5b20"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["PKCE"]
+
+[[source]]
+kind = "document"
+name = "rfc7638"
+url = "https://www.rfc-editor.org/rfc/rfc7638.html"
+sha256 = "13e604d659d8c8fdb8ddbe6097f6073c93f3f6fe2d867501d6190480a560125c"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["JWK Thumbprint"]
+
+[[source]]
+kind = "document"
+name = "rfc7662"
+url = "https://www.rfc-editor.org/rfc/rfc7662.html"
+sha256 = "8c36ce5246215c16fac436fafda277ee0638566b7610aa5cc6673388009445d7"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["Token Introspection"]
+
+[[source]]
+kind = "document"
+name = "rfc8174"
+url = "https://www.rfc-editor.org/rfc/rfc8174.html"
+sha256 = "fa760f13d456fc6d0b95d2d565d4bfa698d3c542e0890c19a2a8c6125e1c3260"
+license = "IETF Trust"
+use = "quote"
+current = true
+
+[[source]]
+kind = "document"
+name = "rfc8414"
+url = "https://www.rfc-editor.org/rfc/rfc8414.html"
+sha256 = "05083c732395b4499316f5d030f2f86cc203f9ac8a455af7efb3f27a29b57697"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["Authorization Server Metadata"]
+
+[[source]]
+kind = "document"
+name = "rfc8628"
+url = "https://www.rfc-editor.org/rfc/rfc8628.html"
+sha256 = "4230ffd7f528dd641fd2579eee8acbb98da877867e9231998712f19dda1b349f"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["Device Authorization Grant"]
+
+[[source]]
+kind = "document"
+name = "rfc8693"
+url = "https://www.rfc-editor.org/rfc/rfc8693.html"
+sha256 = "cad0eccfa08d8c57eb096c2750e6cc783f8697b8771558943971fa58caff0fca"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["Token Exchange"]
+
+[[source]]
+kind = "document"
+name = "rfc8705"
+url = "https://www.rfc-editor.org/rfc/rfc8705.html"
+sha256 = "f9ca7c82d30fd90f1ab21bc16d561ae5e3da625e824cc73b97000ae829f2bdb9"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["mTLS"]
+
+[[source]]
+kind = "document"
+name = "rfc8707"
+url = "https://www.rfc-editor.org/rfc/rfc8707.html"
+sha256 = "d085d9b8e5665995a3c9702ffb1458ac93c51855624f1109e2c81e467f3e82dd"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["Resource Indicators"]
+
+[[source]]
+kind = "document"
+name = "rfc8725"
+url = "https://www.rfc-editor.org/rfc/rfc8725.html"
+sha256 = "7f93df8a106c14e2c9394bd3fc12a488266477c89a1fe2f9182cf0bdb02d7ce0"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["JWT BCP"]
+
+[[source]]
+kind = "document"
+name = "rfc9101"
+url = "https://www.rfc-editor.org/rfc/rfc9101.html"
+sha256 = "14a98eb7f65063f0eaa37b0d48ed0e956cb5fd8e38e799a28a119c56554ccb94"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["JAR"]
+
+[[source]]
+kind = "document"
+name = "rfc9126"
+url = "https://www.rfc-editor.org/rfc/rfc9126.html"
+sha256 = "63ff5c59d0017c94165d3cc49786fd272edfe2666a4e96c2b65a623a0010b31c"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["PAR"]
+
+[[source]]
+kind = "document"
+name = "rfc9207"
+url = "https://www.rfc-editor.org/rfc/rfc9207.html"
+sha256 = "482fca2e2591ac8b30566f952112bfb19887f186c5140251ccd4948a64a3be85"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["Issuer Identification"]
+
+[[source]]
+kind = "document"
+name = "rfc9396"
+url = "https://www.rfc-editor.org/rfc/rfc9396.html"
+sha256 = "a71380d14733dd4d5056ecec42598b5b2661b197a4079468ce09c71d1adf2e33"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["RAR"]
+
+[[source]]
+kind = "document"
+name = "rfc9449"
+url = "https://www.rfc-editor.org/rfc/rfc9449.html"
+sha256 = "2d8657f072913d55627dc25c02d3ad305bd62bed7f06c78c7d0621768b234784"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["DPoP"]
+
+[[source]]
+kind = "document"
+name = "rfc9700"
+url = "https://www.rfc-editor.org/rfc/rfc9700.html"
+sha256 = "c00e2234fcd79581bc29669c60d693afaa42f67d9205bddee848f757ae975419"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["OAuth 2.0 Security BCP"]
