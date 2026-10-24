@@ -445,7 +445,7 @@ codecite has no network listener by default and makes no outbound calls except f
 - **Read-only queries:** `search`, `read` and the graph tools open the database read-only. Only `index` writes.
 - **Supply chain:** a pinned toolchain and a minimal dependency set.
   - Actions are pinned by commit SHA. Dependabot bumps them, `cargo` and `npm` after a 7-day cooldown.
-  - PRs to `main` are gated on `cargo-deny` (its advisories check reads RustSec, the database `cargo-audit` uses), zizmor, gitleaks, OSV-Scanner, dependency review and CodeQL, as required checks in oss-admin.
+  - PRs to `main` are gated on `cargo-deny` (its advisories check reads RustSec, the database `cargo-audit` uses), zizmor, gitleaks, OSV-Scanner, dependency review and CodeQL, as required checks in oss-admin. cargo-deny alone gates licenses, since only the Rust binary ships; dependency review checks vulnerabilities in every lockfile, the eval tooling's included.
   - When codecite ships an embedding model, it is pinned by Hugging Face commit and per-file sha256 and fetched through the document fetcher (#109).
   - Publishing, release signing, SBOM and provenance are #110; there are no releases before it.
   - The repository reports vulnerabilities privately (`SECURITY.md`, GitHub private vulnerability reporting).
