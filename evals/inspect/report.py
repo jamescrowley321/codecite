@@ -58,7 +58,10 @@ def pass_diff(code, base):
 
 
 def median_ratio(code, base):
-    return median(code) / median(base) - 1
+    m = median(base)
+    if m == 0:
+        return 0.0 if median(code) == 0 else float("inf")
+    return median(code) / m - 1
 
 
 def main():
@@ -70,7 +73,7 @@ def main():
             if s.error or not s.scores:
                 continue
             score = next(iter(s.scores.values()))
-            tokens = sum(u.total_tokens for u in s.model_usage.values())
+            tokens = sum(u.total_tokens or 0 for u in (s.model_usage or {}).values())
             timed_out = bool((score.metadata or {}).get("timed_out"))
             runs[(log.eval.model, s.metadata["arm"])].append((score.value == 1, tokens, s.total_time or 0.0, timed_out))
 
@@ -90,12 +93,14 @@ def main():
                 f" (pass {p[0]:+.0%}..{p[1]:+.0%}, tokens {t[0]:+.0%}..{t[1]:+.0%}, time {s[0]:+.0%}..{s[1]:+.0%})"
             )
         for arm, r in (("baseline", base), ("codecite", code)):
-            if not r:
-                continue
-            print(
-                f"| {model.removeprefix('openrouter/')} | {arm} | {len(r)} | {sum(x[0] for x in r) / len(r):.0%} | {sum(x[3] for x in r)} "
-                f"| {median(x[1] for x in r):,.0f} | {median(x[2] for x in r):.0f}s | {verdict if arm == 'codecite' else ''} |"
+            # An arm with no usable runs still gets a row, so the verdict
+            # (incomplete) always shows.
+            cells = (
+                f"{sum(x[0] for x in r) / len(r):.0%} | {sum(x[3] for x in r)} | {median(x[1] for x in r):,.0f} | {median(x[2] for x in r):.0f}s"
+                if r
+                else "- | - | - | -"
             )
+            print(f"| {model.removeprefix('openrouter/')} | {arm} | {len(r)} | {cells} | {verdict if arm == 'codecite' else ''} |")
 
 
 if __name__ == "__main__":

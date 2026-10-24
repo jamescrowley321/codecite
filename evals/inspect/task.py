@@ -99,6 +99,8 @@ def last_turn_error(stdout: str) -> str | None:
             event = json.loads(line)
         except ValueError:
             continue
+        if not isinstance(event, dict):
+            continue
         message = event.get("message") if event.get("type") == "message_end" else None
         if isinstance(message, dict) and message.get("role") == "assistant":
             last = message
@@ -123,30 +125,30 @@ def hidden_tests_and_checks():
                 text = f.read_text().replace("@IDENTITY_MODEL@", IDENTITY_MODEL)
                 await sb.write_file(f"/score/start/{f.relative_to(start)}", text)
 
-        tests = await sb.exec(
-            ["uv", "run", "--with", "pytest==9.1.1", "--with", "httpx==0.28.1", "pytest", "-q", "-p", "no:cacheprovider", "/score/hidden"],
-            cwd=PROJECT,
-            env={"UV_OFFLINE": "1"},
-            timeout=300,
-        )
-        checks = await sb.exec(["python3", "-I", "/score/checks.py", "/score/start", PROJECT], timeout=60)
-        if checks.success:
-            try:
-                results = json.loads(checks.stdout).get("checks", [])
-            except (json.JSONDecodeError, KeyError):
-                results = []
-                failed = ["checks-crashed"]
-            else:
-                failed = [c["name"] for c in results if not c["passed"]]
-        else:
+        # Both run the agent's code, so a hang is the agent's failure, scored
+        # like any other; letting the timeout raise would retry the sample.
+        try:
+            tests = await sb.exec(
+                ["uv", "run", "--with", "pytest==9.1.1", "--with", "httpx==0.28.1", "pytest", "-q", "-p", "no:cacheprovider", "/score/hidden"],
+                cwd=PROJECT,
+                env={"UV_OFFLINE": "1"},
+                timeout=300,
+            )
+            tests_passed, tests_tail = tests.success, tests.stdout[-1500:]
+        except TimeoutError:
+            tests_passed, tests_tail = False, "hidden tests timed out"
+        try:
+            checks = await sb.exec(["python3", "-I", "/score/checks.py", "/score/start", PROJECT], timeout=60)
+            results = json.loads(checks.stdout)["checks"] if checks.success else []
+        except (TimeoutError, ValueError, KeyError, TypeError):
             results = []
-            failed = ["checks-crashed"]
+        failed = [c["name"] for c in results if not c["passed"]] if results else ["checks-crashed"]
         timed_out = store().get("timed_out", False)
-        passed = tests.success and not failed and not timed_out
+        passed = tests_passed and not failed and not timed_out
         return Score(
             value=1 if passed else 0,
-            explanation=f"{'agent timed out; ' if timed_out else ''}hidden tests {'passed' if tests.success else 'failed'}; failed checks: {', '.join(failed) or 'none'}",
-            metadata={"timed_out": timed_out, "tests_passed": tests.success, "tests_tail": tests.stdout[-1500:], "checks": results},
+            explanation=f"{'agent timed out; ' if timed_out else ''}hidden tests {'passed' if tests_passed else 'failed'}; failed checks: {', '.join(failed) or 'none'}",
+            metadata={"timed_out": timed_out, "tests_passed": tests_passed, "tests_tail": tests_tail, "checks": results},
         )
 
     return score
