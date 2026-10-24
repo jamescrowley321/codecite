@@ -1,0 +1,90 @@
+{
+ "BAAI/bge-base-en-v1.5": {
+  "files": {
+   "config.json": "86f84a5285de7f1ee673f712387219ef1e261ec27dcd870e793a80f9da1aaa3b",
+   "model_optimized.onnx": "4e556722bc4f65716c544c8a931f1e90fb3f866e5741fd93a96f051d673339c7",
+   "special_tokens_map.json": "5d5b662e421ea9fac075174bb0688ee0d9431699900b90662acd44b2a350503a",
+   "tokenizer.json": "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
+   "tokenizer_config.json": "0b29c7bfc889e53b36d9dd3e686dd4300f6525110eaa98c76a5dafceb2029f53"
+  },
+  "repo": "Qdrant/bge-base-en-v1.5-onnx-Q",
+  "revision": "199291fdd1aa89faf9c20b722dc72ad5e17aa0d0"
+ },
+ "BAAI/bge-small-en-v1.5": {
+  "files": {
+   "config.json": "13582bcf2effc85b7bf3d3f5532e686bc1c9ce86bb009d10f0ec33cbe92299dd",
+   "model_optimized.onnx": "51f1bd0addd6e859e42c2c8021a5e5461385bb676a649f4b269aa445449f2431",
+   "special_tokens_map.json": "5d5b662e421ea9fac075174bb0688ee0d9431699900b90662acd44b2a350503a",
+   "tokenizer.json": "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
+   "tokenizer_config.json": "0b29c7bfc889e53b36d9dd3e686dd4300f6525110eaa98c76a5dafceb2029f53"
+  },
+  "repo": "Qdrant/bge-small-en-v1.5-onnx-Q",
+  "revision": "aa8f8b060edb00e03bfdd08813a2949946c8ba55"
+ },
+ "mixedbread-ai/mxbai-embed-large-v1": {
+  "files": {
+   "config.json": "ce13f118fc183c005236901d2662ced752de632ebb161e6af800aadda2d176f7",
+   "onnx/model.onnx": "adb53ed475faa339bfad3bd2bdb7e6a30b4f47280ade9811f81bef7953f9ab77",
+   "special_tokens_map.json": "5d5b662e421ea9fac075174bb0688ee0d9431699900b90662acd44b2a350503a",
+   "tokenizer.json": "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
+   "tokenizer_config.json": "0b29c7bfc889e53b36d9dd3e686dd4300f6525110eaa98c76a5dafceb2029f53"
+  },
+  "repo": "mixedbread-ai/mxbai-embed-large-v1",
+  "revision": "b33106f585b9ce46904ad7443a3b52b7a63e231c"
+ },
+ "nomic-ai/nomic-embed-text-v1.5": {
+  "files": {
+   "config.json": "9ab00bd92cee80a569f708140b7b6c1661a65891ff3765b1519e181ba2f2c92b",
+   "onnx/model.onnx": "147d5aa88c2101237358e17796cf3a227cead1ec304ec34b465bb08e9d952965",
+   "special_tokens_map.json": "5d5b662e421ea9fac075174bb0688ee0d9431699900b90662acd44b2a350503a",
+   "tokenizer.json": "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
+   "tokenizer_config.json": "d7e0000bcc80134debd2222220427e6bf5fa20a669f40a0d0d1409cc18e0a9bc"
+  },
+  "repo": "nomic-ai/nomic-embed-text-v1.5",
+  "revision": "e9b6763023c676ca8431644204f50c2b100d9aab"
+ },
+ "sentence-transformers/all-MiniLM-L6-v2": {
+  "files": {
+   "config.json": "1b4d8e2a3988377ed8b519a31d8d31025a25f1c5f8606998e8014111438efcd7",
+   "model.onnx": "bbd7b466f6d58e646fdc2bd5fd67b2f5e93c0b687011bd4548c420f7bd46f0c5",
+   "special_tokens_map.json": "5d5b662e421ea9fac075174bb0688ee0d9431699900b90662acd44b2a350503a",
+   "tokenizer.json": "851ca67100d372ca3ae031a6abd168f53489eebfd7d89523f35c5c9b4d372c3c",
+   "tokenizer_config.json": "abda01c8c14c5151ae498aceb30db406d6b91242c394fd88d3b6fd5a63a101e6"
+  },
+  "repo": "Qdrant/all-MiniLM-L6-v2-onnx",
+  "revision": "d13954661f83248295ba75c1ed411eef3b7b936e"
+ },
+ "snowflake/snowflake-arctic-embed-m": {
+  "files": {
+   "config.json": "2e26193d0d00a8c709c379fd840bd6c41789b25add0d324d841d0788d61b7e0e",
+   "onnx/model.onnx": "564e6c65ee0c739a486702e9e3e9b33c3f697c19c34dbe886bce9eec497ce971",
+   "special_tokens_map.json": "5d5b662e421ea9fac075174bb0688ee0d9431699900b90662acd44b2a350503a",
+   "tokenizer.json": "91f1def9b9391fdabe028cd3f3fcc4efd34e5d1f08c3bf2de513ebb5911a1854",
+   "tokenizer_config.json": "0e83e9d7206b3ade43f8f2aeef523cf5d5b4a25b67af21b273de21972c0f58b7"
+  },
+  "repo": "Snowflake/snowflake-arctic-embed-m",
+  "revision": "fc74610d18462d218e312aa986ec5c8a75a98152"
+ },
+ "snowflake/snowflake-arctic-embed-s": {
+  "files": {
+   "config.json": "4e519aa92ec40943356032afe458c8829d70c5766b109e4a57490b82f72dcfb7",
+   "onnx/model.onnx": "579c1f1778a0993eb0d2a1403340ffb491c769247fb46acc4f5cf8ac5b89c1e1",
+   "special_tokens_map.json": "5d5b662e421ea9fac075174bb0688ee0d9431699900b90662acd44b2a350503a",
+   "tokenizer.json": "91f1def9b9391fdabe028cd3f3fcc4efd34e5d1f08c3bf2de513ebb5911a1854",
+   "tokenizer_config.json": "9ca59277519f6e3692c8685e26b94d4afca2d5438deff66483db495e48735810"
+  },
+  "repo": "Snowflake/snowflake-arctic-embed-s",
+  "revision": "e596f507467533e48a2e17c007f0e1dacc837b33"
+ },
+ "thenlper/gte-base": {
+  "files": {
+   "config.json": "88bed05d7640945dd2de4b4e81fbe4dd962289c32fc1c0aacfd13deb7ea90155",
+   "onnx/model.onnx": "dbfc7a6898c7c95fc53e52aaaf8302b5b2f5e8ec90d0eafa8e3d4acd26abef39",
+   "special_tokens_map.json": "b6d346be366a7d1d48332dbc9fdf3bf8960b5d879522b7799ddba59e76237ee3",
+   "tokenizer.json": "da0e79933b9ed51798a3ae27893d3c5fa4a201126cef75586296df9b4d2c62a0",
+   "tokenizer_config.json": "ae83fa6ca0333117ff12606020af925d648667ef70d92ff7f27d781ba0ca4544"
+  },
+  "repo": "thenlper/gte-base",
+  "revision": "c078288308d8dee004ab72c6191778064285ec0c"
+ }
+}
