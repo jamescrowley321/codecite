@@ -364,8 +364,10 @@ fn blend<T>(
     named: bool,
     score: impl Fn(&T) -> f64,
 ) -> Vec<T> {
+    // Sized by the results, not the caller's limit, which may be huge.
+    let room = limit.min(code.len() + spec.len());
     if !named {
-        let mut merged = Vec::with_capacity(limit);
+        let mut merged = Vec::with_capacity(room);
         let (mut code, mut spec) = (code.into_iter(), spec.into_iter());
         while merged.len() < limit {
             match (spec.next(), code.next()) {
@@ -392,7 +394,7 @@ fn blend<T>(
     // The first `head` by score, then the held spec results that missed
     // them, then the next best.
     let mut slots: Vec<Option<(bool, bool, T)>> = by_score.into_iter().map(Some).collect();
-    let mut merged = Vec::with_capacity(limit);
+    let mut merged = Vec::with_capacity(room);
     for slot in slots.iter_mut().take(head) {
         merged.extend(slot.take());
     }
@@ -977,6 +979,11 @@ mod tests {
         // With one kind, it is that kind in order.
         assert_eq!(blend(code.clone(), vec![], 2, false, |x| x.1), code[..2]);
         assert_eq!(blend(vec![], code.clone(), 2, true, |x| x.1), code[..2]);
+        // A huge limit returns what there is without reserving room for it.
+        for named in [true, false] {
+            let blended = blend(code.clone(), vec![], usize::MAX, named, |x| x.1);
+            assert_eq!(blended, code);
+        }
     }
 
     #[test]
