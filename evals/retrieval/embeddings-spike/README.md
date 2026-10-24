@@ -29,6 +29,11 @@ plain RRF.
 
 `fusion.py` prints every model and variant.
 
+The design that follows from it, with lexical variants, simulated agent rewrites,
+rerankers and the scripts that measure them (`lexical.py`, `rewrite.py`,
+`rerank.py`, `sparse.py`, `options.py`), is
+`docs/superpowers/specs/2026-10-23-hybrid-retrieval-design.md`.
+
 ## Reproduce
 
 ```bash

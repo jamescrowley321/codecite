@@ -10,6 +10,17 @@
   "repo": "Qdrant/bge-base-en-v1.5-onnx-Q",
   "revision": "199291fdd1aa89faf9c20b722dc72ad5e17aa0d0"
  },
+ "BAAI/bge-reranker-base": {
+  "files": {
+   "config.json": "289adf7ada1eb6b4afa7589a48a032d45a076cf2e46dcdb3b4cabc33be14f708",
+   "onnx/model.onnx": "15b9a8c3da82eddf263df571281166e00e9308fe19d077084b642ebfcaf06d2b",
+   "special_tokens_map.json": "d5469a60db23249c7f8945013d78df30b44b6bf686c6bb4740f4223f77b1b535",
+   "tokenizer.json": "9eb652ac4e40cc093272bbbe0f55d521cf67570060227109b5cdc20945a4489e",
+   "tokenizer_config.json": "a1d6bc8734a6f635dc158508bef000f8e2e5a759c7d92f984b2c86e5ff53425b"
+  },
+  "repo": "BAAI/bge-reranker-base",
+  "revision": "2cfc18c9415c912f9d8155881c133215df768a70"
+ },
  "BAAI/bge-small-en-v1.5": {
   "files": {
    "config.json": "13582bcf2effc85b7bf3d3f5532e686bc1c9ce86bb009d10f0ec33cbe92299dd",
@@ -20,6 +31,61 @@
   },
   "repo": "Qdrant/bge-small-en-v1.5-onnx-Q",
   "revision": "aa8f8b060edb00e03bfdd08813a2949946c8ba55"
+ },
+ "Xenova/ms-marco-MiniLM-L-12-v2": {
+  "files": {
+   "config.json": "681b15ee0e4ec2cc2320b4e32e01266ebcbc8a84d55c9f0fac04cfefb7eece30",
+   "onnx/model.onnx": "3a6d50ce60de831c8c68197df674eeb878d4ff34bb1aca5d1f3cb346c9075dba",
+   "special_tokens_map.json": "b6d346be366a7d1d48332dbc9fdf3bf8960b5d879522b7799ddba59e76237ee3",
+   "tokenizer.json": "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
+   "tokenizer_config.json": "0b29c7bfc889e53b36d9dd3e686dd4300f6525110eaa98c76a5dafceb2029f53"
+  },
+  "repo": "Xenova/ms-marco-MiniLM-L-12-v2",
+  "revision": "42a4a787e30451cf9dbd09080c2a5b8dde332c1e"
+ },
+ "Xenova/ms-marco-MiniLM-L-6-v2": {
+  "files": {
+   "config.json": "d827779a72d27ae68cf878a6fc2e954542663fe21ca515d9f4783fc96be2d37e",
+   "onnx/model.onnx": "c623d0bcb99f4622beb413eaef00cfbe5db20df9f1dd982da4b4f26022881870",
+   "special_tokens_map.json": "b6d346be366a7d1d48332dbc9fdf3bf8960b5d879522b7799ddba59e76237ee3",
+   "tokenizer.json": "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
+   "tokenizer_config.json": "0b29c7bfc889e53b36d9dd3e686dd4300f6525110eaa98c76a5dafceb2029f53"
+  },
+  "repo": "Xenova/ms-marco-MiniLM-L-6-v2",
+  "revision": "a09144355adeed5f58c8ed011d209bf8ee5a1fec"
+ },
+ "answerdotai/answerai-colbert-small-v1": {
+  "files": {
+   "config.json": "8a7ef3067ec44d7909d28daaf0cd52a6739a25e689252789b0927c593e17b121",
+   "special_tokens_map.json": "5d5b662e421ea9fac075174bb0688ee0d9431699900b90662acd44b2a350503a",
+   "tokenizer.json": "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
+   "tokenizer_config.json": "0b29c7bfc889e53b36d9dd3e686dd4300f6525110eaa98c76a5dafceb2029f53",
+   "vespa_colbert.onnx": "9161e64cab96fe5a5366782578e20da3409b26bd171a2a8bc6b9168777950903"
+  },
+  "repo": "answerdotai/answerai-colbert-small-v1",
+  "revision": "934fa8bb4ce2284f4c2baa232d81aca4d076fa5e"
+ },
+ "jinaai/jina-reranker-v1-tiny-en": {
+  "files": {
+   "config.json": "dc70646aa6c9e75e3c513cc9c037f35ad54308001c3961d45c0f69749bcfb022",
+   "onnx/model.onnx": "e0e743251c7566e2b1e4f5ad091c681a700d7d7a3d85541ea56ca3acf43d1afa",
+   "special_tokens_map.json": "06e405a36dfe4b9604f484f6a1e619af1a7f7d09e34a8555eb0b77b66318067f",
+   "tokenizer.json": "0046da43cc8c424b317f56b092b0512aaaa65c4f925d2f16af9d9eeb4d0ef902",
+   "tokenizer_config.json": "d291c6652d96d56ffdbcf1ea19d9bae5ed79003f7648c627e725a619227ce8fa"
+  },
+  "repo": "jinaai/jina-reranker-v1-tiny-en",
+  "revision": "aca45de6945b5dc6399abcd2a9c55ded5dc9111f"
+ },
+ "jinaai/jina-reranker-v1-turbo-en": {
+  "files": {
+   "config.json": "e050ff6a15ae9295e84882fa0e98051bd8754856cd5201395ebf00ce9f2d609b",
+   "onnx/model.onnx": "c1296c66c119de645fa9cdee536d8637740efe85224cfa270281e50f213aa565",
+   "special_tokens_map.json": "06e405a36dfe4b9604f484f6a1e619af1a7f7d09e34a8555eb0b77b66318067f",
+   "tokenizer.json": "0046da43cc8c424b317f56b092b0512aaaa65c4f925d2f16af9d9eeb4d0ef902",
+   "tokenizer_config.json": "d291c6652d96d56ffdbcf1ea19d9bae5ed79003f7648c627e725a619227ce8fa"
+  },
+  "repo": "jinaai/jina-reranker-v1-turbo-en",
+  "revision": "b8c14f4e723d9e0aab4732a7b7b93741eeeb77c2"
  },
  "mixedbread-ai/mxbai-embed-large-v1": {
   "files": {
@@ -42,6 +108,29 @@
   },
   "repo": "nomic-ai/nomic-embed-text-v1.5",
   "revision": "e9b6763023c676ca8431644204f50c2b100d9aab"
+ },
+ "opensearch-project/opensearch-neural-sparse-encoding-doc-v3-gte": {
+  "files": {
+   "config.json": "1f0cdbc1583bc2676ade70ed54f15387457e09dc4bd751863b56b240c3b0551e",
+   "idf.json": "da23a1c0b9252776cc8c6d70fd14723e218f484d489cd9027ac6e4065d5b9edd",
+   "model.onnx": "7a630c8258890503bf62e5ec15acb1a6f4491b057df2ade358436109d75afa0a",
+   "special_tokens_map.json": "b6d346be366a7d1d48332dbc9fdf3bf8960b5d879522b7799ddba59e76237ee3",
+   "tokenizer.json": "ea725c60b9022a7a491ffc348b5622a199853c806d625f673d0e2ebf1c3b5312",
+   "tokenizer_config.json": "ff6aa1c1dbd6510c9890acf82034d050bc1c42473eed8b71b890d35f943b0fa5"
+  },
+  "repo": "Qdrant/opensearch-neural-sparse-encoding-doc-v3-gte",
+  "revision": "8ea969ac53f825df88ddd015de2d19ff67b7b897"
+ },
+ "prithivida/Splade_PP_en_v1": {
+  "files": {
+   "config.json": "017fde19abff1131c9c747fbd71f8348173409ac6d3d350fd122fd33341ecd85",
+   "model.onnx": "65adbad0d7e1bc882c867d534821d52e60d6f666a91662be3f58457d08d25bf3",
+   "special_tokens_map.json": "5d5b662e421ea9fac075174bb0688ee0d9431699900b90662acd44b2a350503a",
+   "tokenizer.json": "91f1def9b9391fdabe028cd3f3fcc4efd34e5d1f08c3bf2de513ebb5911a1854",
+   "tokenizer_config.json": "fc88e344ea2ba2cb3feb4e78fbc3813d194bbe12bc5cbb7094572f8628a26085"
+  },
+  "repo": "Qdrant/Splade_PP_en_v1",
+  "revision": "600ce23fd7611e71694fcf724f46778f1ad24c1c"
  },
  "sentence-transformers/all-MiniLM-L6-v2": {
   "files": {

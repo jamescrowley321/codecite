@@ -1,8 +1,12 @@
 """Embed every spec chunk and query with each model, and keep each query's top 50
 spec chunks by cosine similarity in out/vec-<model>.json.
 
-Usage: uv run --locked python -I embed.py <db> <queries.toml> <model> [<model>...]
+Usage: uv run --locked python -I embed.py [--context] <db> <queries.toml> <model> [<model>...]
 Models load only through models.lock.json (see models.py).
+
+Each chunk is embedded as `title\n\ntext`. With --context, the document's title
+and a step's section title go in front (`OAuth 2.0 Token Revocation > Revocation
+Request\n\n...`), and the outputs are named emb-ctx-*/vec-ctx-*.
 """
 import json, sys, time
 from pathlib import Path
@@ -14,6 +18,7 @@ import numpy as np
 from fastembed import TextEmbedding
 
 from bench import OUT, queries, spec_chunks
+from titles import TITLES
 import models
 
 # Per-model query/document prefixes, from each model card.
@@ -32,13 +37,20 @@ LONG_CONTEXT = {"nomic-ai/nomic-embed-text-v1.5"}
 TOP = 50
 
 
-def main(db, queries_path, names):
+def unit(c, context):
+    if not context:
+        return f"{c['title']}\n\n{c['text']}"
+    path = [TITLES[c["doc"]], c["parent_title"], c["title"]]
+    return " > ".join(t for t in path if t) + "\n\n" + c["text"]
+
+
+def main(db, queries_path, names, context=False):
     qs = queries(queries_path)
     chunks = spec_chunks(db)
     OUT.mkdir(exist_ok=True)
     for name in names:
         qp, dp = PREFIX.get(name, ("", ""))
-        slug = name.replace("/", "_")
+        slug = ("ctx-" if context else "") + name.replace("/", "_")
         m = TextEmbedding(model_name=name, threads=16, specific_model_path=models.path(name))
         cache = OUT / f"emb-{slug}.npy"
         if cache.exists():
@@ -46,7 +58,7 @@ def main(db, queries_path, names):
         else:
             t = time.time()
             batch = 1 if name in LONG_CONTEXT else 32
-            E = np.array(list(m.embed([f"{dp}{c['title']}\n\n{c['text']}" for c in chunks],
+            E = np.array(list(m.embed([dp + unit(c, context) for c in chunks],
                                       batch_size=batch)))
             np.save(cache, E)
             print(f"{name}: embedded {len(chunks)} chunks in {time.time() - t:.0f}s")
@@ -62,6 +74,9 @@ def main(db, queries_path, names):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 4:
+    args = sys.argv[1:]
+    context = args[:1] == ["--context"]
+    args = args[context:]
+    if len(args) < 3:
         raise SystemExit(__doc__)
-    main(sys.argv[1], sys.argv[2], sys.argv[3:])
+    main(args[0], args[1], args[2:], context)
