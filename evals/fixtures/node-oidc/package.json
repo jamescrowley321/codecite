@@ -11,6 +11,6 @@
   },
   "dependencies": {
     "jose": "^6.0.11",
-    "oidc-provider": "9.7.1"
+    "oidc-provider": "9.12.2"
   }
 }
