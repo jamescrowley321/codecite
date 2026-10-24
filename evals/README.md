@@ -43,11 +43,18 @@ uv run --locked python inspect/report.py
 ```
 
 Logs land in `inspect/logs/` (gitignored); `uv run --locked inspect view`
-browses them. A panel takes hours: run it detached from your shell (for
-example `systemd-run --user --unit=codecite-panel -p MemoryMax=16G
-inspect/panel.sh`), since a killed run leaves its sandboxes behind and its log
-unfinished. `inspect eval-retry <log>` reruns only an unfinished log's missing
-samples.
+browses them. Being ignored, they go with the worktree: copy them out before
+`git worktree remove`, or pass `--log-dir` a directory outside the checkout.
+A panel takes hours: run it detached from your shell (for example
+`systemd-run --user --unit=codecite-panel -p MemoryMax=16G inspect/panel.sh`),
+since a killed run leaves its sandboxes behind and its log unfinished.
+`inspect eval-retry <log>` reruns only an unfinished log's missing samples.
+
+Several models can run in one `inspect eval` process (a comma-separated
+`--model`). Each sandbox creates its own Docker network, and Docker's default
+address pools hold about 31, so keep `--max-sandboxes` under that (14 works);
+past it, sandbox starts fail with "all predefined address pools have been fully
+subnetted" and take the model's whole run with them (#111).
 
 ## How a sample runs
 
@@ -63,6 +70,8 @@ samples.
   its allowed providers); the panel pins none.
 - The hidden tests and checks reach the sandbox only after the agent exits. A
   sample passes when the hidden tests and every check pass.
-- An agent that runs past 600 s fails: what it left behind is scored, but the
-  sample can't pass. A provider error is infrastructure: the sample errors and
-  Inspect retries it (`--retry-on-error 2`); errored samples are never scored.
+- An agent that runs past 600 s, or whose sandbox fails mid-run, fails: what
+  it left behind is scored, but the sample can't pass. Hidden tests or checks
+  that hang fail too. A provider error that pi reports is infrastructure: the
+  sample errors and Inspect retries it (`--retry-on-error 2`); errored samples
+  are never scored.

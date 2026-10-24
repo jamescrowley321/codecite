@@ -33,8 +33,9 @@ Please include as much of the following as you can:
 
 ## Supported versions
 
-Security fixes go into the latest release on crates.io and the `main` branch.
-Older releases are not patched; upgrade to the current release to get fixes.
+Security fixes go into the `main` branch. codecite has no releases yet; once
+it publishes to crates.io (#110), fixes also go into the latest release, and
+older releases are not patched.
 
 ## Scope
 
