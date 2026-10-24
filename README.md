@@ -64,16 +64,11 @@ cites each one:
 
 ```console
 $ codecite search identity "validate DPoP proof jti" --limit 2
-1. identity-model@9458d60f4f2f20227bddf2594fd7d10cba66ea0a:rust/src/dpop/proof.rs#L207-L212
-   function new_jti · score 32.68 · adapt · indexed 2026-10-20T20:34:15Z
-     fn new_jti() -> Result<String> {
-         let mut bytes = [0u8; JTI_BYTES];
-         getrandom::fill(&mut bytes)
-2. identity-model@9458d60f4f2f20227bddf2594fd7d10cba66ea0a:go/internal/conformance/dpop_test.go#L23-L87
-   function runDPoPVector · score 32.20 · adapt · indexed 2026-10-20T20:34:15Z
-     func runDPoPVector(t *testing.T, label, base string, v HTTPVector) {
-     	t.Helper()
-     	if v.Expect.Outcome != OutcomeAccept {
+2 results · adapt · indexed 2026-10-20T20:34:15Z
+1. identity-model@9458d60f4f2f:rust/src/dpop/proof.rs#L207-L212 · function new_jti · 32.7
+   fn new_jti() -> Result<String> {
+2. identity-model@9458d60f4f2f:go/internal/conformance/dpop_test.go#L23-L87 · function runDPoPVector · 32.2
+   func runDPoPVector(t *testing.T, label, base string, v HTTPVector) {
 ```
 
 `codecite read` prints the text a citation points at, for the citations

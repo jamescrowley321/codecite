@@ -1,0 +1,15 @@
+services:
+  node-oidc:
+    build: .
+    ports:
+      - "127.0.0.1:9011:9011"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=9011
+      - ISSUER=http://127.0.0.1:9011
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9011/.well-known/openid-configuration"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 3s

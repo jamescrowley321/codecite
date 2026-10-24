@@ -47,7 +47,7 @@ enum Command {
         #[arg(long)]
         path: Option<String>,
         /// The most results to print.
-        #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u32).range(1..))]
+        #[arg(long, default_value_t = 5, value_parser = clap::value_parser!(u32).range(1..))]
         limit: u32,
         /// Print the results as a JSON array.
         #[arg(long)]
@@ -267,39 +267,91 @@ fn write_results(
     out.flush()
 }
 
-/// How many lines of each snippet the human form shows.
-const HUMAN_SNIPPET_LINES: usize = 3;
+/// The most characters of a snippet line the human form shows.
+const HUMAN_SNIPPET_CHARS: usize = 120;
 
-/// The short human form of the results: per result, its rank and citation,
-/// then what it is, then the start of its snippet.
+/// How many hex characters of a code citation's commit the human form
+/// shows. `codecite read` accepts the abbreviation.
+const HUMAN_COMMIT_CHARS: usize = 12;
+
+/// The short human form of the results. A header carries the license class
+/// and `indexed_at` when every result shares them; otherwise each result's
+/// line does. Per result: one line with its rank, citation, kind, symbol
+/// and score, then its snippet's first non-blank line.
 fn human(results: &[SearchResult]) -> String {
     use std::fmt::Write as _;
 
-    if results.is_empty() {
+    let Some(first) = results.first() else {
         return "no results\n".into();
-    }
+    };
+    let shared = results
+        .iter()
+        .all(|r| r.license_class == first.license_class && r.indexed_at == first.indexed_at);
     let mut out = String::new();
-    for (rank, r) in (1..).zip(results) {
-        // `write!` to a `String` can't fail.
-        let _ = writeln!(out, "{rank}. {}", escape_controls(&r.citation));
-        let mut about = escape_controls(&r.kind);
-        if let Some(symbol) = &r.symbol {
-            let _ = write!(about, " {}", escape_controls(symbol));
-        }
-        let _ = write!(
-            about,
-            " · score {:.2} · {} · indexed {}",
-            r.score, r.license_class, r.indexed_at
+    // `write!` to a `String` can't fail.
+    if shared {
+        let n = results.len();
+        let _ = writeln!(
+            out,
+            "{n} result{} · {} · indexed {}",
+            if n == 1 { "" } else { "s" },
+            escape_controls(&first.license_class),
+            escape_controls(&first.indexed_at)
         );
-        if r.dirty == Some(true) {
-            about.push_str(" · dirty");
+    }
+    for (rank, r) in (1..).zip(results) {
+        let _ = write!(
+            out,
+            "{rank}. {} · {}",
+            escape_controls(&abbreviate_commit(&r.citation)),
+            escape_controls(&r.kind)
+        );
+        if let Some(symbol) = &r.symbol {
+            let _ = write!(out, " {}", escape_controls(symbol));
         }
-        let _ = writeln!(out, "   {about}");
-        for line in r.snippet.lines().take(HUMAN_SNIPPET_LINES) {
-            let _ = writeln!(out, "     {}", escape_controls(line));
+        let _ = write!(out, " · {:.1}", r.score);
+        if r.dirty == Some(true) {
+            out.push_str(" · dirty");
+        }
+        if !shared {
+            let _ = write!(
+                out,
+                " · {} · indexed {}",
+                escape_controls(&r.license_class),
+                escape_controls(&r.indexed_at)
+            );
+        }
+        out.push('\n');
+        if let Some(line) = r.snippet.lines().map(str::trim).find(|l| !l.is_empty()) {
+            let _ = writeln!(
+                out,
+                "   {}",
+                escape_controls(&cut(line, HUMAN_SNIPPET_CHARS))
+            );
         }
     }
     out
+}
+
+/// A code citation, `repo@<40 hex>:path#L…`, with its commit cut to
+/// [`HUMAN_COMMIT_CHARS`]. Any other citation comes back unchanged.
+fn abbreviate_commit(citation: &str) -> std::borrow::Cow<'_, str> {
+    if let Some((repo, rest)) = citation.split_once('@')
+        && let Some((commit, path)) = rest.split_once(':')
+        && commit.len() == 40
+        && commit.bytes().all(|b| b.is_ascii_hexdigit())
+    {
+        return format!("{repo}@{}:{path}", &commit[..HUMAN_COMMIT_CHARS]).into();
+    }
+    citation.into()
+}
+
+/// `text` cut to at most `max` characters, with `…` appended when cut.
+fn cut(text: &str, max: usize) -> std::borrow::Cow<'_, str> {
+    match text.char_indices().nth(max) {
+        Some((end, _)) => format!("{}…", &text[..end]).into(),
+        None => text.into(),
+    }
 }
 
 /// Indexed text is untrusted: an escape sequence in it could drive the
@@ -418,7 +470,7 @@ mod tests {
             (corpus.as_str(), query.as_str()),
             ("identity", "validate token")
         );
-        assert_eq!((language, path, limit), (None, None, 10));
+        assert_eq!((language, path, limit), (None, None, 5));
         assert!(!json && !allow_stale);
         let cli = Cli::try_parse_from([
             "codecite",
@@ -538,28 +590,105 @@ code · adapt · indexed 2026-10-20T06:00:00Z
         assert_eq!(err.kind(), std::io::ErrorKind::BrokenPipe);
     }
 
-    #[test]
-    fn the_human_form_shows_rank_citation_and_snippet() {
-        let result = SearchResult {
-            citation: "app@0123456:src/lib.rs#L1-L5".into(),
+    const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    fn code(path: &str, symbol: Option<&str>, snippet: &str) -> SearchResult {
+        SearchResult {
+            citation: format!("app@{SHA}:{path}#L1-L5"),
             kind: "function".into(),
-            symbol: Some("validate".into()),
-            score: 2.5,
+            symbol: symbol.map(Into::into),
+            score: 2.46,
             license_class: "adapt".into(),
             indexed_at: "2026-10-20T06:00:00Z".into(),
-            dirty: Some(true),
-            snippet: "fn validate() {\n    a();\n    b();\n    c();\n}".into(),
-        };
+            dirty: Some(false),
+            snippet: snippet.into(),
+        }
+    }
+
+    #[test]
+    fn the_human_form_puts_shared_fields_in_one_header() {
+        let mut dirty = code("src/b.rs", None, "\n  \n    let x = 1;  \nmore");
+        dirty.dirty = Some(true);
+        dirty.score = 1.0;
         assert_eq!(
-            human(&[result]),
-            "1. app@0123456:src/lib.rs#L1-L5
-   function validate · score 2.50 · adapt · indexed 2026-10-20T06:00:00Z · dirty
-     fn validate() {
-         a();
-         b();
+            human(&[
+                code("src/a.rs", Some("validate"), "fn validate() {\n    a();\n}"),
+                dirty
+            ]),
+            "2 results · adapt · indexed 2026-10-20T06:00:00Z
+1. app@0123456789ab:src/a.rs#L1-L5 · function validate · 2.5
+   fn validate() {
+2. app@0123456789ab:src/b.rs#L1-L5 · function · 1.0 · dirty
+   let x = 1;
+"
+        );
+        assert_eq!(
+            human(&[code("a.rs", None, "x")]),
+            "1 result · adapt · indexed 2026-10-20T06:00:00Z
+1. app@0123456789ab:a.rs#L1-L5 · function · 2.5
+   x
 "
         );
         assert_eq!(human(&[]), "no results\n");
+    }
+
+    #[test]
+    fn the_human_form_puts_differing_fields_on_each_line() {
+        let mut quote = code("b.rs", None, "  \n\t\n");
+        quote.license_class = "quote".into();
+        let mut later = code("c.rs", None, "y");
+        later.indexed_at = "2026-10-21T06:00:00Z".into();
+        assert_eq!(
+            human(&[code("a.rs", None, "x"), quote]),
+            "1. app@0123456789ab:a.rs#L1-L5 · function · 2.5 · adapt · indexed 2026-10-20T06:00:00Z
+   x
+2. app@0123456789ab:b.rs#L1-L5 · function · 2.5 · quote · indexed 2026-10-20T06:00:00Z
+"
+        );
+        let out = human(&[code("a.rs", None, "x"), later]);
+        assert!(out.starts_with("1. "), "{out}");
+        assert!(out.contains("indexed 2026-10-21T06:00:00Z\n"), "{out}");
+    }
+
+    #[test]
+    fn the_human_form_keeps_spec_and_other_citations_whole() {
+        let spec = SearchResult {
+            citation: "rfc9449@sha256:0123456789ab#section-4.3/step-2".into(),
+            kind: "step".into(),
+            symbol: None,
+            score: 12.34,
+            license_class: "quote".into(),
+            indexed_at: "2026-10-20T06:00:00Z".into(),
+            dirty: None,
+            snippet: "Check the jti.".into(),
+        };
+        let mut short = code("a.rs", None, "x");
+        short.citation = "app@0123456:a.rs#L1-L5".into();
+        let mut not_hex = code("a.rs", None, "x");
+        not_hex.citation = format!("app@{}g:a.rs#L1-L5", &SHA[..39]);
+        let out = human(&[spec, short, not_hex]);
+        assert!(
+            out.contains(
+                "1. rfc9449@sha256:0123456789ab#section-4.3/step-2 · step · 12.3 · quote ·"
+            ),
+            "{out}"
+        );
+        assert!(out.contains("2. app@0123456:a.rs#L1-L5 · "), "{out}");
+        assert!(
+            out.contains(&format!("3. app@{}g:a.rs#L1-L5 · ", &SHA[..39])),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn the_human_form_cuts_a_long_snippet_line() {
+        let long = "é".repeat(130);
+        let out = human(&[code("a.rs", None, &long)]);
+        let line = out.lines().nth(2).unwrap();
+        assert_eq!(line, format!("   {}…", "é".repeat(120)));
+        let exact = "a".repeat(120);
+        let out = human(&[code("a.rs", None, &exact)]);
+        assert_eq!(out.lines().nth(2).unwrap(), format!("   {exact}"));
     }
 
     /// A writer whose every write fails, like stdout after its reader has
@@ -592,7 +721,7 @@ code · adapt · indexed 2026-10-20T06:00:00Z
     #[test]
     fn the_human_form_escapes_control_characters() {
         let result = SearchResult {
-            citation: "app@0123456:a\u{1b}.md#L1-L1".into(),
+            citation: format!("app@{SHA}:a\u{1b}.md#L1-L1"),
             kind: "section".into(),
             symbol: Some("Title\u{7}".into()),
             score: 1.0,
@@ -606,7 +735,7 @@ code · adapt · indexed 2026-10-20T06:00:00Z
             !out.chars()
                 .any(|c| c.is_control() && c != '\n' && c != '\t')
         );
-        assert!(out.contains("a\\u{1b}.md"), "{out}");
+        assert!(out.contains("app@0123456789ab:a\\u{1b}.md"), "{out}");
         assert!(out.contains("Title\\u{7}"), "{out}");
         assert!(
             out.contains("# Title\\u{1b}]52;c;ZWNobyBoaQ==\\u{7}\tend"),

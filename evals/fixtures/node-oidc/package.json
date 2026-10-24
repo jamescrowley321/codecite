@@ -1,0 +1,16 @@
+{
+  "name": "codecite-eval-oidc-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Lean node-oidc-provider IdP for the codecite A/B eval",
+  "main": "provider.js",
+  "scripts": {
+    "start": "node provider.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "jose": "^6.0.11",
+    "oidc-provider": "9.7.1"
+  }
+}
