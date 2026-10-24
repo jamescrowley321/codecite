@@ -574,6 +574,7 @@ mod tests {
             dirty: Some(false),
             text: "# Title\u{1b}]52;c;ZWNobyBoaQ==\u{7}\n\tend".into(),
             truncated: false,
+            instruction: None,
         };
         let mut out = Vec::new();
         write_read(&mut out, &result, false).unwrap();

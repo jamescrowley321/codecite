@@ -13,10 +13,12 @@ mod corpora;
 pub use corpora::{Corpora, CorpusInfo, corpora};
 
 mod read;
-pub use read::{DEFAULT_MAX_LINES, ReadOptions, ReadResult};
+pub use read::{DEFAULT_MAX_LINES, QUOTE_INSTRUCTION, ReadOptions, ReadResult};
 
 mod search;
-pub use search::{DEFAULT_MAX_AGE_DAYS, Freshness, MAX_SNIPPET_LINES, SearchQuery, SearchResult};
+pub use search::{
+    DEFAULT_MAX_AGE_DAYS, Freshness, MAX_SNIPPET_LINES, SearchQuery, SearchResult, SearchResults,
+};
 
 mod write;
 pub use write::{ChunkRecord, DocumentRecord, SourceRecord, SymbolRecord};
@@ -178,6 +180,21 @@ impl Store {
             });
         }
         Store::open_read_only(&path)
+    }
+
+    /// Opens `corpus` as [`Store::open_corpus`] does or, when it is `None`,
+    /// the one corpus `dir` holds. With none or several to choose from,
+    /// that is [`Error::NoCorpusNamed`], listing them: never a guess.
+    pub fn open_corpus_or_only(dir: &Path, corpus: Option<&str>) -> Result<Store> {
+        if let Some(corpus) = corpus {
+            return Store::open_corpus(dir, corpus);
+        }
+        match known_corpora(dir)?.as_slice() {
+            [only] => Store::open_corpus(dir, only),
+            known => Err(Error::NoCorpusNamed {
+                known: known.to_vec(),
+            }),
+        }
     }
 
     /// The schema version stored in the file.
@@ -791,6 +808,36 @@ mod tests {
         let store = Store::open_corpus(&dir, "specs").unwrap();
         assert_eq!(store.path(), dir.join("specs.db"));
         drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn an_unnamed_corpus_is_the_only_one() {
+        let dir = scratch("only-corpus");
+        let err = Store::open_corpus_or_only(&dir.join("missing"), None)
+            .err()
+            .unwrap();
+        assert!(
+            matches!(&err, Error::NoCorpusNamed { known } if known.is_empty()),
+            "{err:?}"
+        );
+        drop(Store::open_read_write(&dir.join("specs.db")).unwrap());
+        let store = Store::open_corpus_or_only(&dir, None).unwrap();
+        assert_eq!(store.path(), dir.join("specs.db"));
+        drop(store);
+        drop(Store::open_read_write(&dir.join("identity.db")).unwrap());
+        let err = Store::open_corpus_or_only(&dir, None).err().unwrap();
+        assert!(
+            matches!(&err, Error::NoCorpusNamed { known } if known == &["identity", "specs"]),
+            "{err:?}"
+        );
+        let store = Store::open_corpus_or_only(&dir, Some("identity")).unwrap();
+        assert_eq!(store.path(), dir.join("identity.db"));
+        drop(store);
+        let err = Store::open_corpus_or_only(&dir, Some("identty"))
+            .err()
+            .unwrap();
+        assert!(matches!(err, Error::UnknownCorpus { .. }), "{err:?}");
         fs::remove_dir_all(&dir).unwrap();
     }
 

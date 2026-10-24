@@ -4,6 +4,7 @@
 
 use rusqlite::functions::FunctionFlags;
 use rusqlite::{Connection, OptionalExtension, params};
+use schemars::JsonSchema;
 use serde::Serialize;
 
 use super::Store;
@@ -47,9 +48,18 @@ pub struct SearchQuery<'a> {
     pub allow_stale: bool,
 }
 
+/// The results of a search, best first: what `codecite search --json`
+/// prints and the MCP `search` tool returns, as the same JSON. An MCP
+/// tool's structured result must be an object, so the list is a field.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct SearchResults {
+    /// The ranked results; none when nothing matched.
+    pub results: Vec<SearchResult>,
+}
+
 /// One ranked result, in the shape the CLI prints as JSON and the MCP
 /// server returns.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct SearchResult {
     /// Where the chunk is: `repo@sha:path#L10-L42`, or
     /// `doc@sha256:<12 hex>#section-4.3[/step-2]` for a spec.

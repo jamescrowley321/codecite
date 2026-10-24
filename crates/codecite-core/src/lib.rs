@@ -23,8 +23,9 @@ pub use role::Role;
 mod store;
 pub use store::{
     ChunkRecord, Corpora, CorpusInfo, DEFAULT_MAX_AGE_DAYS, DEFAULT_MAX_LINES, DocumentRecord,
-    Freshness, MAX_SNIPPET_LINES, ReadOptions, ReadResult, SCHEMA_VERSION, SearchQuery,
-    SearchResult, SourceRecord, Store, SymbolRecord, corpora, is_corpus_name,
+    Freshness, MAX_SNIPPET_LINES, QUOTE_INSTRUCTION, ReadOptions, ReadResult, SCHEMA_VERSION,
+    SearchQuery, SearchResult, SearchResults, SourceRecord, Store, SymbolRecord, corpora,
+    is_corpus_name,
 };
 
 mod terms;

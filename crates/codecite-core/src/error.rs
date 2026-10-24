@@ -58,6 +58,14 @@ pub enum Error {
         known: Vec<String>,
     },
 
+    /// The caller named no corpus, and the data directory does not hold
+    /// exactly one to use instead.
+    #[error("{}", no_corpus_named(known))]
+    NoCorpusNamed {
+        /// The corpora that do exist, sorted.
+        known: Vec<String>,
+    },
+
     /// The corpus was last indexed longer ago than its manifest's
     /// `max_age_days` allows.
     #[error(
@@ -189,6 +197,51 @@ pub enum Error {
     },
 }
 
+impl Error {
+    /// The variant's name in snake_case, such as `unknown_corpus`: what an
+    /// MCP client matches on, since the message may change.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Error::Io(_) => "io",
+            Error::InvalidCorpus { .. } => "invalid_corpus",
+            Error::Sqlite(_) => "sqlite",
+            Error::SchemaTooNew { .. } => "schema_too_new",
+            Error::InvalidCorpusName { .. } => "invalid_corpus_name",
+            Error::UnknownCorpus { .. } => "unknown_corpus",
+            Error::NoCorpusNamed { .. } => "no_corpus_named",
+            Error::StaleIndex { .. } => "stale_index",
+            Error::EmptyQuery => "empty_query",
+            Error::NotACitation { .. } => "not_a_citation",
+            Error::BadCitation { .. } => "bad_citation",
+            Error::UnknownSource { .. } => "unknown_source",
+            Error::UnknownVersion { .. } => "unknown_version",
+            Error::AmbiguousDocument { .. } => "ambiguous_document",
+            Error::NoSuchSection { .. } => "no_such_section",
+            Error::UncitableSection { .. } => "uncitable_section",
+            Error::NoSuchStep { .. } => "no_such_step",
+            Error::NoSuchFile { .. } => "no_such_file",
+            Error::LinesPastEnd { .. } => "lines_past_end",
+        }
+    }
+
+    /// What the caller could have meant instead: the corpora, names,
+    /// versions or pinned citations the error lists. Empty for an error
+    /// that lists none.
+    pub fn candidates(&self) -> &[String] {
+        match self {
+            Error::UnknownCorpus { known, .. }
+            | Error::NoCorpusNamed { known }
+            | Error::UnknownSource { known, .. }
+            | Error::UnknownVersion { known, .. } => known,
+            Error::AmbiguousDocument { candidates, .. }
+            | Error::NoSuchSection { candidates, .. }
+            | Error::NoSuchStep { candidates, .. }
+            | Error::NoSuchFile { candidates, .. } => candidates,
+            _ => &[],
+        }
+    }
+}
+
 /// The end of an error message that lists candidates: `nearest: a, b`, or
 /// `no candidates`. Candidates come from indexed text, such as file paths,
 /// so their control characters are escaped before they reach a terminal.
@@ -231,6 +284,15 @@ fn known_corpora(known: &[String]) -> String {
         "no corpus has been indexed yet; run codecite index".into()
     } else {
         format!("known corpora: {}", known.join(", "))
+    }
+}
+
+/// The message of an [`Error::NoCorpusNamed`].
+fn no_corpus_named(known: &[String]) -> String {
+    if known.is_empty() {
+        known_corpora(known)
+    } else {
+        format!("name a corpus; {}", known_corpora(known))
     }
 }
 
@@ -306,6 +368,48 @@ mod tests {
             err.to_string(),
             "unknown corpus `identity`; no corpus has been indexed yet; run codecite index"
         );
+    }
+
+    #[test]
+    fn no_corpus_named_lists_the_corpora_to_choose_from() {
+        let err = Error::NoCorpusNamed {
+            known: vec!["identity".into(), "specs".into()],
+        };
+        assert_eq!(
+            err.to_string(),
+            "name a corpus; known corpora: identity, specs"
+        );
+        assert_eq!(err.kind(), "no_corpus_named");
+        assert_eq!(err.candidates(), ["identity", "specs"]);
+        let err = Error::NoCorpusNamed { known: vec![] };
+        assert_eq!(
+            err.to_string(),
+            "no corpus has been indexed yet; run codecite index"
+        );
+    }
+
+    #[test]
+    fn each_error_has_a_kind_and_its_candidates() {
+        let err = Error::NoSuchSection {
+            document: "rfc9449@sha256:1a2b3c4d5e6f".into(),
+            section: "4.9".into(),
+            candidates: vec!["rfc9449@sha256:1a2b3c4d5e6f#section-4.3".into()],
+        };
+        assert_eq!(err.kind(), "no_such_section");
+        assert_eq!(
+            err.candidates(),
+            ["rfc9449@sha256:1a2b3c4d5e6f#section-4.3"]
+        );
+        let err = Error::StaleIndex {
+            corpus: "demo".into(),
+            indexed_at: "2026-01-01T00:00:00Z".into(),
+            max_age_days: 7,
+        };
+        assert_eq!(err.kind(), "stale_index");
+        assert!(err.candidates().is_empty());
+        assert_eq!(Error::EmptyQuery.kind(), "empty_query");
+        let err = Error::from(io::Error::other("disk on fire"));
+        assert_eq!(err.kind(), "io");
     }
 
     #[test]
