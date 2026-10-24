@@ -124,7 +124,9 @@ def main(db, queries_path, rewrites=None):
         ranked = {}
         for q in qs:
             m = fts_query(q["text"], stop)
-            hits = con.execute(f"select rowid, -bm25(f, {w}) s from f where f match ?", (m,))
+            # FTS5 rejects an empty MATCH, which a query of only stopwords leaves.
+            hits = con.execute(f"select rowid, -bm25(f, {w}) s from f where f match ?",
+                               (m,)) if m else []
             spec = sorted(((s, rid) for rid, s in hits if rid in cite), key=lambda x: (-x[0], x[1]))
             ranked[q["id"]] = [cite[rid] for _, rid in spec[:50]]
         (OUT / f"lex-{name}{suffix}.json").write_text(json.dumps(ranked))

@@ -22,10 +22,14 @@ def refill(base, stream):
     out = []
     for c in base:
         if is_spec(c):
-            nxt = next(stream)
-            while nxt in out:
+            try:
                 nxt = next(stream)
-            out.append(nxt)
+                while nxt in out:
+                    nxt = next(stream)
+                out.append(nxt)
+            except StopIteration:  # stream ran dry: keep BM25's hit
+                if c not in out:
+                    out.append(c)
         else:
             out.append(c)
     return out

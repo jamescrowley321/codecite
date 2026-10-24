@@ -35,7 +35,7 @@ def main(db, queries_path, reranker, first, second, k):
     m = TextCrossEncoder(model_name=reranker, threads=8, specific_model_path=models.path(reranker))
     out, times = {}, []
     for q in qs:
-        cands = list(dict.fromkeys(lex[q["id"]][:k] + vec.get(q["id"], [])[:k]))
+        cands = list(dict.fromkeys(lex.get(q["id"], [])[:k] + vec.get(q["id"], [])[:k]))
         t = time.time()
         s = np.array(list(m.rerank(q["text"], [text[c] for c in cands], batch_size=16)))
         times.append(time.time() - t)

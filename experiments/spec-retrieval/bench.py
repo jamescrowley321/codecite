@@ -26,7 +26,9 @@ def spec_chunks(db):
                p.title
         from chunk c join document d on d.id=c.document_id join source s on s.id=d.source_id
         left join chunk p on p.id=c.parent_id
-        where s.kind='document'""").fetchall()
+        where s.kind='document'
+        order by c.id""").fetchall()
+    con.close()
     out = []
     for cid, name, rev, kind, number, _, _, title, text, pnumber, current, ptitle in rows:
         frag = f"section-{pnumber}/step-{number}" if kind == "step" else f"section-{number}"
@@ -74,20 +76,22 @@ def hit(answer, cite):
     target, _, frag = answer.partition("#")
     if frag.startswith("section-"):
         return c[0] == "spec" and c[1] == target and (c[2] == frag or c[2].startswith(frag + "/"))
-    line = int(frag[1:])
-    return c[0] == "code" and c[1] == target and c[2][0] <= line <= c[2][1]
+    if c[0] != "code" or not frag.startswith("L"):
+        return False
+    line = int(frag[1:].partition("-L")[0])
+    return c[1] == target and c[2][0] <= line <= c[2][1]
 
 
 def scores(qs, ranked):
-    """{class: (Recall@1, Recall@10, MRR)}, plus "all"."""
-    by = {}
+    """{class: (Recall@1, Recall@10, MRR)}, plus "all"; a class with no queries scores 0."""
+    by = {c: [] for c in CLASSES}
     for q in qs:
         rank = next((i + 1 for i, c in enumerate(ranked[q["id"]][:DEPTH])
                      if any(hit(a, c) for a in q["answers"])), None)
         for key in (q["class"], "all"):
             by.setdefault(key, []).append(rank)
     return {k: (sum(r == 1 for r in v) / len(v), sum(r is not None for r in v) / len(v),
-                sum(1 / r for r in v if r) / len(v)) for k, v in by.items()}
+                sum(1 / r for r in v if r) / len(v)) if v else (0, 0, 0) for k, v in by.items()}
 
 
 def rrf(weighted, k):
