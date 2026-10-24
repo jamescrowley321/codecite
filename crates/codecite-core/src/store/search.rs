@@ -1,11 +1,13 @@
-//! Searching a corpus: BM25 over the full-text index, with an exact symbol
-//! name first, and each result cited.
+//! Searching a corpus: BM25 over the full-text index, weighted by what each
+//! document is for and lifted for a symbol a query word names, with each
+//! result cited.
 
-use rusqlite::{OptionalExtension, params};
+use rusqlite::functions::FunctionFlags;
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 
 use super::Store;
-use crate::{Error, Result, text_terms};
+use crate::{Error, Result, Role, text_terms};
 
 /// The most lines of a chunk a result's snippet holds. Agents read the
 /// rest through its citation.
@@ -18,6 +20,16 @@ pub const DEFAULT_MAX_AGE_DAYS: u32 = 30;
 /// a match in a symbol's name counts most, then one in the path, then one
 /// in the text.
 const COLUMN_WEIGHTS: (f64, f64, f64) = (10.0, 5.0, 1.0);
+
+/// The factor on a chunk's score when a word of the query, or the whole
+/// query, is its symbol's name. Large enough that a long definition, whose
+/// BM25 score its length dilutes, outranks short chunks that only use it.
+const NAME_BOOST: f64 = 3.0;
+
+/// The most definitions a name can have and still be boosted. A name that
+/// picks out a few definitions is one the query means; a common word that
+/// many helpers are named after (`app`, `user`, `get`) is not.
+const MAX_NAME_DEFINITIONS: u32 = 3;
 
 /// A search: the text, the filters and how many results to return.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,12 +54,18 @@ pub struct SearchResult {
     /// Where the chunk is: `repo@sha:path#L10-L42`, or
     /// `doc@sha256:<12 hex>#section-4.3[/step-2]` for a spec.
     pub citation: String,
-    /// `function`, `class`, `section`, `step` or `window`.
+    /// `function`, `class`, `variable`, `type_alias`, `section`, `step` or
+    /// `window`.
     pub kind: String,
     /// The name of the definition the chunk holds, if any.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub symbol: Option<String>,
-    /// The BM25 score: higher is a better match.
+    /// What the chunk's document is for: `source`, `test`, `example`,
+    /// `docs` or `spec` (see [`Role`]).
+    pub role: &'static str,
+    /// The ranking score, higher first: BM25 times the role's weight, times
+    /// [`NAME_BOOST`] when the query names the chunk's symbol. Results come
+    /// in this order.
     pub score: f64,
     /// How agents may use the source: `adapt`, `approach_only` or `quote`.
     pub license_class: String,
@@ -120,10 +138,14 @@ impl Store {
     /// first.
     ///
     /// Each word of the query is split into identifier terms as the index
-    /// splits text, and a chunk matches when it holds any of them; BM25
-    /// ranks the matches, weighting the symbol column, then the path, then
-    /// the text. A chunk whose symbol's name is exactly the query comes
-    /// first. Only the current version of each document is searched.
+    /// splits text, and a chunk matches when it holds any of them. BM25
+    /// scores the matches, weighting the symbol column, then the path, then
+    /// the text; the score is then weighted by the document's [`Role`], so
+    /// tests and examples rank below the source they use, and multiplied by
+    /// [`NAME_BOOST`] when a word of the query, or the whole query, is the
+    /// chunk's symbol's name (ignoring case, `_` and `-`) and at most
+    /// [`MAX_NAME_DEFINITIONS`] symbols have that name. Only the current
+    /// version of each document is searched.
     ///
     /// A query with no letter or digit is [`Error::EmptyQuery`]. An index
     /// older than its maximum age is [`Error::StaleIndex`] unless
@@ -131,14 +153,21 @@ impl Store {
     pub fn search(&self, query: &SearchQuery<'_>) -> Result<Vec<SearchResult>> {
         let fts = fts_query(query.text).ok_or(Error::EmptyQuery)?;
         self.check_fresh(query.allow_stale)?;
+        let mut names = String::from(NAME_SEPARATOR);
+        for name in self.boosted_names(query.text)? {
+            names.push_str(&name);
+            names.push(NAME_SEPARATOR);
+        }
 
         let (w_symbol, w_path, w_text) = COLUMN_WEIGHTS;
         let mut stmt = self.conn.prepare_cached(
             "SELECT c.kind, c.start_line, c.end_line, c.number, p.number, c.text,
                d.path, d.dirty, s.name, s.kind, s.revision, s.license_class, s.indexed_at,
                sym.display_name,
-               -bm25(chunk_fts, ?3, ?4, ?5) AS score,
-               coalesce(sym.display_name = ?2, 0) AS exact
+               -bm25(chunk_fts, ?3, ?4, ?5)
+                 * codecite_role_weight(d.path, s.kind)
+                 * CASE WHEN instr(?2, char(31) || codecite_name_key(sym.display_name) || char(31)) > 0
+                        THEN ?9 ELSE 1.0 END AS score
              FROM chunk_fts
              JOIN chunk c ON c.id = chunk_fts.rowid
              JOIN document d ON d.id = c.document_id
@@ -148,19 +177,20 @@ impl Store {
              WHERE chunk_fts MATCH ?1 AND s.is_current
                AND (?6 IS NULL OR d.language = ?6)
                AND (?7 IS NULL OR d.path GLOB ?7)
-             ORDER BY exact DESC, score DESC, c.id
+             ORDER BY score DESC, c.id
              LIMIT ?8",
         )?;
         let rows = stmt.query_map(
             params![
                 fts,
-                query.text.trim(),
+                names,
                 w_symbol,
                 w_path,
                 w_text,
                 query.language,
                 query.path,
                 query.limit,
+                NAME_BOOST,
             ],
             |row| {
                 let kind: String = row.get(0)?;
@@ -175,6 +205,7 @@ impl Store {
                 let source_kind: String = row.get(9)?;
                 let revision: String = row.get(10)?;
                 let is_spec = source_kind == "document";
+                let role = Role::of(&path, &source_kind).as_str();
                 let citation = if is_spec {
                     spec_citation(&source, &revision, &kind, number, parent_number)
                 } else {
@@ -184,6 +215,7 @@ impl Store {
                     citation,
                     kind,
                     symbol: row.get(13)?,
+                    role,
                     score: row.get(14)?,
                     license_class: row.get(11)?,
                     indexed_at: row.get(12)?,
@@ -193,6 +225,22 @@ impl Store {
             },
         )?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// The [`query_names`] that at least one and at most
+    /// [`MAX_NAME_DEFINITIONS`] symbols have.
+    fn boosted_names(&self, text: &str) -> Result<Vec<String>> {
+        let mut count = self.conn.prepare_cached(
+            "SELECT count(*) FROM symbol WHERE codecite_name_key(display_name) = ?1",
+        )?;
+        let mut names = Vec::new();
+        for name in query_names(text) {
+            let defined: u32 = count.query_row([&name], |row| row.get(0))?;
+            if (1..=MAX_NAME_DEFINITIONS).contains(&defined) {
+                names.push(name);
+            }
+        }
+        Ok(names)
     }
 
     /// Refuses an index older than its maximum age with
@@ -217,6 +265,28 @@ impl Store {
     }
 }
 
+/// Registers the SQL functions [`Store::search`] ranks with, once per
+/// connection: `codecite_role_weight(path, source_kind)` and
+/// `codecite_name_key(name)`.
+pub(super) fn register_functions(conn: &Connection) -> rusqlite::Result<()> {
+    conn.create_scalar_function(
+        "codecite_role_weight",
+        2,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |ctx| {
+            let path: String = ctx.get(0)?;
+            let source_kind: String = ctx.get(1)?;
+            Ok(Role::of(&path, &source_kind).weight())
+        },
+    )?;
+    conn.create_scalar_function(
+        "codecite_name_key",
+        1,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |ctx| Ok(ctx.get::<Option<String>>(0)?.map(|name| name_key(&name))),
+    )
+}
+
 /// Turns the user's text into an FTS5 query, or `None` when it has no
 /// terms.
 ///
@@ -239,6 +309,35 @@ fn fts_query(text: &str) -> Option<String> {
         .map(|t| format!("\"{}\"", t.replace('"', "\"\"")))
         .collect();
     Some(quoted.join(" OR "))
+}
+
+/// Separates the names passed to the search, so SQL finds one with
+/// `instr`. No name holds it: [`query_names`] splits words at it.
+const NAME_SEPARATOR: char = '\u{1f}';
+
+/// The names a query can mean: each word, and all the words run together,
+/// so `validate token` names both `validate` and `validateToken`. Each is a
+/// [`name_key`].
+fn query_names(text: &str) -> Vec<String> {
+    let mut names: Vec<String> = text
+        .split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-'))
+        .map(name_key)
+        .filter(|w| !w.is_empty())
+        .collect();
+    if names.len() > 1 {
+        names.push(names.concat());
+    }
+    let mut seen = std::collections::HashSet::new();
+    names.retain(|name| seen.insert(name.clone()));
+    names
+}
+
+/// A name as the search compares it: lowercase, without `_` or `-`.
+fn name_key(name: &str) -> String {
+    name.chars()
+        .filter(|&c| c != '_' && c != '-')
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 /// `repo@sha:path#L10-L42`, or `#L10` for one line.
@@ -512,10 +611,52 @@ mod tests {
             results[0].citation,
             format!("app@{HEAD}:src/validate.rs#L5-L9")
         );
-        // Without the boost, BM25 alone ranks a chunk above it.
-        assert!(results[1..].iter().any(|r| r.score > results[0].score));
-        let scores: Vec<f64> = results[1..].iter().map(|r| r.score).collect();
+        // The printed score is the one the order uses.
+        let scores: Vec<f64> = results.iter().map(|r| r.score).collect();
         assert!(scores.windows(2).all(|w| w[0] >= w[1]), "{scores:?}");
+    }
+
+    #[test]
+    fn a_symbol_named_by_any_query_word_comes_first() {
+        let f = fixture();
+        for text in ["validate rust", "how does validate work", "VALIDATE"] {
+            let results = f.search(text);
+            assert_eq!(results[0].symbol.as_deref(), Some("validate"), "{text}");
+        }
+        // The words run together name `validateToken`, and `_` is ignored.
+        assert_eq!(
+            f.search("validate_token")[0].symbol.as_deref(),
+            Some("validateToken")
+        );
+    }
+
+    #[test]
+    fn source_outranks_the_tests_and_examples_that_use_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open_read_write(&dir.path().join("demo.db")).unwrap();
+        let app = store.upsert_source(&code_source("app")).unwrap();
+        // The same text in each, so only the role tells them apart, and an
+        // unrelated file so the term is not in every document.
+        let text = "app.add_middleware(TokenMiddleware)";
+        let docs = [
+            ("tests/test_app.py", text),
+            ("examples/app.py", text),
+            ("src/app.py", text),
+            ("src/other.py", "def unrelated(): pass"),
+        ];
+        for (path, text) in docs {
+            let doc = file(
+                path,
+                "python",
+                false,
+                vec![chunk("window", (1, 1), text, None)],
+            );
+            store.write_document(app, &doc).unwrap();
+        }
+        store.set_indexed_at(30).unwrap();
+        let results = store.search(&query("add middleware")).unwrap();
+        let roles: Vec<&str> = results.iter().map(|r| r.role).collect();
+        assert_eq!(roles, ["source", "example", "test"], "{results:?}");
     }
 
     #[test]
@@ -568,6 +709,7 @@ mod tests {
         assert_eq!(code["license_class"], "adapt");
         assert_eq!(code["dirty"], true);
         assert!(code["score"].is_f64());
+        assert_eq!(code["role"], "source");
         let spec = serde_json::to_value(&f.search("jti")[0]).unwrap();
         // A `Value`'s keys are sorted. A spec result has no symbol or dirty.
         let keys: Vec<&String> = spec.as_object().unwrap().keys().collect();
@@ -578,6 +720,7 @@ mod tests {
                 "indexed_at",
                 "kind",
                 "license_class",
+                "role",
                 "score",
                 "snippet"
             ]
@@ -612,6 +755,51 @@ mod tests {
             ..query("validate")
         };
         assert!(f.citations(&nothing).is_empty());
+    }
+
+    #[test]
+    fn query_names_are_each_word_and_all_of_them() {
+        assert_eq!(query_names("validate"), ["validate"]);
+        assert_eq!(
+            query_names("Token-Validation  middleware!"),
+            ["tokenvalidation", "middleware", "tokenvalidationmiddleware"]
+        );
+        assert!(query_names("--").is_empty());
+        assert_eq!(query_names("foo bar foo"), ["foo", "bar", "foobarfoo"]);
+    }
+
+    #[test]
+    fn a_name_many_helpers_share_is_not_boosted() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open_read_write(&dir.path().join("demo.db")).unwrap();
+        let app = store.upsert_source(&code_source("app")).unwrap();
+        // Four test helpers named `app`, and the source that says it most.
+        for i in 0..4 {
+            let path = format!("src/h{i}.py");
+            let name = format!("codecite . app . h{i}/app().");
+            let mut helper = chunk("function", (1, 1), "def app(): return 1", None);
+            helper.symbol = Some(SymbolRecord {
+                id: name,
+                display_name: "app",
+                kind: "function",
+            });
+            store
+                .write_document(app, &file(&path, "python", false, vec![helper]))
+                .unwrap();
+        }
+        let mut create = chunk("function", (1, 1), "def create(): return App()", None);
+        create.symbol = Some(SymbolRecord {
+            id: "codecite . app . main/create().".into(),
+            display_name: "create",
+            kind: "function",
+        });
+        store
+            .write_document(app, &file("src/main.py", "python", false, vec![create]))
+            .unwrap();
+        store.set_indexed_at(30).unwrap();
+        // `search` registers the name function `boosted_names` needs.
+        store.search(&query("app")).unwrap();
+        assert_eq!(store.boosted_names("app create").unwrap(), ["create"]);
     }
 
     #[test]

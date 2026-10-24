@@ -19,6 +19,10 @@ pub enum ChunkKind {
     Function,
     /// A class, struct, enum, trait or interface.
     Class,
+    /// A top-level variable or constant.
+    Variable,
+    /// A type alias.
+    TypeAlias,
     /// A Markdown heading and the text under it.
     Section,
     /// A run of at most [`WINDOW_LINES`] lines.
@@ -31,6 +35,8 @@ impl ChunkKind {
         match self {
             Self::Function => "function",
             Self::Class => "class",
+            Self::Variable => "variable",
+            Self::TypeAlias => "type_alias",
             Self::Section => "section",
             Self::Window => "window",
         }
@@ -54,6 +60,15 @@ pub enum SymbolKind {
     Trait,
     /// An interface.
     Interface,
+    /// A top-level variable or constant: Python `NAME = ...`, a TypeScript
+    /// or JavaScript `const`, a Rust `const` or `static`, a Go `const` or
+    /// `var`.
+    Variable,
+    /// A type alias: Python `type NAME = ...`, TypeScript and Rust `type`,
+    /// and a Go type that is neither a struct nor an interface. A Python
+    /// alias assigned like a variable (`CurrentUser = Annotated[...]`) is a
+    /// [`SymbolKind::Variable`].
+    TypeAlias,
 }
 
 impl SymbolKind {
@@ -67,6 +82,8 @@ impl SymbolKind {
             Self::Enum => "enum",
             Self::Trait => "trait",
             Self::Interface => "interface",
+            Self::Variable => "variable",
+            Self::TypeAlias => "type_alias",
         }
     }
 }
@@ -301,6 +318,90 @@ mod tests {
                 ("class", 16, 29, "Client#"),
                 ("function", 18, 21, "Client#Client()."),
                 ("function", 25, 28, "Client#Validate()."),
+            ])
+        );
+    }
+
+    #[test]
+    fn top_level_variables_and_type_aliases_are_definitions() {
+        let python = "CurrentUser = Annotated[ClaimsPrincipal, Depends(get_user)]\n\
+                      TIMEOUT: int = 30\n\
+                      type Claims = dict[str, str]\n\
+                      a, b = 1, 2\n\
+                      def f():\n    local = 1\n";
+        assert_eq!(
+            outline("app/deps.py", python),
+            expect(&[
+                ("variable", 1, 1, "CurrentUser."),
+                ("variable", 2, 2, "TIMEOUT."),
+                ("type_alias", 3, 3, "Claims#"),
+                ("window", 4, 4, ""),
+                ("function", 5, 6, "f()."),
+            ])
+        );
+        let ts = "export type Claims = Record<string, string>;\n\
+                  export const TIMEOUT = 30;\n\
+                  const parse = (raw: string) => raw;\n\
+                  let a = 1, b = 2;\n\
+                  function f() { const local = 1; }\n";
+        let want = expect(&[
+            ("type_alias", 1, 1, "Claims#"),
+            ("variable", 2, 2, "TIMEOUT."),
+            ("function", 3, 3, "parse()."),
+            ("variable", 4, 4, "a."),
+            ("variable", 4, 4, "b."),
+            ("function", 5, 5, "f()."),
+        ]);
+        assert_eq!(outline("src/deps.ts", ts), want);
+        let js = "export const TIMEOUT = 30;\nvar Client = class {};\nconst f = function () {};\n";
+        assert_eq!(
+            outline("lib/deps.js", js),
+            expect(&[
+                ("variable", 1, 1, "TIMEOUT."),
+                ("variable", 2, 2, "Client."),
+                ("function", 3, 3, "f()."),
+            ])
+        );
+        let rust = "pub const TIMEOUT: u32 = 30;\nstatic NAME: &str = \"x\";\npub type Claims = Vec<String>;\nimpl Client { const MAX: u8 = 1; }\n";
+        assert_eq!(
+            outline("src/deps.rs", rust),
+            expect(&[
+                ("variable", 1, 1, "TIMEOUT."),
+                ("variable", 2, 2, "NAME."),
+                ("type_alias", 3, 3, "Claims#"),
+                ("class", 4, 4, ""),
+                ("variable", 4, 4, "Client#MAX."),
+            ])
+        );
+        let go = "package deps\n\
+                  const Timeout = 30\n\
+                  var (\n\tA = 1\n\tB = 2\n)\n\
+                  type Mode int\n\
+                  type Handler = func()\n\
+                  type Client struct{}\n\
+                  func f() { const local = 1 }\n";
+        assert_eq!(
+            outline("deps/deps.go", go),
+            expect(&[
+                ("window", 1, 1, ""),
+                ("variable", 2, 2, "Timeout."),
+                ("window", 3, 3, ""),
+                ("variable", 4, 4, "A."),
+                ("variable", 5, 5, "B."),
+                ("type_alias", 7, 7, "Mode#"),
+                ("type_alias", 8, 8, "Handler#"),
+                ("class", 9, 9, "Client#"),
+                ("function", 10, 10, "f()."),
+            ])
+        );
+        // A grouped `const` holds its specs directly; only `var` has a list.
+        let grouped = "package deps\nconst (\n\tX = 1\n\tY = 2\n)\n";
+        assert_eq!(
+            outline("deps/consts.go", grouped),
+            expect(&[
+                ("window", 1, 2, ""),
+                ("variable", 3, 3, "X."),
+                ("variable", 4, 4, "Y."),
             ])
         );
     }

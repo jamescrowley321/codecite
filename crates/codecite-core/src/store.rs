@@ -106,6 +106,7 @@ impl Store {
         // commit. A power cut can lose the last commits but never corrupts
         // the file, and an index run commits once per document.
         conn.pragma_update(None, "synchronous", "NORMAL")?;
+        search::register_functions(&conn)?;
 
         Ok(Store {
             conn,
@@ -149,6 +150,7 @@ impl Store {
                 ),
             });
         }
+        search::register_functions(&conn)?;
 
         Ok(Store {
             conn,
