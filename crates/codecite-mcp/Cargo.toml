@@ -16,6 +16,8 @@ workspace = true
 [dependencies]
 codecite-core.workspace = true
 rmcp.workspace = true
+schemars.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 

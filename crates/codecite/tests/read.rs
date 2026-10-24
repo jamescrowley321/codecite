@@ -91,7 +91,7 @@ fn stderr(output: &Output) -> String {
 fn read_returns_what_a_search_result_cites() {
     let demo = Demo::new();
     let results = demo.json(&["search", "demo", "validate", "--json"]);
-    let citation = results[0]["citation"].as_str().unwrap();
+    let citation = results["results"][0]["citation"].as_str().unwrap();
     assert!(citation.ends_with(":src/lib.rs#L1-L3"), "{citation}");
     let read = demo.json(&["read", "demo", citation, "--json"]);
     assert_eq!(read["citation"], citation);
@@ -135,7 +135,7 @@ fn a_citation_from_the_human_search_form_reads_back() {
 fn the_human_form_and_the_line_cap() {
     let demo = Demo::new();
     let results = demo.json(&["search", "demo", "validate", "--json"]);
-    let citation = results[0]["citation"].as_str().unwrap();
+    let citation = results["results"][0]["citation"].as_str().unwrap();
     // Lines 1 to 5, as an abbreviated commit cites them.
     let (repo, rest) = citation.split_once('@').unwrap();
     let short = format!("{repo}@{}:src/lib.rs#L1-L5", &rest[..7]);
@@ -164,7 +164,7 @@ fn the_human_form_and_the_line_cap() {
 fn errors_name_the_problem() {
     let demo = Demo::new();
     let results = demo.json(&["search", "demo", "validate", "--json"]);
-    let citation = results[0]["citation"].as_str().unwrap();
+    let citation = results["results"][0]["citation"].as_str().unwrap();
     let past_end = citation.replace("#L1-L3", "#L4-L9");
     let cases = [
         (

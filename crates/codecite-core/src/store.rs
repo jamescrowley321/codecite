@@ -17,7 +17,8 @@ pub use read::{DEFAULT_MAX_LINES, QUOTE_INSTRUCTION, ReadOptions, ReadResult};
 
 mod search;
 pub use search::{
-    DEFAULT_MAX_AGE_DAYS, Freshness, MAX_SNIPPET_LINES, SearchQuery, SearchResult, SearchResults,
+    DEFAULT_MAX_AGE_DAYS, DEFAULT_SEARCH_LIMIT, Freshness, MAX_SNIPPET_LINES, SearchQuery,
+    SearchResult, SearchResults,
 };
 
 mod write;

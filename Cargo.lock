@@ -284,6 +284,8 @@ dependencies = [
  "codecite-core",
  "rmcp",
  "rusqlite",
+ "schemars",
+ "serde",
  "serde_json",
  "tempfile",
  "thiserror",

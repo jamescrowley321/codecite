@@ -71,9 +71,9 @@ pub struct ReadResult {
     pub text: String,
     /// Whether the text stops before the end of what was cited.
     pub truncated: bool,
-    /// How the license lets the agent use the text, when it says more
-    /// than `license_class` alone: a `quote` source's text is
-    /// [`QUOTE_INSTRUCTION`].
+    /// What the license asks of the agent, when it asks more than
+    /// `license_class` says: a `quote` source's text is to be quoted
+    /// exactly, with its citation, and never paraphrased.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instruction: Option<String>,
 }

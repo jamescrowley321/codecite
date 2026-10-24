@@ -221,10 +221,6 @@ fn check(file: &QueryFile) -> anyhow::Result<()> {
 
 /// The citations `codecite search` returns for `text`, best first.
 fn search(codecite: &Path, corpus: &str, text: &str) -> anyhow::Result<Vec<String>> {
-    #[derive(Deserialize)]
-    struct Result {
-        citation: String,
-    }
     let output = Command::new(codecite)
         .args(["search", corpus, text, "--json", "--allow-stale", "--limit"])
         .arg(DEPTH.to_string())
@@ -236,6 +232,41 @@ fn search(codecite: &Path, corpus: &str, text: &str) -> anyhow::Result<Vec<Strin
             String::from_utf8_lossy(&output.stderr).trim()
         );
     }
-    let results: Vec<Result> = serde_json::from_slice(&output.stdout)?;
-    Ok(results.into_iter().map(|r| r.citation).collect())
+    citations(&output.stdout).context("parsing codecite search --json")
+}
+
+/// The citations in what `codecite search --json` prints,
+/// `{"results": [...]}`, best first.
+fn citations(stdout: &[u8]) -> serde_json::Result<Vec<String>> {
+    #[derive(Deserialize)]
+    struct Printed {
+        results: Vec<Result>,
+    }
+    #[derive(Deserialize)]
+    struct Result {
+        citation: String,
+    }
+    let printed: Printed = serde_json::from_slice(stdout)?;
+    Ok(printed.results.into_iter().map(|r| r.citation).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn citations_come_from_the_results_object() {
+        let printed = br#"{"results":[{"citation":"a@0123456:x.rs#L1","score":2.0},{"citation":"rfc9449@sha256:1a2b3c4d5e6f#section-4.3"}]}"#;
+        assert_eq!(
+            citations(printed).unwrap(),
+            [
+                "a@0123456:x.rs#L1",
+                "rfc9449@sha256:1a2b3c4d5e6f#section-4.3"
+            ]
+        );
+        assert!(citations(br#"{"results":[]}"#).unwrap().is_empty());
+        // The bare array `search --json` printed before is refused, not
+        // read as no results.
+        assert!(citations(br#"[{"citation":"a@0123456:x.rs#L1"}]"#).is_err());
+    }
 }

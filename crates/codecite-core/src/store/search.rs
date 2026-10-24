@@ -14,6 +14,10 @@ use crate::{Error, Result, Role, text_terms};
 /// rest through its citation.
 pub const MAX_SNIPPET_LINES: usize = 40;
 
+/// How many results a search returns unless asked for another number:
+/// the CLI's `--limit` and the MCP `search` tool's `limit` default.
+pub const DEFAULT_SEARCH_LIMIT: u32 = 5;
+
 /// How many days an index stays fresh when its manifest doesn't say.
 pub const DEFAULT_MAX_AGE_DAYS: u32 = 30;
 
@@ -71,11 +75,11 @@ pub struct SearchResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub symbol: Option<String>,
     /// What the chunk's document is for: `source`, `test`, `example`,
-    /// `docs` or `spec` (see [`Role`]).
+    /// `docs` or `spec`.
     pub role: &'static str,
     /// The ranking score, higher first: BM25 times the role's weight, times
-    /// [`NAME_BOOST`] when the query names the chunk's symbol. Results come
-    /// in this order.
+    /// a boost when the query names the chunk's symbol. Results come in
+    /// this order.
     pub score: f64,
     /// How agents may use the source: `adapt`, `approach_only` or `quote`.
     pub license_class: String,
@@ -85,7 +89,8 @@ pub struct SearchResult {
     /// was indexed. Spec results have none.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dirty: Option<bool>,
-    /// The chunk's first [`MAX_SNIPPET_LINES`] lines.
+    /// The chunk's first 40 lines (`MAX_SNIPPET_LINES`); `read` its
+    /// citation for the rest.
     pub snippet: String,
 }
 
