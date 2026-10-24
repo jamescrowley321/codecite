@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-10-17
+last_verified: 2026-10-20
 ---
 
 # codecite — design
@@ -70,6 +70,57 @@ flowchart LR
 ```
 
 The workspace has five crates: `codecite-core` (schema and query engine), `codecite-index` (pipeline and providers), `codecite-lsp`, `codecite-mcp`, and the `codecite` binary that ties them together.
+
+The crates depend on core and never on each other; only the binary sees them all.
+
+```mermaid
+flowchart TD
+  bin["codecite<br/>CLI: clap subcommands"] --> index["codecite-index<br/>manifest · fetch · clone · walk · chunk · spec"]
+  bin --> mcp["codecite-mcp<br/>rmcp server on stdio"]
+  bin --> lsp["codecite-lsp<br/>live provider"]
+  bin --> core
+  index --> core["codecite-core<br/>store · migrations · search · read · corpora<br/>citations · terms · requirement keywords"]
+  mcp --> core
+  lsp --> core
+  core --> sqlite[("rusqlite<br/>bundled SQLite + FTS5")]
+```
+
+An index run reads the manifest, fetches every pinned input before it writes anything, then chunks and writes one document per transaction.
+
+```mermaid
+flowchart TD
+  manifest["Manifest<br/>corpora/#lt;corpus#gt;.toml"] --> docs & gits & locals
+  docs["document sources"] --> fetcher{"Fetcher:<br/>sha256 in cache?"}
+  fetcher -- yes --> cached["read ~/.cache/codecite/documents/#lt;sha256#gt;"]
+  fetcher -- no --> get["HTTP GET, ≤16 MiB, 60 s<br/>hash while streaming"] --> pin{"matches pin?"}
+  pin -- no --> stop["stop: Mismatch names both hashes<br/>store untouched"]
+  pin -- yes --> cached
+  gits["git sources"] --> clones["Clones: partial clone per URL<br/>fetch pinned commit, checkout, clean"]
+  clones --> walk
+  locals["local sources"] --> walk["Walk: git ls-files + include/exclude<br/>skip deny-list, symlink, binary, #gt;1 MiB"]
+  walk --> chunker["Chunker"]
+  chunker --> ts["tree-sitter definitions<br/>Rust · Python · TS/JS · Go · C#"]
+  chunker --> md["Markdown heading sections"]
+  chunker --> win["60-line windows"]
+  cached --> spec["Spec: render HTML to lines<br/>numbered sections + steps<br/>BCP 14 keywords · RFC relations"]
+  ts & md & win & spec --> terms["Terms: split identifiers"]
+  terms --> write["Store write<br/>one transaction per document<br/>unchanged hash → skip"]
+  write --> db[("#lt;corpus#gt;.db")]
+```
+
+Queries open the corpus read-only, refuse a stale or newer-schema file, and return results that the CLI prints and the MCP tools return as the same JSON.
+
+```mermaid
+flowchart LR
+  subgraph clients
+    cli["codecite search / read / corpora"]
+    agent["agent → codecite mcp<br/>(tools on tokio's blocking pool)"]
+  end
+  cli & agent --> open["Store::open_corpus<br/>read-only · schema check · freshness"]
+  open --> search["search: terms → quoted OR FTS5<br/>bm25 weights symbol 10 · path 5 · body 1<br/>exact symbol first · current versions"]
+  open --> read["read: written form (aliases) or canonical<br/>→ version → section/step or lines"]
+  search & read --> out["result with citation, license class, indexed_at<br/>or a typed error with candidates"]
+```
 
 `codecite-mcp` serves MCP over stdio with `rmcp` on a single-threaded `tokio` runtime. Its tools are `rmcp` `#[tool]` methods: an input schema is generated from the tool's parameter type and an output schema from its result type (`schemars`), and the result types are the ones `codecite-core` returns to the CLI, so both print the same JSON. A tool runs its SQLite work on `tokio`'s blocking pool. stdout carries only MCP messages; anything else goes to stderr. A failed operation is a tool result with `isError` and the error's message and causes, so the agent can read it; an unknown tool or malformed request is a JSON-RPC error.
 
@@ -148,6 +199,66 @@ CREATE INDEX edge_evidence ON edge(evidence_doc);
 CREATE TRIGGER chunk_fts_delete AFTER DELETE ON chunk BEGIN
   DELETE FROM chunk_fts WHERE rowid = old.id;                       -- a contentless FTS table can't be a foreign key's child
 END;
+```
+
+How the tables relate, with the columns that carry each relation:
+
+```mermaid
+erDiagram
+  source ||--o{ document : "holds"
+  document ||--o{ chunk : "splits into"
+  document ||--o{ symbol : "defines"
+  chunk |o--o{ chunk : "parent_id (section → step)"
+  symbol |o--o{ chunk : "symbol_id"
+  chunk ||--|| chunk_fts : "rowid"
+  symbol ||--o{ edge : "src / dst"
+  document |o--o{ edge : "evidence_doc"
+  alias }o--|| source : "name (document)"
+  source {
+    int id PK
+    text name
+    text kind "local | git | document"
+    text revision "commit or sha256"
+    int is_current
+    text license_class
+  }
+  document {
+    int id PK
+    int source_id FK
+    text path
+    blob content_hash
+    int dirty
+    text text "code files only"
+  }
+  chunk {
+    int id PK
+    int document_id FK
+    int start_line
+    int end_line
+    text kind "function | class | section | step | window"
+    text number
+    text strength "MUST,SHOULD"
+  }
+  symbol {
+    text id PK "SCIP symbol string"
+    text display_name
+  }
+  edge {
+    text src
+    text dst
+    text kind
+    text provider
+    int confidence
+  }
+  alias {
+    text alias PK
+    text name
+  }
+  chunk_fts {
+    text symbol
+    text path
+    text terms
+  }
 ```
 
 - **Document versions** are separate sources: each pinned version of a document is its own `source` row, with the document's name, its `sha256` as `revision`, and `is_current`, `obsoleted_by` and `updated_by` from the manifest. A version is unique by name and revision, any other source by name. Results name a version as citations do, `rfc9449@sha256:1a2b3c4d5e6f`.
@@ -274,7 +385,7 @@ The CLI and the MCP server expose the same operations and return the same JSON, 
 | --- | --- |
 | `codecite add <corpus> <url>...` | Add sources to a manifest, detect licenses, pin the current commit |
 | `codecite index <corpus> [--manifest <path>] [--print-hashes]` | Fetch, index and run providers; incremental by default. Reads `corpora/<corpus>.toml` unless `--manifest` names another file. `--print-hashes` downloads each document source and prints its sha256, without checking or indexing, so a new or changed document is pinned on purpose |
-| `codecite search <corpus> "<query>" [--language <name>] [--path <glob>] [--limit <n>] [--json] [--allow-stale]` | Ranked chunks with citations, at most `--limit` (default 10). `--json` prints the result objects as a JSON array; otherwise each result is its rank and citation, a line naming its kind, symbol, score, license class and `indexed_at`, and its snippet's first 3 lines |
+| `codecite search <corpus> "<query>" [--language <name>] [--path <glob>] [--limit <n>] [--json] [--allow-stale]` | Ranked chunks with citations, at most `--limit` (default 5). `--json` prints the result objects as a JSON array. Otherwise, when every result shares its license class and `indexed_at`, a header line `<n> results · <license class> · indexed <indexed_at>` comes first; each result is then one line, `<rank>. <citation> · <kind>[ <symbol>] · <score to 1 decimal>[ · dirty]`, with the license class and `indexed_at` appended when there is no header, and its snippet's first non-blank line, trimmed and cut at 120 characters. A code citation's commit is cut to 12 characters, which `read` accepts |
 | `codecite def <symbol>` | Where a symbol is defined |
 | `codecite refs <symbol>` | Every reference to a symbol |
 | `codecite graph <callers\|callees\|impact\|path> ...` | Graph queries with `--min-confidence` |
@@ -339,6 +450,8 @@ codecite earns its place only if agents using it do no worse than agents without
 - **Arms:** the same agent, model and prompt, once with the agent's normal tools and once with the `codecite` CLI added. Baseline with web tools and codecite's MCP tools come as further arms. Many runs per task per arm (20 by default).
 - **Agents:** Claude Code and pi over OpenRouter to start; adding an agent is one adapter.
 - **Measures:** pass rate, total tokens, cost, tool calls, wall time, and citation accuracy where a task cites specs (a sampled review of whether each cited span supports what the agent claimed).
+- **Isolation:** every agent runs inside a bubblewrap sandbox: the host read-only, the owner's home, `/tmp`, `/run` (and with it the system bus and container daemon sockets), the evals state dir, the codecite checkouts and the round's own records hidden, and only the run's own directories, the identity-model export, the agent's install and the task's toolchain bound back in. The network is shared, for the model provider. No agent can read the owner's files (credentials included), the hidden tests or another run. The run's own directories appear at fixed neutral paths (`/work/project`, `/work/home`, `/work/xdg`, `/work/identity-model`, and `/work/bin` in the codecite arm only), so nothing the agent sees, its working directory and system prompt included, names its arm, run or round; the arms differ only by the codecite note and `/work/bin`. The task's setup (`uv sync`) runs in the same sandbox, and compose freezes the task (project, hidden tests, reference) into the round dir, so a round never reads the live checkout.
+- **Credentials:** the one credential an agent needs is inside its own sandbox: Claude Code's subscription token is in its environment, and pi's OpenRouter key is in its agent dir's `auth.json` (fed to the sandbox from a pipe, so never on the host's disk), not its environment. The sandbox doesn't stop an agent from printing either (`env`, `cat`), and what it prints goes to its model provider; redaction cleans only the files on disk. Such a run is flagged, `call` ends with a warning to rotate the key, and the scorecard lists it. Scanning transcripts for fetched code and hidden paths stays as a second layer.
 
 **Retrieval benchmark**
 
@@ -349,7 +462,8 @@ codecite earns its place only if agents using it do no worse than agents without
 
 **Success criteria**
 
-- No loss on any of correctness, tokens or time, for any agent/model pair. A loss is a pass rate more than 5 percentage points below baseline, or a median total-token count or wall time more than 5% above baseline. Any loss stops feature work until it is understood.
+- No loss on any of correctness, tokens or time, for any agent/model pair. Each measure is a difference between the arms: pass rate in points (codecite minus baseline), and median total tokens and median wall time relative to baseline's median (codecite / baseline - 1). Each gets a 95% percentile bootstrap interval over the usable runs (each arm resampled on its own, 10 000 times, seeded from the plan's seed, so a scorecard is reproducible). A loss is an interval past the margin at its favourable end: the pass rate's upper bound more than 5 points below 0, or the tokens' or time's lower bound more than 5% above 0. This replaces the harness design's plain comparison of the numbers, which at 20 runs per arm stops on noise most of the time (the owner's decision). Any loss stops feature work until it is understood. A pair short of the planned usable runs in an arm, or with an unknown measure, is incomplete, not a pass.
+- Usable runs are scored runs that finished (ok, timed out, or failed: `agent_error` counts as a failure, and a resumed round doesn't redo it), with known total tokens, that are not tainted. A tainted run, or one whose tokens are unknown, is redone when `call` resumes; the old one is kept and listed. A run the provider ended (a provider error at any turn count, such as pi's "Provider returned an empty response" or Claude Code's error result), and a rate or usage limit at any point, is infrastructure, not the agent's work: retried with backoff, never scored. After 3 attempts in one `call` the run is recorded as an infrastructure error, excluded and listed with the provider's text, and tried again on resume; a rate limit that outlasts the retries pauses the round until it resets. The IdP fixture is frozen into the round with the task.
 - Recall@10 of at least 0.8 with BM25 alone.
 - Losses are reported alongside wins, with the tasks where retrieval hurt.
 
