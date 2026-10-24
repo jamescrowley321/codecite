@@ -46,13 +46,54 @@ Rules:
 
 - Work on a `<type>/<short-description>` branch in its own worktree under
   `~/repos/codecite-worktrees/`. The primary checkout at `~/repos/codecite`
-  stays on a clean `main`.
+  stays on a clean `main`. A Claude Code cloud session works on its own
+  branch in its own checkout instead.
+- Never force-push. James and other sessions push to the same branches; fetch
+  before you push.
 - Conventional commits. Every change lands through a squash-merged PR; the PR
   title becomes the commit.
 - `main` is protected: a PR merges only when it is up to date with `main` and
   the CI and security gates pass (`fmt`, `clippy`, `test`, `deny`, `zizmor`,
   `gitleaks`, `dependency-review`, CodeQL, OSV-Scanner). Renaming a gate's job
   means renaming its required check in oss-admin in step.
+
+## Rules for every artifact
+
+- Name no client or outside project in commits, PRs, issues or docs. The
+  public corpora codecite indexes are fine; anything else is "another project".
+- Every PR body has an AI provenance section naming the harness and the model,
+  and the box `- [x] A human has reviewed this change and is accountable for
+  it`, ticked. James has delegated the tick for agent PRs; the Policy lens
+  blocks without it.
+
+## Working an issue end to end
+
+This is how an agent, local or in a Claude Code cloud session, takes one
+issue from open to a reviewed PR. Ralph (`ralph/`) runs the same steps in a
+loop.
+
+1. **Pick.** Take the next open issue labelled `cloud-ready`, in the order the
+   pinned queue issue gives. Read it and `docs/design.md`.
+2. **Plan.** Follow Planning above. If the superpowers skills aren't
+   installed, as in a cloud session, write the plan by hand in
+   `docs/superpowers/plans/` and commit it with the PR.
+3. **Build test-first.** Before every push, run what CI runs:
+   `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D
+   warnings` and `cargo test --workspace --locked`.
+4. **Open the PR against `main`**, never stacked: the lenses review only PRs to
+   `main`. Use a conventional title and put `Closes #<n>`, the issue's
+   acceptance criteria and the provenance section in the body.
+5. **Read the feedback.** CI and the lens reviews come back on the PR: one
+   review per lens from `github-actions[bot]`, then the Merge Gate's verdict.
+   Fix every MUST FIX at its cause, test-first. Lenses see only diff hunks, so
+   before fixing a "missing" line read the whole file; for a false positive,
+   reply on the PR saying why. Fix a SHOULD FIX when it's cheap. After three
+   review rounds, stop and summarise what's left in a PR comment.
+6. **Ask for an eval.** If the PR changes indexing, search, ranking or the
+   CLI's output, add the `eval` label. The eval workflow runs the quick A/B
+   eval and posts its scorecard. A quick loss means run the full eval, so say
+   so on the PR. Never call it a pass.
+7. **Stop there.** James merges. Don't merge your own PR.
 
 ## Repository settings
 
