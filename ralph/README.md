@@ -4,9 +4,9 @@
 
 - `PROMPT.md`: the router. It reads the queue from GitHub issues and routes each iteration to one phase file.
 - `phases/`: `restack → setup → plan → implement → pr → ci → review → review-fix → complete`. Planning and TDD use the superpowers skills.
-- Review runs in CI: `.github/workflows/claude.yml` reviews each PR when it opens. The loop waits for that verdict, answers each round in a PR comment, and asks `@claude review this PR` after its fixes, for up to two re-reviews. If CI doesn't review, the loop runs `blind-peer-review:check` locally and posts the result. The plugin chooses the lenses, so tuning the review means changing the plugin pin in `claude.yml`.
+- Review runs in CI: `.github/workflows/blind-peer-review.yml` runs the lenses on every push to a PR that targets `main`, and its Merge Gate gives the verdict. The loop waits for that verdict on the head commit, answers each round in a PR comment, and pushes its fixes, which re-runs the review, for up to two re-reviews. If CI doesn't review, as for every stacked PR, the loop runs `blind-peer-review:check` locally and posts the result. The plugin chooses the lenses, so tuning the review means changing the plugin pin in `blind-peer-review.yml`.
 - `run.sh`: launches or resumes the loop from the runner worktree `~/repos/codecite-worktrees/ralph-loop`.
-- `wait-ci.sh` and `wait-review.sh`: after each push, sleep a minute, then wait for that commit's CI run or for the review comment. `ci` fixes failures from the log the script prints and pushes again (up to 3 attempts).
+- `wait-ci.sh` and `wait-review.sh`: after each push, sleep a minute, then wait for every non-review workflow on that commit, or for the lens Merge Gate. `ci` fixes failures from the log the script prints and pushes again (up to 3 attempts).
 
 ## Run
 
