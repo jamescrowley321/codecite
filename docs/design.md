@@ -443,7 +443,11 @@ codecite has no network listener by default and makes no outbound calls except f
 - **Data boundary:** never index PHI, customer data or secrets. A deny-list skips files by name before opening them: `.env*`, keys and certificates (`*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.crt`, `*.cer`, `*.der`, `*.jks`, `*.keystore`) and SSH keys (`id_rsa`, `id_ed25519.pub`; not `id_token.rs`), and a secrets scan skips files with high-entropy credentials.
 - **Untrusted code:** language servers and some SCIP indexers execute project code (rust-analyzer runs build scripts and proc macros, for example). They run only on sources marked trusted, with timeouts. Third-party reference corpora default to tree-sitter only.
 - **Read-only queries:** `search`, `read` and the graph tools open the database read-only. Only `index` writes.
-- **Supply chain:** pinned toolchain, `cargo-deny` in CI (its advisories check reads RustSec, the database `cargo-audit` uses), a minimal dependency set, and signed release artifacts with an SBOM.
+- **Supply chain:** a pinned toolchain and a minimal dependency set.
+  - Actions are pinned by commit SHA. Dependabot bumps them, `cargo` and `npm` after a 7-day cooldown.
+  - PRs to `main` are gated on `cargo-deny` (its advisories check reads RustSec, the database `cargo-audit` uses), zizmor, gitleaks, OSV-Scanner, dependency review and CodeQL, as required checks in oss-admin.
+  - An embedding model is pinned by Hugging Face commit and per-file sha256, and fetched through the document fetcher (#109).
+  - Release signing, SBOM and provenance are #110. Until #110 lands, releases are published by hand and are not signed.
 
 ## Evaluation plan
 
