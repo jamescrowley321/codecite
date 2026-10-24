@@ -17,6 +17,7 @@ server. Read `docs/design.md` before any non-trivial change.
 | Work and status | GitHub milestones and issues — the only place status lives |
 | Design for one open question | `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` |
 | Steps for one issue | `docs/superpowers/plans/YYYY-MM-DD-<topic>.md` |
+| A/B agent eval and retrieval benchmark | `evals/` (see `evals/README.md`) |
 | Experiments and spikes, with their scripts and results | `experiments/<topic>/` — kept for re-running or scaling up |
 | Autonomous loop over the open issues | `ralph/` (see `ralph/README.md`) |
 
@@ -48,6 +49,10 @@ Rules:
   stays on a clean `main`.
 - Conventional commits. Every change lands through a squash-merged PR; the PR
   title becomes the commit.
+- `main` is protected: a PR merges only when it is up to date with `main` and
+  the CI and security gates pass (`fmt`, `clippy`, `test`, `deny`, `zizmor`,
+  `gitleaks`, `dependency-review`, CodeQL, OSV-Scanner). Renaming a gate's job
+  means renaming its required check in oss-admin in step.
 
 ## Repository settings
 

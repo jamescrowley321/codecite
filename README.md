@@ -32,13 +32,13 @@ candidates, never a guess, and an index older than its manifest's
 ## Install
 
 ```sh
-cargo install codecite --locked
+cargo install --git https://github.com/jamescrowley321/codecite codecite --locked
 ```
 
-This builds the `codecite` binary from crates.io with the pinned dependency
-versions. It needs Rust 1.99.1 or newer and a C compiler, since the
-tree-sitter grammars and SQLite are compiled from C. Git sources also need
-`git` on `PATH`.
+This builds the `codecite` binary from this repository with the pinned
+dependency versions. codecite is not on crates.io yet (#110). It needs Rust
+1.99.1 or newer and a C compiler, since the tree-sitter grammars and SQLite are
+compiled from C. Git sources also need `git` on `PATH`.
 
 ## Quick start
 
@@ -86,7 +86,7 @@ step · ID Token Validation · SHOULD · quote · indexed 2026-10-20T20:34:20Z
 
 ```console
 $ codecite corpora
-{"corpora":[{"age_days":0.0,"corpus":"self","indexed_at":"2026-10-20T20:49:36Z","max_age_days":30,"size_bytes":7655424,"sources":1,"stale":false}]}
+{"corpora":[{"age_days":0.0,"corpus":"identity","indexed_at":"2026-10-20T22:56:30Z","max_age_days":30,"size_bytes":41594880,"sources":40,"stale":false}]}
 ```
 
 To give an agent the same answers, register the MCP server, for example with
@@ -111,7 +111,7 @@ claude mcp add codecite -- codecite mcp
 - A code graph — definitions, references, callers, callees, impact — merged from
   tree-sitter, SCIP, LSP, CodeGraph and Graphify, with every edge tagged by the
   provider that produced it and how far to trust it.
-- Pinned corpus manifests that record each source's commit and license class, so
+- License detection (SPDX) checked against each manifest's license class, so
   agents know what they may adapt and what they may only learn from.
 - Fully local: no server process, no telemetry, no network access beyond
   fetching pinned sources.
@@ -125,7 +125,9 @@ claude mcp add codecite -- codecite mcp
 CI runs `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`,
 `cargo test --workspace --locked` and `cargo deny check` on every PR. Run them
 locally before pushing; `--locked` fails if `Cargo.lock` is out of date, as it
-does in CI. `cargo deny` needs `cargo install cargo-deny --locked`.
+does in CI. `cargo deny` needs `cargo install cargo-deny --locked`. PRs are also
+gated on security scans (zizmor, gitleaks, OSV-Scanner, dependency review and
+CodeQL); `SECURITY.md` says how to report a vulnerability.
 
 ## License
 

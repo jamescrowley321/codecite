@@ -47,7 +47,14 @@ def _source(model):
     from fastembed import LateInteractionTextEmbedding, SparseTextEmbedding, TextEmbedding
     from fastembed.rerank.cross_encoder import TextCrossEncoder
     for cls in (TextEmbedding, TextCrossEncoder, SparseTextEmbedding, LateInteractionTextEmbedding):
-        for m in cls._list_supported_models():
+        try:
+            supported = cls._list_supported_models()
+        except AttributeError as e:
+            raise SystemExit(
+                f"fastembed private API changed ({e}). "
+                f"This script is pinned to fastembed==0.9.0; regenerate the lockfile with care."
+            ) from e
+        for m in supported:
             if m.model == model:
                 return m.sources.hf, m.model_file
     raise SystemExit(f"unknown fastembed model: {model}")
