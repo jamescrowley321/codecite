@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use codecite_core::{
     Corpora, DEFAULT_MAX_LINES, DEFAULT_SEARCH_LIMIT, MAX_READ_LINES, MAX_SEARCH_LIMIT,
-    ReadOptions, ReadResult, SearchQuery, SearchResults, Store,
+    ReadOptions, ReadResult, Scope, SearchQuery, SearchResults, Store,
 };
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::{Json, Parameters};
@@ -32,6 +32,9 @@ pub struct SearchParams {
     /// Only files whose path matches this glob; `*` matches `/` too.
     #[serde(default)]
     pub path: Option<String>,
+    /// `spec` for only spec sections, `code` for only code. Omitted, both.
+    #[serde(default)]
+    pub only: Option<Scope>,
     /// The most results to return, at most 50.
     #[serde(default = "default_limit", deserialize_with = "search_limit")]
     #[schemars(range(min = 1, max = MAX_SEARCH_LIMIT))]
@@ -233,6 +236,7 @@ impl Server {
                 text: &params.query,
                 language: params.language.as_deref(),
                 path: params.path.as_deref(),
+                only: params.only,
                 limit: params.limit.get(),
                 allow_stale: params.allow_stale,
             })?;
@@ -485,6 +489,7 @@ mod tests {
                 text,
                 language: None,
                 path: None,
+                only: None,
                 limit: 5,
                 allow_stale: false,
             })
@@ -571,6 +576,18 @@ mod tests {
         // Nothing matching is an empty list, not an error.
         let none = session.ok("search", json!({"query": "zzzz"})).await;
         assert_eq!(none, json!({"results": []}));
+        // `only` keeps one kind.
+        for (query, only, spec) in [("proof", "spec", true), ("validate", "code", false)] {
+            let found = session
+                .ok("search", json!({"query": query, "only": only}))
+                .await;
+            let results = found["results"].as_array().unwrap();
+            assert!(!results.is_empty(), "{only}");
+            assert!(
+                results.iter().all(|r| (r["role"] == "spec") == spec),
+                "{only}"
+            );
+        }
         session.stop().await;
     }
 

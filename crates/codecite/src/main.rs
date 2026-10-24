@@ -4,10 +4,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, bail};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use codecite_core::{
     DEFAULT_MAX_LINES, DEFAULT_SEARCH_LIMIT, MAX_READ_LINES, MAX_SEARCH_LIMIT, ReadOptions,
-    ReadResult, SearchQuery, SearchResult, SearchResults, Store, is_corpus_name,
+    ReadResult, Scope, SearchQuery, SearchResult, SearchResults, Store, is_corpus_name,
 };
 use codecite_index::{Clones, Fetcher, LicenseClass, Manifest, Source, WalkOptions, index_corpus};
 
@@ -46,6 +46,9 @@ enum Command {
         /// Only files whose path matches this glob; `*` matches `/` too.
         #[arg(long)]
         path: Option<String>,
+        /// Only spec sections or only code. Without it, both.
+        #[arg(long, value_enum)]
+        only: Option<Only>,
         /// The most results to print, at most 50.
         #[arg(long, default_value_t = DEFAULT_SEARCH_LIMIT, value_parser = clap::value_parser!(u32).range(1..=i64::from(MAX_SEARCH_LIMIT)))]
         limit: u32,
@@ -81,6 +84,24 @@ enum Command {
     Mcp,
 }
 
+/// The sources `search --only` keeps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum Only {
+    /// Spec sections and steps.
+    Spec,
+    /// Code from repositories and local directories.
+    Code,
+}
+
+impl From<Only> for Scope {
+    fn from(only: Only) -> Scope {
+        match only {
+            Only::Spec => Scope::Spec,
+            Only::Code => Scope::Code,
+        }
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     match Cli::parse().command {
         Command::Index {
@@ -93,6 +114,7 @@ fn main() -> anyhow::Result<()> {
             query,
             language,
             path,
+            only,
             limit,
             json,
             allow_stale,
@@ -101,6 +123,7 @@ fn main() -> anyhow::Result<()> {
                 text: &query,
                 language: language.as_deref(),
                 path: path.as_deref(),
+                only: only.map(Scope::from),
                 limit,
                 allow_stale,
             };
@@ -463,6 +486,7 @@ mod tests {
             query,
             language,
             path,
+            only,
             limit,
             json,
             allow_stale,
@@ -474,7 +498,7 @@ mod tests {
             (corpus.as_str(), query.as_str()),
             ("identity", "validate token")
         );
-        assert_eq!((language, path, limit), (None, None, 5));
+        assert_eq!((language, path, only, limit), (None, None, None, 5));
         assert!(!json && !allow_stale);
         let cli = Cli::try_parse_from([
             "codecite",
@@ -485,6 +509,8 @@ mod tests {
             "rust",
             "--path",
             "src/*",
+            "--only",
+            "spec",
             "--limit",
             "3",
             "--json",
@@ -494,6 +520,7 @@ mod tests {
         let Command::Search {
             language,
             path,
+            only,
             limit,
             json,
             allow_stale,
@@ -504,6 +531,7 @@ mod tests {
         };
         assert_eq!(language.as_deref(), Some("rust"));
         assert_eq!(path.as_deref(), Some("src/*"));
+        assert_eq!(only.map(Scope::from), Some(Scope::Spec));
         assert_eq!(limit, 3);
         assert!(json && allow_stale);
         // From 1 to the cap the MCP tool has too.
@@ -513,6 +541,8 @@ mod tests {
         }
         let most = ["codecite", "search", "identity", "jti", "--limit", "50"];
         assert!(Cli::try_parse_from(most).is_ok());
+        let other = ["codecite", "search", "identity", "jti", "--only", "docs"];
+        assert!(Cli::try_parse_from(other).is_err());
     }
 
     #[test]

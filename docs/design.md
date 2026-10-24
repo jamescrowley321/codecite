@@ -322,7 +322,8 @@ BM25 over code-aware terms does most of the work; vectors and graph signals refi
 - With embeddings on, nearest neighbors from `chunk_vec`, merged with BM25 by reciprocal rank fusion (k = 60).
 - The BM25 score is weighted by what the chunk's document is for, read from its path: source, docs and specs 1, examples 0.6 (`examples/`, `samples/`, `demo/`), tests 0.4 (`tests/`, `__tests__/`, `testdata/`, `conformance/`, and test file names such as `test_x.py`, `x_test.go`, `x.spec.ts`, `XTests.cs`). A test directory wins over an example one, and both over a prose extension. Results carry this as `role`.
 - A chunk whose symbol is named by a word of the query, or by all its words run together, scores 3 times higher, comparing names without case, `_` or `-`; so `TokenValidationMiddleware FastAPI` puts the class first and `validate token` lifts `validateToken`. Only a name that at most 3 symbols share is boosted, so a common word that many helpers are named after (`app`, `get`) lifts nothing.
-- Results come in the order of the score they print.
+- Spec and code results are ranked apart, since their BM25 scores are not on one scale: a short constants file that repeats `token_type_hint` outscores the long section that defines it once. When the query names a symbol, results keep score order, except that the best spec results, up to 3 and a third of the limit, move into the last slots if they would fall below them. Otherwise the two alternate, spec first. So within each kind results come in the order of the score they print, but a spec result may sit above a higher-scoring code one. On the retrieval benchmark this lifts spec-keyword Recall@10 from 0.56 to 0.89 and leaves code-symbol at 1.00; scoring specs alone reaches 0.94.
+- `--only spec` or `--only code` searches one kind, ranked by score.
 - Only the current version of each document is searched; an older pinned version is reached by its citation.
 - Filters by corpus, repo, language and path glob are plain SQL `WHERE` clauses. The path glob is SQLite's `GLOB`: `*` matches any run of characters, `/` included, and case matters.
 
@@ -387,7 +388,7 @@ The CLI and the MCP server expose the same operations and return the same JSON, 
 | --- | --- |
 | `codecite add <corpus> <url>...` | Add sources to a manifest, detect licenses, pin the current commit |
 | `codecite index <corpus> [--manifest <path>] [--print-hashes]` | Fetch, index and run providers; incremental by default. Reads `corpora/<corpus>.toml` unless `--manifest` names another file. `--print-hashes` downloads each document source and prints its sha256, without checking or indexing, so a new or changed document is pinned on purpose |
-| `codecite search <corpus> "<query>" [--language <name>] [--path <glob>] [--limit <n>] [--json] [--allow-stale]` | Ranked chunks with citations, at most `--limit` (default 5, at most 50). `--json` prints `{"results": [...]}`, the `search` tool's JSON. Otherwise, when every result shares its license class and `indexed_at`, a header line `<n> results · <license class> · indexed <indexed_at>` comes first; each result is then one line, `<rank>. <citation> · <kind>[ <symbol>] · <score to 1 decimal>[ · dirty]`, with the license class and `indexed_at` appended when there is no header, and its snippet's first non-blank line, trimmed and cut at 120 characters. A code citation's commit is cut to 12 characters, which `read` accepts |
+| `codecite search <corpus> "<query>" [--language <name>] [--path <glob>] [--only spec|code] [--limit <n>] [--json] [--allow-stale]` | Ranked chunks with citations, at most `--limit` (default 5, at most 50). `--json` prints `{"results": [...]}`, the `search` tool's JSON. Otherwise, when every result shares its license class and `indexed_at`, a header line `<n> results · <license class> · indexed <indexed_at>` comes first; each result is then one line, `<rank>. <citation> · <kind>[ <symbol>] · <score to 1 decimal>[ · dirty]`, with the license class and `indexed_at` appended when there is no header, and its snippet's first non-blank line, trimmed and cut at 120 characters. A code citation's commit is cut to 12 characters, which `read` accepts |
 | `codecite def <symbol>` | Where a symbol is defined |
 | `codecite refs <symbol>` | Every reference to a symbol |
 | `codecite graph <callers\|callees\|impact\|path> ...` | Graph queries with `--min-confidence` |
@@ -398,7 +399,7 @@ The CLI and the MCP server expose the same operations and return the same JSON, 
 
 | MCP tool | Inputs | Returns |
 | --- | --- | --- |
-| `search` | `query`, `corpus?`, `language?`, `path?`, `limit` (default 5, at most 50, as the CLI's), `allow_stale` (default false) | Ranked results |
+| `search` | `query`, `corpus?`, `language?`, `path?`, `only?` (`spec` or `code`), `limit` (default 5, at most 50, as the CLI's), `allow_stale` (default false) | Ranked results |
 | `definition` | `symbol`, `corpus?` | Definition sites |
 | `references` | `symbol`, `min_confidence` | Reference sites |
 | `callers` / `callees` | `symbol`, `depth` (default 1), `min_confidence` | Edges with providers |

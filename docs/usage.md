@@ -114,6 +114,7 @@ keys and certificates), symlinks, binaries and files over 1 MiB.
 codecite search identity "DPoP proof jti replay"
 codecite search identity "verify proof" --language rust --limit 5
 codecite search identity "nonce" --path "py/src/*" --json
+codecite search identity "token_type_hint" --only spec
 ```
 
 A query matches identifiers however they are written: `validate token` finds
@@ -121,6 +122,12 @@ A query matches identifiers however they are written: `validate token` finds
 exactly the query comes first; the rest rank by BM25, weighting symbol names
 over paths over body text. Spec results come from each document's current
 version.
+
+Specs and code are ranked separately and then merged, so code that repeats a
+term doesn't bury the spec section that defines it. When the query names a
+symbol, code keeps the top slots and the best spec sections take the last few;
+otherwise the results alternate, spec first. `--only spec` or `--only code`
+searches one kind.
 
 ```text
 1. rfc9449@sha256:2d8657f07291#section-11.1
