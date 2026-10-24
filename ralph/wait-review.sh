@@ -40,7 +40,7 @@ for _ in $(seq 1 8); do
     id=$(jq -r .databaseId <<< "$run")
     gate=$(gh run view "$id" -R "$repo" --json jobs --jq '.jobs[] | select(.name == "Merge Gate")')
     # Which gate step failed tells a BLOCK from a review that never finished.
-    step() { jq -r --arg n "$1" '.steps[] | select(.name == $n) | .conclusion' <<< "$gate"; }
+    step() { jq -r --arg n "$1" '(.steps // [])[] | select(.name == $n) | .conclusion' <<< "$gate"; }
     if [[ $(jq -r .conclusion <<< "$run") == cancelled ]]; then
       :  # superseded; the newer run shows up on a later poll
     elif [[ -z "$gate" || $(jq -r .conclusion <<< "$gate") == skipped ]]; then
@@ -59,10 +59,16 @@ for _ in $(seq 1 8); do
     fi
     if [[ -n "${verdict:-}" ]]; then
       # Every lens review on this commit, as the review-fix phase reads them.
+      # Only the workflow's bot: anyone can post a review carrying the marker.
       gh api "repos/$repo/pulls/$pr/reviews" --paginate --jq \
-        ".[] | select(.commit_id == \"$sha\" and ((.body // \"\") | contains(\"blind-peer-review:rendered-v1\")))
+        ".[] | select(.user.login == \"github-actions[bot]\" and .user.type == \"Bot\"
+                      and .commit_id == \"$sha\" and ((.body // \"\") | contains(\"blind-peer-review:rendered-v1\")))
          | \"\(.body)\n\n---\n\"" \
         | python3 -I -c 'import html, sys; sys.stdout.write(html.unescape(sys.stdin.read()))' > "$out"
+      if [[ $verdict == BLOCK && ! -s "$out" ]]; then
+        echo "REVIEW_FAILED run $id: the Merge Gate blocked but no lens review was found"
+        exit 3
+      fi
       echo "FOUND $verdict"
       exit 0
     fi

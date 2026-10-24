@@ -35,6 +35,8 @@ runs_json() {
       | group_by(.workflowName) | map(max_by(.createdAt))"
 }
 
+# One budget for both waits, so a call never outlasts the 10-minute cap.
+end=$((SECONDS + 480))
 deadline=$((SECONDS + 180))
 while :; do
   runs=$(runs_json)
@@ -46,13 +48,12 @@ while :; do
   sleep 10
 done
 
-deadline=$((SECONDS + 420))
 while :; do
   runs=$(runs_json)
   failed=$(jq -r '.[] | select(.status == "completed" and
     (.conclusion | IN("success", "neutral", "skipped") | not)) | .databaseId' <<< "$runs")
   pending=$(jq '[.[] | select(.status != "completed")] | length' <<< "$runs")
-  if [[ -n "$failed" || "$pending" == 0 ]] || (( SECONDS >= deadline )); then
+  if [[ -n "$failed" || "$pending" == 0 ]] || (( SECONDS >= end )); then
     break
   fi
   sleep 15
@@ -66,7 +67,7 @@ if [[ -n "$failed" ]]; then
     echo "--- failed run $id"
     # Drop the job/step/timestamp prefix and the post-step artifact upload,
     # which would otherwise fill the tail and hide the finding.
-    gh run view "$id" -R "$repo" --log-failed \
+    { gh run view "$id" -R "$repo" --log-failed 2>&1 || echo "(logs unavailable)"; } \
       | sed -E 's/^[^\t]*\t[^\t]*\t[^ ]* //' \
       | { grep -vE 'artifact|Uploaded bytes|blob storage|SHA256 digest' || true; } \
       | tail -n 150
