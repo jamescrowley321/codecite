@@ -116,9 +116,9 @@ pub struct SearchResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dirty: Option<bool>,
     /// The chunk's first 40 lines (`MAX_SNIPPET_LINES`), and at most 4 KiB
-    /// of them (`MAX_SNIPPET_BYTES`): a prefix of the chunk, cut at a
-    /// character boundary, with no marker in it. `read` its citation for
-    /// the rest.
+    /// of them (`MAX_SNIPPET_BYTES`): a prefix of the chunk's lines joined
+    /// with `\n`, cut at a character boundary, with no marker in it. `read`
+    /// its citation for the rest.
     pub snippet: String,
     /// Whether the snippet stops before the end of the chunk, at the line
     /// limit or the byte budget. The citation still names the whole chunk.
@@ -1145,6 +1145,12 @@ mod tests {
         assert!(truncated);
         assert_eq!(s.len(), MAX_SNIPPET_BYTES - 1);
         assert!(text.starts_with(&s));
+        // CRLF lines are joined with `\n`, and the cut counts those bytes.
+        let crlf = format!("a\r\n{}", "b".repeat(MAX_SNIPPET_BYTES));
+        let (s, truncated) = snippet(&crlf);
+        assert!(truncated);
+        assert_eq!(s.len(), MAX_SNIPPET_BYTES);
+        assert!(s.starts_with("a\nbbb"));
         // Text within the budget is whole.
         let short = "é".repeat(MAX_SNIPPET_BYTES / 2);
         assert_eq!(snippet(&short), (short.clone(), false));

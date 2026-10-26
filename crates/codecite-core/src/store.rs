@@ -14,7 +14,8 @@ pub use corpora::{Corpora, CorpusInfo, corpora};
 
 mod read;
 pub use read::{
-    DEFAULT_MAX_LINES, MAX_READ_BYTES, MAX_READ_LINES, QUOTE_INSTRUCTION, ReadOptions, ReadResult,
+    DEFAULT_MAX_LINES, MAX_READ_BYTES, MAX_READ_LINES, QUOTE_INSTRUCTION,
+    QUOTE_TRUNCATED_INSTRUCTION, ReadOptions, ReadResult,
 };
 
 mod search;

@@ -222,7 +222,7 @@ impl Server {
 
     /// The `search` tool: the same JSON as `codecite search --json`.
     #[tool(
-        description = "Search a corpus of code and specs. Returns ranked results, best first, each with its citation, kind, role (source, test, example, docs or spec), symbol, score, license class, indexed_at and a snippet of at most 40 lines and 4 KiB. A snippet is an exact prefix of its chunk, cut on a character boundary with no marker in the text; `snippet_truncated` is true when it stops before the chunk ends. Pass a result's citation to `read` for its exact text. A search that matches nothing returns no results; an unknown corpus, a stale index or a query with no words is an error."
+        description = "Search a corpus of code and specs. Returns ranked results, best first, each with its citation, kind, role (source, test, example, docs or spec), symbol, score, license class, indexed_at and a snippet of at most 40 lines and 4 KiB. A snippet is an exact prefix of its chunk's lines, with `\\n` line endings, cut on a character boundary with no marker in the text; `snippet_truncated` is true when it stops before the chunk ends. Pass a result's citation to `read` for its exact text. A search that matches nothing returns no results; an unknown corpus, a stale index or a query with no words is an error."
     )]
     async fn search(
         &self,
@@ -248,7 +248,7 @@ impl Server {
 
     /// The `read` tool: the same JSON as `codecite read --json`.
     #[tool(
-        description = "Read the exact text a citation points at, under its pinned citation, with its license class. The text is at most `max_lines` lines and 64 KiB: an exact prefix, cut on a character boundary with no marker in the text, and `truncated` is true when it stops before the end of what was cited, whose citation still names it all. A spec section or step adds its title and requirement keywords (strength). Text from a `quote` source carries an instruction: quote it exactly with its citation, never paraphrase. A citation that is not in the corpus is an error with candidates, never the nearest guess."
+        description = "Read the exact text a citation points at, under its pinned citation, with its license class. The text is at most `max_lines` lines and 64 KiB: an exact prefix of the cited lines, with `\\n` line endings, cut on a character boundary with no marker in the text, and `truncated` is true when it stops before the end of what was cited, whose citation still names it all. A spec section or step adds its title and requirement keywords (strength). Text from a `quote` source carries an instruction: quote it exactly with its citation, never paraphrase, and say a truncated quote is partial. A citation that is not in the corpus is an error with candidates, never the nearest guess."
     )]
     async fn read(
         &self,
