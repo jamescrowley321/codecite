@@ -9,14 +9,16 @@ at its favourable end: pass rate's upper bound more than 5 points below 0, or
 tokens' or time's lower bound more than 5% above 0. A model short of the
 planned runs in either arm is incomplete, not a pass.
 
-    uv run python inspect/report.py [LOG_DIR_OR_FILES...]   (default: inspect/logs)
+    uv run python inspect/report.py [--tier quick|full] [LOG_DIR_OR_FILES...]
 
+The default logs are the tier's, inspect/logs/<tier>/, else inspect/logs/.
 Given a directory, it reads one log per model: the newest finished one, else
-the newest.
+the newest. The tier heads the scorecard: a quick verdict is directional, and
+a quick loss means run the full tier.
 """
 
+import argparse
 import random
-import sys
 from collections import defaultdict
 from pathlib import Path
 from statistics import median
@@ -26,11 +28,16 @@ from inspect_ai.log import list_eval_logs, read_eval_log
 MARGIN = 0.05
 RESAMPLES = 10_000
 SEED = 0
+TIERS = {
+    "quick": "**Quick tier** (directional, never the gate): a loss here means run the full tier.",
+    "full": "**Full tier**: the no-loss gate in docs/design.md (Evaluation plan).",
+}
 
 
-def logs(args):
+def logs(args, tier=None):
     if not args:
-        args = [str(Path(__file__).with_name("logs"))]
+        logs_dir = Path(__file__).with_name("logs")
+        args = [str(logs_dir / tier if tier else logs_dir)]
     for a in args:
         if not Path(a).is_dir():
             yield read_eval_log(a)
@@ -65,9 +72,14 @@ def median_ratio(code, base):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="The A/B scorecard.")
+    parser.add_argument("--tier", choices=sorted(TIERS))
+    parser.add_argument("logs", nargs="*", help="log directories or files")
+    args = parser.parse_args()
+
     runs = defaultdict(list)  # (model, arm) -> [(passed, tokens, seconds, timed_out)]
     planned = {}
-    for log in logs(sys.argv[1:]):
+    for log in logs(args.logs, args.tier):
         planned[log.eval.model] = log.eval.config.epochs or 1
         for s in log.samples or []:
             if s.error or not s.scores:
@@ -78,6 +90,8 @@ def main():
             runs[(log.eval.model, s.metadata["arm"])].append((score.value == 1, tokens, s.total_time or 0.0, timed_out))
 
     rng = random.Random(SEED)
+    if args.tier:
+        print(TIERS[args.tier] + "\n")
     print("| model | arm | runs | pass | timeouts | median tokens | median time | verdict |")
     print("|---|---|---|---|---|---|---|---|")
     for model in sorted(planned):
