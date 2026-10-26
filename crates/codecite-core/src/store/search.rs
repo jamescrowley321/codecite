@@ -481,7 +481,7 @@ pub(super) fn code_citation(
 
 /// `doc@sha256:<12 hex>#section-<n>`, or `…#section-<n>/step-<k>` for a step,
 /// whose section is its parent's number.
-fn spec_citation(
+pub(super) fn spec_citation(
     doc: &str,
     sha256: &str,
     kind: &str,

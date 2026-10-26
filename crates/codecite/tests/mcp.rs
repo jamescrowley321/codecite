@@ -166,14 +166,14 @@ fn mcp_answers_on_stdout_and_logs_on_stderr() {
     let tools = list["result"]["tools"].as_array().unwrap();
     let mut names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     names.sort_unstable();
-    assert_eq!(names, ["corpora", "read", "search"], "{list}");
+    assert_eq!(names, ["corpora", "grep", "read", "search"], "{list}");
     for tool in tools {
         assert_eq!(tool["inputSchema"]["type"], "object", "{tool}");
     }
 
     // Each tool's text is what the CLI prints for the same query, byte for
-    // byte: corpora, a search, a read of code and of a spec, and an empty
-    // search.
+    // byte: corpora, a search, greps, a read of code and of a spec, and an
+    // empty search.
     let cases = [
         ("corpora", json!({}), vec!["corpora"]),
         (
@@ -190,6 +190,18 @@ fn mcp_answers_on_stdout_and_logs_on_stderr() {
             "search",
             json!({"query": "zzzz"}),
             vec!["search", "demo", "zzzz", "--json"],
+        ),
+        (
+            "grep",
+            json!({"pattern": "valid", "limit": 2}),
+            vec!["grep", "demo", "valid", "--limit", "2", "--json"],
+        ),
+        (
+            "grep",
+            json!({"pattern": "MUST", "fixed": true, "only": "spec"}),
+            vec![
+                "grep", "demo", "MUST", "--fixed", "--only", "spec", "--json",
+            ],
         ),
         (
             "read",
