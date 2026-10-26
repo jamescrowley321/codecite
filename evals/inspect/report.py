@@ -19,6 +19,7 @@ a quick loss means run the full tier.
 
 import argparse
 import random
+import sys
 from collections import defaultdict
 from pathlib import Path
 from statistics import median
@@ -39,6 +40,8 @@ def logs(args, tier=None):
         logs_dir = Path(__file__).with_name("logs")
         args = [str(logs_dir / tier if tier else logs_dir)]
     for a in args:
+        if not Path(a).exists():
+            sys.exit(f"no logs at {a}")
         if not Path(a).is_dir():
             yield read_eval_log(a)
             continue
