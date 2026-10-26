@@ -57,6 +57,10 @@ class AgainstIndex(unittest.TestCase):
             ],
         )
 
+    def test_a_malformed_question_is_left_to_check_set(self):
+        qs = [{"id": "q", "accepted": ["rfc6749#section-9.9"]}, question("Is it?", "rfc6749#section-9.9")]
+        self.assertEqual(check.check_against_index(qs, FOUND), [])
+
     def test_a_step_of_an_accepted_section_counts(self):
         q = question("Is it?", ["rfc6749#section-3.2.1/step-2"])
         self.assertEqual(check.check_against_index([q], FOUND), [])
@@ -87,6 +91,19 @@ class Set(unittest.TestCase):
         qs = spread(24)
         qs[0]["answer"] = ["it must reject it"]
         self.assertEqual(check.check_set(qs, QUERIES, DOCUMENTS), ["q0: answer `it must reject it` is not closed-form"])
+
+    def test_a_missing_field_fails_without_a_crash(self):
+        qs = spread(24)
+        del qs[0]["text"]
+        self.assertIn("q0: missing text", check.check_set(qs, QUERIES, DOCUMENTS))
+
+    def test_accepted_that_is_not_a_list_of_sections_fails(self):
+        for accepted in ("doc0#section-1", [1], [], 7):
+            qs = spread(24)
+            qs[0]["accepted"] = accepted
+            self.assertIn(
+                "q0: accepted must be a non-empty list of sections", check.check_set(qs, QUERIES, DOCUMENTS)
+            )
 
     def test_more_than_half_adapted_fails(self):
         qs = spread(24)

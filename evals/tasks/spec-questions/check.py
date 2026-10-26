@@ -79,6 +79,20 @@ def default_db():
     return Path(data) / "codecite" / f"{CORPUS}.db"
 
 
+def malformed(q):
+    """Why a question can't be checked at all, or None: a missing field, or a
+    field of the wrong type."""
+    missing = FIELDS - q.keys()
+    if missing:
+        return f"missing {', '.join(sorted(missing))}"
+    if not all(isinstance(q[f], str) for f in ("id", "text", "source")):
+        return "id, text and source must be strings"
+    accepted = q["accepted"]
+    if not (isinstance(accepted, list) and accepted and all(isinstance(a, str) for a in accepted)):
+        return "accepted must be a non-empty list of sections"
+    return None
+
+
 def load(path):
     with open(path, "rb") as f:
         return tomllib.load(f)
@@ -98,11 +112,11 @@ def check_set(questions, queries, documents):
     per_document = Counter()
     for q in questions:
         qid = q.get("id", "?")
-        missing = FIELDS - q.keys()
-        extra = q.keys() - FIELDS - OPTIONAL_FIELDS
-        if missing:
-            failures.append(f"{qid}: missing {', '.join(sorted(missing))}")
+        problem = malformed(q)
+        if problem:
+            failures.append(f"{qid}: {problem}")
             continue
+        extra = q.keys() - FIELDS - OPTIONAL_FIELDS
         if extra:
             failures.append(f"{qid}: unknown field {', '.join(sorted(extra))}")
 
@@ -123,8 +137,6 @@ def check_set(questions, queries, documents):
                 failures.append(f"{qid}: accepted `{label}` names a document not in identity-bench.toml")
             else:
                 docs.add(m["doc"])
-        if not q["accepted"]:
-            failures.append(f"{qid}: no accepted section")
         per_document.update(docs)
 
         origin = q.get("adapted_from")
@@ -180,6 +192,8 @@ def check_against_index(questions, found):
     rare_below = RARE_SHARE * len(found)
 
     for q in questions:
+        if malformed(q):
+            continue  # check_set reports it
         asked = words(q["text"]) - ALLOWED - PLAIN
         for label in q["accepted"]:
             m = ACCEPTED.match(label)
