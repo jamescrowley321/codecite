@@ -1,0 +1,266 @@
+# Spec questions for the spec-question task (#104), asked the way an agent asks
+# them: in its own words, not the spec's. `check.py` holds the rules.
+#
+# Each question has:
+# - `text`: the question as the agent gets it;
+# - `answer`: the closed-form answer, `yes`/`no` or one name or value, with
+#   every form the spec allows (any one of them is right);
+# - `accepted`: the sections that support the answer, written as in
+#   evals/retrieval/queries.toml, a step in an accepted section counting;
+# - `source`: the real task the question comes from;
+# - `adapted_from`: for a question adapted from queries.toml, that query's id.
+#
+# This file holds the answers. It never goes into the sandbox image: the agent
+# gets only `text`, and the scorer reads the rest after the agent exits.
+# A new question that also works as a retrieval query is in queries.toml too,
+# under the same id.
+
+[[question]]
+id = "spec-plain-echoed-login-value-checked"
+text = "If my app put a random one-off value in the sign-in request, must it confirm the identity blob it gets back carries that same value?"
+answer = ["yes"]
+accepted = ["openid-connect-core-1_0#section-3.1.3.7"]
+source = "OIDC client: ID token validation"
+adapted_from = "spec-req-nonce-check-mandatory"
+
+[[question]]
+id = "spec-plain-wrong-login-secret-error"
+text = "Which error does the provider return when the secret my app shows while redeeming a login code doesn't fit the hash it sent at the start?"
+answer = ["invalid_grant"]
+accepted = ["rfc7636#section-4.6"]
+source = "authorization server: token endpoint PKCE check"
+adapted_from = "spec-req-pkce-verifier-mismatch"
+
+[[question]]
+id = "spec-plain-cancel-credential-prove-identity"
+text = "Does an app that has its own secret need to prove who it is when asking the provider to cancel a credential?"
+answer = ["yes"]
+accepted = ["rfc7009#section-2.1"]
+source = "revocation client"
+adapted_from = "spec-req-revocation-client-auth"
+
+[[question]]
+id = "spec-plain-unknown-must-understand-extension"
+text = "If a signed object's header lists an extension as must-understand and my verifier doesn't know it, may my code still treat the signature as valid?"
+answer = ["no"]
+accepted = ["rfc7515#section-4.1.11"]
+source = "JWS verification: header processing"
+adapted_from = "spec-req-jws-crit-header"
+
+[[question]]
+id = "spec-plain-backend-app-one-off-secret"
+text = "Is a backend web app that keeps its own secret still advised to bind each sign-in to a one-off secret it reveals only when redeeming the code?"
+answer = ["yes"]
+accepted = ["rfc9700#section-2.1.1"]
+source = "OAuth client: deciding when to send PKCE"
+adapted_from = "spec-req-pkce-confidential-clients"
+
+[[question]]
+id = "spec-plain-anonymous-liveness-check"
+text = "May any anonymous caller ask the provider whether a credential is still live?"
+answer = ["no"]
+accepted = ["rfc7662#section-2.1"]
+source = "introspection client: credentials for the call"
+adapted_from = "spec-req-introspection-caller-auth"
+
+[[question]]
+id = "spec-plain-throwaway-secret-shortest"
+text = "At the least, how long is the throwaway secret an app makes up before each sign-in?"
+answer = ["43"]
+accepted = ["rfc7636#section-4.1"]
+source = "PKCE: generating the verifier"
+adapted_from = "spec-plain-throwaway-secret-length"
+
+[[question]]
+id = "spec-plain-turn-away-header"
+text = "Which response header must my API include when it turns away a call that arrived with no credential?"
+answer = ["WWW-Authenticate"]
+accepted = ["rfc6750#section-3"]
+source = "resource server middleware: rejecting requests"
+adapted_from = "spec-plain-reply-to-missing-credential"
+
+[[question]]
+id = "spec-plain-gadget-default-wait"
+text = "If the provider never said how often a living-room gadget may re-check, how many seconds must it pause between checks?"
+answer = ["5"]
+accepted = ["rfc8628#section-3.5", "rfc8628#section-3.2"]
+source = "device flow: polling interval"
+adapted_from = "spec-plain-gadget-recheck-frequency"
+
+[[question]]
+id = "spec-plain-not-meant-for-my-service"
+text = "If my service isn't named as one of the parties a signed claims set is meant for, must it refuse the set?"
+answer = ["yes"]
+accepted = ["rfc7519#section-4.1.3"]
+source = "JWT validation library"
+adapted_from = "spec-req-aud-claim-validation"
+
+[[question]]
+id = "spec-plain-keep-working-scope"
+text = "Which scope value do I ask for so my app can keep working for someone after they've closed the browser?"
+answer = ["offline_access"]
+accepted = ["openid-connect-core-1_0#section-11"]
+source = "OIDC client: requesting refresh tokens"
+adapted_from = "spec-plain-keep-working-after-browser-closed"
+
+[[question]]
+id = "spec-plain-settings-name-matches-base"
+text = "Must the provider name inside its fetched settings document be exactly the base address I built the fetch URL from?"
+answer = ["yes"]
+accepted = ["openid-connect-discovery-1_0#section-4.3", "rfc8414#section-3.3"]
+source = "discovery client: metadata validation"
+adapted_from = "spec-req-discovery-issuer-match"
+
+[[question]]
+id = "spec-plain-app-sign-in-fails-error"
+text = "Which error does the token endpoint return when an app's own sign-in to it fails, say with a wrong secret?"
+answer = ["invalid_client"]
+accepted = ["rfc6749#section-5.2"]
+source = "token client: mapping token endpoint error codes to exceptions"
+
+[[question]]
+id = "spec-plain-login-code-lifetime"
+text = "At most how many minutes should a one-time login code stay redeemable?"
+answer = ["10"]
+accepted = ["rfc6749#section-4.1.2"]
+source = "authorization server: issuing and redeeming authorization codes"
+
+[[question]]
+id = "spec-plain-login-code-second-use"
+text = "May my app redeem the same one-time login code twice?"
+answer = ["no"]
+accepted = ["rfc6749#section-4.1.2", "rfc6749#section-10.5"]
+source = "OAuth client: retrying a failed code exchange"
+
+[[question]]
+id = "spec-plain-not-enough-permission-status"
+text = "What HTTP status should my API send when the credential is fine but doesn't carry enough permission for this call?"
+answer = ["403"]
+accepted = ["rfc6750#section-3.1"]
+source = "resource server middleware: rejecting requests"
+
+[[question]]
+id = "spec-plain-derive-what-is-sent-up-front"
+text = "If an app is able to hash, which method must it use to derive what it sends up front from its per-login secret?"
+answer = ["S256"]
+accepted = ["rfc7636#section-4.2"]
+source = "PKCE: building the authorization request"
+
+[[question]]
+id = "spec-plain-cancel-unknown-credential-status"
+text = "What HTTP status does the provider return when asked to cancel a credential it doesn't recognise?"
+answer = ["200"]
+accepted = ["rfc7009#section-2.2"]
+source = "OAuth client: token revocation on logout"
+
+[[question]]
+id = "spec-plain-liveness-reply-field"
+text = "When my API asks the provider whether a credential is still live, which field of the reply is always present?"
+answer = ["active"]
+accepted = ["rfc7662#section-2.2"]
+source = "resource server: token introspection"
+
+[[question]]
+id = "spec-plain-no-good-after-field"
+text = "Which registered field marks the moment after which a signed claims set is no good?"
+answer = ["exp"]
+accepted = ["rfc7519#section-4.1.4"]
+source = "JWT validation library"
+
+[[question]]
+id = "spec-plain-spot-resent-claims-set"
+text = "Which field lets a server spot that someone is sending the same signed claims set again?"
+answer = ["jti"]
+accepted = ["rfc7519#section-4.1.7"]
+source = "client authentication: private_key_jwt assertions"
+
+[[question]]
+id = "spec-plain-never-show-screen"
+text = "What do I put in the sign-in request so the provider never shows the person a screen and fails instead?"
+answer = ["none", "prompt=none"]
+accepted = ["openid-connect-core-1_0#section-3.1.2.1"]
+source = "OIDC client: silent re-auth"
+
+[[question]]
+id = "spec-plain-background-sign-in-needs-password"
+text = "My background sign-in can't finish because the person must type their password again. What error comes back?"
+answer = ["login_required"]
+accepted = ["openid-connect-core-1_0#section-3.1.2.6", "openid-connect-core-1_0#section-3.1.2.1"]
+source = "OIDC client: silent re-auth"
+
+[[question]]
+id = "spec-plain-settings-document-path"
+text = "Given the base address of a provider, where under it do I fetch its settings document?"
+answer = ["/.well-known/openid-configuration"]
+accepted = ["openid-connect-discovery-1_0#section-4", "openid-connect-discovery-1_0#section-4.1"]
+source = "discovery client"
+
+[[question]]
+id = "spec-plain-gadget-still-waiting-error"
+text = "Which error does a living-room gadget get while the person still hasn't finished approving on their phone?"
+answer = ["authorization_pending"]
+accepted = ["rfc8628#section-3.5"]
+source = "device flow: polling the token endpoint"
+
+[[question]]
+id = "spec-plain-gadget-too-eager-error"
+text = "Which error tells a living-room gadget that it is asking for its result too often?"
+answer = ["slow_down"]
+accepted = ["rfc8628#section-3.5"]
+source = "device flow: polling interval"
+
+[[question]]
+id = "spec-plain-key-bound-scheme"
+text = "When a caller proves it holds the key its token is tied to, which word replaces Bearer at the start of the Authorization header?"
+answer = ["DPoP"]
+accepted = ["rfc9449#section-7.1"]
+source = "resource server: checking a DPoP-bound JWT access token"
+
+[[question]]
+id = "spec-plain-sign-out-message-one-off-value"
+text = "When someone logs off, may the message the provider posts to my backend carry the one-off random value from their login?"
+answer = ["no"]
+accepted = ["openid-connect-backchannel-1_0#section-2.4", "openid-connect-backchannel-1_0#section-2.6"]
+source = "RP: back-channel logout receiver"
+
+[[question]]
+id = "spec-plain-sign-out-message-marker"
+text = "Which claim tells my backend that a server-to-server message from the provider means the person has gone?"
+answer = ["events"]
+accepted = ["openid-connect-backchannel-1_0#section-2.4", "openid-connect-backchannel-1_0#section-2.6"]
+source = "RP: back-channel logout receiver"
+
+[[question]]
+id = "spec-plain-unsigned-claims-set"
+text = "Should my verifier take a claims set whose header says it carries no signature at all, when my app never opted in to that?"
+answer = ["no"]
+accepted = ["rfc7518#section-3.6"]
+source = "JWT validation library: algorithm allow-list"
+
+[[question]]
+id = "spec-plain-high-security-code-lifetime"
+text = "Under the high-security profile, for how many seconds at most may a login code be redeemable?"
+answer = ["60"]
+accepted = ["fapi-security-profile-2_0#section-5.3.2.1"]
+source = "FAPI authorization server: code lifetime"
+
+[[question]]
+id = "spec-plain-high-security-browser-parameters"
+text = "Under the high-security profile, may the app send its login parameters through the browser without first handing them over behind the scenes?"
+answer = ["no"]
+accepted = ["fapi-security-profile-2_0#section-5.3.2.2"]
+source = "FAPI client: pushed authorization requests"
+
+[[question]]
+id = "spec-plain-self-registration-bad-return-address"
+text = "Which error comes back when my app registers itself on the fly and one of its return addresses is refused?"
+answer = ["invalid_redirect_uri"]
+accepted = ["rfc7591#section-3.2.2"]
+source = "dynamic registration client: handling rejections"
+
+[[question]]
+id = "spec-plain-self-registration-assigned-id"
+text = "When my app registers itself on the fly, which response field holds the identifier the provider assigned?"
+answer = ["client_id"]
+accepted = ["rfc7591#section-3.2.1"]
+source = "dynamic registration client: storing the registration"

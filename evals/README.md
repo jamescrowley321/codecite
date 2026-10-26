@@ -21,6 +21,7 @@ Evaluation plan):
 | `inspect/panel.sh` | Run every model in the panel, one at a time, then the report |
 | `inspect/report.py` | The scorecard: per model, both arms and the no-loss verdict |
 | `tasks/<id>/` | A task: `task.json`, `prompt.md`, starting `project/`, `hidden/` tests, `checks.py`, `reference/`, and `check.sh`/`planted.sh` to prove the task and checks are sound |
+| `tasks/spec-questions/` | Labelled spec questions with closed answers for the spec-question task, and `check.py` to check them against the index |
 | `fixtures/node-oidc/` | The IdP the hidden tests take tokens from |
 | `retrieval/` | The retrieval benchmark's queries and corpus manifest |
 
