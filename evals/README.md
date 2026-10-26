@@ -24,6 +24,40 @@ Evaluation plan):
 | `fixtures/node-oidc/` | The IdP the hidden tests take tokens from |
 | `retrieval/` | The retrieval benchmark's queries and corpus manifest |
 
+## Tasks
+
+- **`fastapi-middleware`:** protect a small FastAPI app with identity-model's
+  `TokenValidationMiddleware`. The prompt names the package and the classes to
+  use; hidden tests take real tokens from the IdP (`fixtures/node-oidc/`).
+- **`backchannel-logout`:** a relying-party app's hand-rolled
+  `POST /backchannel-logout` checks only a logout token's signature and
+  audience. The prompt says only that the endpoint accepts tokens it should
+  reject and must conform to the spec it implements; it names no
+  identity-model symbol and no spec section. An agent can find identity-model's
+  logout-token validation and call it, or find Back-Channel Logout 1.0 §2.6
+  and implement it; both pass. The corpus is all of identity-model plus the
+  spec documents of `retrieval/identity-bench.toml`, at their pinned commit
+  and `sha256`. Hidden tests mint logout tokens with a test key and serve
+  discovery and JWKS from a stub in their conftest, so the task needs no IdP:
+  a valid token (with `sub` and `sid`, `sid` only, `sub` only) ends the
+  session, and a bad signature, wrong `iss` or `aud`, a `nonce`, a missing or
+  malformed `events`, neither `sub` nor `sid`, or a missing `iat` or `jti` is
+  rejected with 400 and leaves the session alone. `checks.py` fails a new
+  dependency, a change outside `app/` other than docs and the agent's own test
+  modules, and a provider URL written into `app/`. Its `reference/` holds a
+  solution that calls identity-model and a hand-written one.
+
+Each task's `check.sh` proves it is well-formed; `backchannel-logout`'s needs
+only uv and an identity-model checkout, and CI runs it (`eval-task`):
+
+```
+IDENTITY_MODEL_REPO=~/repos/auth/identity-model evals/tasks/backchannel-logout/check.sh
+```
+
+The harness (`inspect/task.py`, `inspect/prepare.sh`) runs
+`fastapi-middleware`; choosing the task, and adding a task's spec documents to
+the sandbox corpus, come with #127.
+
 ## Running the A/B eval
 
 Needs Docker, [uv](https://docs.astral.sh/uv/), a release build of codecite
