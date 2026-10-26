@@ -21,8 +21,31 @@ Evaluation plan):
 | `inspect/panel.sh` | Run every model in the panel, one at a time, then the report |
 | `inspect/report.py` | The scorecard: per model, both arms and the no-loss verdict |
 | `tasks/<id>/` | A task: `task.json`, `prompt.md`, starting `project/`, `hidden/` tests, `checks.py`, `reference/`, and `check.sh`/`planted.sh` to prove the task and checks are sound |
-| `fixtures/node-oidc/` | The IdP the hidden tests take tokens from |
+| `fixtures/node-oidc/` | The IdP the fastapi-middleware hidden tests take tokens from |
 | `retrieval/` | The retrieval benchmark's queries and corpus manifest |
+
+## Tasks
+
+- **`fastapi-middleware`**: protect a FastAPI app with identity-model's
+  `TokenValidationMiddleware` and `CurrentUser`. The hidden tests take real
+  tokens from node-oidc-provider. The corpus is identity-model. The prompt
+  names the symbols, so it tests little search.
+- **`client-auth-uri`**: a FastAPI service's hand-rolled token endpoint takes
+  client credentials from HTTP Basic, the form body and the query string. The
+  prompt says only that a security review flagged it: fix what the OAuth spec
+  forbids, keep what it allows, and cite the section in a comment. The answer
+  is RFC 6749 §2.3.1: credentials MUST NOT be in the request URI, HTTP Basic
+  MUST be supported, and the form body is allowed. The hidden tests reject
+  query-string credentials with `invalid_client` (§5.2), even valid ones, and
+  still issue tokens over Basic and the form body; an agent that removes too
+  much fails. `checks.py` passes only when a comment or docstring in `app/`
+  cites §2.3.1 of RFC 6749 (`rfc6749#section-2.3.1`, `RFC 6749 §2.3.1` or
+  `Section 2.3.1 of RFC 6749`). The corpus is identity-model plus the spec
+  documents of `retrieval/identity-bench.toml` (`task.json`'s
+  `corpus.documents`). It needs no IdP, so `planted.sh` runs the hidden tests
+  itself, and `check.sh` just runs it.
+
+`inspect/task.py` and `inspect/prepare.sh` run `fastapi-middleware` only.
 
 ## Running the A/B eval
 
