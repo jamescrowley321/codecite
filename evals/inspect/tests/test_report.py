@@ -82,8 +82,17 @@ def test_separate_columns(tmp_path, capsys):
 
 def test_sandbox_errors_are_listed(tmp_path, capsys):
     out = scorecard(tmp_path, capsys)
-    assert "- m2, codecite, epoch 3: ConnectionResetError: connection lost" in out
-    assert "- m2, codecite, epoch 4: RuntimeError: container killed" in out
+    assert "- m2, codecite, epoch 3: `ConnectionResetError: connection lost`" in out
+    assert "- m2, codecite, epoch 4: `RuntimeError: container killed`" in out
+
+
+def test_listed_errors_are_short_and_fenced(tmp_path, capsys):
+    long = "RuntimeError: `docker` said\n" + "x" * 1000
+    write_log(tmp_path / "m.eval", "openrouter/m", [sample("baseline", 1, stopped="sandbox_error", error=long)])
+    report.main([str(tmp_path)])
+    (line,) = [line for line in capsys.readouterr().out.splitlines() if line.startswith("- ")]
+    assert line.startswith("- m, baseline, epoch 1: `RuntimeError: 'docker' said xxx")
+    assert line.endswith("…`") and len(line) < 300
 
 
 def test_columns_and_list_add_up_to_the_failures(tmp_path, capsys):

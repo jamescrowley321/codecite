@@ -21,8 +21,11 @@ label and the report change.
      them.
 2. **`task.py`:** catch `TimeoutError` apart from other exceptions and store
    `stopped` (`agent_timeout` or `sandbox_error`) and, for a sandbox error,
-   `sandbox_error` (`Type: message`). The scorer copies both into the score's
-   metadata and its explanation; a stopped agent still can't pass.
+   `sandbox_error` (`Type: message`). pi's output overflowing the stream
+   limit (`OutputLimitExceededError`) or failing to decode is the agent's
+   doing, so it gets `agent_output` instead and counts as a plain failure.
+   The scorer copies the reason and the error into the score's metadata and
+   its explanation; a stopped agent still can't pass.
 3. **`report.py`:** read `stopped` (falling back to the old `timed_out` flag
    as `agent_timeout`, since older logs can't tell the two apart). Add
    `fails`, `timeouts` and `sandbox errors` columns, list each sandbox error

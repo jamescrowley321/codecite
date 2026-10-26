@@ -15,7 +15,7 @@ from inspect_ai.agent import Agent, AgentState, agent, sandbox_agent_bridge
 from inspect_ai.dataset import Sample
 from inspect_ai.scorer import Score, Target, accuracy, scorer, stderr
 from inspect_ai.solver import Generate, TaskState, solver
-from inspect_ai.util import sandbox, store
+from inspect_ai.util import OutputLimitExceededError, sandbox, store
 
 TASK = Path(__file__).resolve().parent.parent / "tasks" / "fastapi-middleware"
 PROJECT = "/work/project"
@@ -77,6 +77,11 @@ def pi() -> Agent:
                 # whatever it left behind. Erroring would retry the sample and
                 # keep only the runs fast enough to finish.
                 store().set("stopped", "agent_timeout")
+                return bridge.state
+            except (OutputLimitExceededError, UnicodeDecodeError):
+                # pi's output overflowing the stream limit or failing to
+                # decode is the agent's doing too, not the sandbox's.
+                store().set("stopped", "agent_output")
                 return bridge.state
             except Exception as e:
                 # A sandbox failure (connection loss, process kill) is scored
@@ -150,7 +155,11 @@ def hidden_tests_and_checks():
         failed = [c["name"] for c in results if not c["passed"]] if results else ["checks-crashed"]
         stopped, sandbox_error = store().get("stopped"), store().get("sandbox_error")
         passed = tests_passed and not failed and not stopped
-        why = {"agent_timeout": "agent timed out; ", "sandbox_error": f"sandbox failed ({sandbox_error}); "}.get(stopped, "")
+        why = {
+            "agent_timeout": "agent timed out; ",
+            "agent_output": "agent's output overflowed or didn't decode; ",
+            "sandbox_error": f"sandbox failed ({sandbox_error}); ",
+        }.get(stopped, "")
         return Score(
             value=1 if passed else 0,
             explanation=f"{why}hidden tests {'passed' if tests_passed else 'failed'}; failed checks: {', '.join(failed) or 'none'}",

@@ -12,7 +12,8 @@ planned runs in either arm is incomplete, not a pass.
 Timeouts and sandbox errors both count as failures. They get columns of
 their own, each sandbox error is listed under the table, and a model with
 any has them named in its verdict, so a loss or pass they helped make doesn't
-read as clean.
+read as clean. An agent whose own output overflowed or didn't decode is a
+plain failure, in neither column.
 
     uv run python inspect/report.py [LOG_DIR_OR_FILES...]   (default: inspect/logs)
 
@@ -70,9 +71,16 @@ def median_ratio(code, base):
 
 
 def stopped(metadata):
-    """Why the agent stopped: agent_timeout, sandbox_error or None. Logs from
+    """Why the agent stopped: agent_timeout, agent_output, sandbox_error or None. Logs from
     before the two were told apart only carry timed_out, which meant either."""
     return metadata.get("stopped") or ("agent_timeout" if metadata.get("timed_out") else None)
+
+
+def listed(error, limit=200):
+    """An error on one line, short and fenced: the scorecard is posted where
+    agents read it, and the text can carry whatever the sandbox printed."""
+    text = " ".join(error.split()).replace("`", "'")
+    return f"`{text[:limit]}…`" if len(text) > limit else f"`{text}`"
 
 
 def main(args):
@@ -123,7 +131,7 @@ def main(args):
     if errors:
         print("\nSandbox errors (scored as failures):\n")
         for model, arm, epoch, error in sorted(errors, key=lambda e: e[:3]):
-            print(f"- {model.removeprefix('openrouter/')}, {arm}, epoch {epoch}: {' '.join(error.split())}")
+            print(f"- {model.removeprefix('openrouter/')}, {arm}, epoch {epoch}: {listed(error)}")
 
 
 if __name__ == "__main__":

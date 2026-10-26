@@ -78,7 +78,8 @@ subnetted" and take the model's whole run with them (#111).
   it left behind is scored, but the sample can't pass. The scorecard counts
   the two apart: `timeouts` for the agent running out of time, `sandbox
   errors` for the sandbox failing under it, each listed under the table with
-  its model, arm and epoch and named in that model's verdict. Hidden tests or
-  checks that hang fail too. A provider error that pi reports is infrastructure: the
-  sample errors and Inspect retries it (`--retry-on-error 2`); errored samples
+  its model, arm and epoch and named in that model's verdict. pi's output
+  overflowing Inspect's stream limit or failing to decode is the agent's
+  failure, in neither column. Hidden tests or checks that hang fail too. A
+  provider error that pi reports is infrastructure: the sample errors and Inspect retries it (`--retry-on-error 2`); errored samples
   are never scored.
