@@ -105,6 +105,14 @@ class Set(unittest.TestCase):
                 "q0: accepted must be a non-empty list of sections", check.check_set(qs, QUERIES, DOCUMENTS)
             )
 
+    def test_a_field_of_the_wrong_type_fails_without_a_crash(self):
+        for field, value in (("id", ["q0"]), ("adapted_from", ["spec-plain-old"]), ("text", 1)):
+            qs = spread(24)
+            qs[0][field] = value
+            self.assertTrue(
+                any("must be a string" in f for f in check.check_set(qs, QUERIES, DOCUMENTS)), f"{field} = {value!r}"
+            )
+
     def test_more_than_half_adapted_fails(self):
         qs = spread(24)
         for q in qs[:13]:

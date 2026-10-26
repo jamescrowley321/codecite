@@ -37,6 +37,7 @@ MIN_DOCUMENTS = 6
 ADAPTED_CLASSES = {"spec-plain", "spec-requirement"}
 FIELDS = {"id", "text", "answer", "accepted", "source"}
 OPTIONAL_FIELDS = {"adapted_from"}
+STRING_FIELDS = {"id", "text", "source", "adapted_from"}
 
 # `yes`/`no`, or one name or value: a parameter, claim, error, header, scheme,
 # path or number. No spaces, so no free text.
@@ -85,8 +86,9 @@ def malformed(q):
     missing = FIELDS - q.keys()
     if missing:
         return f"missing {', '.join(sorted(missing))}"
-    if not all(isinstance(q[f], str) for f in ("id", "text", "source")):
-        return "id, text and source must be strings"
+    wrong = sorted(f for f in STRING_FIELDS if f in q and not isinstance(q[f], str))
+    if wrong:
+        return f"{', '.join(wrong)} must be a string"
     accepted = q["accepted"]
     if not (isinstance(accepted, list) and accepted and all(isinstance(a, str) for a in accepted)):
         return "accepted must be a non-empty list of sections"
@@ -104,14 +106,14 @@ def check_set(questions, queries, documents):
     if len(questions) < MIN_QUESTIONS:
         failures.append(f"{len(questions)} questions; want at least {MIN_QUESTIONS}")
 
-    ids = Counter(q.get("id") for q in questions)
+    ids = Counter(q["id"] for q in questions if isinstance(q.get("id"), str))
     failures += [f"{i}: id used {n} times" for i, n in ids.items() if n > 1]
 
     by_id = {q["id"]: q for q in queries}
     new = 0
     per_document = Counter()
     for q in questions:
-        qid = q.get("id", "?")
+        qid = q["id"] if isinstance(q.get("id"), str) else "?"
         problem = malformed(q)
         if problem:
             failures.append(f"{qid}: {problem}")
@@ -148,7 +150,7 @@ def check_set(questions, queries, documents):
                 failures.append(f"{qid}: differs from the query of the same id in queries.toml")
         elif origin not in by_id:
             failures.append(f"{qid}: adapted_from `{origin}` is not in queries.toml")
-        elif by_id[origin]["class"] not in ADAPTED_CLASSES:
+        elif by_id[origin].get("class") not in ADAPTED_CLASSES:
             failures.append(f"{qid}: adapted_from `{origin}` is not a spec-plain or spec-requirement query")
 
     if 2 * new < len(questions):
@@ -178,7 +180,7 @@ def sections(db):
     for doc, number, text, step in rows:
         entry = found.setdefault((doc, number), {"text": text, "steps": set()})
         if step is not None:
-            entry["steps"].add(step)
+            entry["steps"].add(str(step))
     con.close()
     return found
 
