@@ -20,6 +20,7 @@ Evaluation plan):
 | `inspect/pi-models.json` | Points pi at Inspect's agent bridge |
 | `inspect/panel.sh` | Run every model in the panel, one at a time, then the report |
 | `inspect/report.py` | The scorecard: per model, both arms and the no-loss verdict |
+| `inspect/tests/` | Unit tests for the task's agent and the scorecard; no model key or Docker needed |
 | `tasks/<id>/` | A task: `task.json`, `prompt.md`, starting `project/`, `hidden/` tests, `checks.py`, `reference/`, and `check.sh`/`planted.sh` to prove the task and checks are sound |
 | `fixtures/node-oidc/` | The IdP the hidden tests take tokens from |
 | `retrieval/` | The retrieval benchmark's queries and corpus manifest |
@@ -41,6 +42,9 @@ uv run --locked inspect eval inspect/task.py --model openrouter/anthropic/claude
 inspect/panel.sh                     # the whole panel, EPOCHS=10 by default
 uv run --locked python inspect/report.py
 ```
+
+The unit tests in `inspect/tests/` run offline:
+`uv run --locked --with pytest==9.1.1 pytest inspect/tests`.
 
 Logs land in `inspect/logs/` (gitignored); `uv run --locked inspect view`
 browses them. Being ignored, they go with the worktree: copy them out before
@@ -71,7 +75,10 @@ subnetted" and take the model's whole run with them (#111).
 - The hidden tests and checks reach the sandbox only after the agent exits. A
   sample passes when the hidden tests and every check pass.
 - An agent that runs past 600 s, or whose sandbox fails mid-run, fails: what
-  it left behind is scored, but the sample can't pass. Hidden tests or checks
-  that hang fail too. A provider error that pi reports is infrastructure: the
+  it left behind is scored, but the sample can't pass. The scorecard counts
+  the two apart: `timeouts` for the agent running out of time, `sandbox
+  errors` for the sandbox failing under it, each listed under the table with
+  its model, arm and epoch and named in that model's verdict. Hidden tests or
+  checks that hang fail too. A provider error that pi reports is infrastructure: the
   sample errors and Inspect retries it (`--retry-on-error 2`); errored samples
   are never scored.

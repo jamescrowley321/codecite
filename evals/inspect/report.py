@@ -9,6 +9,11 @@ at its favourable end: pass rate's upper bound more than 5 points below 0, or
 tokens' or time's lower bound more than 5% above 0. A model short of the
 planned runs in either arm is incomplete, not a pass.
 
+Timeouts and sandbox errors both count as failures. They get columns of
+their own, each sandbox error is listed under the table, and a model with
+any has them named in its verdict, so a loss or pass they helped make doesn't
+read as clean.
+
     uv run python inspect/report.py [LOG_DIR_OR_FILES...]   (default: inspect/logs)
 
 Given a directory, it reads one log per model: the newest finished one, else
@@ -64,22 +69,32 @@ def median_ratio(code, base):
     return median(code) / m - 1
 
 
-def main():
-    runs = defaultdict(list)  # (model, arm) -> [(passed, tokens, seconds, timed_out)]
+def stopped(metadata):
+    """Why the agent stopped: agent_timeout, sandbox_error or None. Logs from
+    before the two were told apart only carry timed_out, which meant either."""
+    return metadata.get("stopped") or ("agent_timeout" if metadata.get("timed_out") else None)
+
+
+def main(args):
+    runs = defaultdict(list)  # (model, arm) -> [(passed, tokens, seconds, stopped)]
+    errors = []  # (model, arm, epoch, sandbox error)
     planned = {}
-    for log in logs(sys.argv[1:]):
+    for log in logs(args):
         planned[log.eval.model] = log.eval.config.epochs or 1
         for s in log.samples or []:
             if s.error or not s.scores:
                 continue
             score = next(iter(s.scores.values()))
             tokens = sum(u.total_tokens or 0 for u in (s.model_usage or {}).values())
-            timed_out = bool((score.metadata or {}).get("timed_out"))
-            runs[(log.eval.model, s.metadata["arm"])].append((score.value == 1, tokens, s.total_time or 0.0, timed_out))
+            metadata = score.metadata or {}
+            why = stopped(metadata)
+            runs[(log.eval.model, s.metadata["arm"])].append((score.value == 1, tokens, s.total_time or 0.0, why))
+            if why == "sandbox_error":
+                errors.append((log.eval.model, s.metadata["arm"], s.epoch, metadata.get("sandbox_error") or "unknown error"))
 
     rng = random.Random(SEED)
-    print("| model | arm | runs | pass | timeouts | median tokens | median time | verdict |")
-    print("|---|---|---|---|---|---|---|---|")
+    print("| model | arm | runs | pass | fails | timeouts | sandbox errors | median tokens | median time | verdict |")
+    print("|---|---|---|---|---|---|---|---|---|---|")
     for model in sorted(planned):
         base, code = runs.get((model, "baseline"), []), runs.get((model, "codecite"), [])
         if len(base) < planned[model] or len(code) < planned[model]:
@@ -92,16 +107,24 @@ def main():
             verdict = ("loses on " + ", ".join(losses) if losses else "no loss") + (
                 f" (pass {p[0]:+.0%}..{p[1]:+.0%}, tokens {t[0]:+.0%}..{t[1]:+.0%}, time {s[0]:+.0%}..{s[1]:+.0%})"
             )
+        crashed = [sum(x[3] == "sandbox_error" for x in r) for r in (base, code)]
+        if any(crashed):
+            verdict += f", with sandbox errors (baseline {crashed[0]}, codecite {crashed[1]})"
         for arm, r in (("baseline", base), ("codecite", code)):
             # An arm with no usable runs still gets a row, so the verdict
             # (incomplete) always shows.
             cells = (
-                f"{sum(x[0] for x in r) / len(r):.0%} | {sum(x[3] for x in r)} | {median(x[1] for x in r):,.0f} | {median(x[2] for x in r):.0f}s"
+                f"{sum(x[0] for x in r) / len(r):.0%} | {sum(not x[0] for x in r)} | {sum(x[3] == 'agent_timeout' for x in r)}"
+                f" | {sum(x[3] == 'sandbox_error' for x in r)} | {median(x[1] for x in r):,.0f} | {median(x[2] for x in r):.0f}s"
                 if r
-                else "- | - | - | -"
+                else "- | - | - | - | - | -"
             )
             print(f"| {model.removeprefix('openrouter/')} | {arm} | {len(r)} | {cells} | {verdict if arm == 'codecite' else ''} |")
+    if errors:
+        print("\nSandbox errors (scored as failures):\n")
+        for model, arm, epoch, error in sorted(errors, key=lambda e: e[:3]):
+            print(f"- {model.removeprefix('openrouter/')}, {arm}, epoch {epoch}: {' '.join(error.split())}")
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

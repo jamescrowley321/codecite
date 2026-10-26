@@ -72,13 +72,18 @@ def pi() -> Agent:
                     env={"PATH": path, "HOME": "/root"},
                     timeout=AGENT_TIMEOUT,
                 )
-            except Exception:
+            except TimeoutError:
                 # Running out of time is the agent's failure, not infra: score
                 # whatever it left behind. Erroring would retry the sample and
-                # keep only the runs fast enough to finish. Other sandbox
-                # failures (connection loss, process kill) are treated the same
-                # so transient failures do not bias results by retrying.
-                store().set("timed_out", True)
+                # keep only the runs fast enough to finish.
+                store().set("stopped", "agent_timeout")
+                return bridge.state
+            except Exception as e:
+                # A sandbox failure (connection loss, process kill) is scored
+                # the same way, so retrying doesn't keep only the runs that
+                # survive it, but labelled apart so the scorecard shows it.
+                store().set("stopped", "sandbox_error")
+                store().set("sandbox_error", f"{type(e).__name__}: {e}"[:2000])
                 return bridge.state
             if not result.success:
                 raise RuntimeError(f"pi exited {result.returncode}: {result.stderr[-2000:]}")
@@ -143,12 +148,13 @@ def hidden_tests_and_checks():
         except (TimeoutError, ValueError, KeyError, TypeError):
             results = []
         failed = [c["name"] for c in results if not c["passed"]] if results else ["checks-crashed"]
-        timed_out = store().get("timed_out", False)
-        passed = tests_passed and not failed and not timed_out
+        stopped, sandbox_error = store().get("stopped"), store().get("sandbox_error")
+        passed = tests_passed and not failed and not stopped
+        why = {"agent_timeout": "agent timed out; ", "sandbox_error": f"sandbox failed ({sandbox_error}); "}.get(stopped, "")
         return Score(
             value=1 if passed else 0,
-            explanation=f"{'agent timed out; ' if timed_out else ''}hidden tests {'passed' if tests_passed else 'failed'}; failed checks: {', '.join(failed) or 'none'}",
-            metadata={"timed_out": timed_out, "tests_passed": tests_passed, "tests_tail": tests_tail, "checks": results},
+            explanation=f"{why}hidden tests {'passed' if tests_passed else 'failed'}; failed checks: {', '.join(failed) or 'none'}",
+            metadata={"stopped": stopped, "sandbox_error": sandbox_error, "tests_passed": tests_passed, "tests_tail": tests_tail, "checks": results},
         )
 
     return score
