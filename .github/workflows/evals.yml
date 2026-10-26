@@ -53,8 +53,10 @@ jobs:
     env:
       TIER: ${{ inputs.tier || 'quick' }}
       # Each sandbox is one Docker network; the daemon below gets 256 of
-      # them. 20 sandboxes is what the runner's 4 vCPU and 16 GB carry.
-      MAX_SANDBOXES: "20"
+      # them. The runner's 4 vCPU set the limit: at 20 sandboxes, samples
+      # spent three quarters of their wall time waiting, which skews the
+      # time measure. 8 is Inspect's own default for 4 CPUs.
+      MAX_SANDBOXES: "8"
     outputs:
       scorecard: ${{ steps.scorecard.outputs.scorecard }}
     steps:

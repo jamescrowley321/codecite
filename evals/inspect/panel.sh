@@ -10,7 +10,10 @@
 # Every model runs in one Inspect process. Each sandbox creates its own Docker
 # network, so MAX_SANDBOXES must stay under the daemon's free address pools
 # (about 31 by default; 14 is safe). CI gives the daemon /24 pools and raises
-# it. RETRY=1 reruns only the missing samples of the tier's unfinished logs
+# it. Inspect also caps its own subprocesses and docker CLI calls at the CPU
+# count and twice it, and every sandbox exec takes one, so a sample past those
+# caps waits, and the wait lands in its wall time; both caps are raised to
+# twice MAX_SANDBOXES. RETRY=1 reruns only the missing samples of the tier's unfinished logs
 # (`inspect eval-retry`) instead of starting over. Extra arguments go to
 # `inspect eval` (CI passes --sandbox-prebuilt).
 set -euo pipefail
@@ -52,7 +55,9 @@ esac
 MAX_SANDBOXES="${MAX_SANDBOXES:-14}"
 LOG_DIR="inspect/logs/$TIER"
 mkdir -p "$LOG_DIR"
-LIMITS=(--max-tasks "${#PANEL[@]}" --max-samples 10 --max-sandboxes "$MAX_SANDBOXES" --retry-on-error 2)
+export INSPECT_DOCKER_CLI_CONCURRENCY="${INSPECT_DOCKER_CLI_CONCURRENCY:-$((2 * MAX_SANDBOXES))}"
+LIMITS=(--max-tasks "${#PANEL[@]}" --max-samples 10 --max-sandboxes "$MAX_SANDBOXES"
+  --max-subprocesses "$((2 * MAX_SANDBOXES))" --retry-on-error 2)
 
 start=$SECONDS
 status=0

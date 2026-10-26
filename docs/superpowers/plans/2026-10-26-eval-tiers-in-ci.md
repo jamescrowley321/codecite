@@ -19,8 +19,12 @@ Issue #111: run the A/B eval in GitHub Actions as a quick tier on PRs labelled
   bounding the live sandboxes, and with them the Docker networks.
 - **Network pools.** Locally `MAX_SANDBOXES` defaults to 14, under the
   default pools' ~31 networks. CI gives the daemon /24 pools out of
-  `10.200.0.0/16` (256 networks) and runs 20 sandboxes, what a 4 vCPU, 16 GB
-  runner carries.
+  `10.200.0.0/16` (256 networks) and runs 8 sandboxes, Inspect's default for
+  4 CPUs. The first CI run at 20 had samples finishing in waves, with ~314 s
+  of wall time against ~70 s of working time: Inspect caps its subprocesses
+  at the CPU count and docker CLI calls at twice it, and waiting on those
+  caps counts in wall time. `panel.sh` raises both caps to twice
+  `MAX_SANDBOXES`.
 - **Logs by tier:** `inspect/logs/quick/` and `inspect/logs/full/`.
   `report.py --tier` heads the scorecard with the tier; the quick heading says
   it is directional and that a loss means run the full tier. `panel.sh` writes

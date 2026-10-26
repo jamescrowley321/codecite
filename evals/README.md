@@ -88,7 +88,8 @@ takes an hour or more: run it detached from your shell (for example
 `systemd-run --user --unit=codecite-panel -p MemoryMax=16G inspect/panel.sh
 full`), since a killed run leaves its sandboxes behind and its log unfinished.
 `RETRY=1 inspect/panel.sh full` reruns only the unfinished logs' missing
-samples (`inspect eval-retry`). `EPOCHS` and `MAX_SANDBOXES` override a
+samples (`inspect eval-retry`). `panel.sh` raises Inspect's subprocess and docker CLI limits to twice
+`MAX_SANDBOXES`, so no sample waits on them. `EPOCHS` and `MAX_SANDBOXES` override a
 tier's defaults; arguments after the tier go to `inspect eval`.
 
 `panel.sh` runs every model of a tier in one Inspect process, so the slow
@@ -97,7 +98,10 @@ network, and Docker's default address pools hold about 31, so `MAX_SANDBOXES`
 defaults to 14; past the pools, sandbox starts fail with "all predefined
 address pools have been fully subnetted" and take the model's whole run with
 them (#111). CI gives the daemon /24 pools out of `10.200.0.0/16` (256
-networks) and runs 20 sandboxes at once. To do the same locally, add
+networks) and runs 8 sandboxes at once, Inspect's own default for the
+runner's 4 vCPU. Past what the CPUs carry, samples wait on one another, and
+the wait counts in their wall time: at 20 sandboxes the medians were ~314 s
+against ~70 s of working time. To do the same locally, add
 `"default-address-pools": [{"base": "10.200.0.0/16", "size": 24}]` to
 `/etc/docker/daemon.json` and restart Docker.
 
