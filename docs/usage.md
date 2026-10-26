@@ -175,7 +175,10 @@ $ codecite grep identity invalid_dpop_proof -i --only spec --limit 3
    invalid_dpop_proof
 ```
 
-An invalid regex is an error that says what is wrong with it.
+An invalid regex is an error that says what is wrong with it, and so is an
+empty pattern or one that holds a newline (`\n`), since each line is matched
+on its own. Appendices, whose sections have no canonical citation yet, are
+not grepped.
 
 ## Read
 

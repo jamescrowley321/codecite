@@ -11,7 +11,7 @@ use serde::Serialize;
 use super::Store;
 use super::read::file_lines;
 use super::search::{Scope, code_citation, spec_citation};
-use crate::{Error, Result, Role};
+use crate::{Error, Result, Role, SectionNumber};
 
 /// The most characters of a line a match holds. A minified file can hold a
 /// line of a megabyte; agents read the rest through its citation.
@@ -117,11 +117,12 @@ impl Store {
     /// A code file's stored text, which `read` cites, is matched line by
     /// line, and each match cites its one line. A spec has no file text, so
     /// its sections are matched instead; a line inside one of a section's
-    /// steps cites the step, any other line the section. Only the current
-    /// version of each document is grepped.
+    /// steps cites the step, any other line the section. A section whose
+    /// number has no canonical citation, like an appendix's, is skipped.
+    /// Only the current version of each document is grepped.
     ///
-    /// An empty pattern is [`Error::EmptyQuery`], and one that is not a
-    /// valid regular expression [`Error::BadPattern`]. An index older than
+    /// A pattern that is empty, holds a newline (or `\n`, `\r`) or is not a
+    /// valid regular expression is [`Error::BadPattern`]. An index older than
     /// its maximum age is [`Error::StaleIndex`] unless `query.allow_stale`
     /// is set.
     pub fn grep(&self, query: &GrepQuery<'_>) -> Result<Vec<GrepMatch>> {
@@ -228,7 +229,13 @@ impl Store {
                 _ => {}
             }
         }
-        for (id, section, text) in &sections {
+        // A section whose number no canonical citation can hold, like an
+        // appendix's `A.1`, is left out: its match would carry a citation
+        // `read` refuses.
+        let citable = sections
+            .iter()
+            .filter(|(_, section, _)| section.number.parse::<SectionNumber>().is_ok());
+        for (id, section, text) in citable {
             let section_steps = steps.get(id).map_or(&[][..], Vec::as_slice);
             for (n, line) in (section.start..).zip(file_lines(text)) {
                 if matches.len() >= limit {
@@ -259,8 +266,19 @@ impl Store {
 /// The query's pattern as a regex: escaped when `fixed`, and matching any
 /// case when `ignore_case`.
 fn pattern(query: &GrepQuery<'_>) -> Result<Regex> {
+    let bad = |reason: &str| Error::BadPattern {
+        pattern: query.pattern.into(),
+        reason: reason.into(),
+    };
     if query.pattern.is_empty() {
-        return Err(Error::EmptyQuery);
+        return Err(bad("it is empty"));
+    }
+    // Each line is matched without its line ending, so a pattern that
+    // names one could never match; ripgrep refuses it too.
+    if names_newline(query.pattern, query.fixed) {
+        return Err(bad(
+            "it holds a newline, and grep matches one line at a time",
+        ));
     }
     let source = if query.fixed {
         regex::escape(query.pattern)
@@ -274,6 +292,24 @@ fn pattern(query: &GrepQuery<'_>) -> Result<Regex> {
             pattern: query.pattern.into(),
             reason: err.to_string(),
         })
+}
+
+/// Whether `pattern` holds a line break, or as a regex the escape `\n` or
+/// `\r` (a backslash that is not itself escaped, then `n` or `r`).
+fn names_newline(pattern: &str, fixed: bool) -> bool {
+    if pattern.contains(['\n', '\r']) {
+        return true;
+    }
+    if fixed {
+        return false;
+    }
+    let mut chars = pattern.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' && matches!(chars.next(), Some('n' | 'r')) {
+            return true;
+        }
+    }
+    false
 }
 
 /// `text` cut to at most `max` characters, with `…` appended when cut.
@@ -418,6 +454,8 @@ mod tests {
                     Some("5"),
                     &[],
                 ),
+                // An appendix: no canonical citation can name it.
+                chunk("section", (17, 17), "A.1.  Example jti", Some("A.1"), &[]),
             ],
         };
         store.write_document(id, &doc).unwrap();
@@ -661,7 +699,8 @@ mod tests {
     fn an_empty_pattern_is_an_error() {
         let f = fixture();
         let err = f.store.grep(&query("")).unwrap_err();
-        assert!(matches!(err, Error::EmptyQuery), "{err:?}");
+        assert!(matches!(err, Error::BadPattern { .. }), "{err:?}");
+        assert_eq!(err.to_string(), "invalid pattern \"\": it is empty");
         // A space is something to find.
         assert!(
             !f.grep(&GrepQuery {
@@ -670,6 +709,52 @@ mod tests {
             })
             .is_empty()
         );
+    }
+
+    #[test]
+    fn a_pattern_that_names_a_newline_is_an_error() {
+        let f = fixture();
+        for (pattern, fixed) in [
+            ("jti\nlen", false),
+            (r"jti\n", false),
+            (r"\r?$", false),
+            ("a\nb", true),
+        ] {
+            let err = f
+                .store
+                .grep(&GrepQuery {
+                    fixed,
+                    ..query(pattern)
+                })
+                .unwrap_err();
+            assert!(
+                err.to_string()
+                    .ends_with("it holds a newline, and grep matches one line at a time"),
+                "{pattern:?}: {err}"
+            );
+        }
+        // An escaped backslash before `n`, and `\n` as fixed text, are not
+        // newlines.
+        assert!(!names_newline(r"a\\n", false));
+        assert!(!names_newline(r"a\n", true));
+        assert!(names_newline(r"a\\\n", false));
+    }
+
+    #[test]
+    fn a_section_no_citation_can_name_is_left_out() {
+        let f = fixture();
+        let spec = GrepQuery {
+            only: Some(Scope::Spec),
+            ..query("Example jti")
+        };
+        assert!(f.grep(&spec).is_empty());
+        // Every spec match reads back.
+        for m in f.grep(&GrepQuery {
+            only: Some(Scope::Spec),
+            ..query("jti")
+        }) {
+            assert!(!m.citation.contains("A.1"), "{}", m.citation);
+        }
     }
 
     #[test]

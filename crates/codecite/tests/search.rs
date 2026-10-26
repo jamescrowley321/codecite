@@ -272,7 +272,11 @@ fn grep_errors_name_the_problem() {
         ),
         (
             vec!["grep", "demo", ""],
-            "the query has no words to search for",
+            "invalid pattern \"\": it is empty",
+        ),
+        (
+            vec!["grep", "demo", r"jti\n"],
+            "it holds a newline, and grep matches one line at a time",
         ),
         (vec!["grep", "dmeo", "x"], "unknown corpus `dmeo`"),
     ] {

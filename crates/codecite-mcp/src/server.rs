@@ -282,7 +282,7 @@ impl Server {
 
     /// The `grep` tool: the same JSON as `codecite grep --json`.
     #[tool(
-        description = "Find the lines of a corpus's code and specs that match a regular expression, or with `fixed` an exact string: claim names, error messages, header names, patterns like `token_type_hint=\\w+`. Each match is one line with its citation (a code line `repo@sha:path#L12`, or the spec step or section holding it), kind, role, license class, indexed_at and text; matches come in index order, unscored. Nothing matching is no matches; an unknown corpus, a stale index, an empty pattern or an invalid regex is an error."
+        description = "Find the lines of a corpus's code and specs that match a regular expression, or with `fixed` an exact string: claim names, error messages, header names, patterns like `token_type_hint=\\w+`. Each match is one line with its citation (a code line `repo@sha:path#L12`, or the spec step or section holding it), kind, role, license class, indexed_at and text; matches come in index order, unscored. Nothing matching is no matches; an unknown corpus, a stale index, or an empty, invalid or multi-line pattern is an error."
     )]
     async fn grep(
         &self,
@@ -720,7 +720,7 @@ mod tests {
         );
         assert_eq!(
             session.err("grep", json!({"pattern": ""})).await["kind"],
-            "empty_query"
+            "bad_pattern"
         );
         session.stop().await;
     }
