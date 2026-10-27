@@ -618,7 +618,7 @@ fn pinned(source: &SourceRow) -> String {
 /// A file's lines as the chunker counts them: split at `\n`, a final
 /// newline ending the last line rather than starting an empty one, and a
 /// `\r` before a `\n` dropped.
-fn file_lines(text: &str) -> Vec<&str> {
+pub(super) fn file_lines(text: &str) -> Vec<&str> {
     if text.is_empty() {
         return Vec::new();
     }
