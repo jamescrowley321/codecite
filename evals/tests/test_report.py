@@ -13,33 +13,33 @@ from codecite_evals.report import logs, scorecard
 EPOCHS = 4
 
 
-def sample(arm, epoch, passed=False, stopped=None, error=None, turns=0):
+def sample(arm, epoch, passed=False, stopped=None, error=None, question=None, turns=0):
     metadata = {"stopped": stopped} if stopped else {}
     if error:
         metadata["sandbox_error"] = error
     return EvalSample(
-        id=arm,
+        id=f"{arm}:{question}" if question else arm,
         epoch=epoch,
         input="",
         target="",
         messages=[ChatMessageUser(content="do the task")] + [ChatMessageAssistant(content="ok") for _ in range(turns)],
-        metadata={"arm": arm},
+        metadata={"arm": arm, "question": question} if question else {"arm": arm},
         scores={"hidden_tests_and_checks": Score(value=1 if passed else 0, metadata=metadata)},
         model_usage={"m": ModelUsage(total_tokens=1000)},
         total_time=60.0,
     )
 
 
-def log(model, samples, status="success", created=None, arms=None):
+def log(model, samples, status="success", created=None, task="fastapi_middleware", sample_ids=None, epochs=EPOCHS, arms=None):
     return EvalLog(
         status=status,
         eval=EvalSpec(
             created=created or datetime.now(timezone.utc).isoformat(),
-            task="fastapi_middleware",
-            dataset=EvalDataset(),
+            task=task,
+            dataset=EvalDataset(samples=len(sample_ids) if sample_ids else None, sample_ids=sample_ids),
             model=model,
             task_args={"arms": arms} if arms else {},
-            config=EvalConfig(epochs=EPOCHS),
+            config=EvalConfig(epochs=epochs),
         ),
         samples=samples,
     )
@@ -121,7 +121,7 @@ def test_old_logs_read_timed_out_as_timeouts():
 
 def test_tier_heads_the_scorecard():
     assert scorecard(PANEL, "quick").startswith("**Quick tier** (directional, never the gate)")
-    assert scorecard(PANEL).startswith("| model |")
+    assert scorecard(PANEL).startswith("**Task: `fastapi_middleware`**\n\n| model |")
 
 
 def test_a_directory_gives_each_model_its_newest_finished_log(tmp_path):
@@ -191,3 +191,60 @@ def test_an_ab_run_that_lost_its_codecite_samples_is_incomplete_not_a_calibratio
 def test_calibration_and_ab_logs_are_not_mixed():
     with pytest.raises(ValueError, match="mix calibration"):
         scorecard([calibration("openrouter/m1", 2), PANEL[0]])
+
+
+QUESTIONS = ["q1", "q2", "q3"]
+SPEC_IDS = [f"{arm}:{q}" for q in QUESTIONS for arm in ("baseline", "codecite")]
+
+
+def spec_log(model, samples, epochs=2):
+    return log(model, samples, task="codecite_evals/spec_questions", sample_ids=SPEC_IDS, epochs=epochs)
+
+
+def spec_runs(arm, epochs=2, passed=True, skip=0):
+    runs = [sample(arm, e, passed=passed, question=q) for q in QUESTIONS for e in range(1, epochs + 1)]
+    return runs[skip:]
+
+
+def tables(out):
+    """Each task's rows, by the task its table is headed with."""
+    found, current = {}, None
+    for line in out.splitlines():
+        if line.startswith("**Task: `"):
+            current = line.removeprefix("**Task: `").removesuffix("`**")
+            found[current] = []
+        elif line.startswith("|") and current:
+            found[current].append(line)
+    return {name: table("\n".join(lines))[1] for name, lines in found.items()}
+
+
+def test_each_task_gets_its_own_table():
+    out = scorecard(PANEL[:1] + [spec_log("openrouter/m1", spec_runs("baseline") + spec_runs("codecite", passed=False))])
+    by_task = tables(out)
+    assert set(by_task) == {"fastapi_middleware", "spec_questions"}
+    # Neither task's runs pool into the other's.
+    assert by_task["fastapi_middleware"][("m1", "baseline")]["runs"] == "4"
+    assert by_task["spec_questions"][("m1", "baseline")]["runs"] == "6"
+    assert by_task["spec_questions"][("m1", "codecite")]["pass"] == "0%"
+    assert "loses on pass" in by_task["spec_questions"][("m1", "codecite")]["verdict"]
+
+
+def test_planned_runs_are_questions_times_epochs():
+    # 3 questions x 2 epochs = 6 runs per arm, not 2.
+    short = tables(scorecard([spec_log("openrouter/m", spec_runs("baseline", skip=1) + spec_runs("codecite"))]))
+    assert short["spec_questions"][("m", "codecite")]["verdict"] == "incomplete (5/6 of 6 runs)"
+    full = tables(scorecard([spec_log("openrouter/m", spec_runs("baseline") + spec_runs("codecite"))]))
+    assert full["spec_questions"][("m", "codecite")]["verdict"].startswith("no loss")
+
+
+def test_a_question_sandbox_error_names_the_question():
+    runs = spec_runs("baseline", epochs=1) + spec_runs("codecite", epochs=1)[1:]
+    runs.append(sample("codecite", 1, stopped="sandbox_error", error="RuntimeError: container killed", question="q1"))
+    out = scorecard([spec_log("openrouter/m", runs, epochs=1)])
+    assert "- m, codecite, q1, epoch 1: `RuntimeError: container killed`" in out
+
+
+def test_a_directory_gives_each_task_and_model_its_own_log(tmp_path):
+    write_eval_log(log("openrouter/m", [sample("baseline", 1)]), str(tmp_path / "code.eval"))
+    write_eval_log(spec_log("openrouter/m", spec_runs("baseline")), str(tmp_path / "spec.eval"))
+    assert sorted(found.eval.task for found in logs([tmp_path])) == ["codecite_evals/spec_questions", "fastapi_middleware"]

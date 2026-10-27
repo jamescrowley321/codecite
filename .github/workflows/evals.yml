@@ -1,10 +1,11 @@
 name: Evals
 
 # The A/B agent eval (evals/README.md). The quick tier runs on PRs labelled
-# `eval` and posts its scorecard as one PR comment, updated in place; the full
-# tier runs on dispatch. A dispatch with `arms: baseline` calibrates a task:
-# the quick panel on the baseline arm alone, reported with no verdict
-# (evals/README.md). Advisory, like `bench`: never a required check.
+# `eval`, one job per task in the eval job's matrix, and posts their
+# scorecards as one PR comment, updated in place; the full tier runs on
+# dispatch, for the one task it names. A dispatch with `arms: baseline`
+# calibrates its task: the quick panel on the baseline arm alone, reported with
+# no verdict (evals/README.md). Advisory, like `bench`: never a required check.
 on:
   pull_request:
     types: [labeled, synchronize]
@@ -57,23 +58,26 @@ jobs:
       && ((github.event.action == 'labeled' && github.event.label.name == 'eval')
       || (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'eval'))))
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ inputs.tier == 'full' && 360 || 45 }}
+    timeout-minutes: ${{ inputs.tier == 'full' && 360 || 75 }}
     permissions:
       contents: read
       actions: read # download an earlier run's logs to resume
+    # A PR runs every task here, each on its own runner; a dispatch, its own.
+    strategy:
+      fail-fast: false
+      matrix:
+        task: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.task) || '["fastapi-middleware", "spec-questions"]') }}
     env:
       TIER: ${{ inputs.tier || 'quick' }}
-      TASK_ID: ${{ inputs.task || 'fastapi-middleware' }}
+      TASK_ID: ${{ matrix.task }}
       ARMS: ${{ inputs.arms || 'both' }}
-      # Where panel.sh logs: the tier's directory, or calibration/.
+      # Where panel.sh logs, under inspect/logs/: the tier, or calibration.
       RUN_NAME: ${{ inputs.arms == 'baseline' && 'calibration' || inputs.tier || 'quick' }}
       # Each sandbox is one Docker network; the daemon below gets 256 of
       # them. The runner's 4 vCPU set the limit: at 20 sandboxes, samples
       # spent three quarters of their wall time waiting, which skews the
       # time measure. 8 is Inspect's own default for 4 CPUs.
       MAX_SANDBOXES: "8"
-    outputs:
-      scorecard: ${{ steps.scorecard.outputs.scorecard }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -140,27 +144,33 @@ jobs:
           RESUME: ${{ inputs.resume }}
         run: |
           [[ "$RESUME" =~ ^[0-9]+$ ]] || { echo "resume must be a run id" >&2; exit 1; }
-          gh run download "$RESUME" -R "$GITHUB_REPOSITORY" -n "eval-logs-$RUN_NAME" -D "evals/inspect/logs/$RUN_NAME"
+          gh run download "$RESUME" -R "$GITHUB_REPOSITORY" -n "eval-logs-$RUN_NAME-$TASK_ID" -D "evals/inspect/logs/$RUN_NAME/$TASK_ID"
           echo RETRY=1 >> "$GITHUB_ENV"
-      - name: Run the ${{ env.TIER }} tier (${{ env.TASK_ID }}, arms ${{ env.ARMS }})
-        timeout-minutes: ${{ inputs.tier == 'full' && 345 || 35 }}
+      - name: Run the ${{ env.TIER }} tier on ${{ env.TASK_ID }} (arms ${{ env.ARMS }})
+        timeout-minutes: ${{ inputs.tier == 'full' && 345 || 60 }}
         working-directory: evals
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_EVAL_API_KEY }}
         run: inspect/panel.sh "$TIER" --sandbox-prebuilt
       - name: Publish the scorecard
-        id: scorecard
         if: always()
         run: |
-          card="evals/inspect/logs/$RUN_NAME/scorecard.md"
+          card="evals/inspect/logs/$RUN_NAME/$TASK_ID/scorecard.md"
           [[ -s "$card" ]] || exit 0
           cat "$card" >> "$GITHUB_STEP_SUMMARY"
-          { echo 'scorecard<<SCORECARD_EOF'; cat "$card"; echo 'SCORECARD_EOF'; } >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
-          name: eval-logs-${{ env.RUN_NAME }}
-          path: evals/inspect/logs/${{ env.RUN_NAME }}
+          name: eval-logs-${{ env.RUN_NAME }}-${{ env.TASK_ID }}
+          path: evals/inspect/logs/${{ env.RUN_NAME }}/${{ env.TASK_ID }}
+          if-no-files-found: ignore
+          overwrite: true
+      # The comment job joins every task's scorecard into one comment.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always() && github.event_name == 'pull_request'
+        with:
+          name: scorecard-${{ env.TASK_ID }}
+          path: evals/inspect/logs/${{ env.RUN_NAME }}/${{ env.TASK_ID }}/scorecard.md
           if-no-files-found: ignore
           overwrite: true
 
@@ -168,20 +178,28 @@ jobs:
   comment:
     name: comment
     needs: eval
-    if: always() && github.event_name == 'pull_request' && needs.eval.outputs.scorecard != ''
+    if: always() && github.event_name == 'pull_request' && needs.eval.result != 'skipped'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       pull-requests: write
     steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true # no task got as far as a scorecard
+        with:
+          pattern: scorecard-*
+          path: scorecards
       - name: Post or update the scorecard comment
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          SCORECARD: ${{ needs.eval.outputs.scorecard }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          shopt -s nullglob
+          cards=(scorecards/scorecard-*/scorecard.md)
+          ((${#cards[@]})) || { echo "no scorecards" >&2; exit 0; }
+          SCORECARD="$(for card in "${cards[@]}"; do cat "$card"; echo; done)"
           marker='<!-- codecite-eval-scorecard -->'
           body="$(printf '%s\n## A/B eval\n\n%s\n\nAt %s. Logs: [run](%s).\n' "$marker" "$SCORECARD" "$HEAD_SHA" "$RUN_URL")"
           id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \

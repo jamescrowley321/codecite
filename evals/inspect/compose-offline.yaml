@@ -1,0 +1,9 @@
+# The sandbox alone, for tasks that need no IdP (task.json "idp": null and
+# the task picks this file). It has no network at all, only loopback; pi's
+# model calls leave through Inspect's agent bridge, which needs none.
+services:
+  default:
+    build: build
+    image: codecite-eval-sandbox
+    init: true
+    network_mode: none
