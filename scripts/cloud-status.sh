@@ -9,8 +9,9 @@
 # DIRTY has conflicts, BLOCKED is waiting on a required check, UNSTABLE has a
 # failing check that isn't required.
 # Review: PASS or BLOCK from the latest "Blind peer review" comment that
-# claude.yml posts (claude[bot]'s only: anyone can post the heading), "stale" when commits landed after it, "none" before the
-# first. A stale PR gets a fresh review from an `@claude review this PR` comment.
+# claude.yml posts (claude[bot]'s only: anyone can post the heading),
+# "stale" when it doesn't name the head commit (head `<sha>`), "none" before
+# the first. A stale PR gets a fresh review from an `@claude review this PR` comment.
 # Session links from scripts/cloud-launch.sh are in
 # ~/.local/state/codecite/cloud-sessions.log.
 set -euo pipefail
@@ -29,16 +30,20 @@ for n in "${prs[@]}"; do
     .[] | select(.user.login == "claude[bot]" and .user.type == "Bot"
                  and ((.body // "") | startswith("## Blind peer review")))
     | {body, createdAt: .created_at}' | jq -s .)
-  gh pr view "$n" --json number,title,body,mergeStateStatus,commits,comments,labels | jq -r --argjson reviews "$reviews" '
+  gh pr view "$n" --json number,title,body,mergeStateStatus,headRefOid,comments,labels | jq -r --argjson reviews "$reviews" '
     # capture() emits nothing on a miss, so each match is collected in an
     # array and defaulted; any list gh returns can be null.
-    ((.commits // []) | .[-1].committedDate // "") as $pushed
+    (.headRefOid // "") as $head
     | ($reviews | max_by(.createdAt)) as $rev
-    # The first line that is a verdict ("Verdict: **BLOCK**", "### Verdict:
-    # **PASS**", "**Verdict:** PASS"), not a finding that quotes one.
+    # Every line that is a verdict ("Verdict: **BLOCK**", "### Verdict:
+    # **PASS**", "**Verdict:** PASS"), not a finding that quotes one; "?"
+    # when there is none or they disagree.
     | (if $rev == null then "none"
-       else ([$rev.body | capture("(?im)^[#\\s]*\\**verdict\\**:?\\**\\s*\\**(?<v>PASS|BLOCK)\\b").v] | .[0] // "?" | ascii_upcase)
-         + (if $rev.createdAt < $pushed then " stale" else "" end)
+       else ([$rev.body | capture("(?im)^[#\\s]*\\**verdict\\**:?\\**\\s*\\**(?<v>PASS|BLOCK)\\b"; "g").v | ascii_upcase] | unique
+             | if length == 1 then .[0] else "?" end)
+         # The author sets a commit date; the reviewed sha says what was read.
+         + (([$rev.body | capture("(?i)\\bhead\\b[^`]{0,12}`(?<h>[0-9a-f]{7,40})`").h] | .[0]) as $named
+            | if $named != null and ($head | startswith($named)) then "" else " stale" end)
        end) as $review
     | ([(.body // "") | capture("(?i)(closes|part of) #(?<i>[0-9]+)").i] | .[0]
         | if . == null then "-" else "#" + . end) as $issue

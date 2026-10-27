@@ -4,7 +4,7 @@ The blind peer review runs in CI (`.github/workflows/claude.yml`): when a PR ope
 
 `cd <worktree>`. The task state holds `review_round`.
 
-1. `mkdir -p .claude/review`, then run `~/repos/codecite-worktrees/ralph-loop/ralph/wait-review.sh <pr> .claude/review/round-<review_round>.md`. It sleeps a minute, then waits up to 8 minutes for a review comment from claude[bot] posted after the head commit, and saves it to that file. Run it in the FOREGROUND with the Bash tool's `timeout: 600000`. Never `run_in_background`: a background command dies when this iteration ends, and its result is lost.
+1. `mkdir -p .claude/review`, then run `~/repos/codecite-worktrees/ralph-loop/ralph/wait-review.sh <pr> .claude/review/round-<review_round>.md`. If nothing has asked for a review of the head commit yet (a ci-phase push), it posts `@claude review this PR at head <sha>`. It sleeps a minute, then waits up to 8 minutes for claude[bot]'s review of that commit, posted after the request, and saves it to that file. Run it in the FOREGROUND with the Bash tool's `timeout: 600000`. Never `run_in_background`: a background command dies when this iteration ends, and its result is lost.
 2. `FOUND PASS` → record `verdict: PASS`, set `phase: complete`, end.
 3. `FOUND BLOCK` → record `verdict: BLOCK`, set `phase: review-fix`, end.
 4. `WAITING` → increment `review_waits` in the task state (start at 1). If it is now above 4 (about 35 minutes with no verdict; claude.yml times out at 30), go to step 5. Otherwise run the script again with the same arguments, up to two calls in this iteration in all (each takes up to 9 minutes, and an iteration has 30). If the second call also says `WAITING`, keep `phase: review` and end.
