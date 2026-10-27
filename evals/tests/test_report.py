@@ -215,3 +215,10 @@ def test_calls_are_read_back_from_a_log_file(tmp_path):
     (found,) = logs([tmp_path])
     _, rows = table(scorecard([found]))
     assert rows[("used-3", "codecite")]["used codecite"] == "3/4"
+
+
+def test_a_command_stored_as_an_attachment_is_read(tmp_path):
+    # Inspect moves long strings out of the events into sample.attachments.
+    s = sample("codecite", 1, calls=[bash("attachment://abc"), bash("attachment://def")])
+    s.attachments = {"abc": "cd /work/project && codecite search eval x", "def": "grep -rn codecite ."}
+    assert codecite_calls(s) == 1

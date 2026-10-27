@@ -48,6 +48,7 @@ MARGIN = 0.05
 # share of its usable runs.
 ADOPTION = 0.5
 NATIVE = "mcp__codecite__"
+ATTACHMENT = "attachment://"
 # `codecite` at the start of a shell command: of the line, or after `;`, `&`,
 # `|`, `(`, `$(` or a backtick, behind any VAR=value prefixes, by bare name or
 # path. `grep codecite` or `ls /opt/codecite` don't run it.
@@ -119,6 +120,9 @@ def codecite_calls(sample):
                 calls += 1
             elif call.function == "bash":
                 command = call.arguments.get("command") if isinstance(call.arguments, dict) else None
+                if isinstance(command, str) and command.startswith(ATTACHMENT):
+                    # Inspect stores long strings apart, in the sample's attachments.
+                    command = (sample.attachments or {}).get(command.removeprefix(ATTACHMENT))
                 calls += isinstance(command, str) and bool(CLI.search(command))
     return calls
 
