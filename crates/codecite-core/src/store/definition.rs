@@ -58,8 +58,12 @@ pub struct Definition {
     pub indexed_at: String,
     /// Whether the file differed from the cited commit when it was indexed.
     pub dirty: bool,
-    /// The definition's first 40 lines (`MAX_SNIPPET_LINES`).
+    /// The definition's first 40 lines (`MAX_SNIPPET_LINES`), cut to 4 KiB
+    /// (`MAX_SNIPPET_BYTES`).
     pub snippet: String,
+    /// Whether the snippet stops before the end of the definition. The
+    /// citation still names all of it.
+    pub snippet_truncated: bool,
     /// The providers that found the definition: `treesitter`.
     pub providers: Vec<&'static str>,
     /// How sure they are: 3 exact, 2 extracted, 1 inferred, 0 ambiguous.
@@ -148,6 +152,7 @@ impl Store {
             let revision: String = row.get(8)?;
             let text: String = row.get(11)?;
             let role = Role::of(&path, &source_kind);
+            let (snippet, snippet_truncated) = snippet(&text);
             let definition = Definition {
                 citation: code_citation(&source, &revision, &path, row.get(2)?, row.get(3)?),
                 symbol: row.get(12)?,
@@ -156,7 +161,8 @@ impl Store {
                 license_class: row.get(9)?,
                 indexed_at: row.get(10)?,
                 dirty: row.get(5)?,
-                snippet: snippet(&text),
+                snippet,
+                snippet_truncated,
                 providers: PROVIDERS.to_vec(),
                 confidence: TREESITTER_CONFIDENCE,
             };
@@ -433,6 +439,7 @@ mod tests {
                 "providers",
                 "role",
                 "snippet",
+                "snippet_truncated",
                 "symbol"
             ]
         );

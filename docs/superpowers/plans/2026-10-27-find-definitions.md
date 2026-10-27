@@ -15,6 +15,7 @@
 
 - `kind` is the symbol's kind (`method`, `struct`, …), not the chunk's (`function`, `class`), since it says what was defined.
 - `dirty` is always present: symbols come only from code.
+- The snippet is capped as a search snippet is (40 lines, then 4 KiB since #132), with `snippet_truncated` beside it.
 - The result echoes `symbol` as asked; the lookup trims it.
 - `NoSuchSymbol` carries candidates, as the design's errors do. Finding them scans `symbol`, but only on the error path.
 
