@@ -3,8 +3,9 @@ name: Evals
 # The A/B agent eval (evals/README.md). The quick tier runs on PRs labelled
 # `eval`, one job per task in the eval job's matrix, and posts their
 # scorecards as one PR comment, updated in place; the full tier runs on
-# dispatch, for the one task it names. Advisory, like `bench`: never a
-# required check.
+# dispatch, for the one task it names. A dispatch with `arms: baseline`
+# calibrates its task: the quick panel on the baseline arm alone, reported with
+# no verdict (evals/README.md). Advisory, like `bench`: never a required check.
 on:
   pull_request:
     types: [labeled, synchronize]
@@ -19,8 +20,13 @@ on:
         description: The task to run, a directory under evals/tasks/
         type: string
         default: fastapi-middleware
+      arms:
+        description: both (the A/B run) or baseline (calibrate the task on the quick tier, no verdict)
+        type: choice
+        options: [both, baseline]
+        default: both
       resume:
-        description: Run id of an earlier run of this tier and task whose unfinished logs to finish with inspect eval-retry
+        description: Run id of an earlier run of this tier, task and arms whose unfinished logs to finish with inspect eval-retry
         type: string
         default: ""
 
@@ -32,7 +38,7 @@ permissions:
 # cancel nothing. Dispatches queue rather than cancel.
 concurrency:
   group: >-
-    evals-${{ github.event.pull_request.number || github.ref }}-${{ inputs.tier || 'quick' }}-${{
+    evals-${{ github.event.pull_request.number || github.ref }}-${{ inputs.tier || 'quick' }}-${{ inputs.arms || 'both' }}-${{
     (github.event_name == 'workflow_dispatch'
     || (github.event.action == 'labeled' && github.event.label.name == 'eval')
     || (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'eval')))
@@ -64,6 +70,9 @@ jobs:
     env:
       TIER: ${{ inputs.tier || 'quick' }}
       TASK_ID: ${{ matrix.task }}
+      ARMS: ${{ inputs.arms || 'both' }}
+      # Where panel.sh logs, under inspect/logs/: the tier, or calibration.
+      RUN_NAME: ${{ inputs.arms == 'baseline' && 'calibration' || inputs.tier || 'quick' }}
       # Each sandbox is one Docker network; the daemon below gets 256 of
       # them. The runner's 4 vCPU set the limit: at 20 sandboxes, samples
       # spent three quarters of their wall time waiting, which skews the
@@ -73,10 +82,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Check the task
+      - name: Check the task and arms
         run: |
           [[ "$TASK_ID" =~ ^[a-z0-9][a-z0-9-]*$ && -f "evals/tasks/$TASK_ID/task.json" ]] \
             || { echo "task must be a directory under evals/tasks/" >&2; exit 1; }
+          [[ "$ARMS" == both || "$TIER" == quick ]] || { echo "calibrate (arms: baseline) on the quick tier" >&2; exit 1; }
       - name: Install toolchain
         run: |
           rustup toolchain install
@@ -134,9 +144,9 @@ jobs:
           RESUME: ${{ inputs.resume }}
         run: |
           [[ "$RESUME" =~ ^[0-9]+$ ]] || { echo "resume must be a run id" >&2; exit 1; }
-          gh run download "$RESUME" -R "$GITHUB_REPOSITORY" -n "eval-logs-$TIER-$TASK_ID" -D "evals/inspect/logs/$TIER/$TASK_ID"
+          gh run download "$RESUME" -R "$GITHUB_REPOSITORY" -n "eval-logs-$RUN_NAME-$TASK_ID" -D "evals/inspect/logs/$RUN_NAME/$TASK_ID"
           echo RETRY=1 >> "$GITHUB_ENV"
-      - name: Run the ${{ env.TIER }} tier on ${{ env.TASK_ID }}
+      - name: Run the ${{ env.TIER }} tier on ${{ env.TASK_ID }} (arms ${{ env.ARMS }})
         timeout-minutes: ${{ inputs.tier == 'full' && 345 || 60 }}
         working-directory: evals
         env:
@@ -145,14 +155,14 @@ jobs:
       - name: Publish the scorecard
         if: always()
         run: |
-          card="evals/inspect/logs/$TIER/$TASK_ID/scorecard.md"
+          card="evals/inspect/logs/$RUN_NAME/$TASK_ID/scorecard.md"
           [[ -s "$card" ]] || exit 0
           cat "$card" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
-          name: eval-logs-${{ env.TIER }}-${{ env.TASK_ID }}
-          path: evals/inspect/logs/${{ env.TIER }}/${{ env.TASK_ID }}
+          name: eval-logs-${{ env.RUN_NAME }}-${{ env.TASK_ID }}
+          path: evals/inspect/logs/${{ env.RUN_NAME }}/${{ env.TASK_ID }}
           if-no-files-found: ignore
           overwrite: true
       # The comment job joins every task's scorecard into one comment.
@@ -160,7 +170,7 @@ jobs:
         if: always() && github.event_name == 'pull_request'
         with:
           name: scorecard-${{ env.TASK_ID }}
-          path: evals/inspect/logs/${{ env.TIER }}/${{ env.TASK_ID }}/scorecard.md
+          path: evals/inspect/logs/${{ env.RUN_NAME }}/${{ env.TASK_ID }}/scorecard.md
           if-no-files-found: ignore
           overwrite: true
 

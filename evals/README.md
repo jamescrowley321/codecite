@@ -14,14 +14,14 @@ Evaluation plan):
 
 | Path | What |
 | --- | --- |
-| `src/codecite_evals/` | The `codecite-evals` package that `uv sync` installs: `task.py` (the code tasks: one sample per arm, pi in a Docker sandbox, the scorer), `spec_task.py` (the spec-question task: one sample per question per arm, on the same pi), `report.py` (the scorecard) and `config.py` (where every file below is found) |
-| `tests/` | Unit tests for the task's agent, the scorecard and the config; no model key or Docker needed |
+| `src/codecite_evals/` | The `codecite-evals` package that `uv sync` installs: `task.py` (the code tasks: one sample per arm, pi in a Docker sandbox, the scorer), `spec_task.py` (the spec-question task: one sample per question per arm, on the same pi), `report.py` (the scorecard, or the calibration table), `frozen.py` (the frozen-task check) and `config.py` (where every file below is found) |
+| `tests/` | Unit tests for the task's agent, the scorecard, the frozen-task check and the config; no model key or Docker needed |
 | `inspect/prepare.sh` | Stage the sandbox image's build context in `inspect/build/` for one task (`prepare.sh <task-id>`, default `fastapi-middleware`) |
 | `inspect/Dockerfile`, `inspect/compose.yaml` | The sandbox image and the IdP beside it, on a network with no route out |
 | `inspect/compose-offline.yaml` | The sandbox alone with no network, for a task that needs no IdP (spec-questions) |
 | `inspect/pi-models.json` | Points pi at Inspect's agent bridge |
 | `inspect/panel.sh` | Run one tier (`quick` or `full`): every model in one Inspect process, then the report |
-| `tasks/<id>/` | A task: `task.json`, `prompt.md`, starting `project/`, `hidden/` tests, `checks.py`, `reference/`, and `check.sh`/`planted.sh` to prove the task and checks are sound |
+| `tasks/<id>/` | A task: `task.json` (with `frozen_at` once frozen), `prompt.md`, starting `project/`, `hidden/` tests, `checks.py`, `reference/`, and `check.sh`/`planted.sh` to prove the task and checks are sound |
 | `tasks/spec-questions/` | The spec-question task: `questions.toml` (labelled questions with closed answers, checked against the index by `src/codecite_evals/spec_questions.py`), `prompt.md`, the in-sandbox scorer `score.py`, and `check.sh`/`planted.py` to prove the scorer sound |
 | `fixtures/node-oidc/` | The IdP the fastapi-middleware hidden tests take tokens from |
 | `retrieval/` | The retrieval benchmark's queries and corpus manifest |
@@ -97,6 +97,8 @@ project and corpus, so `inspect/prepare.sh <task-id>` stages it before the
 image is built; after switching tasks, rebuild it (`docker compose -f
 inspect/compose.yaml build`). `panel.sh` runs the task `TASK_ID` names
 (default `fastapi-middleware`).
+Every task takes `-T arms=baseline` to run the baseline arm alone, a
+calibration (see below).
 
 ## Two tiers
 
@@ -131,7 +133,8 @@ and never a required check.
   one PR comment, updated in place, a table per task. A new push cancels a
   stale run. Fork PRs never run: they get no secrets.
 - **Full:** run the workflow by hand (Actions → Evals → Run workflow) with
-  `tier: full` and the `task` to run. Its scorecard goes to the job summary.
+  `tier: full`, the `task` to run and `arms` (`both`, the default, or
+  `baseline` to calibrate; see below). Its scorecard goes to the job summary.
   To finish a run that stopped part way, run it again with `resume` set to
   that run's id: it downloads that run's logs and reruns only their missing
   samples with `inspect eval-retry`.
@@ -141,7 +144,8 @@ and caches the two sandbox images, keyed on a hash of their build contexts
 (which hold the codecite binary and the identity-model commit), so an
 unchanged binary doesn't rebuild. It reads only the `OPENROUTER_EVAL_API_KEY`
 secret. The Inspect logs, with the scorecard, upload as the
-`eval-logs-<tier>-<task>` artifact.
+`eval-logs-<tier>-<task>` artifact, or `eval-logs-calibration-<task>` for a
+calibration.
 
 ## Running the A/B eval locally
 
@@ -162,9 +166,11 @@ uv run --locked codecite-eval-report --tier quick
 ```
 
 The package registers its tasks with Inspect through the `inspect_ai` entry
-point, so Inspect runs them by name (`codecite_evals/<task>`) from any
-directory, and `codecite-eval-report` is the scorecard's command. Both find
-`tasks/`, `inspect/compose.yaml` and `inspect/logs/` through
+point, so Inspect runs them by name from any directory: `codecite_evals/ab`
+takes the task's id (`-T task_id=<id>`) and its arms (`-T arms=both|baseline`),
+and each registered task also runs by its own name.
+`codecite-eval-report` is the scorecard's command. Both find `tasks/`,
+`inspect/compose.yaml` and `inspect/logs/` through
 `src/codecite_evals/config.py`: under this `evals/` directory, or under
 `CODECITE_EVALS_DIR` when it is set.
 
@@ -197,6 +203,37 @@ the wait counts in their wall time: at 20 sandboxes the medians were ~314 s
 against ~70 s of working time. To do the same locally, add
 `"default-address-pools": [{"base": "10.200.0.0/16", "size": 24}]` to
 `/etc/docker/daemon.json` and restart Docker.
+
+## Calibrating a new task
+
+A task has to be hard enough that the arms can differ on correctness: one
+every model passes in both arms can't show codecite helping. Getting it there
+means running it and adjusting it, and adjusting it while watching codecite's
+arm could tune it until codecite wins. So calibrate on the baseline arm only,
+then freeze the task before its first A/B run (`docs/design.md`, Agent
+benchmark).
+
+1. Add `tasks/<id>/` with a new id, and prove it with its `check.sh` and
+   `planted.sh`. Leave `frozen_at` out of its `task.json`.
+2. Run the baseline arm on the quick panel: dispatch the Evals workflow with
+   `task: <id>` and `arms: baseline` (tier `quick`), or locally
+   `evals/inspect/prepare.sh <id>`, rebuild the image, then `TASK_ID=<id>
+   ARMS=baseline evals/inspect/panel.sh quick`. Logs land in
+   `inspect/logs/calibration/<id>/` (the `eval-logs-calibration-<id>` artifact
+   in CI). The calibration table gives
+   each model's pass rate, median turns, tokens and time, the pooled pass
+   rate and whether the task is in band. It has no verdict and is never a
+   pass.
+3. The task is in band when baseline passes 40–80% of runs pooled over the
+   quick panel's models and no model passes every run. Too easy or too hard:
+   adjust the prompt, project, hidden tests or checks and calibrate again.
+   Never run the codecite arm while calibrating.
+4. Freeze it: set `frozen_at` in its `task.json` to the commit its first A/B
+   run runs at, in the PR that adds the task to the panel. From then on CI's
+   frozen-task check (`uv run --locked codecite-eval-frozen`) fails any PR
+   that changes a file under `tasks/<id>/` or moves `frozen_at`. A task that
+   needs changing after that is a new task: copy it to a new id and
+   calibrate that.
 
 ## How a sample runs
 

@@ -107,10 +107,27 @@ def test_scorer_passes_an_agent_that_finished(monkeypatch):
     assert score.metadata["stopped"] is None
 
 
+def test_arms_both_gives_both_samples():
+    t = task.ab("fastapi-middleware")
+    assert [s.metadata["arm"] for s in t.dataset] == ["baseline", "codecite"]
+
+
+def test_arms_baseline_gives_only_the_baseline_sample():
+    t = task.ab("fastapi-middleware", arms="baseline")
+    assert [s.metadata["arm"] for s in t.dataset] == ["baseline"]
+    assert "codecite" not in t.dataset[0].input
+
+
+def test_unknown_arms_are_refused():
+    with pytest.raises(ValueError, match="arms must be one of both, baseline"):
+        task.ab("fastapi-middleware", arms="codecite")
+
+
 def test_every_task_is_registered():
     # Inspect finds tasks through _registry: codecite_evals/<name>.
     assert callable(_registry.fastapi_middleware)
     assert callable(_registry.client_auth_uri)
+    assert callable(_registry.ab)
     assert callable(_registry.backchannel_logout)
 
 

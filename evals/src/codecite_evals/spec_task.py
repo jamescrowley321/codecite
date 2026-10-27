@@ -23,10 +23,9 @@ from inspect_ai.solver import TaskState
 from inspect_ai.util import sandbox, store
 
 from codecite_evals import config
-from codecite_evals.task import arm_to_store, pi, why_stopped
+from codecite_evals.task import ARMS, arm_to_store, pi, why_stopped
 
 TASK_ID = "spec-questions"
-ARMS = ("baseline", "codecite")
 
 
 def spec(task_dir: Path) -> dict:
@@ -66,13 +65,16 @@ def sample_id(arm: str, question_id: str) -> str:
 
 
 @task
-def spec_questions() -> Task:
+def spec_questions(arms: str = "both") -> Task:
+    """arms="baseline" keeps only the baseline arm's samples, a calibration."""
+    if arms not in ARMS:
+        raise ValueError(f"arms must be one of {', '.join(ARMS)}, not {arms!r}")
     task_dir = config.task_dir(TASK_ID)
     return Task(
         dataset=[
             Sample(id=sample_id(arm, q["id"]), input=prompt(task_dir, q, arm), metadata={"arm": arm, "question": q["id"]})
             for q in questions(task_dir)
-            for arm in ARMS
+            for arm in ARMS[arms]
         ],
         solver=[arm_to_store(), pi()],
         scorer=answer_and_section(TASK_ID),

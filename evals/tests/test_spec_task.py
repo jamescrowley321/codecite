@@ -36,6 +36,13 @@ def test_one_sample_per_question_per_arm():
         assert arm in ("baseline", "codecite")
 
 
+def test_arms_baseline_keeps_only_the_baseline_samples():
+    dataset = spec_task.spec_questions(arms="baseline").dataset
+    assert dataset and {s.metadata["arm"] for s in dataset} == {"baseline"}
+    with pytest.raises(ValueError, match="arms must be one of both, baseline"):
+        spec_task.spec_questions(arms="codecite")
+
+
 def test_a_sample_holds_no_answer():
     # The answers reach the sandbox only with the scorer.
     for s in spec_task.spec_questions().dataset:

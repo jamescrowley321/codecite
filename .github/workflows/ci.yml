@@ -70,10 +70,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The frozen-task check diffs each task against its frozen_at commit.
+          fetch-depth: 0
       - name: Install uv
         run: pipx install uv==0.12.5
       - run: uv run --locked pytest
         working-directory: evals
+      # A frozen task's files can't change; on a PR, nor can its frozen_at.
+      - name: Check frozen tasks
+        working-directory: evals
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: uv run --locked codecite-eval-frozen ${BASE_REF:+--base "origin/$BASE_REF"}
 
   deny:
     name: deny
