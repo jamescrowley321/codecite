@@ -767,6 +767,7 @@ code · adapt · indexed 2026-10-20T06:00:00Z
             indexed_at: "2026-10-20T06:00:00Z".into(),
             dirty: Some(false),
             snippet: snippet.into(),
+            snippet_truncated: false,
         }
     }
 
@@ -827,6 +828,7 @@ code · adapt · indexed 2026-10-20T06:00:00Z
             indexed_at: "2026-10-20T06:00:00Z".into(),
             dirty: None,
             snippet: "Check the jti.".into(),
+            snippet_truncated: false,
         };
         let mut short = code("a.rs", None, "x");
         short.citation = "app@0123456:a.rs#L1-L5".into();
@@ -896,6 +898,7 @@ code · adapt · indexed 2026-10-20T06:00:00Z
             indexed_at: "2026-10-20T06:00:00Z".into(),
             dirty: None,
             snippet: "# Title\u{1b}]52;c;ZWNobyBoaQ==\u{7}\tend".into(),
+            snippet_truncated: false,
         };
         let out = human(&[result]);
         assert!(
