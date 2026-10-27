@@ -1,0 +1,13 @@
+[project]
+name = "token-service"
+version = "0.1.0"
+description = "A small OAuth 2.0 token service"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.23.0",
+    "python-multipart>=0.0.9",
+]
+
+[tool.uv]
+package = false
