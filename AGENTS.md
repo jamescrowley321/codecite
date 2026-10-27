@@ -92,8 +92,10 @@ loop.
    review rounds, stop and summarise what's left in a PR comment.
 6. **Ask for an eval.** If the PR changes indexing, search, ranking or the
    CLI's output, add the `eval` label. The eval workflow runs the quick A/B
-   eval and posts its scorecard. A quick loss means run the full eval, so say
-   so on the PR. Never call it a pass.
+   eval on every push while the label is on and keeps its scorecard in one PR
+   comment. The quick tier is directional: a quick loss means run the full
+   eval (the workflow dispatched with `tier: full`), so say so on the PR.
+   Never call it a pass.
 7. **Stop there.** James merges. Don't merge your own PR.
 
 ## Repository settings
