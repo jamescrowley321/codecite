@@ -25,12 +25,19 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 status=0
+declare -A seen=()
 for n in "$@"; do
   if [[ ! "$n" =~ ^[0-9]+$ ]]; then
     echo "#$n: not an issue number" >&2
     status=1
     continue
   fi
+  # One session per issue: a repeated argument would start a second one.
+  if [[ -n "${seen[$n]:-}" ]]; then
+    echo "#$n: listed twice; launched once" >&2
+    continue
+  fi
+  seen[$n]=1
   prompt="Work codecite#$n per AGENTS.md 'Working an issue end to end'"
   # `script` records the session's output, terminal escapes and all.
   timeout 120 script -qfc "claude --cloud \"$prompt\"" "$TMP/$n.log" < /dev/null > /dev/null 2>&1 || true
