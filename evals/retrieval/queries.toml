@@ -297,6 +297,160 @@ text = "my app talks to several identity providers; how do I detect that a login
 answers = ["rfc9207#section-2.4", "rfc9700#section-4.4.2.1"]
 source = "multi-provider client: mix-up defence"
 
+[[query]]
+id = "spec-plain-app-sign-in-fails-error"
+class = "spec-plain"
+text = "Which error does the token endpoint return when an app's own sign-in to it fails, say with a wrong secret?"
+answers = ["rfc6749#section-5.2"]
+source = "token client: mapping token endpoint error codes to exceptions"
+
+[[query]]
+id = "spec-plain-login-code-lifetime"
+class = "spec-plain"
+text = "At most how many minutes should a one-time login code stay redeemable?"
+answers = ["rfc6749#section-4.1.2"]
+source = "authorization server: issuing and redeeming authorization codes"
+
+[[query]]
+id = "spec-plain-login-code-second-use"
+class = "spec-plain"
+text = "May my app redeem the same one-time login code twice?"
+answers = ["rfc6749#section-4.1.2", "rfc6749#section-10.5"]
+source = "OAuth client: retrying a failed code exchange"
+
+[[query]]
+id = "spec-plain-not-enough-permission-status"
+class = "spec-plain"
+text = "What HTTP status should my API send when the credential is fine but doesn't carry enough permission for this call?"
+answers = ["rfc6750#section-3.1"]
+source = "resource server middleware: rejecting requests"
+
+[[query]]
+id = "spec-plain-derive-what-is-sent-up-front"
+class = "spec-plain"
+text = "If an app is able to hash, which method must it use to derive what it sends up front from its per-login secret?"
+answers = ["rfc7636#section-4.2"]
+source = "PKCE: building the authorization request"
+
+[[query]]
+id = "spec-plain-cancel-unknown-credential-status"
+class = "spec-plain"
+text = "What HTTP status does the provider return when asked to cancel a credential it doesn't recognise?"
+answers = ["rfc7009#section-2.2"]
+source = "OAuth client: token revocation on logout"
+
+[[query]]
+id = "spec-plain-liveness-reply-field"
+class = "spec-plain"
+text = "When my API asks the provider whether a credential is still live, which field of the reply is always present?"
+answers = ["rfc7662#section-2.2"]
+source = "resource server: token introspection"
+
+[[query]]
+id = "spec-plain-no-good-after-field"
+class = "spec-plain"
+text = "Which registered field marks the moment after which a signed claims set is no good?"
+answers = ["rfc7519#section-4.1.4"]
+source = "JWT validation library"
+
+[[query]]
+id = "spec-plain-spot-resent-claims-set"
+class = "spec-plain"
+text = "Which field lets a server spot that someone is sending the same signed claims set again?"
+answers = ["rfc7519#section-4.1.7"]
+source = "client authentication: private_key_jwt assertions"
+
+[[query]]
+id = "spec-plain-never-show-screen"
+class = "spec-plain"
+text = "What do I put in the sign-in request so the provider never shows the person a screen and fails instead?"
+answers = ["openid-connect-core-1_0#section-3.1.2.1"]
+source = "OIDC client: silent re-auth"
+
+[[query]]
+id = "spec-plain-background-sign-in-needs-password"
+class = "spec-plain"
+text = "My background sign-in can't finish because the person must type their password again. What error comes back?"
+answers = ["openid-connect-core-1_0#section-3.1.2.6", "openid-connect-core-1_0#section-3.1.2.1"]
+source = "OIDC client: silent re-auth"
+
+[[query]]
+id = "spec-plain-settings-document-path"
+class = "spec-plain"
+text = "Given the base address of a provider, where under it do I fetch its settings document?"
+answers = ["openid-connect-discovery-1_0#section-4", "openid-connect-discovery-1_0#section-4.1"]
+source = "discovery client"
+
+[[query]]
+id = "spec-plain-gadget-still-waiting-error"
+class = "spec-plain"
+text = "Which error does a living-room gadget get while the person still hasn't finished approving on their phone?"
+answers = ["rfc8628#section-3.5"]
+source = "device flow: polling the token endpoint"
+
+[[query]]
+id = "spec-plain-gadget-too-eager-error"
+class = "spec-plain"
+text = "Which error tells a living-room gadget that it is asking for its result too often?"
+answers = ["rfc8628#section-3.5"]
+source = "device flow: polling interval"
+
+[[query]]
+id = "spec-plain-key-bound-scheme"
+class = "spec-plain"
+text = "When a caller proves it holds the key its token is tied to, which word replaces Bearer at the start of the Authorization header?"
+answers = ["rfc9449#section-7.1"]
+source = "resource server: checking a DPoP-bound JWT access token"
+
+[[query]]
+id = "spec-plain-sign-out-message-one-off-value"
+class = "spec-plain"
+text = "When someone logs off, may the message the provider posts to my backend carry the one-off random value from their login?"
+answers = ["openid-connect-backchannel-1_0#section-2.4", "openid-connect-backchannel-1_0#section-2.6"]
+source = "RP: back-channel logout receiver"
+
+[[query]]
+id = "spec-plain-sign-out-message-marker"
+class = "spec-plain"
+text = "Which claim tells my backend that a server-to-server message from the provider means the person has gone?"
+answers = ["openid-connect-backchannel-1_0#section-2.4", "openid-connect-backchannel-1_0#section-2.6"]
+source = "RP: back-channel logout receiver"
+
+[[query]]
+id = "spec-plain-unsigned-claims-set"
+class = "spec-plain"
+text = "Should my verifier take a claims set whose header says it carries no signature at all, when my app never opted in to that?"
+answers = ["rfc7518#section-3.6"]
+source = "JWT validation library: algorithm allow-list"
+
+[[query]]
+id = "spec-plain-high-security-code-lifetime"
+class = "spec-plain"
+text = "Under the high-security profile, for how many seconds at most may a login code be redeemable?"
+answers = ["fapi-security-profile-2_0#section-5.3.2.1"]
+source = "FAPI authorization server: code lifetime"
+
+[[query]]
+id = "spec-plain-high-security-browser-parameters"
+class = "spec-plain"
+text = "Under the high-security profile, may the app send its login parameters through the browser without first handing them over behind the scenes?"
+answers = ["fapi-security-profile-2_0#section-5.3.2.2"]
+source = "FAPI client: pushed authorization requests"
+
+[[query]]
+id = "spec-plain-self-registration-bad-return-address"
+class = "spec-plain"
+text = "Which error comes back when my app registers itself on the fly and one of its return addresses is refused?"
+answers = ["rfc7591#section-3.2.2"]
+source = "dynamic registration client: handling rejections"
+
+[[query]]
+id = "spec-plain-self-registration-assigned-id"
+class = "spec-plain"
+text = "When my app registers itself on the fly, which response field holds the identifier the provider assigned?"
+answers = ["rfc7591#section-3.2.1"]
+source = "dynamic registration client: storing the registration"
+
 
 [[query]]
 id = "spec-req-dpop-proof-validation"

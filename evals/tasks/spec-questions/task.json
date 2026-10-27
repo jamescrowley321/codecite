@@ -1,0 +1,19 @@
+{
+  "id": "spec-questions",
+  "project": null,
+  "prompt": "prompt.md",
+  "questions": "questions.toml",
+  "score": "score.py",
+  "answer": "/work/answer.txt",
+  "specs": "/opt/specs",
+  "corpus": {
+    "repo": "identity-model",
+    "commit": "9458d60f4f2f20227bddf2594fd7d10cba66ea0a",
+    "documents": "evals/retrieval/identity-bench.toml"
+  },
+  "idp": null,
+  "epochs": {
+    "quick": 1,
+    "full": 3
+  }
+}

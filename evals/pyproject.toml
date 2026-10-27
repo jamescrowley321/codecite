@@ -9,6 +9,7 @@ dependencies = [
 
 [project.scripts]
 codecite-eval-report = "codecite_evals.report:main"
+codecite-eval-frozen = "codecite_evals.frozen:main"
 
 # Inspect finds the tasks here: `inspect eval codecite_evals/fastapi_middleware`.
 [project.entry-points.inspect_ai]
