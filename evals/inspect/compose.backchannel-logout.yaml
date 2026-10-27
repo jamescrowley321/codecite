@@ -1,0 +1,10 @@
+# The backchannel-logout sandbox. Its hidden tests serve discovery and JWKS
+# from a stub in their conftest, so there is no IdP, and the sandbox has no
+# network at all: pi's model calls go through Inspect's agent bridge, over
+# the sandbox's exec channel.
+services:
+  default:
+    build: build/backchannel-logout
+    image: codecite-eval-sandbox-backchannel-logout
+    init: true
+    network_mode: none

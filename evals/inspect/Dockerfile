@@ -19,16 +19,18 @@ RUN sed -i 's#@IDENTITY_MODEL@#/opt/identity-model#' pyproject.toml \
  && uv sync \
  && uv run --with pytest==9.1.1 --with httpx==0.28.1 python -c ''
 
-# The `eval` corpus over identity-model. codecite indexes a git source, so
-# the export becomes a throwaway one-commit repo first.
+# The `eval` corpus over identity-model, plus the task's spec documents
+# (documents.toml, fetched here and checked against their sha256). codecite
+# indexes a git source, so the export becomes a throwaway one-commit repo first.
 COPY codecite /opt/codecite/bin/codecite
-COPY COMMIT /tmp/COMMIT
+COPY COMMIT documents.toml /tmp/
 RUN git init -q /tmp/src && cp -r /opt/identity-model/. /tmp/src/ \
  && git -C /tmp/src add -A \
  && git -C /tmp/src -c user.name=eval -c user.email=eval@localhost commit -qm export \
- && printf 'name = "eval"\n\n[[source]]\nkind = "git"\nname = "identity-model"\nurl = "/tmp/src"\ncommit = "%s"\nlicense = "Apache-2.0"\nuse = "adapt"\n' "$(git -C /tmp/src rev-parse HEAD)" > /tmp/corpus.toml \
+ && printf 'name = "eval"\n\n[[source]]\nkind = "git"\nname = "identity-model"\nurl = "/tmp/src"\ncommit = "%s"\nlicense = "Apache-2.0"\nuse = "adapt"\n\n' "$(git -C /tmp/src rev-parse HEAD)" > /tmp/corpus.toml \
+ && cat /tmp/documents.toml >> /tmp/corpus.toml \
  && /opt/codecite/bin/codecite index eval --manifest /tmp/corpus.toml \
- && rm -rf /tmp/src /tmp/corpus.toml /tmp/COMMIT /root/.cache/codecite
+ && rm -rf /tmp/src /tmp/corpus.toml /tmp/COMMIT /tmp/documents.toml /root/.cache/codecite
 
 COPY pi-models.json /root/.pi/agent/models.json
 ENV PI_OFFLINE=1 PI_TELEMETRY=0 PI_SKIP_VERSION_CHECK=1

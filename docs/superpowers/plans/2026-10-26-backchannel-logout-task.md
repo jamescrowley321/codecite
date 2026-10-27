@@ -16,7 +16,7 @@
 - `task.json`'s `corpus.documents` names `evals/retrieval/identity-bench.toml` instead of copying its document list; `idp` is `null`.
 - Valid tokens carry `exp`: errata set 1 made it required, so a hand-written solution may demand it, while identity-model's claim check does not. No test drops `exp`.
 - The prompt adds two lines beyond the issue's wording: where the identity-model source is, as `fastapi-middleware`'s does for both arms, and which interfaces the hidden tests use (`app.main:app`, `app/sessions.py`).
-- The harness still runs only `fastapi-middleware`. Choosing a task, and indexing the task's documents into the sandbox corpus, belong with #127's `task` input.
+- The task is registered as `codecite_evals/backchannel_logout` (from review, after #131 made `evals/` a package). `task.py` builds every task from its directory; `prepare.sh <task>` stages `build/<task>/`; `compose.backchannel-logout.yaml` has no IdP and no network; the image indexes the manifest's documents. `panel.sh` and the eval workflow still run `fastapi-middleware`; choosing the task there is #127's `task` input.
 
 ## Steps
 

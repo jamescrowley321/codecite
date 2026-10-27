@@ -84,7 +84,7 @@ class ScoringSandbox:
 def score_with(monkeypatch, store):
     monkeypatch.setattr(task, "sandbox", lambda: ScoringSandbox())
     monkeypatch.setattr(task, "store", lambda: store)
-    return asyncio.run(task.hidden_tests_and_checks()(None, None))
+    return asyncio.run(task.hidden_tests_and_checks("fastapi-middleware")(None, None))
 
 
 def test_scorer_records_a_sandbox_error(monkeypatch):

@@ -14,10 +14,11 @@ Evaluation plan):
 
 | Path | What |
 | --- | --- |
-| `src/codecite_evals/` | The `codecite-evals` package that `uv sync` installs: `task.py` (the Inspect task: one sample per arm, pi in a Docker sandbox, the scorer), `report.py` (the scorecard) and `config.py` (where every file below is found) |
-| `tests/` | Unit tests for the task's agent, the scorecard and the config; no model key or Docker needed |
-| `inspect/prepare.sh` | Stage the sandbox image's build context in `inspect/build/` |
+| `src/codecite_evals/` | The `codecite-evals` package that `uv sync` installs: `task.py` (the Inspect tasks, one per directory under `tasks/`: one sample per arm, pi in a Docker sandbox, the scorer), `_registry.py` (the tasks Inspect finds), `report.py` (the scorecard) and `config.py` (where every file below is found) |
+| `tests/` | Unit tests for the tasks' agent, scorer and registration, the scorecard and the config; no model key or Docker needed |
+| `inspect/prepare.sh [task]` | Stage a task's sandbox image build context in `inspect/build/<task>/` (default `fastapi-middleware`) |
 | `inspect/Dockerfile`, `inspect/compose.yaml` | The sandbox image and the IdP beside it, on a network with no route out |
+| `inspect/compose.<task>.yaml` | A task's own sandbox, when it differs from `compose.yaml` (`backchannel-logout`: no IdP, no network) |
 | `inspect/pi-models.json` | Points pi at Inspect's agent bridge |
 | `inspect/panel.sh` | Run one tier (`quick` or `full`): every model in one Inspect process, then the report |
 | `tasks/<id>/` | A task: `task.json`, `prompt.md`, starting `project/`, `hidden/` tests, `checks.py`, `reference/`, and `check.sh`/`planted.sh` to prove the task and checks are sound |
@@ -54,9 +55,19 @@ only uv and an identity-model checkout, and CI runs it (`eval-task`):
 IDENTITY_MODEL_REPO=~/repos/auth/identity-model evals/tasks/backchannel-logout/check.sh
 ```
 
-The harness (`inspect/task.py`, `inspect/prepare.sh`) runs
-`fastapi-middleware`; choosing the task, and adding a task's spec documents to
-the sandbox corpus, come with #127.
+Both tasks are registered (`codecite_evals/fastapi_middleware`,
+`codecite_evals/backchannel_logout`). A task's sandbox comes from
+`inspect/prepare.sh <task>` and its compose file, and its corpus adds the
+documents of the manifest its `task.json` names. The codecite arm's note then
+says the corpus holds the specification documents identity-model implements,
+never which. `panel.sh` and the eval workflow still run `fastapi-middleware`;
+choosing the task there comes with #127. To run `backchannel-logout` locally:
+
+```
+evals/inspect/prepare.sh backchannel-logout
+docker compose -f evals/inspect/compose.backchannel-logout.yaml build
+cd evals && uv run --locked inspect eval codecite_evals/backchannel_logout --model ...
+```
 
 ## Two tiers
 
@@ -117,7 +128,7 @@ uv run --locked codecite-eval-report --tier quick
 The package registers its tasks with Inspect through the `inspect_ai` entry
 point, so Inspect runs them by name (`codecite_evals/<task>`) from any
 directory, and `codecite-eval-report` is the scorecard's command. Both find
-`tasks/`, `inspect/compose.yaml` and `inspect/logs/` through
+`tasks/`, each task's compose file and `inspect/logs/` through
 `src/codecite_evals/config.py`: under this `evals/` directory, or under
 `CODECITE_EVALS_DIR` when it is set.
 
