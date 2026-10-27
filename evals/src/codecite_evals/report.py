@@ -20,6 +20,12 @@ any has them named in its verdict, so a loss or pass they helped make doesn't
 read as clean. An agent whose own output overflowed or didn't decode is a
 plain failure, in neither column.
 
+A pair whose codecite arm called codecite in fewer than half its usable runs
+is not measured: the arms then differ by a tool the agent never used, so the
+comparison says nothing about codecite. "used codecite" counts, per arm, the
+runs with at least one call, read from the model calls in the log: a call to
+one of codecite's native tools, or a `bash` call that runs `codecite`.
+
 A run of the baseline arm alone (`-T arms=baseline`, recorded in the log's
 task arguments) is a calibration, not an A/B run: per task, it gets a
 calibration table, with pass rate, median turns, tokens and time per model and
@@ -37,17 +43,28 @@ a quick loss means run the full tier.
 
 import argparse
 import random
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
 from statistics import median
 
+from inspect_ai.event import ModelEvent
 from inspect_ai.log import list_eval_logs, read_eval_log
 from inspect_ai.model import ChatMessageAssistant
 
 from codecite_evals import config
 
 MARGIN = 0.05
+# A pair is measured when its codecite arm used codecite in at least this
+# share of its usable runs.
+ADOPTION = 0.5
+NATIVE = "mcp__codecite__"
+ATTACHMENT = "attachment://"
+# `codecite` at the start of a shell command: of the line, or after `;`, `&`,
+# `|`, `(`, `$(` or a backtick, behind any VAR=value prefixes, by bare name or
+# path. `grep codecite` or `ls /opt/codecite` don't run it.
+CLI = re.compile(r"(?:^|[;&|(`\n]|\$\()\s*(?:\w+=\S*\s+)*(?:\S*/)?codecite(?=\s|$)")
 RESAMPLES = 10_000
 SEED = 0
 # A task is in band when baseline passes this share of runs, pooled over the
@@ -110,6 +127,26 @@ def stopped(metadata):
     return metadata.get("stopped") or ("agent_timeout" if metadata.get("timed_out") else None)
 
 
+def codecite_calls(sample):
+    """How many tool calls in this sample's model calls ran codecite: its
+    native tools, or `bash` with a codecite command. Text that only names
+    codecite isn't a call."""
+    calls = 0
+    for event in sample.events or []:
+        if not isinstance(event, ModelEvent) or not event.output.choices:
+            continue
+        for call in event.output.message.tool_calls or []:
+            if call.function.startswith(NATIVE):
+                calls += 1
+            elif call.function == "bash":
+                command = call.arguments.get("command") if isinstance(call.arguments, dict) else None
+                if isinstance(command, str) and command.startswith(ATTACHMENT):
+                    # Inspect stores long strings apart, in the sample's attachments.
+                    command = (sample.attachments or {}).get(command.removeprefix(ATTACHMENT))
+                calls += isinstance(command, str) and bool(CLI.search(command))
+    return calls
+
+
 def listed(error, limit=200):
     """An error on one line, short and fenced: the scorecard is posted where
     agents read it, and the text can carry whatever the sandbox printed."""
@@ -143,7 +180,7 @@ def scorecard(logs, tier=None):
     kinds = {calibrating(log) for log in logs}
     if len(kinds) > 1:
         raise ValueError("these logs mix calibration runs (arms=baseline) with A/B runs; report them apart")
-    runs = defaultdict(list)  # (task, model, arm) -> [(passed, tokens, seconds, stopped, turns)]
+    runs = defaultdict(list)  # (task, model, arm) -> [(passed, tokens, seconds, stopped, turns, used codecite)]
     errors = defaultdict(list)  # task -> [(model, arm, sample, epoch, sandbox error)]
     planned = {}  # (task, model, arm) -> runs
     for log in logs:
@@ -159,7 +196,7 @@ def scorecard(logs, tier=None):
             why = stopped(metadata)
             arm = s.metadata["arm"]
             turns = sum(isinstance(m, ChatMessageAssistant) for m in s.messages or [])
-            runs[(name, model, arm)].append((score.value == 1, tokens, s.total_time or 0.0, why, turns))
+            runs[(name, model, arm)].append((score.value == 1, tokens, s.total_time or 0.0, why, turns, codecite_calls(s) > 0))
             if why == "sandbox_error":
                 # A question's sample is named by its question; a code task's by its arm alone.
                 which = s.metadata.get("question")
@@ -233,8 +270,8 @@ def table(rng, name, runs, planned):
     out = [
         f"**Task: `{name}`**",
         "",
-        "| model | arm | runs | pass | fails | timeouts | sandbox errors | median tokens | median time | verdict |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| model | arm | runs | used codecite | pass | fails | timeouts | sandbox errors | median tokens | median time | verdict |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for model in sorted({k[1] for k in planned if k[0] == name}):
         base, code = runs.get((name, model, "baseline"), []), runs.get((name, model, "codecite"), [])
@@ -242,6 +279,8 @@ def table(rng, name, runs, planned):
         if len(base) < want_base or len(code) < want_code:
             of = want_base if want_base == want_code else f"{want_base}/{want_code}"
             verdict = f"incomplete ({len(base)}/{len(code)} of {of} runs)"
+        elif (used := sum(x[5] for x in code)) < ADOPTION * len(code):
+            verdict = f"not measured (codecite used in {used} of {len(code)} runs)"
         else:
             p = interval(rng, [r[0] for r in base], [r[0] for r in code], pass_diff)
             t = interval(rng, [r[1] for r in base], [r[1] for r in code], median_ratio)
@@ -261,7 +300,7 @@ def table(rng, name, runs, planned):
                 if r
                 else "- | - | - | - | - | -"
             )
-            out.append(f"| {model.removeprefix('openrouter/')} | {arm} | {len(r)} | {cells} | {verdict if arm == 'codecite' else ''} |")
+            out.append(f"| {model.removeprefix('openrouter/')} | {arm} | {len(r)} | {sum(x[5] for x in r)}/{len(r)} | {cells} | {verdict if arm == 'codecite' else ''} |")
     return out
 
 

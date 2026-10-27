@@ -4,8 +4,9 @@ Two benchmarks decide whether codecite earns its place (`docs/design.md`,
 Evaluation plan):
 
 - **A/B agent eval** (`inspect/`): the same coding agent does the same task
-  twice, in a **baseline** arm and in a **codecite** arm with the `codecite`
-  CLI on `PATH` and a prebuilt corpus. Hidden tests and deterministic checks
+  twice, in a **baseline** arm and in a **codecite** arm with codecite's
+  `search` and `read` as native tools, the `codecite` CLI on `PATH` and a
+  prebuilt corpus. Hidden tests and deterministic checks
   score both. Runs on [Inspect AI](https://inspect.aisi.org.uk/).
 - **Retrieval benchmark** (`retrieval/`): labelled queries run through
   `codecite-bench`; CI runs it on every PR.
@@ -240,9 +241,20 @@ benchmark).
 - The sandbox image holds pi, the task's project with its dependencies
   installed, identity-model's source at the task's pinned commit, and codecite
   with the `eval` corpus already indexed. A spec-question sample instead
-  starts in an empty `/work/project` with the spec documents in `/opt/specs`. The baseline arm deletes codecite
-  before the agent starts; the codecite arm gets it on `PATH` and a note in
-  the prompt. Otherwise the arms are identical.
+  starts in an empty `/work/project` with the spec documents in `/opt/specs`.
+  The baseline arm deletes codecite
+  before the agent starts and runs pi with `--no-mcp`. The codecite arm runs
+  `codecite mcp` through pi's built-in MCP support (`-e builtin:mcp`, with the
+  server's exposure `direct`), so `mcp__codecite__search` and
+  `mcp__codecite__read` sit in pi's tool list next to `grep` and `find`, with
+  codecite's descriptions; it keeps codecite on `PATH` too, and its prompt
+  gets a note naming both. Otherwise the arms are identical.
+- The scorecard's `used codecite` column counts, per arm, the runs with at
+  least one call to codecite, read from the model calls in the Inspect log: a
+  native tool call, or a `bash` call that runs `codecite`. Text that only
+  names codecite doesn't count. A model whose codecite arm used it in fewer
+  than half its usable runs gets the verdict `not measured`: the arms then
+  differ by a tool the agent never touched.
 - The sandbox shares the IdP's network namespace and has no route to the
   internet. pi's model calls leave through Inspect's agent bridge, so Inspect
   records every call and its tokens, and the agent never holds a key.
