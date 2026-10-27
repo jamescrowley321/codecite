@@ -59,6 +59,10 @@ async def token(request: Request):
         return invalid_client()
 
     creds = basic_credentials(request)
+    # RFC 6749 §2.3: a client MUST NOT use more than one authentication method
+    # in a request; one that does is an invalid_request (§5.2).
+    if creds is not None and "client_secret" in form:
+        return error("invalid_request")
     if creds is not None:
         client_id, client_secret = creds
     else:

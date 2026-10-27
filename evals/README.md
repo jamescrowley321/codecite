@@ -40,7 +40,9 @@ Evaluation plan):
   is RFC 6749 §2.3.1: credentials MUST NOT be in the request URI, HTTP Basic
   MUST be supported, and the form body is allowed. The hidden tests reject
   query-string credentials, even valid ones, with `invalid_client` or
-  `invalid_request` (both readings of §5.2), and
+  `invalid_request` (both readings of §5.2); reject HTTP Basic plus a
+  `client_secret` in the body, since a client MUST NOT use more than one
+  authentication method in a request (§2.3); and
   still issue tokens over Basic and the form body; an agent that removes too
   much fails. `checks.py` passes only when a comment or docstring in `app/`
   cites §2.3.1 of RFC 6749 (`rfc6749#section-2.3.1`, `RFC 6749 §2.3.1` or
