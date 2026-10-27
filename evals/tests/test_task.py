@@ -8,7 +8,7 @@ from inspect_ai.agent import AgentState
 from inspect_ai.model import ChatMessageUser
 from inspect_ai.util import ExecResult, OutputLimitExceededError
 
-from codecite_evals import task
+from codecite_evals import config, task
 
 
 class Store(dict):
@@ -84,7 +84,7 @@ class ScoringSandbox:
 def score_with(monkeypatch, store):
     monkeypatch.setattr(task, "sandbox", lambda: ScoringSandbox())
     monkeypatch.setattr(task, "store", lambda: store)
-    return asyncio.run(task.hidden_tests_and_checks()(None, None))
+    return asyncio.run(task.hidden_tests_and_checks(config.task_dir("fastapi-middleware"))(None, None))
 
 
 def test_scorer_records_a_sandbox_error(monkeypatch):
@@ -99,3 +99,19 @@ def test_scorer_passes_an_agent_that_finished(monkeypatch):
     score = score_with(monkeypatch, Store())
     assert score.value == 1
     assert score.metadata["stopped"] is None
+
+
+def test_arms_both_gives_both_samples():
+    t = task.ab("fastapi-middleware")
+    assert [s.metadata["arm"] for s in t.dataset] == ["baseline", "codecite"]
+
+
+def test_arms_baseline_gives_only_the_baseline_sample():
+    t = task.ab("fastapi-middleware", arms="baseline")
+    assert [s.metadata["arm"] for s in t.dataset] == ["baseline"]
+    assert "codecite" not in t.dataset[0].input
+
+
+def test_unknown_arms_are_refused():
+    with pytest.raises(ValueError, match="arms must be one of both, baseline"):
+        task.ab("fastapi-middleware", arms="codecite")

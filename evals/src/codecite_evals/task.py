@@ -1,10 +1,12 @@
-"""The fastapi-middleware A/B eval on Inspect: pi in a Docker sandbox, with
-and without codecite, on any model Inspect can reach.
+"""The A/B eval on Inspect: pi in a Docker sandbox, with and without
+codecite, on any model Inspect can reach.
 
-    uv run inspect eval codecite_evals/fastapi_middleware --model openrouter/openai/gpt-6.1-sol -M strict_tools=false --epochs 2
+    uv run inspect eval codecite_evals/ab -T task_id=fastapi-middleware --model openrouter/openai/gpt-6.1-sol -M strict_tools=false --epochs 2
 
-Each sample is one arm; epochs repeat it. pi's model calls go through
-Inspect's agent bridge, so Inspect records every call and its tokens.
+Each sample is one arm; epochs repeat it. `-T arms=baseline` runs only the
+baseline arm, to calibrate a task's difficulty without watching codecite's
+(evals/README.md). pi's model calls go through Inspect's agent bridge, so
+Inspect records every call and its tokens.
 """
 
 import json
@@ -18,7 +20,7 @@ from inspect_ai.util import OutputLimitExceededError, sandbox, store
 
 from codecite_evals import config
 
-TASK = config.task_dir("fastapi-middleware")
+ARMS = {"both": ("baseline", "codecite"), "baseline": ("baseline",)}
 PROJECT = "/work/project"
 IDENTITY_MODEL = "/opt/identity-model"
 CODECITE_NOTE = (
@@ -31,19 +33,30 @@ PI_FLAGS = ["--no-session", "--no-mcp", "--no-extensions", "--no-skills", "--no-
 AGENT_TIMEOUT = 600
 
 
-def prompt(arm: str) -> str:
-    text = (TASK / "prompt.md").read_text().replace("{identity_model}", IDENTITY_MODEL)
+def prompt(task_dir, arm: str) -> str:
+    text = (task_dir / "prompt.md").read_text().replace("{identity_model}", IDENTITY_MODEL)
     return f"{text}\n\n{CODECITE_NOTE}\n" if arm == "codecite" else text
 
 
 @task
-def fastapi_middleware() -> Task:
+def ab(task_id: str = "fastapi-middleware", arms: str = "both") -> Task:
+    """One task under tasks/, in both arms or (arms=baseline) the baseline
+    arm alone. The sandbox image holds that task's project (prepare.sh)."""
+    if arms not in ARMS:
+        raise ValueError(f"arms must be one of {', '.join(ARMS)}, not {arms!r}")
+    task_dir = config.task_dir(task_id)
     return Task(
-        dataset=[Sample(id=arm, input=prompt(arm), metadata={"arm": arm}) for arm in ("baseline", "codecite")],
+        dataset=[Sample(id=arm, input=prompt(task_dir, arm), metadata={"arm": arm}) for arm in ARMS[arms]],
         solver=[arm_to_store(), pi()],
-        scorer=hidden_tests_and_checks(),
+        scorer=hidden_tests_and_checks(task_dir),
         sandbox=("docker", str(config.COMPOSE)),
+        metadata={"task_id": task_id, "arms": arms},
     )
+
+
+@task
+def fastapi_middleware(arms: str = "both") -> Task:
+    return ab("fastapi-middleware", arms)
 
 
 @solver
@@ -121,16 +134,16 @@ def last_turn_error(stdout: str) -> str | None:
 
 
 @scorer(metrics=[accuracy(), stderr()])
-def hidden_tests_and_checks():
+def hidden_tests_and_checks(task_dir):
     """Correct when the hidden tests and every deterministic check pass. The
     tests and checks reach the sandbox only now, after the agent has exited."""
 
     async def score(state: TaskState, target: Target) -> Score:
         sb = sandbox()
-        for f in (TASK / "hidden").glob("*.py"):
+        for f in (task_dir / "hidden").glob("*.py"):
             await sb.write_file(f"/score/hidden/{f.name}", f.read_text())
-        await sb.write_file("/score/checks.py", (TASK / "checks.py").read_text())
-        start = TASK / "project"
+        await sb.write_file("/score/checks.py", (task_dir / "checks.py").read_text())
+        start = task_dir / "project"
         for f in start.rglob("*"):
             if f.is_file():
                 text = f.read_text().replace("@IDENTITY_MODEL@", IDENTITY_MODEL)

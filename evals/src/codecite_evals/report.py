@@ -15,6 +15,11 @@ any has them named in its verdict, so a loss or pass they helped make doesn't
 read as clean. An agent whose own output overflowed or didn't decode is a
 plain failure, in neither column.
 
+A run of the baseline arm alone (`-T arms=baseline`, recorded in the log's
+task arguments) is a calibration, not an A/B run: it gets a calibration table, with pass rate, median turns, tokens and
+time per model and the pooled pass rate against the band, and no verdict. A
+calibration is never a pass.
+
     uv run codecite-eval-report [--tier quick|full] [LOG_DIR_OR_FILES...]
 
 The default logs are the tier's, inspect/logs/<tier>/, else inspect/logs/
@@ -32,12 +37,20 @@ from pathlib import Path
 from statistics import median
 
 from inspect_ai.log import list_eval_logs, read_eval_log
+from inspect_ai.model import ChatMessageAssistant
 
 from codecite_evals import config
 
 MARGIN = 0.05
 RESAMPLES = 10_000
 SEED = 0
+# A task is in band when baseline passes this share of runs, pooled over the
+# quick panel's models, and no model passes every run (docs/design.md).
+BAND = (0.40, 0.80)
+CALIBRATION = (
+    "**Calibration** (baseline arm only, {tier} panel): no verdict, and never a pass. "
+    "The task is in band when baseline passes 40–80% of runs pooled over models and no model passes every run."
+)
 TIERS = {
     "quick": "**Quick tier** (directional, never the gate): a loss here means run the full tier.",
     "full": "**Full tier**: the no-loss gate in docs/design.md (Evaluation plan).",
@@ -98,8 +111,13 @@ def listed(error, limit=200):
 
 
 def scorecard(logs, tier=None):
-    """The scorecard for these eval logs, as markdown, headed by its tier."""
-    runs = defaultdict(list)  # (model, arm) -> [(passed, tokens, seconds, stopped)]
+    """The scorecard for these eval logs, as markdown, headed by its tier: the
+    A/B table, or the calibration table when every log ran baseline alone."""
+    logs = list(logs)
+    kinds = {calibrating(log) for log in logs}
+    if len(kinds) > 1:
+        raise ValueError("these logs mix calibration runs (arms=baseline) with A/B runs; report them apart")
+    runs = defaultdict(list)  # (model, arm) -> [(passed, tokens, seconds, stopped, turns)]
     errors = []  # (model, arm, epoch, sandbox error)
     planned = {}
     for log in logs:
@@ -111,10 +129,77 @@ def scorecard(logs, tier=None):
             tokens = sum(u.total_tokens or 0 for u in (s.model_usage or {}).values())
             metadata = score.metadata or {}
             why = stopped(metadata)
-            runs[(log.eval.model, s.metadata["arm"])].append((score.value == 1, tokens, s.total_time or 0.0, why))
+            turns = sum(isinstance(m, ChatMessageAssistant) for m in s.messages or [])
+            runs[(log.eval.model, s.metadata["arm"])].append((score.value == 1, tokens, s.total_time or 0.0, why, turns))
             if why == "sandbox_error":
                 errors.append((log.eval.model, s.metadata["arm"], s.epoch, metadata.get("sandbox_error") or "unknown error"))
 
+    if kinds == {True}:
+        out = calibration(runs, planned, tier)
+    else:
+        out = ab(runs, planned, tier)
+    if errors:
+        out += ["", "Sandbox errors (scored as failures):", ""]
+        for model, arm, epoch, error in sorted(errors, key=lambda e: e[:3]):
+            out.append(f"- {model.removeprefix('openrouter/')}, {arm}, epoch {epoch}: {listed(error)}")
+    return "\n".join(out)
+
+
+def calibrating(log):
+    """Whether this log ran the baseline arm alone."""
+    return (log.eval.task_args or {}).get("arms") == "baseline"
+
+
+def counts(r):
+    """The cells every table shares: pass, fails, timeouts, sandbox errors."""
+    return (
+        f"{sum(x[0] for x in r) / len(r):.0%} | {sum(not x[0] for x in r)} | {sum(x[3] == 'agent_timeout' for x in r)}"
+        f" | {sum(x[3] == 'sandbox_error' for x in r)}"
+    )
+
+
+def calibration(runs, planned, tier):
+    """Baseline alone, per model, and where the pooled pass rate falls
+    against the band. No verdict: a calibration says nothing of codecite."""
+    out = [CALIBRATION.format(tier=tier or "this"), ""]
+    out += [
+        "| model | runs | pass | fails | timeouts | sandbox errors | median turns | median tokens | median time |",
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
+    short, perfect, pooled = [], [], []
+    for model in sorted(planned):
+        r = runs.get((model, "baseline"), [])
+        name = model.removeprefix("openrouter/")
+        if len(r) < planned[model]:
+            short.append(f"{name} {len(r)}/{planned[model]}")
+        if r and all(x[0] for x in r):
+            perfect.append(name)
+        pooled += [x[0] for x in r]
+        cells = (
+            f"{counts(r)} | {median(x[4] for x in r):.0f} | {median(x[1] for x in r):,.0f} | {median(x[2] for x in r):.0f}s"
+            if r
+            else "- | - | - | - | - | - | -"
+        )
+        out.append(f"| {name} | {len(r)} | {cells} |")
+    low, high = BAND
+    rate = sum(pooled) / len(pooled) if pooled else 0.0
+    if short:
+        band = f"incomplete ({', '.join(short)} runs)"
+    else:
+        misses = []
+        if rate < low:
+            misses.append(f"too hard: pooled pass rate under {low:.0%}")
+        if rate > high:
+            misses.append(f"too easy: pooled pass rate over {high:.0%}")
+        if perfect:
+            misses.append(f"passes every run: {', '.join(perfect)}")
+        band = "in band" if not misses else "out of band (" + "; ".join(misses) + ")"
+    out += ["", f"Pooled baseline pass rate: {rate:.0%} of {len(pooled)} runs. Band: {band}."]
+    return out
+
+
+def ab(runs, planned, tier):
+    """Baseline against codecite, per model, with the no-loss verdict."""
     rng = random.Random(SEED)
     out = [TIERS[tier], ""] if tier else []
     out += [
@@ -140,17 +225,12 @@ def scorecard(logs, tier=None):
             # An arm with no usable runs still gets a row, so the verdict
             # (incomplete) always shows.
             cells = (
-                f"{sum(x[0] for x in r) / len(r):.0%} | {sum(not x[0] for x in r)} | {sum(x[3] == 'agent_timeout' for x in r)}"
-                f" | {sum(x[3] == 'sandbox_error' for x in r)} | {median(x[1] for x in r):,.0f} | {median(x[2] for x in r):.0f}s"
+                f"{counts(r)} | {median(x[1] for x in r):,.0f} | {median(x[2] for x in r):.0f}s"
                 if r
                 else "- | - | - | - | - | -"
             )
             out.append(f"| {model.removeprefix('openrouter/')} | {arm} | {len(r)} | {cells} | {verdict if arm == 'codecite' else ''} |")
-    if errors:
-        out += ["", "Sandbox errors (scored as failures):", ""]
-        for model, arm, epoch, error in sorted(errors, key=lambda e: e[:3]):
-            out.append(f"- {model.removeprefix('openrouter/')}, {arm}, epoch {epoch}: {listed(error)}")
-    return "\n".join(out)
+    return out
 
 
 def main():
@@ -158,4 +238,7 @@ def main():
     parser.add_argument("--tier", choices=sorted(TIERS))
     parser.add_argument("logs", nargs="*", type=Path, help="log directories or files")
     args = parser.parse_args()
-    print(scorecard(logs(args.logs, args.tier), args.tier))
+    try:
+        print(scorecard(logs(args.logs, args.tier), args.tier))
+    except ValueError as e:
+        sys.exit(str(e))
