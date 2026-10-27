@@ -84,6 +84,15 @@ pub enum Error {
     #[error("the query has no words to search for")]
     EmptyQuery,
 
+    /// A grep pattern that is not a valid regular expression.
+    #[error("invalid pattern {pattern:?}: {reason}")]
+    BadPattern {
+        /// The pattern as given.
+        pattern: String,
+        /// What the regex parser says is wrong with it.
+        reason: String,
+    },
+
     /// The text matches none of the citation forms `read` accepts.
     #[error(
         "{text:?} is not a citation; write repo@sha:path#L10-L42, doc@sha256:<hash>#section-4.3, a spec URL, or a form like RFC 9449 §4.3"
@@ -224,6 +233,7 @@ impl Error {
             Error::NoCorpusNamed { .. } => "no_corpus_named",
             Error::StaleIndex { .. } => "stale_index",
             Error::EmptyQuery => "empty_query",
+            Error::BadPattern { .. } => "bad_pattern",
             Error::NotACitation { .. } => "not_a_citation",
             Error::BadCitation { .. } => "bad_citation",
             Error::UnknownSource { .. } => "unknown_source",

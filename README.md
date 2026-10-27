@@ -21,10 +21,11 @@ flowchart LR
 | --- | --- |
 | `codecite index <corpus>` | Indexes the local checkouts, git repositories (at pinned commits) and spec documents (pinned by sha256) that `corpora/<corpus>.toml` lists. Code splits at definitions with tree-sitter (Rust, Python, TypeScript, JavaScript, Go, C#); RFC and OpenID HTML splits into numbered sections and steps. Later runs work offline and rewrite only what changed |
 | `codecite search <corpus> "<query>"` | Ranked results, each with its citation, license class and when it was indexed. Identifiers match however they are written (`validate token` finds `validateToken`) |
+| `codecite grep <corpus> <pattern>` | Lines matching a regex, or exact text with `--fixed`, across the indexed code and specs, each with its citation: a code line, or the spec step or section that holds it. For the literal strings ranking is weak at: a claim name, an error message, `token_type_hint=\w+` |
 | `codecite read <corpus> <citation>` | The exact text a citation points at, under its pinned citation. Accepts the canonical forms search prints and the ones people write: `RFC 9449 §4.3`, `OIDC Core §3.1.3.7 step 13`, a spec URL |
 | `codecite def <corpus> <symbol>` | Every definition of a symbol, by its exact name (`callback`) or dotted (`Client.callback`), source first. Several matches are all listed and marked ambiguous, never one guess |
 | `codecite corpora` | The indexed corpora as JSON, with each one's age, size, source count and staleness |
-| `codecite mcp` | An MCP server over stdio. Its tools `corpora`, `search`, `definition` and `read` return the same JSON as the commands `corpora`, `search`, `def` and `read` (with `--json` for all but `corpora`), byte for byte, and an error is a tool error with its kind and candidates |
+| `codecite mcp` | An MCP server over stdio. Its tools `corpora`, `search`, `grep`, `definition` and `read` return the same JSON as the commands `corpora`, `search`, `grep`, `def` and `read` (with `--json` for all but `corpora`), byte for byte, and an error is a tool error with its kind and candidates |
 
 A citation that doesn't resolve to exactly one span is an error listing the
 candidates, never a guess, and an index older than its manifest's

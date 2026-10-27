@@ -253,6 +253,16 @@ fn a_mebibyte_line_is_cut_to_the_byte_budgets() {
         demo.json(&["read", "demo", citation, "--max-lines", "1", "--json"]),
         read
     );
+
+    // A grep match's line is held to the snippet budget, and cites the
+    // same line.
+    let grep = demo.json(&["grep", "demo", "^token", "--json"]);
+    let m = &grep["matches"][0];
+    let matched = m["text"].as_str().unwrap();
+    assert!(matched.len() <= MAX_SNIPPET_BYTES, "{}", matched.len());
+    assert!(line.starts_with(matched));
+    assert_eq!(m["truncated"], true);
+    assert_eq!(m["citation"], citation);
 }
 
 #[test]
@@ -273,4 +283,9 @@ fn a_cut_falls_on_a_character_boundary() {
     assert_eq!(text.len(), MAX_READ_BYTES - 1);
     assert!(line.starts_with(text));
     assert_eq!(read["truncated"], true);
+
+    let grep = demo.json(&["grep", "demo", "wide", "--fixed", "--json"]);
+    let matched = grep["matches"][0]["text"].as_str().unwrap();
+    assert_eq!(matched.len(), MAX_SNIPPET_BYTES - 1);
+    assert!(line.starts_with(matched));
 }

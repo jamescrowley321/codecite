@@ -1,4 +1,4 @@
-//! `codecite search` end to end: a corpus indexed from a real git checkout
+//! `codecite search` and `codecite grep` end to end: a corpus indexed from a real git checkout
 //! under a temporary `XDG_DATA_HOME`, then searched. Linux only, since other
 //! platforms ignore `XDG_DATA_HOME`.
 #![cfg(target_os = "linux")]
@@ -202,6 +202,84 @@ fn errors_name_the_problem() {
         ),
     ];
     for (args, want) in cases {
+        let output = demo.run(&args);
+        assert!(!output.status.success(), "{args:?}");
+        assert!(
+            stderr(&output).contains(want),
+            "{args:?}: {}",
+            stderr(&output)
+        );
+    }
+}
+
+/// Runs `codecite grep demo <args> --json` and returns the matches it
+/// prints, `{"matches": [...]}`.
+fn grep(demo: &Demo, args: &[&str]) -> Vec<serde_json::Value> {
+    let mut all = vec!["grep", "demo"];
+    all.extend(args);
+    all.push("--json");
+    let output = demo.run(&all);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let mut printed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    serde_json::from_value(printed["matches"].take()).unwrap()
+}
+
+#[test]
+fn grep_prints_cited_lines() {
+    let demo = Demo::new();
+    let matches = grep(&demo, &[r"token\.\w+\(\)"]);
+    assert_eq!(matches.len(), 1, "{matches:#?}");
+    let m = &matches[0];
+    // The working tree's text, as indexed, on its own line number.
+    assert_eq!(m["text"], "    token.len() > 8");
+    assert_eq!(m["kind"], "code");
+    assert_eq!(m["dirty"], true);
+    let citation = m["citation"].as_str().unwrap();
+    assert!(citation.ends_with(":src/lib.rs#L2"), "{citation}");
+    // The citation reads back the same line.
+    let read = demo.run(&["read", "demo", citation, "--json"]);
+    let read: serde_json::Value = serde_json::from_slice(&read.stdout).unwrap();
+    assert_eq!(read["text"], m["text"]);
+
+    let fixed = grep(&demo, &["validate(token", "--fixed"]);
+    assert_eq!(citations(&fixed).len(), 2, "{fixed:#?}");
+    assert!(grep(&demo, &["VALIDATE(", "-F"]).is_empty());
+    assert_eq!(grep(&demo, &["VALIDATE(", "-F", "-i"]).len(), 2);
+    let ts = grep(
+        &demo,
+        &["token", "--language", "typescript", "--limit", "1"],
+    );
+    assert_eq!(ts.len(), 1, "{ts:#?}");
+    assert!(citations(&ts)[0].ends_with(":web/check.ts#L1"), "{ts:#?}");
+
+    let output = demo.run(&["grep", "demo", "validate"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.starts_with("2 matches · adapt · indexed "), "{text}");
+    assert!(
+        text.contains(":src/lib.rs#L1 · dirty\n   pub fn validate("),
+        "{text}"
+    );
+}
+
+#[test]
+fn grep_errors_name_the_problem() {
+    let demo = Demo::new();
+    for (args, want) in [
+        (
+            vec!["grep", "demo", "validate("],
+            "invalid pattern \"validate(\": ",
+        ),
+        (
+            vec!["grep", "demo", ""],
+            "invalid pattern \"\": it is empty",
+        ),
+        (
+            vec!["grep", "demo", r"jti\n"],
+            "it holds a newline, and grep matches one line at a time",
+        ),
+        (vec!["grep", "dmeo", "x"], "unknown corpus `dmeo`"),
+    ] {
         let output = demo.run(&args);
         assert!(!output.status.success(), "{args:?}");
         assert!(
