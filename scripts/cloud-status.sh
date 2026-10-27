@@ -26,16 +26,17 @@ fi
 printf '%-6s %-8s %-12s %-8s %-6s %s\n' PR STATE REVIEW ISSUE EVAL TITLE
 for n in "${prs[@]}"; do
   # The REST API names the bot claude[bot], a login no user can hold; gh pr
-  # view drops the suffix.
+  # view drops the suffix. Only the newest review headed for this PR is kept,
+  # so the jq argument stays small however many rounds the PR had.
   reviews=$(gh api "repos/{owner}/{repo}/issues/$n/comments" --paginate --jq '
     .[] | select(.user.login == "claude[bot]" and .user.type == "Bot"
-                 and ((.body // "") | test("(^|\n)#{2,4} Blind peer review")))
-    | {body, createdAt: .created_at}' | jq -s .)
+                 and ((.body // "") | test("(^|\n)#{2,4} Blind peer review — PR #'"$n"'\\b"; "i")))
+    | {body, createdAt: .created_at}' | jq -s 'max_by(.createdAt) // null')
   gh pr view "$n" --json number,title,body,mergeStateStatus,headRefOid,comments,labels | jq -r --argjson reviews "$reviews" '
     # capture() emits nothing on a miss, so each match is collected in an
     # array and defaulted; any list gh returns can be null.
     (.headRefOid // "") as $head
-    | ($reviews | max_by(.createdAt)) as $rev
+    | $reviews as $rev
     # Every line that is a verdict ("Verdict: **BLOCK**", "### Verdict:
     # **PASS**", "**Verdict:** PASS"), not a finding that quotes one;
     # "running" while a progress comment has none yet, "?" when there is none

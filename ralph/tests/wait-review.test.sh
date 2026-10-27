@@ -14,7 +14,7 @@ trap 'rm -rf "$work"' EXIT
 mkdir "$work/bin"
 
 # The stub answers the gh calls wait-review.sh makes from files in $work:
-# head (the PR's head sha), runs (claude.yml run start times) and comments.json
+# head (the PR's head sha), runs.json (claude.yml runs) and comments.json
 # (the PR's comments). `gh pr comment` appends the new comment to
 # comments.json and logs it to posted.
 cat > "$work/bin/gh" <<'EOF'
@@ -23,7 +23,7 @@ set -euo pipefail
 case "$1 $2" in
   "api user") echo james ;;
   "pr view") cat "$STUB/head" ;;
-  "run list") cat "$STUB/runs" ;;
+  "run list") cat "$STUB/runs.json" ;;
   "pr comment")
     body=${*##*--body }
     echo "$body" >> "$STUB/posted"
@@ -45,7 +45,7 @@ comment() { jq -n --arg l "$1" --arg t "$2" --arg b "$3" --arg c "$4" '{user: {l
 setup() {
   echo "$sha" > "$work/head"
   printf '%s\n' "$@" | jq -s . > "$work/comments.json"
-  : > "$work/runs" ; : > "$work/posted"
+  echo '[]' > "$work/runs.json" ; : > "$work/posted"
 }
 
 failed=0
@@ -62,7 +62,8 @@ check() {  # name, expected first line of output, expected exit code
 
 # The review on open: the run started before the review was posted.
 setup "$(comment 'claude[bot]' Bot "$review" 2026-10-27T03:48:53Z)"
-echo 2026-10-27T03:40:00Z > "$work/runs"
+run() { jq -n --arg c "$1" --arg s "$2" --arg k "$3" '[{createdAt: $c, status: $s, conclusion: $k}]' > "$work/runs.json"; }
+run 2026-10-27T03:40:00Z completed success
 check "a review after the opening run is found" "FOUND BLOCK" 0
 grep -q '^## Blind peer review — PR #145' "$work/out.md" && echo "ok   the review is written to the out file" || { echo "FAIL out file"; failed=1; }
 [[ ! -s "$work/posted" ]] && echo "ok   no request is posted when one exists" || { echo "FAIL posted a request"; failed=1; }
@@ -71,12 +72,19 @@ grep -q '^## Blind peer review — PR #145' "$work/out.md" && echo "ok   the rev
 setup "$(comment james User "@claude review this PR at head \`deadbee000\`" 2026-10-27T03:00:00Z)" \
       "$(comment 'claude[bot]' Bot "$review" 2026-10-27T03:48:53Z)"
 echo deadbee000 > "$work/head"
-check "a review that names another head is refused" "REVIEW_FAILED the newest review is of 91d7628" 3
+check "a review that names an older head is waited past" "WAITING" 4
 
 # No request yet for this head (a ci-phase push): the script asks for one.
 setup "$(comment 'claude[bot]' Bot "$review" 2026-10-27T03:48:53Z)"
 check "a head with no request waits for a new review" "WAITING" 4
 grep -q "@claude review this PR at head \`$sha\`" "$work/posted" && echo "ok   it posts the request" || { echo "FAIL no request posted"; failed=1; }
+grep -q "Verdict: \*\*PASS\*\*" "$work/posted" && grep -q "### Blind peer review — PR #145" "$work/posted" && echo "ok   the request pins the heading and the verdict line" || { echo "FAIL request text"; failed=1; }
+
+# A failed or skipped run on open is no request: the script asks again.
+setup "$(comment 'claude[bot]' Bot "$review" 2026-10-27T03:48:53Z)"
+run 2026-10-27T03:40:00Z completed skipped
+check "a skipped run on open doesn't count as a request" "WAITING" 4
+[[ -s "$work/posted" ]] && echo "ok   it posts a request instead" || { echo "FAIL no request after a skipped run"; failed=1; }
 
 # A re-request for the same head: last round's review no longer counts.
 setup "$(comment 'claude[bot]' Bot "$review" 2026-10-27T03:48:53Z)" \
@@ -106,6 +114,17 @@ check "a review that names no head is refused" "REVIEW_FAILED the newest review 
 setup "$(comment james User "@claude review this PR at head \`$sha\`" 2026-10-27T03:00:00Z)" \
       "$(comment 'claude[bot]' Bot "${review/PR #145/PR #146}" 2026-10-27T03:50:00Z)"
 check "a review headed for another PR is refused" "REVIEW_FAILED the newest review is headed for another PR" 3
+
+# A review that finished, or errored, without a verdict won't get one.
+setup "$(comment james User "@claude review this PR at head \`$sha\`" 2026-10-27T03:00:00Z)" \
+      "$(comment 'claude[bot]' Bot "$(printf '**Claude finished @james'"'"'s task in 54s**\n\n### Blind peer review — PR #145\n\nhead `%s`\n\nEight lenses are running…\n' "${sha:0:7}")" 2026-10-27T03:00:05Z)"
+check "a finished review with no verdict fails at once" "REVIEW_FAILED the review ended without a verdict" 3
+
+# An unrelated mention after the review: its progress comment has no heading.
+setup "$(comment james User "@claude review this PR at head \`$sha\`" 2026-10-27T03:00:00Z)" \
+      "$(comment 'claude[bot]' Bot "$(printf '## Blind peer review — PR #145\nhead `%s`\nVerdict: **PASS**\n' "$sha")" 2026-10-27T03:10:00Z)" \
+      "$(comment 'claude[bot]' Bot "**Claude is working…** —— [View job](x)" 2026-10-27T03:20:00Z)"
+check "a later unrelated progress comment doesn't hide the review" "FOUND PASS" 0
 
 # The head spelled the other way the skill writes it.
 setup "$(comment james User "@claude review this PR at head \`$sha\`" 2026-10-27T03:00:00Z)" \
