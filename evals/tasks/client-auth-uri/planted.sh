@@ -87,6 +87,10 @@ plant wrong-secret-invalid-request test_unknown_client_rejected,test_wrong_basic
 # A list of sections that includes 2.3.1 cites it; one that doesn't, doesn't.
 plant section-list "" "" "sed -i 's|RFC 6749 §2.3.1:|RFC 6749 section 2.3 / 2.3.1 / 3.2:|' app/main.py" || status=1
 plant section-list-without "" cites-section "sed -i 's|RFC 6749 §2.3.1:|RFC 6749 sections 2.3, 2.3.10 and 3.2:|' app/main.py" || status=1
+plant section-signs-list "" "" "sed -i 's|RFC 6749 §2.3.1:|RFC 6749 §2.3, §2.3.1:|' app/main.py" || status=1
+plant sections-of-rfc "" "" "sed -i 's|RFC 6749 §2.3.1:|Sections 2.3.1 and 3.2 of RFC 6749:|' app/main.py" || status=1
+plant list-of-other-rfc "" cites-section "sed -i 's|RFC 6749 §2.3.1:|RFC 6749 §3.2 and 2.3.1 of RFC 7523:|' app/main.py" || status=1
 # The agent's own tests are not out of scope; other new files still are.
-plant added-tests "" "" "mkdir -p tests && echo 'def test_x(): pass' > tests/test_token.py && echo 'def test_y(): pass' > test_app.py" || status=1
+plant added-tests "" "" "mkdir -p tests && echo 'def test_x(): pass' > tests/test_token.py && echo 'def test_y(): pass' > test_app.py && echo '' > tests/conftest.py" || status=1
+plant added-non-test-under-tests "" scope "mkdir -p tests && echo 'echo hi' > tests/run.sh" || status=1
 exit "$status"

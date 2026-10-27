@@ -24,22 +24,40 @@ IGNORED_FILES = {"uv.lock"}
 # The forms are codecite's citation (with or without its @sha256 pin), the
 # spec URL with its anchor, "RFC 6749 §2.3.1" / "RFC 6749, Section 2.3.1",
 # and "Section 2.3.1 of RFC 6749". A section may be one of a list
-# ("RFC 6749 section 2.3 / 2.3.1", "§§2.3, 2.3.1 and 3.2").
+# ("RFC 6749 section 2.3 / 2.3.1", "RFC 6749 §2.3, §2.3.1", "Sections 2.3.1
+# and 3.2 of RFC 6749"), but not one that a later "of RFC <n>" gives to
+# another RFC ("RFC 6749 §3.2 and 2.3.1 of RFC 7523").
 RFC = r"rfc[\s-]?6749(?!\d)"
 SECTION = r"2\.3\.1(?!\.?\d)"
 SECTION_WORD = r"(?:§§?|sec(?:tions?|s?\.)?)"
-# Sections listed before 2.3.1: "2.3 / ", "2.3, ", "2.3 and ".
-BEFORE = r"(?:\d+(?:\.\d+)*\s*(?:/|,|&|and)\s*)*"
+JOIN = r"\s*(?:/|,|&|and)\s*"
+ITEM = r"(?:§§?\s*)?\d+(?:\.\d+)*"
+# Sections listed before 2.3.1 ("2.3 / ", "§2.3, ") and after it (" and 3.2").
+BEFORE = r"(?:" + ITEM + JOIN + r")*(?:§§?\s*)?"
+AFTER = r"(?:" + JOIN + ITEM + r")*"
+OF_RFC = r"\s*,?\s*(?:of|in)\s+(?:the\s+)?rfc[\s-]?(\d{4})"
 CITATION = re.compile(
     "|".join(
         (
             RFC + r"[^\s#]*#section-" + SECTION,
             RFC + r"\s*,?\s*" + SECTION_WORD + r"\s*" + BEFORE + SECTION,
-            SECTION_WORD + r"\s*" + BEFORE + SECTION + r"\s*,?\s*(?:of|in)\s+(?:the\s+)?" + RFC,
+            SECTION_WORD + r"\s*" + BEFORE + SECTION + AFTER + r"\s*,?\s*(?:of|in)\s+(?:the\s+)?" + RFC,
         )
     ),
     re.IGNORECASE,
 )
+# What follows a match: the rest of its list, then "of RFC <n>" if any.
+TAIL = re.compile(AFTER + OF_RFC, re.IGNORECASE)
+
+
+def cites(block: str):
+    """The first citation of RFC 6749 §2.3.1 in a comment block, or None."""
+    for m in CITATION.finditer(block):
+        tail = TAIL.match(block, m.end())
+        if tail and tail.group(1) != "6749":
+            continue  # the list's 2.3.1 is another RFC's
+        return m
+    return None
 
 
 def py_files(project: Path):
@@ -85,7 +103,7 @@ def check_citation(final: Path):
         except (OSError, UnicodeDecodeError):
             continue
         for block in comment_blocks(source):
-            if m := CITATION.search(block):
+            if m := cites(block):
                 return True, f"{path.name}: {m.group(0)!r}"
             if re.search(r"rfc[\s-]?\d{4}|§|section", block, re.IGNORECASE):
                 seen.append(block[:80])
@@ -137,13 +155,15 @@ def check_scope(start: Path, final: Path):
     a, b = files(start), files(final)
     problems = []
     # Docs may change or be added; pyproject.toml is deps-unchanged's. An
-    # agent may add tests of its own (tests/, test_*.py): the hidden tests
-    # run from outside the project, so its tests change nothing they score.
+    # agent may add Python tests of its own (test_*.py, *_test.py,
+    # conftest.py, at any depth): the hidden tests run from outside the
+    # project, so its tests change nothing they score. Any other new file,
+    # under tests/ or not, is out of scope.
     def guarded(rel):
         return not rel.startswith("app/") and not rel.endswith(".md")
     def own_test(rel):
         name = rel.rsplit("/", 1)[-1]
-        return rel.startswith("tests/") or (name.startswith("test_") and name.endswith(".py"))
+        return name == "conftest.py" or (name.endswith(".py") and (name.startswith("test_") or name.endswith("_test.py")))
     for rel, p in a.items():
         if rel not in b:
             problems.append(f"deleted {rel}")
