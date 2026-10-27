@@ -12,6 +12,9 @@ use crate::{Error, Result};
 mod corpora;
 pub use corpora::{Corpora, CorpusInfo, corpora};
 
+mod definition;
+pub use definition::{Definition, Definitions};
+
 mod read;
 pub use read::{DEFAULT_MAX_LINES, MAX_READ_LINES, QUOTE_INSTRUCTION, ReadOptions, ReadResult};
 

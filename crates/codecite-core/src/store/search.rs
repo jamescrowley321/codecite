@@ -457,7 +457,7 @@ fn query_names(text: &str) -> Vec<String> {
 }
 
 /// A name as the search compares it: lowercase, without `_` or `-`.
-fn name_key(name: &str) -> String {
+pub(super) fn name_key(name: &str) -> String {
     name.chars()
         .filter(|&c| c != '_' && c != '-')
         .flat_map(char::to_lowercase)
@@ -497,7 +497,7 @@ fn spec_citation(
 }
 
 /// The first [`MAX_SNIPPET_LINES`] lines of a chunk's text.
-fn snippet(text: &str) -> String {
+pub(super) fn snippet(text: &str) -> String {
     let lines: Vec<&str> = text.lines().take(MAX_SNIPPET_LINES).collect();
     lines.join("\n")
 }

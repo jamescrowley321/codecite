@@ -187,6 +187,19 @@ pub enum Error {
         candidates: Vec<String>,
     },
 
+    /// No definition in the corpus has this name.
+    #[error(
+        "the corpus defines no symbol `{}`; {}",
+        escape_controls(symbol),
+        list_of("did you mean", candidates)
+    )]
+    NoSuchSymbol {
+        /// The symbol as asked for.
+        symbol: String,
+        /// Defined names that differ from it only in case, `_` or `-`.
+        candidates: Vec<String>,
+    },
+
     /// A code citation runs past the end of its file.
     #[error("{citation} runs past the end of the file, which has {lines} lines")]
     LinesPastEnd {
@@ -220,6 +233,7 @@ impl Error {
             Error::UncitableSection { .. } => "uncitable_section",
             Error::NoSuchStep { .. } => "no_such_step",
             Error::NoSuchFile { .. } => "no_such_file",
+            Error::NoSuchSymbol { .. } => "no_such_symbol",
             Error::LinesPastEnd { .. } => "lines_past_end",
         }
     }
@@ -236,7 +250,8 @@ impl Error {
             Error::AmbiguousDocument { candidates, .. }
             | Error::NoSuchSection { candidates, .. }
             | Error::NoSuchStep { candidates, .. }
-            | Error::NoSuchFile { candidates, .. } => candidates,
+            | Error::NoSuchFile { candidates, .. }
+            | Error::NoSuchSymbol { candidates, .. } => candidates,
             _ => &[],
         }
     }
@@ -460,6 +475,28 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "app@0123abc has no indexed file \"src/nope.rs\"; no candidates"
+        );
+    }
+
+    #[test]
+    fn no_such_symbol_lists_the_names_it_could_mean() {
+        let err = Error::NoSuchSymbol {
+            symbol: "callBack".into(),
+            candidates: vec!["callback".into()],
+        };
+        assert_eq!(err.kind(), "no_such_symbol");
+        assert_eq!(err.candidates(), ["callback"]);
+        assert_eq!(
+            err.to_string(),
+            "the corpus defines no symbol `callBack`; did you mean: callback"
+        );
+        let err = Error::NoSuchSymbol {
+            symbol: "nope\u{1b}".into(),
+            candidates: vec![],
+        };
+        assert_eq!(
+            err.to_string(),
+            "the corpus defines no symbol `nope\\u{1b}`; no candidates"
         );
     }
 

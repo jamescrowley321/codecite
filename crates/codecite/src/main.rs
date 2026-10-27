@@ -6,8 +6,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use codecite_core::{
-    DEFAULT_MAX_LINES, DEFAULT_SEARCH_LIMIT, MAX_READ_LINES, MAX_SEARCH_LIMIT, ReadOptions,
-    ReadResult, Scope, SearchQuery, SearchResult, SearchResults, Store, is_corpus_name,
+    DEFAULT_MAX_LINES, DEFAULT_SEARCH_LIMIT, Definitions, MAX_READ_LINES, MAX_SEARCH_LIMIT,
+    ReadOptions, ReadResult, Scope, SearchQuery, SearchResult, SearchResults, Store,
+    is_corpus_name,
 };
 use codecite_index::{Clones, Fetcher, LicenseClass, Manifest, Source, WalkOptions, index_corpus};
 
@@ -57,6 +58,20 @@ enum Command {
         #[arg(long)]
         json: bool,
         /// Search an index older than its manifest's `max_age_days`.
+        #[arg(long)]
+        allow_stale: bool,
+    },
+    /// Print where a symbol is defined: every definition, cited.
+    Def {
+        /// The corpus to look in.
+        corpus: String,
+        /// The symbol's name as written, such as `callback`, or dotted with
+        /// the names it is inside, such as `Client.callback`.
+        symbol: String,
+        /// Print the result as JSON, as the MCP `definition` tool returns it.
+        #[arg(long)]
+        json: bool,
+        /// Look in an index older than its manifest's `max_age_days`.
         #[arg(long)]
         allow_stale: bool,
     },
@@ -129,6 +144,12 @@ fn main() -> anyhow::Result<()> {
             };
             search(&corpus, &query, json)
         }
+        Command::Def {
+            corpus,
+            symbol,
+            json,
+            allow_stale,
+        } => def(&corpus, &symbol, allow_stale, json),
         Command::Read {
             corpus,
             citation,
@@ -209,6 +230,15 @@ fn search(corpus: &str, query: &SearchQuery<'_>, json: bool) -> anyhow::Result<(
     let store = Store::open_corpus(dirs.data_dir(), corpus)?;
     let results = store.search(query)?;
     to_stdout(|out| write_results(out, results, json))
+}
+
+/// `codecite def`: opens the corpus read-only and prints every definition
+/// of the symbol, as JSON or in a short human form.
+fn def(corpus: &str, symbol: &str, allow_stale: bool, json: bool) -> anyhow::Result<()> {
+    let dirs = project_dirs()?;
+    let store = Store::open_corpus(dirs.data_dir(), corpus)?;
+    let found = store.definition(symbol, allow_stale)?;
+    to_stdout(|out| write_definitions(out, &found, json))
 }
 
 /// `codecite read`: opens the corpus read-only and prints the cited text,
@@ -292,6 +322,69 @@ fn write_results(
         out.write_all(human(&results).as_bytes())?;
     }
     out.flush()
+}
+
+/// Writes definitions to `out`, as JSON or in the short human form.
+fn write_definitions(
+    out: &mut impl std::io::Write,
+    found: &Definitions,
+    json: bool,
+) -> std::io::Result<()> {
+    if json {
+        write_json(out, serde_json::to_value(found)?)?;
+    } else {
+        out.write_all(human_definitions(found).as_bytes())?;
+    }
+    out.flush()
+}
+
+/// The short human form of definitions: a header with how many there are
+/// and whether the name is ambiguous, then per definition one line with its
+/// rank, citation, kind, symbol, role, license class and `indexed_at`, and
+/// its snippet's first non-blank line.
+fn human_definitions(found: &Definitions) -> String {
+    use std::fmt::Write as _;
+
+    let mut out = String::new();
+    let n = found.total;
+    // `write!` to a `String` can't fail.
+    let _ = write!(
+        out,
+        "{n} definition{} of {}",
+        if n == 1 { "" } else { "s" },
+        escape_controls(&found.symbol)
+    );
+    if found.results.len() < n {
+        let _ = write!(out, ", the first {}", found.results.len());
+    }
+    if found.ambiguous {
+        out.push_str(" · ambiguous");
+    }
+    out.push('\n');
+    for (rank, d) in (1..).zip(&found.results) {
+        let _ = write!(
+            out,
+            "{rank}. {} · {} {} · {} · {} · indexed {}",
+            escape_controls(&abbreviate_commit(&d.citation)),
+            escape_controls(&d.kind),
+            escape_controls(&d.symbol),
+            d.role,
+            escape_controls(&d.license_class),
+            escape_controls(&d.indexed_at)
+        );
+        if d.dirty {
+            out.push_str(" · dirty");
+        }
+        out.push('\n');
+        if let Some(line) = d.snippet.lines().map(str::trim).find(|l| !l.is_empty()) {
+            let _ = writeln!(
+                out,
+                "   {}",
+                escape_controls(&cut(line, HUMAN_SNIPPET_CHARS))
+            );
+        }
+    }
+    out
 }
 
 /// The most characters of a snippet line the human form shows.
@@ -593,6 +686,95 @@ mod tests {
         }
         let most = ["codecite", "read", "identity", "§4.3", "--max-lines", "500"];
         assert!(Cli::try_parse_from(most).is_ok());
+    }
+
+    #[test]
+    fn def_takes_a_corpus_and_a_symbol() {
+        assert!(Cli::try_parse_from(["codecite", "def", "identity"]).is_err());
+        let cli = Cli::try_parse_from(["codecite", "def", "identity", "Client.callback"]).unwrap();
+        let Command::Def {
+            corpus,
+            symbol,
+            json,
+            allow_stale,
+        } = cli.command
+        else {
+            panic!("not def");
+        };
+        assert_eq!(
+            (corpus.as_str(), symbol.as_str()),
+            ("identity", "Client.callback")
+        );
+        assert!(!json && !allow_stale);
+        let args = [
+            "codecite",
+            "def",
+            "identity",
+            "x",
+            "--json",
+            "--allow-stale",
+        ];
+        let Command::Def {
+            json, allow_stale, ..
+        } = Cli::try_parse_from(args).unwrap().command
+        else {
+            panic!("not def");
+        };
+        assert!(json && allow_stale);
+    }
+
+    fn definition(path: &str, role: &'static str) -> codecite_core::Definition {
+        codecite_core::Definition {
+            citation: format!("app@{SHA}:{path}#L1-L5"),
+            symbol: "callback".into(),
+            kind: "method".into(),
+            role,
+            license_class: "adapt".into(),
+            indexed_at: "2026-10-20T06:00:00Z".into(),
+            dirty: false,
+            snippet: "\n  pub fn callback(&self) {\n}".into(),
+            providers: vec!["treesitter"],
+            confidence: 2,
+        }
+    }
+
+    #[test]
+    fn the_definitions_form_says_how_many_and_whether_ambiguous() {
+        let mut test = definition("tests/a.rs", "test");
+        test.dirty = true;
+        let found = Definitions {
+            symbol: "callback".into(),
+            ambiguous: true,
+            total: 3,
+            results: vec![definition("src/a.rs", "source"), test],
+        };
+        assert_eq!(
+            human_definitions(&found),
+            "3 definitions of callback, the first 2 · ambiguous
+1. app@0123456789ab:src/a.rs#L1-L5 · method callback · source · adapt · indexed 2026-10-20T06:00:00Z
+   pub fn callback(&self) {
+2. app@0123456789ab:tests/a.rs#L1-L5 · method callback · test · adapt · indexed 2026-10-20T06:00:00Z · dirty
+   pub fn callback(&self) {
+"
+        );
+        let mut one = definition("src/a\u{1b}.rs", "source");
+        one.snippet = "fn x() {} \u{7}".into();
+        let found = Definitions {
+            symbol: "Client.callback\u{1b}".into(),
+            ambiguous: false,
+            total: 1,
+            results: vec![one],
+        };
+        let out = human_definitions(&found);
+        assert!(
+            out.starts_with("1 definition of Client.callback\\u{1b}\n"),
+            "{out}"
+        );
+        assert!(out.contains("src/a\\u{1b}.rs"), "{out}");
+        assert!(out.contains("fn x() {} \\u{7}"), "{out}");
+        assert!(!out.chars().any(|c| c.is_control() && c != '\n'), "{out}");
+        let err = write_definitions(&mut ClosedPipe, &found, true).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::BrokenPipe);
     }
 
     #[test]

@@ -6,7 +6,7 @@
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
-use codecite_core::{ChunkRecord, DocumentRecord, Keyword, SourceRecord, Store};
+use codecite_core::{ChunkRecord, DocumentRecord, Keyword, SourceRecord, Store, SymbolRecord};
 use serde_json::{Value, json};
 
 const LIB: &str = "pub fn validate(token: &str) -> bool {\n    !token.is_empty()\n}\n";
@@ -29,7 +29,11 @@ fn data_home() -> tempfile::TempDir {
         title: None,
         parent: None,
         strength: &[],
-        symbol: None,
+        symbol: Some(SymbolRecord {
+            id: "codecite . app . src/`lib.rs`/validate().".into(),
+            display_name: "validate",
+            kind: "function",
+        }),
     };
     let source = SourceRecord {
         name: "app",
@@ -71,6 +75,7 @@ fn data_home() -> tempfile::TempDir {
         anchor: Some("section-4.3"),
         title: Some("Checking DPoP Proofs"),
         strength: &[Keyword::Must],
+        symbol: None,
         ..chunk
     };
     let spec = DocumentRecord {
@@ -166,14 +171,14 @@ fn mcp_answers_on_stdout_and_logs_on_stderr() {
     let tools = list["result"]["tools"].as_array().unwrap();
     let mut names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     names.sort_unstable();
-    assert_eq!(names, ["corpora", "read", "search"], "{list}");
+    assert_eq!(names, ["corpora", "definition", "read", "search"], "{list}");
     for tool in tools {
         assert_eq!(tool["inputSchema"]["type"], "object", "{tool}");
     }
 
     // Each tool's text is what the CLI prints for the same query, byte for
-    // byte: corpora, a search, a read of code and of a spec, and an empty
-    // search.
+    // byte: corpora, a search, a read of code and of a spec, an empty
+    // search and a definition.
     let cases = [
         ("corpora", json!({}), vec!["corpora"]),
         (
@@ -207,6 +212,11 @@ fn mcp_answers_on_stdout_and_logs_on_stderr() {
                 "2",
                 "--json",
             ],
+        ),
+        (
+            "definition",
+            json!({"symbol": "validate"}),
+            vec!["def", "demo", "validate", "--json"],
         ),
     ];
     for (id, (tool, arguments, args)) in (3..).zip(cases) {
