@@ -41,6 +41,9 @@ def show(root, ref, path):
 def problems(evals_dir: Path, base=None):
     """What's wrong with the frozen tasks under evals_dir/tasks, one line each."""
     root = Path(git(evals_dir, "rev-parse", "--show-toplevel").stdout.strip())
+    # An unknown base would read as a task frozen nowhere, skipping the check.
+    if base and git(root, "cat-file", "-e", f"{base}^{{commit}}", check=False).returncode != 0:
+        return [f"base ref {base} is not a commit here (CI needs the full history)"]
     found = []
     for spec in sorted((evals_dir / "tasks").glob("*/task.json")):
         task_id = spec.parent.name

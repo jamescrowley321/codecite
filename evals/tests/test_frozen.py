@@ -84,3 +84,7 @@ def test_an_unknown_frozen_at_fails(repo):
 def test_every_task_here_records_where_it_froze():
     for spec in (config.EVALS_DIR / "tasks").glob("*/task.json"):
         assert json.loads(spec.read_text()).get("frozen_at"), f"{spec.parent.name} has no frozen_at"
+
+
+def test_an_unknown_base_fails_rather_than_skipping_the_check(repo):
+    assert problems(repo / "evals", "origin/no-such-branch") == ["base ref origin/no-such-branch is not a commit here (CI needs the full history)"]
