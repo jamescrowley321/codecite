@@ -1,5 +1,5 @@
 # Spec questions for the spec-question task (#104), asked the way an agent asks
-# them: in its own words, not the spec's. `check.py` holds the rules.
+# them: in its own words, not the spec's. `codecite_evals.spec_questions` holds the rules.
 #
 # Each question has:
 # - `text`: the question as the agent gets it;

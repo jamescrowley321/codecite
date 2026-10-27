@@ -4,10 +4,10 @@
 
 **Architecture:** Data plus a stdlib Python checker, no Rust changes:
 - `evals/tasks/spec-questions/questions.toml`: one `[[question]]` per question with `id`, `text`, `answer`, `accepted`, `source`, and `adapted_from` for one adapted from `queries.toml`.
-- `evals/tasks/spec-questions/check.py`: checks the set's shape (count, closed answers, at least half new, spread over documents) and, against the identity-bench corpus file, that every accepted section exists and no question repeats a distinctive term of its section.
-- `evals/tasks/spec-questions/test_check.py`: `unittest` tests for the checker on made-up questions.
+- `evals/src/codecite_evals/spec_questions.py`, in the `codecite-evals` package with its paths from `config.py`: checks the set's shape (count, closed answers, at least half new, spread over documents) and, against the identity-bench corpus file, that every accepted section exists and no question repeats a distinctive term of its section.
+- `evals/tests/test_spec_questions.py`: pytest tests for the checker on made-up questions, and the real set's shape.
 - `evals/retrieval/queries.toml`: every new question, as a `spec-plain` query under the same id.
-- `.github/workflows/ci.yml`: the `bench` job, which already builds the index, runs the tests and the checker after the benchmark.
+- `.github/workflows/ci.yml`: the `bench` job, which already builds the index, runs the checker after the benchmark; `evals-test` runs the tests with the rest of `evals/tests/`.
 
 ## Decisions
 
@@ -20,8 +20,8 @@
 
 ## Tasks
 
-1. Write `check.py` and `test_check.py`, test-first on made-up questions: a plain question passes, `client_secret_basic` and a rare word fail, a missing section or step fails, and each shape rule fails on its own.
+1. Write the checker and its tests, test-first on made-up questions: a plain question passes, `client_secret_basic` and a rare word fail, a missing section or step fails, and each shape rule fails on its own.
 2. Write the questions, checking each answer against the section text in the index, and rephrase every question the checker flags.
 3. Add the new questions to `queries.toml` and run `codecite-bench --class spec` before and after.
 4. Add the checker to the `bench` job; describe the directory in `evals/README.md` and its own `README.md`.
-5. Run `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, the unit tests and `check.py`.
+5. Run `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `uv run --locked pytest` in `evals/`, and the checker.

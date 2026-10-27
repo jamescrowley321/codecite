@@ -1,6 +1,6 @@
 """Check the spec-question set in questions.toml.
 
-Usage: python3 -I check.py [--db PATH]
+Usage: uv run --locked python -m codecite_evals.spec_questions [--db PATH]
 
 Reads the identity-bench index that `codecite index identity-bench --manifest
 evals/retrieval/identity-bench.toml` builds, so every section is numbered the
@@ -25,11 +25,9 @@ import tomllib
 from collections import Counter
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-REPO_ROOT = HERE.parents[2]
-QUESTIONS = HERE / "questions.toml"
-QUERIES = REPO_ROOT / "evals/retrieval/queries.toml"
-MANIFEST = REPO_ROOT / "evals/retrieval/identity-bench.toml"
+from codecite_evals import config
+
+TASK = "spec-questions"
 CORPUS = "identity-bench"
 
 MIN_QUESTIONS = 24
@@ -220,9 +218,9 @@ def main():
     parser.add_argument("--db", type=Path, default=default_db(), help="the identity-bench corpus file")
     args = parser.parse_args()
 
-    questions = load(QUESTIONS)["question"]
-    queries = load(QUERIES)["query"]
-    documents = {s["name"] for s in load(MANIFEST)["source"] if s["kind"] == "document"}
+    questions = load(config.task_dir(TASK) / "questions.toml")["question"]
+    queries = load(config.QUERIES)["query"]
+    documents = {s["name"] for s in load(config.BENCH_MANIFEST)["source"] if s["kind"] == "document"}
 
     failures = check_set(questions, queries, documents)
     if not args.db.exists():

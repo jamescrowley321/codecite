@@ -14,18 +14,84 @@ Evaluation plan):
 
 | Path | What |
 | --- | --- |
-| `inspect/task.py` | The Inspect task: one sample per arm, pi in a Docker sandbox, the scorer |
-| `inspect/prepare.sh` | Stage the sandbox image's build context in `inspect/build/` |
+| `src/codecite_evals/` | The `codecite-evals` package that `uv sync` installs: `task.py` (the Inspect task: one sample per arm, pi in a Docker sandbox, the scorer), `report.py` (the scorecard) and `config.py` (where every file below is found) |
+| `tests/` | Unit tests for the task's agent, the scorecard and the config; no model key or Docker needed |
+| `inspect/prepare.sh` | Stage the sandbox image's build context in `inspect/build/` for one task (`prepare.sh <task-id>`, default `fastapi-middleware`) |
 | `inspect/Dockerfile`, `inspect/compose.yaml` | The sandbox image and the IdP beside it, on a network with no route out |
 | `inspect/pi-models.json` | Points pi at Inspect's agent bridge |
-| `inspect/panel.sh` | Run every model in the panel, one at a time, then the report |
-| `inspect/report.py` | The scorecard: per model, both arms and the no-loss verdict |
+| `inspect/panel.sh` | Run one tier (`quick` or `full`): every model in one Inspect process, then the report |
 | `tasks/<id>/` | A task: `task.json`, `prompt.md`, starting `project/`, `hidden/` tests, `checks.py`, `reference/`, and `check.sh`/`planted.sh` to prove the task and checks are sound |
-| `tasks/spec-questions/` | Labelled spec questions with closed answers for the spec-question task, and `check.py` to check them against the index |
-| `fixtures/node-oidc/` | The IdP the hidden tests take tokens from |
+| `tasks/spec-questions/` | Labelled spec questions with closed answers for the spec-question task; `src/codecite_evals/spec_questions.py` checks them against the index |
+| `fixtures/node-oidc/` | The IdP the fastapi-middleware hidden tests take tokens from |
 | `retrieval/` | The retrieval benchmark's queries and corpus manifest |
 
-## Running the A/B eval
+## Tasks
+
+- **`fastapi-middleware`**: protect a FastAPI app with identity-model's
+  `TokenValidationMiddleware` and `CurrentUser`. The hidden tests take real
+  tokens from node-oidc-provider. The corpus is identity-model. The prompt
+  names the symbols, so it tests little search.
+- **`client-auth-uri`**: a FastAPI service's hand-rolled token endpoint takes
+  client credentials from HTTP Basic, the form body and the query string. The
+  prompt says only that a security review flagged it: fix what the OAuth spec
+  forbids, keep what it allows, and cite the section in a comment. The answer
+  is RFC 6749 §2.3.1: credentials MUST NOT be in the request URI, HTTP Basic
+  MUST be supported, and the form body is allowed. The hidden tests reject
+  query-string credentials with `invalid_client` (§5.2), even valid ones, and
+  still issue tokens over Basic and the form body; an agent that removes too
+  much fails. `checks.py` passes only when a comment or docstring in `app/`
+  cites §2.3.1 of RFC 6749 (`rfc6749#section-2.3.1`, `RFC 6749 §2.3.1` or
+  `Section 2.3.1 of RFC 6749`). The corpus is identity-model plus the spec
+  documents of `retrieval/identity-bench.toml` (`task.json`'s
+  `corpus.documents`), and the codecite arm's note says so. It needs no IdP,
+  so `planted.sh` runs the hidden tests itself, and `check.sh` just runs it.
+
+Each task is registered in `src/codecite_evals/task.py` and runs as
+`codecite_evals/<task>` with `_` for `-`. The sandbox image holds one task's
+project and corpus, so `inspect/prepare.sh <task-id>` stages it before the
+image is built; after switching tasks, rebuild it (`docker compose -f
+inspect/compose.yaml build`). `panel.sh` and the CI workflow run
+`fastapi-middleware`.
+
+## Two tiers
+
+The A/B eval runs at one of two tiers. They share the task, the scorer and the
+report; only the panel and the number of epochs differ.
+
+| Tier | Panel | Epochs per arm | Takes | Use it |
+| --- | --- | --- | --- | --- |
+| `quick` | claude-haiku-5.5, claude-sonnet-5.5, gpt-6.1-sol | 5 | under 20 minutes in CI | on every PR that touches indexing, search, ranking or the CLI's output |
+| `full` | all 9 models | 10 | within CI's 6-hour job limit | before a milestone closes, after a quick loss, or when the task set changes |
+
+The quick verdict is directional, never the gate: at 5 runs per arm its
+intervals are wide, so a quick loss means "run the full tier", not "stop". The
+full tier is the gate in `docs/design.md` (Evaluation plan). The quick panel's
+third model is the fastest pi model by round one's medians; change it in
+`panel.sh` when a full run's medians say another is faster.
+
+### In CI
+
+`.github/workflows/evals.yml` runs both tiers. It is advisory, like `bench`,
+and never a required check.
+
+- **Quick:** add the `eval` label to a PR. The tier runs then and again on
+  every push while the label is on, and its scorecard goes to one PR comment,
+  updated in place. A new push cancels a stale run. Fork PRs never run: they
+  get no secrets.
+- **Full:** run the workflow by hand (Actions → Evals → Run workflow) with
+  `tier: full`. Its scorecard goes to the job summary. To finish a run that
+  stopped part way, run it again with `resume` set to that run's id: it
+  downloads that run's logs and reruns only their missing samples with
+  `inspect eval-retry`.
+
+The job builds codecite, fetches identity-model at the task's pinned commit
+and caches the two sandbox images, keyed on a hash of their build contexts
+(which hold the codecite binary and the identity-model commit), so an
+unchanged binary doesn't rebuild. It reads only the `OPENROUTER_EVAL_API_KEY`
+secret. The Inspect logs, with the scorecard, upload as the `eval-logs-<tier>`
+artifact.
+
+## Running the A/B eval locally
 
 Needs Docker, [uv](https://docs.astral.sh/uv/), a release build of codecite
 and an identity-model checkout (`IDENTITY_MODEL_REPO`, default
@@ -33,29 +99,50 @@ and an identity-model checkout (`IDENTITY_MODEL_REPO`, default
 
 ```
 cargo build --release
-evals/inspect/prepare.sh
+evals/inspect/prepare.sh             # or: evals/inspect/prepare.sh client-auth-uri
 cd evals
 uv sync --locked
 set -a; . ~/.config/codecite/evals.env; set +a
 export OPENROUTER_API_KEY="$OPENROUTER_EVAL_API_KEY"
-uv run --locked inspect eval inspect/task.py --model openrouter/anthropic/claude-haiku-5.5 -M strict_tools=false --epochs 2
-inspect/panel.sh                     # the whole panel, EPOCHS=10 by default
-uv run --locked python inspect/report.py
+uv run --locked inspect eval codecite_evals/fastapi_middleware --model openrouter/anthropic/claude-haiku-5.5 -M strict_tools=false --epochs 2
+inspect/panel.sh quick               # or: inspect/panel.sh full
+uv run --locked codecite-eval-report --tier quick
 ```
 
-Logs land in `inspect/logs/` (gitignored); `uv run --locked inspect view`
-browses them. Being ignored, they go with the worktree: copy them out before
-`git worktree remove`, or pass `--log-dir` a directory outside the checkout.
-A panel takes hours: run it detached from your shell (for example
-`systemd-run --user --unit=codecite-panel -p MemoryMax=16G inspect/panel.sh`),
-since a killed run leaves its sandboxes behind and its log unfinished.
-`inspect eval-retry <log>` reruns only an unfinished log's missing samples.
+The package registers its tasks with Inspect through the `inspect_ai` entry
+point, so Inspect runs them by name (`codecite_evals/<task>`) from any
+directory, and `codecite-eval-report` is the scorecard's command. Both find
+`tasks/`, `inspect/compose.yaml` and `inspect/logs/` through
+`src/codecite_evals/config.py`: under this `evals/` directory, or under
+`CODECITE_EVALS_DIR` when it is set.
 
-Several models can run in one `inspect eval` process (a comma-separated
-`--model`). Each sandbox creates its own Docker network, and Docker's default
-address pools hold about 31, so keep `--max-sandboxes` under that (14 works);
-past it, sandbox starts fail with "all predefined address pools have been fully
-subnetted" and take the model's whole run with them (#111).
+The unit tests in `tests/` run offline, and CI runs them on every PR:
+`uv run --locked pytest`.
+
+Each tier's logs land in `inspect/logs/<tier>/` (gitignored), with the last
+scorecard in `scorecard.md`; `uv run --locked inspect view` browses them. Being
+ignored, they go with the worktree: copy them out before `git worktree
+remove`, or pass `--log-dir` a directory outside the checkout. A full run
+takes an hour or more: run it detached from your shell (for example
+`systemd-run --user --unit=codecite-panel -p MemoryMax=16G inspect/panel.sh
+full`), since a killed run leaves its sandboxes behind and its log unfinished.
+`RETRY=1 inspect/panel.sh full` reruns only the unfinished logs' missing
+samples (`inspect eval-retry`). `panel.sh` raises Inspect's subprocess and docker CLI limits to twice
+`MAX_SANDBOXES`, so no sample waits on them. `EPOCHS` and `MAX_SANDBOXES` override a
+tier's defaults; arguments after the tier go to `inspect eval`.
+
+`panel.sh` runs every model of a tier in one Inspect process, so the slow
+models no longer add up one after another. Each sandbox creates its own Docker
+network, and Docker's default address pools hold about 31, so `MAX_SANDBOXES`
+defaults to 14; past the pools, sandbox starts fail with "all predefined
+address pools have been fully subnetted" and take the model's whole run with
+them (#111). CI gives the daemon /24 pools out of `10.200.0.0/16` (256
+networks) and runs 8 sandboxes at once, Inspect's own default for the
+runner's 4 vCPU. Past what the CPUs carry, samples wait on one another, and
+the wait counts in their wall time: at 20 sandboxes the medians were ~314 s
+against ~70 s of working time. To do the same locally, add
+`"default-address-pools": [{"base": "10.200.0.0/16", "size": 24}]` to
+`/etc/docker/daemon.json` and restart Docker.
 
 ## How a sample runs
 
@@ -72,7 +159,12 @@ subnetted" and take the model's whole run with them (#111).
 - The hidden tests and checks reach the sandbox only after the agent exits. A
   sample passes when the hidden tests and every check pass.
 - An agent that runs past 600 s, or whose sandbox fails mid-run, fails: what
-  it left behind is scored, but the sample can't pass. Hidden tests or checks
-  that hang fail too. A provider error that pi reports is infrastructure: the
-  sample errors and Inspect retries it (`--retry-on-error 2`); errored samples
-  are never scored.
+  it left behind is scored, but the sample can't pass. The scorecard counts
+  the two apart: `timeouts` for the agent running out of time, `sandbox
+  errors` for the sandbox failing under it, each listed under the table with
+  its model, arm and epoch and named in that model's verdict. pi's output
+  overflowing Inspect's stream limit or failing to decode is the agent's
+  failure, in neither column. Hidden tests or checks that hang fail too. A
+  provider error that pi reports is infrastructure: the sample errors and
+  Inspect retries it (`--retry-on-error 2`); errored samples are never
+  scored.

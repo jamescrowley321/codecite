@@ -9,8 +9,8 @@ section. That is where codecite should beat a grep baseline.
 | File | What |
 | --- | --- |
 | `questions.toml` | The questions, their answers, the sections that support them, and where each came from |
-| `check.py` | Checks the set against the identity-bench index: every accepted section exists, and no question repeats a distinctive term of its section |
-| `test_check.py` | Tests for `check.py` on made-up questions |
+| `../../src/codecite_evals/spec_questions.py` | Checks the set against the identity-bench index: every accepted section exists, and no question repeats a distinctive term of its section |
+| `../../tests/test_spec_questions.py` | Its tests, on made-up questions and the real set's shape |
 
 ## Keeping the answers out of the sandbox
 
@@ -22,16 +22,18 @@ from this file after the agent exits.
 ## Checking the set
 
 The checks read the identity-bench corpus file, so section numbers are the
-ones search cites. They need no model key; CI runs them in the `bench` job.
+ones search cites. They need no model key; CI's `bench` job runs the checker
+and `evals-test` runs its tests.
 
 ```
 cargo build --release -p codecite
 target/release/codecite index identity-bench --manifest evals/retrieval/identity-bench.toml
-python3 -I evals/tasks/spec-questions/check.py
-python3 -I -m unittest discover -s evals/tasks/spec-questions
+cd evals
+uv run --locked python -m codecite_evals.spec_questions
+uv run --locked pytest tests/test_spec_questions.py
 ```
 
 A word of a question is a distinctive term of its section when the section
 also uses it and it either names something (it has a `_` or mixes letters and
-digits) or fewer than 3% of the corpus's spec sections use it. `check.py`
+digits) or fewer than 3% of the corpus's spec sections use it. The checker
 skips plain English and a short allowlist of the field's everyday words.

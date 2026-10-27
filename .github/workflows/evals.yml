@@ -1,0 +1,173 @@
+name: Evals
+
+# The A/B agent eval (evals/README.md). The quick tier runs on PRs labelled
+# `eval` and posts its scorecard as one PR comment, updated in place; the full
+# tier runs on dispatch. Advisory, like `bench`: never a required check.
+on:
+  pull_request:
+    types: [labeled, synchronize]
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: quick (3 models, 5 epochs) or full (9 models, 10 epochs)
+        type: choice
+        options: [quick, full]
+        default: quick
+      resume:
+        description: Run id of an earlier run of this tier whose unfinished logs to finish with inspect eval-retry
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+# A push to a labelled PR cancels its stale eval. Events that run nothing (any
+# other label, a push to an unlabelled PR) get a group of their own, so they
+# cancel nothing. Dispatches queue rather than cancel.
+concurrency:
+  group: >-
+    evals-${{ github.event.pull_request.number || github.ref }}-${{ inputs.tier || 'quick' }}-${{
+    (github.event_name == 'workflow_dispatch'
+    || (github.event.action == 'labeled' && github.event.label.name == 'eval')
+    || (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'eval')))
+    && 'run' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  eval:
+    name: eval
+    # Fork PRs get no secrets, so they never run.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event.pull_request.head.repo.full_name == github.repository
+      && ((github.event.action == 'labeled' && github.event.label.name == 'eval')
+      || (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'eval'))))
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.tier == 'full' && 360 || 45 }}
+    permissions:
+      contents: read
+      actions: read # download an earlier run's logs to resume
+    env:
+      TIER: ${{ inputs.tier || 'quick' }}
+      # Each sandbox is one Docker network; the daemon below gets 256 of
+      # them. The runner's 4 vCPU set the limit: at 20 sandboxes, samples
+      # spent three quarters of their wall time waiting, which skews the
+      # time measure. 8 is Inspect's own default for 4 CPUs.
+      MAX_SANDBOXES: "8"
+    outputs:
+      scorecard: ${{ steps.scorecard.outputs.scorecard }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install toolchain
+        run: |
+          rustup toolchain install
+          rustc --version
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: cargo build --release --locked -p codecite
+      - name: Fetch identity-model at the task's pinned commit
+        run: |
+          commit="$(jq -r .corpus.commit evals/tasks/fastapi-middleware/task.json)"
+          repo="$RUNNER_TEMP/identity-model"
+          git init -q "$repo"
+          git -C "$repo" fetch -q --depth 1 https://github.com/jamescrowley321/identity-model "$commit"
+          echo "IDENTITY_MODEL_REPO=$repo" >> "$GITHUB_ENV"
+      - run: evals/inspect/prepare.sh
+      # The key is the hash of every file the two images are built from, so
+      # it covers the codecite binary and the identity-model commit.
+      - name: Hash the image build contexts
+        id: context
+        run: |
+          hash="$(find evals/inspect/build evals/inspect/compose.yaml evals/fixtures/node-oidc -type f -print0 \
+            | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-32)"
+          echo "key=evals-images-$hash" >> "$GITHUB_OUTPUT"
+      - name: Restore the sandbox images
+        id: images
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/images
+          key: ${{ steps.context.outputs.key }}
+      # Docker's default pools hold about 31 networks; /24s out of one /16
+      # hold 256, enough for every sandbox at once (#111).
+      - name: Give the Docker daemon small address pools
+        run: |
+          conf=/etc/docker/daemon.json
+          current="$(sudo cat "$conf" 2>/dev/null || echo '{}')"
+          jq '. + {"default-address-pools": [{"base": "10.200.0.0/16", "size": 24}]}' <<<"$current" | sudo tee "$conf"
+          sudo systemctl restart docker
+          docker info --format '{{.Name}} up'
+      - name: Load the sandbox images
+        if: steps.images.outputs.cache-hit == 'true'
+        run: docker load -i "$RUNNER_TEMP/images/images.tar"
+      - name: Build the sandbox images
+        if: steps.images.outputs.cache-hit != 'true'
+        run: |
+          docker compose -f evals/inspect/compose.yaml build
+          mkdir -p "$RUNNER_TEMP/images"
+          docker save -o "$RUNNER_TEMP/images/images.tar" codecite-eval-sandbox codecite-eval-idp
+      - name: Install uv
+        run: pipx install uv==0.12.5
+      - run: uv sync --locked
+        working-directory: evals
+      - name: Fetch the logs to resume
+        if: inputs.resume != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESUME: ${{ inputs.resume }}
+        run: |
+          [[ "$RESUME" =~ ^[0-9]+$ ]] || { echo "resume must be a run id" >&2; exit 1; }
+          gh run download "$RESUME" -R "$GITHUB_REPOSITORY" -n "eval-logs-$TIER" -D "evals/inspect/logs/$TIER"
+          echo RETRY=1 >> "$GITHUB_ENV"
+      - name: Run the ${{ env.TIER }} tier
+        timeout-minutes: ${{ inputs.tier == 'full' && 345 || 35 }}
+        working-directory: evals
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_EVAL_API_KEY }}
+        run: inspect/panel.sh "$TIER" --sandbox-prebuilt
+      - name: Publish the scorecard
+        id: scorecard
+        if: always()
+        run: |
+          card="evals/inspect/logs/$TIER/scorecard.md"
+          [[ -s "$card" ]] || exit 0
+          cat "$card" >> "$GITHUB_STEP_SUMMARY"
+          { echo 'scorecard<<SCORECARD_EOF'; cat "$card"; echo 'SCORECARD_EOF'; } >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: eval-logs-${{ env.TIER }}
+          path: evals/inspect/logs/${{ env.TIER }}
+          if-no-files-found: ignore
+          overwrite: true
+
+  # Kept apart so the job holding the eval key can't write to the PR.
+  comment:
+    name: comment
+    needs: eval
+    if: always() && github.event_name == 'pull_request' && needs.eval.outputs.scorecard != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Post or update the scorecard comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          SCORECARD: ${{ needs.eval.outputs.scorecard }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          marker='<!-- codecite-eval-scorecard -->'
+          body="$(printf '%s\n## A/B eval\n\n%s\n\nAt %s. Logs: [run](%s).\n' "$marker" "$SCORECARD" "$HEAD_SHA" "$RUN_URL")"
+          id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -n1)"
+          if [[ -n "$id" ]]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -f body="$body" >/dev/null
+          else
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -f body="$body" >/dev/null
+          fi
