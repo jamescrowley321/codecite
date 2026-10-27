@@ -43,8 +43,7 @@ inspect/panel.sh                     # the whole panel, EPOCHS=10 by default
 uv run --locked python inspect/report.py
 ```
 
-The unit tests in `inspect/tests/` run offline:
-`uv run --locked --with pytest==9.1.1 pytest inspect/tests`.
+The unit tests in `inspect/tests/` run offline: `uv run --locked pytest`.
 
 Logs land in `inspect/logs/` (gitignored); `uv run --locked inspect view`
 browses them. Being ignored, they go with the worktree: copy them out before
@@ -81,5 +80,6 @@ subnetted" and take the model's whole run with them (#111).
   its model, arm and epoch and named in that model's verdict. pi's output
   overflowing Inspect's stream limit or failing to decode is the agent's
   failure, in neither column. Hidden tests or checks that hang fail too. A
-  provider error that pi reports is infrastructure: the sample errors and Inspect retries it (`--retry-on-error 2`); errored samples
-  are never scored.
+  provider error that pi reports is infrastructure: the sample errors and
+  Inspect retries it (`--retry-on-error 2`); errored samples are never
+  scored.

@@ -83,11 +83,12 @@ def listed(error, limit=200):
     return f"`{text[:limit]}…`" if len(text) > limit else f"`{text}`"
 
 
-def main(args):
+def scorecard(logs):
+    """The scorecard for these eval logs, as markdown."""
     runs = defaultdict(list)  # (model, arm) -> [(passed, tokens, seconds, stopped)]
     errors = []  # (model, arm, epoch, sandbox error)
     planned = {}
-    for log in logs(args):
+    for log in logs:
         planned[log.eval.model] = log.eval.config.epochs or 1
         for s in log.samples or []:
             if s.error or not s.scores:
@@ -101,8 +102,10 @@ def main(args):
                 errors.append((log.eval.model, s.metadata["arm"], s.epoch, metadata.get("sandbox_error") or "unknown error"))
 
     rng = random.Random(SEED)
-    print("| model | arm | runs | pass | fails | timeouts | sandbox errors | median tokens | median time | verdict |")
-    print("|---|---|---|---|---|---|---|---|---|---|")
+    out = [
+        "| model | arm | runs | pass | fails | timeouts | sandbox errors | median tokens | median time | verdict |",
+        "|---|---|---|---|---|---|---|---|---|---|",
+    ]
     for model in sorted(planned):
         base, code = runs.get((model, "baseline"), []), runs.get((model, "codecite"), [])
         if len(base) < planned[model] or len(code) < planned[model]:
@@ -127,12 +130,17 @@ def main(args):
                 if r
                 else "- | - | - | - | - | -"
             )
-            print(f"| {model.removeprefix('openrouter/')} | {arm} | {len(r)} | {cells} | {verdict if arm == 'codecite' else ''} |")
+            out.append(f"| {model.removeprefix('openrouter/')} | {arm} | {len(r)} | {cells} | {verdict if arm == 'codecite' else ''} |")
     if errors:
-        print("\nSandbox errors (scored as failures):\n")
+        out += ["", "Sandbox errors (scored as failures):", ""]
         for model, arm, epoch, error in sorted(errors, key=lambda e: e[:3]):
-            print(f"- {model.removeprefix('openrouter/')}, {arm}, epoch {epoch}: {listed(error)}")
+            out.append(f"- {model.removeprefix('openrouter/')}, {arm}, epoch {epoch}: {listed(error)}")
+    return "\n".join(out)
+
+
+def main():
+    print(scorecard(logs(sys.argv[1:])))
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    main()

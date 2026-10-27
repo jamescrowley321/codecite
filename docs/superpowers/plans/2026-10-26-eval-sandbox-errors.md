@@ -7,13 +7,14 @@ label and the report change.
 
 ## Steps
 
-1. **Tests first** (`evals/inspect/tests/`, run with
-   `uv run --locked --with pytest==9.1.1 pytest inspect/tests` from `evals/`):
+1. **Tests first** (`evals/inspect/tests/`, run with `uv run --locked pytest`
+   from `evals/`; pytest is in the project's `dev` group, and its config puts
+   `inspect/` on the import path):
    - `test_task.py` drives `pi()` with a stub sandbox, store and agent bridge.
      An `exec` that raises `TimeoutError` records `agent_timeout`; one that
      raises anything else records `sandbox_error` with the exception's type
      and message. Neither raises out of the agent.
-   - `test_report.py` writes a log built in the test (two models, a mix of
+   - `test_report.py` hands `report.scorecard()` logs built in memory (two models, a mix of
      passes, plain failures, timeouts and sandbox errors) and checks the
      scorecard: separate `timeouts` and `sandbox errors` columns, a `fails`
      column they fit inside, each sandbox error listed under the table with

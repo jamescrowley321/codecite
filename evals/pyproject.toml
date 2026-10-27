@@ -6,3 +6,13 @@ dependencies = [
     "inspect-ai>=0.3.283",
     "openai>=3.37.0",
 ]
+
+[dependency-groups]
+dev = ["pytest==9.1.1"]
+
+[tool.pytest.ini_options]
+# task.py and report.py live in inspect/, which can't be a package: the name
+# would shadow the standard library's inspect module.
+pythonpath = ["inspect"]
+testpaths = ["inspect/tests"]
+addopts = ["-p", "no:cacheprovider"]
