@@ -4,7 +4,7 @@
 # has no route out.
 services:
   default:
-    build: build/fastapi-middleware
+    build: build
     image: codecite-eval-sandbox
     init: true
     network_mode: "service:idp"

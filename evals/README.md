@@ -14,23 +14,37 @@ Evaluation plan):
 
 | Path | What |
 | --- | --- |
-| `src/codecite_evals/` | The `codecite-evals` package that `uv sync` installs: `task.py` (the Inspect tasks, one per directory under `tasks/`: one sample per arm, pi in a Docker sandbox, the scorer), `_registry.py` (the tasks Inspect finds), `report.py` (the scorecard) and `config.py` (where every file below is found) |
-| `tests/` | Unit tests for the tasks' agent, scorer and registration, the scorecard and the config; no model key or Docker needed |
-| `inspect/prepare.sh [task]` | Stage a task's sandbox image build context in `inspect/build/<task>/` (default `fastapi-middleware`) |
+| `src/codecite_evals/` | The `codecite-evals` package that `uv sync` installs: `task.py` (the Inspect task: one sample per arm, pi in a Docker sandbox, the scorer), `report.py` (the scorecard) and `config.py` (where every file below is found) |
+| `tests/` | Unit tests for the task's agent, the scorecard and the config; no model key or Docker needed |
+| `inspect/prepare.sh` | Stage the sandbox image's build context in `inspect/build/` for one task (`prepare.sh <task-id>`, default `fastapi-middleware`) |
 | `inspect/Dockerfile`, `inspect/compose.yaml` | The sandbox image and the IdP beside it, on a network with no route out |
-| `inspect/compose.<task>.yaml` | A task's own sandbox, when it differs from `compose.yaml` (`backchannel-logout`: no IdP, no network) |
 | `inspect/pi-models.json` | Points pi at Inspect's agent bridge |
 | `inspect/panel.sh` | Run one tier (`quick` or `full`): every model in one Inspect process, then the report |
 | `tasks/<id>/` | A task: `task.json`, `prompt.md`, starting `project/`, `hidden/` tests, `checks.py`, `reference/`, and `check.sh`/`planted.sh` to prove the task and checks are sound |
-| `fixtures/node-oidc/` | The IdP the hidden tests take tokens from |
+| `fixtures/node-oidc/` | The IdP the fastapi-middleware hidden tests take tokens from |
 | `retrieval/` | The retrieval benchmark's queries and corpus manifest |
 
 ## Tasks
 
-- **`fastapi-middleware`:** protect a small FastAPI app with identity-model's
-  `TokenValidationMiddleware`. The prompt names the package and the classes to
-  use; hidden tests take real tokens from the IdP (`fixtures/node-oidc/`).
-- **`backchannel-logout`:** a relying-party app's hand-rolled
+- **`fastapi-middleware`**: protect a FastAPI app with identity-model's
+  `TokenValidationMiddleware` and `CurrentUser`. The hidden tests take real
+  tokens from node-oidc-provider. The corpus is identity-model. The prompt
+  names the symbols, so it tests little search.
+- **`client-auth-uri`**: a FastAPI service's hand-rolled token endpoint takes
+  client credentials from HTTP Basic, the form body and the query string. The
+  prompt says only that a security review flagged it: fix what the OAuth spec
+  forbids, keep what it allows, and cite the section in a comment. The answer
+  is RFC 6749 §2.3.1: credentials MUST NOT be in the request URI, HTTP Basic
+  MUST be supported, and the form body is allowed. The hidden tests reject
+  query-string credentials with `invalid_client` (§5.2), even valid ones, and
+  still issue tokens over Basic and the form body; an agent that removes too
+  much fails. `checks.py` passes only when a comment or docstring in `app/`
+  cites §2.3.1 of RFC 6749 (`rfc6749#section-2.3.1`, `RFC 6749 §2.3.1` or
+  `Section 2.3.1 of RFC 6749`). The corpus is identity-model plus the spec
+  documents of `retrieval/identity-bench.toml` (`task.json`'s
+  `corpus.documents`), and the codecite arm's note says so. It needs no IdP,
+  so `planted.sh` runs the hidden tests itself, and `check.sh` just runs it.
+- **`backchannel-logout`**: a relying-party app's hand-rolled
   `POST /backchannel-logout` checks only a logout token's signature and
   audience. The prompt says only that the endpoint accepts tokens it should
   reject and must conform to the spec it implements; it names no
@@ -55,19 +69,12 @@ only uv and an identity-model checkout, and CI runs it (`eval-task`):
 IDENTITY_MODEL_REPO=~/repos/auth/identity-model evals/tasks/backchannel-logout/check.sh
 ```
 
-Both tasks are registered (`codecite_evals/fastapi_middleware`,
-`codecite_evals/backchannel_logout`). A task's sandbox comes from
-`inspect/prepare.sh <task>` and its compose file, and its corpus adds the
-documents of the manifest its `task.json` names. The codecite arm's note then
-says the corpus holds the specification documents identity-model implements,
-never which. `panel.sh` and the eval workflow still run `fastapi-middleware`;
-choosing the task there comes with #127. To run `backchannel-logout` locally:
-
-```
-evals/inspect/prepare.sh backchannel-logout
-docker compose -f evals/inspect/compose.backchannel-logout.yaml build
-cd evals && uv run --locked inspect eval codecite_evals/backchannel_logout --model ...
-```
+Each task is registered in `src/codecite_evals/task.py` and runs as
+`codecite_evals/<task>` with `_` for `-`. The sandbox image holds one task's
+project and corpus, so `inspect/prepare.sh <task-id>` stages it before the
+image is built; after switching tasks, rebuild it (`docker compose -f
+inspect/compose.yaml build`). `panel.sh` and the CI workflow run
+`fastapi-middleware`.
 
 ## Two tiers
 
@@ -115,7 +122,7 @@ and an identity-model checkout (`IDENTITY_MODEL_REPO`, default
 
 ```
 cargo build --release
-evals/inspect/prepare.sh
+evals/inspect/prepare.sh             # or: evals/inspect/prepare.sh client-auth-uri
 cd evals
 uv sync --locked
 set -a; . ~/.config/codecite/evals.env; set +a
@@ -128,7 +135,7 @@ uv run --locked codecite-eval-report --tier quick
 The package registers its tasks with Inspect through the `inspect_ai` entry
 point, so Inspect runs them by name (`codecite_evals/<task>`) from any
 directory, and `codecite-eval-report` is the scorecard's command. Both find
-`tasks/`, each task's compose file and `inspect/logs/` through
+`tasks/`, `inspect/compose.yaml` and `inspect/logs/` through
 `src/codecite_evals/config.py`: under this `evals/` directory, or under
 `CODECITE_EVALS_DIR` when it is set.
 

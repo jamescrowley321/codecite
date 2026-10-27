@@ -14,13 +14,6 @@ COMPOSE = EVALS_DIR / "inspect" / "compose.yaml"
 LOGS = EVALS_DIR / "inspect" / "logs"
 
 
-def compose(task_id: str) -> Path:
-    """A task's sandbox: inspect/compose.<task-id>.yaml when the task has one,
-    else the shared compose.yaml (the sandbox beside the IdP)."""
-    own = EVALS_DIR / "inspect" / f"compose.{task_id}.yaml"
-    return own if own.is_file() else COMPOSE
-
-
 def task_dir(task_id: str) -> Path:
     """A task's directory: task.json, prompt.md, project/, hidden/, checks.py."""
     path = EVALS_DIR / "tasks" / task_id

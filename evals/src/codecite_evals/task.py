@@ -1,14 +1,17 @@
-"""The A/B eval tasks on Inspect: pi in a Docker sandbox, with and without
-codecite, on any model Inspect can reach.
+"""The A/B eval on Inspect: pi in a Docker sandbox, with and without
+codecite, on any model Inspect can reach. Each task in evals/tasks/ that is
+registered here runs as codecite_evals/<name>:
 
     uv run inspect eval codecite_evals/fastapi_middleware --model openrouter/openai/gpt-6.1-sol -M strict_tools=false --epochs 2
 
-Each sample is one arm; epochs repeat it. pi's model calls go through
-Inspect's agent bridge, so Inspect records every call and its tokens. Every
-task is built the same way from its directory under evals/tasks/.
+The sandbox image holds one task's project and corpus: stage it with
+`inspect/prepare.sh <task-id>` before building. Each sample is one arm; epochs
+repeat it. pi's model calls go through Inspect's agent bridge, so Inspect
+records every call and its tokens.
 """
 
 import json
+from pathlib import Path
 
 from inspect_ai import Task, task
 from inspect_ai.agent import Agent, AgentState, agent, sandbox_agent_bridge
@@ -21,54 +24,53 @@ from codecite_evals import config
 
 PROJECT = "/work/project"
 IDENTITY_MODEL = "/opt/identity-model"
-CODECITE_NOTE = (
-    "The `codecite` command is on your PATH. Its corpus `eval` indexes the identity-model source at "
-    f"`{IDENTITY_MODEL}`{{documents}}. "
-    '`codecite search eval "<query>"` prints ranked results with citations, and '
-    '`codecite read eval "<citation>"` prints the text a citation points at.'
-)
-# The note says the corpus holds documents, never which: naming the spec
-# would tell the codecite arm what the prompt keeps from both arms.
-DOCUMENTS_NOTE = " and the specification documents it implements"
 PI_TOOLS = "read,bash,edit,write,grep,find,ls"
 PI_FLAGS = ["--no-session", "--no-mcp", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve"]
 AGENT_TIMEOUT = 600
 
 
-def task_json(task_id: str) -> dict:
-    return json.loads((config.task_dir(task_id) / "task.json").read_text())
+def codecite_note(task_dir: Path) -> str:
+    """The codecite arm's note, naming what the task's `eval` corpus indexes."""
+    corpus = json.loads((task_dir / "task.json").read_text())["corpus"]
+    indexes = f"the identity-model source at `{IDENTITY_MODEL}`"
+    if corpus.get("documents"):
+        indexes += " and the OAuth 2.0, OpenID Connect and FAPI specifications it implements"
+    return (
+        f"The `codecite` command is on your PATH. Its corpus `eval` indexes {indexes}. "
+        '`codecite search eval "<query>"` prints ranked results with citations, and '
+        '`codecite read eval "<citation>"` prints the text a citation points at.'
+    )
 
 
-def prompt(task_id: str, arm: str) -> str:
-    text = (config.task_dir(task_id) / "prompt.md").read_text().replace("{identity_model}", IDENTITY_MODEL)
-    if arm != "codecite":
-        return text
-    documents = DOCUMENTS_NOTE if task_json(task_id)["corpus"].get("documents") else ""
-    return f"{text}\n\n{CODECITE_NOTE.format(documents=documents)}\n"
+def prompt(task_dir: Path, arm: str) -> str:
+    text = (task_dir / "prompt.md").read_text().replace("{identity_model}", IDENTITY_MODEL)
+    return f"{text}\n\n{codecite_note(task_dir)}\n" if arm == "codecite" else text
 
 
-def score_command(task_id: str) -> list[str]:
-    """The task's hidden-test command from task.json, run on the copied tests."""
-    return [a.replace("{hidden}", "/score/hidden") for a in task_json(task_id)["score"]]
-
-
-def eval_task(task_id: str) -> Task:
+def ab_task(task_id: str) -> Task:
+    """One task's A/B eval: a sample per arm, scored by its hidden tests and checks."""
+    task_dir = config.task_dir(task_id)
     return Task(
-        dataset=[Sample(id=arm, input=prompt(task_id, arm), metadata={"arm": arm}) for arm in ("baseline", "codecite")],
+        dataset=[Sample(id=arm, input=prompt(task_dir, arm), metadata={"arm": arm}) for arm in ("baseline", "codecite")],
         solver=[arm_to_store(), pi()],
         scorer=hidden_tests_and_checks(task_id),
-        sandbox=("docker", str(config.compose(task_id))),
+        sandbox=("docker", str(config.COMPOSE)),
     )
 
 
 @task
 def fastapi_middleware() -> Task:
-    return eval_task("fastapi-middleware")
+    return ab_task("fastapi-middleware")
+
+
+@task
+def client_auth_uri() -> Task:
+    return ab_task("client-auth-uri")
 
 
 @task
 def backchannel_logout() -> Task:
-    return eval_task("backchannel-logout")
+    return ab_task("backchannel-logout")
 
 
 @solver
@@ -148,16 +150,16 @@ def last_turn_error(stdout: str) -> str | None:
 @scorer(metrics=[accuracy(), stderr()])
 def hidden_tests_and_checks(task_id: str):
     """Correct when the hidden tests and every deterministic check pass. The
-    tests and checks reach the sandbox only now, after the agent has exited."""
-    root = config.task_dir(task_id)
-    tests_cmd = score_command(task_id)
+    tests and checks reach the sandbox only now, after the agent has exited.
+    Takes the task's id, not its path, so the eval log records the id."""
+    task_dir = config.task_dir(task_id)
 
     async def score(state: TaskState, target: Target) -> Score:
         sb = sandbox()
-        for f in (root / "hidden").glob("*.py"):
+        for f in (task_dir / "hidden").glob("*.py"):
             await sb.write_file(f"/score/hidden/{f.name}", f.read_text())
-        await sb.write_file("/score/checks.py", (root / "checks.py").read_text())
-        start = root / "project"
+        await sb.write_file("/score/checks.py", (task_dir / "checks.py").read_text())
+        start = task_dir / "project"
         for f in start.rglob("*"):
             if f.is_file():
                 text = f.read_text().replace("@IDENTITY_MODEL@", IDENTITY_MODEL)
@@ -167,7 +169,7 @@ def hidden_tests_and_checks(task_id: str):
         # like any other; letting the timeout raise would retry the sample.
         try:
             tests = await sb.exec(
-                tests_cmd,
+                ["uv", "run", "--with", "pytest==9.1.1", "--with", "httpx==0.28.1", "pytest", "-q", "-p", "no:cacheprovider", "/score/hidden"],
                 cwd=PROJECT,
                 env={"UV_OFFLINE": "1"},
                 timeout=300,
