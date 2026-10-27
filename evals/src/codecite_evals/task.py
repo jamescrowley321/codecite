@@ -1,14 +1,13 @@
 """The fastapi-middleware A/B eval on Inspect: pi in a Docker sandbox, with
 and without codecite, on any model Inspect can reach.
 
-    uv run inspect eval inspect/task.py --model openrouter/openai/gpt-6.1-sol -M strict_tools=false --epochs 2
+    uv run inspect eval codecite_evals/fastapi_middleware --model openrouter/openai/gpt-6.1-sol -M strict_tools=false --epochs 2
 
 Each sample is one arm; epochs repeat it. pi's model calls go through
 Inspect's agent bridge, so Inspect records every call and its tokens.
 """
 
 import json
-from pathlib import Path
 
 from inspect_ai import Task, task
 from inspect_ai.agent import Agent, AgentState, agent, sandbox_agent_bridge
@@ -17,7 +16,9 @@ from inspect_ai.scorer import Score, Target, accuracy, scorer, stderr
 from inspect_ai.solver import Generate, TaskState, solver
 from inspect_ai.util import OutputLimitExceededError, sandbox, store
 
-TASK = Path(__file__).resolve().parent.parent / "tasks" / "fastapi-middleware"
+from codecite_evals import config
+
+TASK = config.task_dir("fastapi-middleware")
 PROJECT = "/work/project"
 IDENTITY_MODEL = "/opt/identity-model"
 CODECITE_NOTE = (
@@ -41,7 +42,7 @@ def fastapi_middleware() -> Task:
         dataset=[Sample(id=arm, input=prompt(arm), metadata={"arm": arm}) for arm in ("baseline", "codecite")],
         solver=[arm_to_store(), pi()],
         scorer=hidden_tests_and_checks(),
-        sandbox=("docker", str(Path(__file__).with_name("compose.yaml"))),
+        sandbox=("docker", str(config.COMPOSE)),
     )
 
 

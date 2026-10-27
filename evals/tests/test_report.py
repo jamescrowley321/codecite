@@ -2,11 +2,11 @@
 
 from datetime import datetime, timezone
 
-from inspect_ai.log import EvalConfig, EvalDataset, EvalLog, EvalSample, EvalSpec
+from inspect_ai.log import EvalConfig, EvalDataset, EvalLog, EvalSample, EvalSpec, write_eval_log
 from inspect_ai.model import ModelUsage
 from inspect_ai.scorer import Score
 
-from report import scorecard
+from codecite_evals.report import logs, scorecard
 
 EPOCHS = 4
 
@@ -27,11 +27,11 @@ def sample(arm, epoch, passed=False, stopped=None, error=None):
     )
 
 
-def log(model, samples):
+def log(model, samples, status="success", created=None):
     return EvalLog(
-        status="success",
+        status=status,
         eval=EvalSpec(
-            created=datetime.now(timezone.utc).isoformat(),
+            created=created or datetime.now(timezone.utc).isoformat(),
             task="fastapi_middleware",
             dataset=EvalDataset(),
             model=model,
@@ -118,3 +118,12 @@ def test_old_logs_read_timed_out_as_timeouts():
 def test_tier_heads_the_scorecard():
     assert scorecard(PANEL, "quick").startswith("**Quick tier** (directional, never the gate)")
     assert scorecard(PANEL).startswith("| model |")
+
+
+def test_a_directory_gives_each_model_its_newest_finished_log(tmp_path):
+    for name, status, created in (("old", "success", "2026-10-01T00:00:00+00:00"),
+                                  ("new", "success", "2026-10-02T00:00:00+00:00"),
+                                  ("newer-unfinished", "started", "2026-10-03T00:00:00+00:00")):
+        write_eval_log(log("openrouter/m", [sample("baseline", 1)], status, created), str(tmp_path / f"{name}.eval"))
+    (found,) = logs([tmp_path])
+    assert found.eval.created == "2026-10-02T00:00:00+00:00"

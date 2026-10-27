@@ -15,9 +15,10 @@ any has them named in its verdict, so a loss or pass they helped make doesn't
 read as clean. An agent whose own output overflowed or didn't decode is a
 plain failure, in neither column.
 
-    uv run python inspect/report.py [--tier quick|full] [LOG_DIR_OR_FILES...]
+    uv run codecite-eval-report [--tier quick|full] [LOG_DIR_OR_FILES...]
 
-The default logs are the tier's, inspect/logs/<tier>/, else inspect/logs/.
+The default logs are the tier's, inspect/logs/<tier>/, else inspect/logs/
+(both under evals/, see config.py).
 Given a directory, it reads one log per model: the newest finished one, else
 the newest. The tier heads the scorecard: a quick verdict is directional, and
 a quick loss means run the full tier.
@@ -32,6 +33,8 @@ from statistics import median
 
 from inspect_ai.log import list_eval_logs, read_eval_log
 
+from codecite_evals import config
+
 MARGIN = 0.05
 RESAMPLES = 10_000
 SEED = 0
@@ -41,18 +44,19 @@ TIERS = {
 }
 
 
-def logs(args, tier=None):
-    if not args:
-        logs_dir = Path(__file__).with_name("logs")
-        args = [str(logs_dir / tier if tier else logs_dir)]
-    for a in args:
-        if not Path(a).exists():
-            sys.exit(f"no logs at {a}")
-        if not Path(a).is_dir():
-            yield read_eval_log(a)
+def logs(paths: list[Path], tier=None):
+    """The logs at these files and directories; from a directory, one per
+    model. With no paths, the tier's log directory."""
+    if not paths:
+        paths = [config.LOGS / tier if tier else config.LOGS]
+    for path in paths:
+        if not path.exists():
+            sys.exit(f"no logs at {path}")
+        if not path.is_dir():
+            yield read_eval_log(str(path))
             continue
         newest = {}  # model -> header
-        for info in list_eval_logs(a):
+        for info in list_eval_logs(str(path)):
             head = read_eval_log(info.name, header_only=True)
             key = (head.status == "success", head.eval.created)
             if head.eval.model not in newest or key > newest[head.eval.model][0]:
@@ -152,10 +156,6 @@ def scorecard(logs, tier=None):
 def main():
     parser = argparse.ArgumentParser(description="The A/B scorecard.")
     parser.add_argument("--tier", choices=sorted(TIERS))
-    parser.add_argument("logs", nargs="*", help="log directories or files")
+    parser.add_argument("logs", nargs="*", type=Path, help="log directories or files")
     args = parser.parse_args()
     print(scorecard(logs(args.logs, args.tier), args.tier))
-
-
-if __name__ == "__main__":
-    main()

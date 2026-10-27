@@ -14,13 +14,12 @@ Evaluation plan):
 
 | Path | What |
 | --- | --- |
-| `inspect/task.py` | The Inspect task: one sample per arm, pi in a Docker sandbox, the scorer |
+| `src/codecite_evals/` | The `codecite-evals` package that `uv sync` installs: `task.py` (the Inspect task: one sample per arm, pi in a Docker sandbox, the scorer), `report.py` (the scorecard) and `config.py` (where every file below is found) |
+| `tests/` | Unit tests for the task's agent, the scorecard and the config; no model key or Docker needed |
 | `inspect/prepare.sh` | Stage the sandbox image's build context in `inspect/build/` |
 | `inspect/Dockerfile`, `inspect/compose.yaml` | The sandbox image and the IdP beside it, on a network with no route out |
 | `inspect/pi-models.json` | Points pi at Inspect's agent bridge |
 | `inspect/panel.sh` | Run one tier (`quick` or `full`): every model in one Inspect process, then the report |
-| `inspect/report.py` | The scorecard: per model, both arms and the no-loss verdict, headed by its tier |
-| `inspect/tests/` | Unit tests for the task's agent and the scorecard; no model key or Docker needed |
 | `tasks/<id>/` | A task: `task.json`, `prompt.md`, starting `project/`, `hidden/` tests, `checks.py`, `reference/`, and `check.sh`/`planted.sh` to prove the task and checks are sound |
 | `fixtures/node-oidc/` | The IdP the hidden tests take tokens from |
 | `retrieval/` | The retrieval benchmark's queries and corpus manifest |
@@ -76,12 +75,20 @@ cd evals
 uv sync --locked
 set -a; . ~/.config/codecite/evals.env; set +a
 export OPENROUTER_API_KEY="$OPENROUTER_EVAL_API_KEY"
-uv run --locked inspect eval inspect/task.py --model openrouter/anthropic/claude-haiku-5.5 -M strict_tools=false --epochs 2
+uv run --locked inspect eval codecite_evals/fastapi_middleware --model openrouter/anthropic/claude-haiku-5.5 -M strict_tools=false --epochs 2
 inspect/panel.sh quick               # or: inspect/panel.sh full
-uv run --locked python inspect/report.py --tier quick
+uv run --locked codecite-eval-report --tier quick
 ```
 
-The unit tests in `inspect/tests/` run offline: `uv run --locked pytest`.
+The package registers its tasks with Inspect through the `inspect_ai` entry
+point, so Inspect runs them by name (`codecite_evals/<task>`) from any
+directory, and `codecite-eval-report` is the scorecard's command. Both find
+`tasks/`, `inspect/compose.yaml` and `inspect/logs/` through
+`src/codecite_evals/config.py`: under this `evals/` directory, or under
+`CODECITE_EVALS_DIR` when it is set.
+
+The unit tests in `tests/` run offline, and CI runs them on every PR:
+`uv run --locked pytest`.
 
 Each tier's logs land in `inspect/logs/<tier>/` (gitignored), with the last
 scorecard in `scorecard.md`; `uv run --locked inspect view` browses them. Being

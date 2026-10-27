@@ -7,9 +7,8 @@ label and the report change.
 
 ## Steps
 
-1. **Tests first** (`evals/inspect/tests/`, run with `uv run --locked pytest`
-   from `evals/`; pytest is in the project's `dev` group, and its config puts
-   `inspect/` on the import path):
+1. **Tests first** (`evals/tests/`, run with `uv run --locked pytest` from
+   `evals/`; pytest is in the project's `dev` group):
    - `test_task.py` drives `pi()` with a stub sandbox, store and agent bridge.
      An `exec` that raises `TimeoutError` records `agent_timeout`; one that
      raises anything else records `sandbox_error` with the exception's type
@@ -32,7 +31,13 @@ label and the report change.
    `fails`, `timeouts` and `sandbox errors` columns, list each sandbox error
    under the table, and when a model has any, append the per-arm counts to
    its verdict so it doesn't read as a clean loss or pass.
-4. **Docs:** `evals/README.md` (how a sample runs, how to run the tests) and
+4. **Package (from review):** `evals/` becomes the `codecite-evals` package
+   in a src layout (`src/codecite_evals/`). Inspect finds the task through the
+   `inspect_ai` entry point (`codecite_evals/fastapi_middleware`), the
+   scorecard is the `codecite-eval-report` script, and `config.py` resolves
+   the tasks, the compose file and the logs from one setting
+   (`CODECITE_EVALS_DIR`). CI runs the tests as the `evals-test` job.
+5. **Docs:** `evals/README.md` (how a sample runs, how to run the tests) and
    `docs/design.md` (Evaluation plan) describe the two labels.
 
 ## Default a reviewer can change

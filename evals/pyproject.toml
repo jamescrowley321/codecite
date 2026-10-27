@@ -7,12 +7,20 @@ dependencies = [
     "openai>=3.37.0",
 ]
 
+[project.scripts]
+codecite-eval-report = "codecite_evals.report:main"
+
+# Inspect finds the tasks here: `inspect eval codecite_evals/fastapi_middleware`.
+[project.entry-points.inspect_ai]
+codecite_evals = "codecite_evals._registry"
+
+[build-system]
+requires = ["uv_build>=0.11,<0.13"]
+build-backend = "uv_build"
+
 [dependency-groups]
 dev = ["pytest==9.1.1"]
 
 [tool.pytest.ini_options]
-# task.py and report.py live in inspect/, which can't be a package: the name
-# would shadow the standard library's inspect module.
-pythonpath = ["inspect"]
-testpaths = ["inspect/tests"]
+testpaths = ["tests"]
 addopts = ["-p", "no:cacheprovider"]

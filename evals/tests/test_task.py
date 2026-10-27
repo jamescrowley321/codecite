@@ -8,7 +8,7 @@ from inspect_ai.agent import AgentState
 from inspect_ai.model import ChatMessageUser
 from inspect_ai.util import ExecResult, OutputLimitExceededError
 
-import task
+from codecite_evals import task
 
 
 class Store(dict):
