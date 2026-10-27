@@ -169,6 +169,62 @@ $ codecite read identity "§4.3"
 Error: §4.3 names no document and is not in exactly one current document; name one: rfc6749@sha256:535362fa3b4c#section-4.3, rfc9449@sha256:2d8657f07291#section-4.3, …
 ```
 
+## Check a citation
+
+`cite` checks a spec citation: whether it names exactly one section or step in
+the corpus, what that text is, and why not when it doesn't.
+
+```sh
+codecite cite identity "OIDC Core §3.1.3.7 step 13"
+codecite cite identity "§4.3" --json
+codecite cite identity "[OIDC Core §3.1.3.6](https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation)"
+```
+
+It accepts every spec form `read` does, and one more:
+
+| Form | Example |
+| --- | --- |
+| A Markdown link, its text a citation and its target a spec URL with its anchor | `[OIDC Core §3.1.3.7](https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation)` |
+| The same, with a bare section taking the URL's document | `[§3.1.3.7 step 13](https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation)` |
+
+A citation that resolves prints as `read` prints it, with its text cut to 40
+lines. An older pinned version, or a document another obsoletes, says what
+supersedes it:
+
+```text
+$ codecite cite identity "RFC 2616 §14.9"
+rfc2616@sha256:261600000000#section-14.9
+section · Cache-Control · quote · indexed 2026-10-20T22:56:30Z
+superseded by rfc9110
+…
+```
+
+One that doesn't resolve is still a successful check, exiting 0, with its
+findings and the pinned citations it could have meant:
+
+```text
+$ codecite cite identity "[OIDC Core §3.1.3.6](https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation)"
+unresolved
+anchor_label_mismatch: OIDC Core §3.1.3.6 is openid-connect-core-1_0@sha256:4d016752a645#section-3.1.3.6, but https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation is openid-connect-core-1_0@sha256:4d016752a645#section-3.1.3.7
+candidates:
+  openid-connect-core-1_0@sha256:4d016752a645#section-3.1.3.6
+  openid-connect-core-1_0@sha256:4d016752a645#section-3.1.3.7
+```
+
+`--json` prints the result as one compact JSON object, here for
+`"RFC 9449 §4.3 step 99"`:
+
+```json
+{"candidates":["rfc9449@sha256:2d8657f07291#section-4.3/step-12","rfc9449@sha256:2d8657f07291#section-4.3/step-11","rfc9449@sha256:2d8657f07291#section-4.3/step-10","rfc9449@sha256:2d8657f07291#section-4.3/step-9","rfc9449@sha256:2d8657f07291#section-4.3/step-8"],"findings":[{"candidates":["rfc9449@sha256:2d8657f07291#section-4.3/step-12","rfc9449@sha256:2d8657f07291#section-4.3/step-11","rfc9449@sha256:2d8657f07291#section-4.3/step-10","rfc9449@sha256:2d8657f07291#section-4.3/step-9","rfc9449@sha256:2d8657f07291#section-4.3/step-8"],"section":"rfc9449@sha256:2d8657f07291#section-4.3","step":99,"type":"no_such_step"}],"resolved":false}
+```
+
+The findings are `no_such_section`, `no_such_step`, `anchor_label_mismatch`
+(a link whose anchor is another section than its text) and
+`ambiguous_document` (a bare § that is not in exactly one current document).
+Anything else wrong is an error that exits non-zero, as `read`'s are: text that
+is no citation, a malformed one, an unknown document or version, a stale index,
+and a code citation, which `read` reads instead.
+
 ## List corpora
 
 ```sh
