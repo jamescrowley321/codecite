@@ -42,22 +42,34 @@ comments() { gh api "repos/$repo/issues/$pr/comments" --paginate --jq '.[]' | jq
 # When this head's review was last asked for: the newest of the claude.yml
 # run that opening the PR started on it, still running or successful, and
 # our request comments naming it.
+# Either lookup failing fails since(), so a failed run lookup never reads as
+# "no request" and posts one that cancels the opening review mid-run.
 since() {
+  local runs requests
+  runs=$(gh run list -R "$repo" --workflow claude.yml --event pull_request --commit "$sha" \
+    --json createdAt,status,conclusion) || return 1
+  requests=$(comments) || return 1
   {
-    gh run list -R "$repo" --workflow claude.yml --event pull_request --commit "$sha" \
-      --json createdAt,status,conclusion \
-      | jq -r '.[] | select(.status != "completed" or .conclusion == "success") | .createdAt'
-    comments | jq -r --arg me "$me" --arg sha "$sha" '.[]
+    jq -r '.[] | select(.status != "completed" or .conclusion == "success") | .createdAt' <<< "$runs"
+    jq -r --arg me "$me" --arg sha "$sha" '.[]
       | select(.user.login == $me and ((.body // "") | contains("@claude review this PR"))
                and ((.body // "") | contains($sha)))
-      | .created_at'
+      | .created_at' <<< "$requests"
   } | sort | tail -1
 }
 
-asked=$(since)
+if ! asked=$(since); then
+  echo "REVIEW_FAILED could not read the PR's runs or comments"
+  exit 3
+fi
 if [[ -z "$asked" ]]; then
-  "$here/request-review.sh" "$pr" > /dev/null
-  asked=$(since)
+  "$here/request-review.sh" "$pr" "$sha" > /dev/null
+  # The new comment can take a moment to show in the listing.
+  for _ in 1 2 3 4 5; do
+    asked=$(since) || asked=""
+    [[ -n "$asked" ]] && break
+    sleep "${WAIT_RETRY:-5}"
+  done
   if [[ -z "$asked" ]]; then
     echo "REVIEW_FAILED posted a review request but can't find it (is gh logged in as $me?)"
     exit 3
@@ -74,12 +86,15 @@ for _ in $(seq 1 8); do
     continue
   fi
   # Only claude[bot], a login no user can hold: anyone can post the heading.
-  # The newest comment since the request that carries the heading: an
-  # unrelated mention's progress comment never hides the review.
-  review=$(jq --arg since "$asked" '
+  # The newest comment since the request that carries the heading and doesn't
+  # name another head: an unrelated mention's progress comment, or an older
+  # head's review landing late, never hides this head's review.
+  review=$(jq --arg since "$asked" --arg sha "$sha" '
     [.[] | select(.user.login == "claude[bot]" and .user.type == "Bot"
                   and ((.body // "") | test("(^|\n)#{2,4} Blind peer review"; "i"))
-                  and .created_at > $since)]
+                  and .created_at > $since)
+         | select(([(.body // "") | capture("(?i)\\bhead\\b[^`]{0,12}`(?<h>[0-9a-f]{7,40})`").h] | .[0]) as $named
+                  | $named == null or ($sha | startswith($named)))]
     | max_by(.created_at) // empty' <<< "$all")
   if [[ -n "$review" ]]; then
     body=$(jq -r .body <<< "$review")
@@ -91,9 +106,7 @@ for _ in $(seq 1 8); do
       | grep -oiE '(PASS|BLOCK)$' | tr a-z A-Z | sort -u || true)
     # The first commit named as the head: "head `<sha>`", "Head: `<sha>`".
     named=$(grep -oiE '\bhead\b[^`]{0,12}`[0-9a-f]{7,40}`' <<< "$body" | head -1 | grep -oE '[0-9a-f]{7,40}' | tail -1 || true)
-    if [[ -n "$named" && "$sha" != "$named"* ]]; then
-      :  # a review of an older head, landing late: wait for this head's
-    elif [[ -z "$verdicts" ]]; then
+    if [[ -z "$verdicts" ]]; then
       if grep -qE '^\*\*Claude (finished|encountered an error)' <<< "$body"; then
         echo "REVIEW_FAILED the review ended without a verdict ($url)"
         exit 3

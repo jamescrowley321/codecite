@@ -284,11 +284,13 @@ jobs:
           # checkout, not `node:*`, so the no-interpreters rule holds.
           #
           # `gh pr comment` / `gh issue comment` are the ONLY write commands:
-          # posting the review is the job. Both take only this event's own PR
-          # or issue number, followed by `--repo <this repo>` so the prefix
-          # ends at a token (#14 can't admit #140), and a prompt-injected
-          # review can't post a verdict on another PR: ralph/wait-review.sh
-          # and scripts/cloud-status.sh trust claude[bot]'s comments. Everything else that writes —
+          # posting the review is the job. Both must start with this event's
+          # own PR or issue number and `--repo <this repo>`, so the prefix ends
+          # at a token (#14 can't admit #140). That narrows where a
+          # prompt-injected review can post; it doesn't close it, since flags
+          # after the prefix (a second --repo, --edit-last) are unchecked.
+          # ralph/wait-review.sh and scripts/cloud-status.sh also check the
+          # heading's PR number and the head sha before trusting a verdict. Everything else that writes —
           # Write for the skill's patch file, mkdir for its out dir — stays
           # inside the workspace, and the job cannot push (contents: read).
           claude_args: |

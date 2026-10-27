@@ -34,7 +34,7 @@ case "$1 $2" in
 esac
 EOF
 chmod +x "$work/bin/gh"
-export STUB="$work" PATH="$work/bin:$PATH" WAIT_SLEEP=0 WAIT_POLL=0
+export STUB="$work" PATH="$work/bin:$PATH" WAIT_SLEEP=0 WAIT_POLL=0 WAIT_RETRY=0
 
 sha=91d7628aaaabbbbccccddddeeeeffff000011112
 review=$(cat "$here/review-145.md")
@@ -125,6 +125,12 @@ setup "$(comment james User "@claude review this PR at head \`$sha\`" 2026-10-27
       "$(comment 'claude[bot]' Bot "$(printf '## Blind peer review — PR #145\nhead `%s`\nVerdict: **PASS**\n' "$sha")" 2026-10-27T03:10:00Z)" \
       "$(comment 'claude[bot]' Bot "**Claude is working…** —— [View job](x)" 2026-10-27T03:20:00Z)"
 check "a later unrelated progress comment doesn't hide the review" "FOUND PASS" 0
+
+# This head's review, then an older head's landing late: this head's counts.
+setup "$(comment james User "@claude review this PR at head \`$sha\`" 2026-10-27T03:00:00Z)" \
+      "$(comment 'claude[bot]' Bot "$(printf '## Blind peer review — PR #145\nhead `%s`\nVerdict: **PASS**\n' "$sha")" 2026-10-27T03:10:00Z)" \
+      "$(comment 'claude[bot]' Bot "$(printf '## Blind peer review — PR #145\nhead `deadbee`\nVerdict: **BLOCK**\n')" 2026-10-27T03:20:00Z)"
+check "an older head's late review doesn't hide this head's" "FOUND PASS" 0
 
 # The head spelled the other way the skill writes it.
 setup "$(comment james User "@claude review this PR at head \`$sha\`" 2026-10-27T03:00:00Z)" \
