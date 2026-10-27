@@ -15,6 +15,12 @@ any has them named in its verdict, so a loss or pass they helped make doesn't
 read as clean. An agent whose own output overflowed or didn't decode is a
 plain failure, in neither column.
 
+A pair whose codecite arm called codecite in fewer than half its usable runs
+is not measured: the arms then differ by a tool the agent never used, so the
+comparison says nothing about codecite. "used codecite" counts, per arm, the
+runs with at least one call, read from the model calls in the log: a call to
+one of codecite's native tools, or a `bash` call that runs `codecite`.
+
     uv run codecite-eval-report [--tier quick|full] [LOG_DIR_OR_FILES...]
 
 The default logs are the tier's, inspect/logs/<tier>/, else inspect/logs/
@@ -26,16 +32,26 @@ a quick loss means run the full tier.
 
 import argparse
 import random
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
 from statistics import median
 
+from inspect_ai.event import ModelEvent
 from inspect_ai.log import list_eval_logs, read_eval_log
 
 from codecite_evals import config
 
 MARGIN = 0.05
+# A pair is measured when its codecite arm used codecite in at least this
+# share of its usable runs.
+ADOPTION = 0.5
+NATIVE = "mcp__codecite__"
+# `codecite` at the start of a shell command: of the line, or after `;`, `&`,
+# `|`, `(`, `$(` or a backtick, behind any VAR=value prefixes, by bare name or
+# path. `grep codecite` or `ls /opt/codecite` don't run it.
+CLI = re.compile(r"(?:^|[;&|(`\n]|\$\()\s*(?:\w+=\S*\s+)*(?:\S*/)?codecite(?=\s|$)")
 RESAMPLES = 10_000
 SEED = 0
 TIERS = {
@@ -90,6 +106,23 @@ def stopped(metadata):
     return metadata.get("stopped") or ("agent_timeout" if metadata.get("timed_out") else None)
 
 
+def codecite_calls(sample):
+    """How many tool calls in this sample's model calls ran codecite: its
+    native tools, or `bash` with a codecite command. Text that only names
+    codecite isn't a call."""
+    calls = 0
+    for event in sample.events or []:
+        if not isinstance(event, ModelEvent) or not event.output.choices:
+            continue
+        for call in event.output.message.tool_calls or []:
+            if call.function.startswith(NATIVE):
+                calls += 1
+            elif call.function == "bash":
+                command = call.arguments.get("command") if isinstance(call.arguments, dict) else None
+                calls += isinstance(command, str) and bool(CLI.search(command))
+    return calls
+
+
 def listed(error, limit=200):
     """An error on one line, short and fenced: the scorecard is posted where
     agents read it, and the text can carry whatever the sandbox printed."""
@@ -99,7 +132,7 @@ def listed(error, limit=200):
 
 def scorecard(logs, tier=None):
     """The scorecard for these eval logs, as markdown, headed by its tier."""
-    runs = defaultdict(list)  # (model, arm) -> [(passed, tokens, seconds, stopped)]
+    runs = defaultdict(list)  # (model, arm) -> [(passed, tokens, seconds, stopped, used codecite)]
     errors = []  # (model, arm, epoch, sandbox error)
     planned = {}
     for log in logs:
@@ -111,20 +144,22 @@ def scorecard(logs, tier=None):
             tokens = sum(u.total_tokens or 0 for u in (s.model_usage or {}).values())
             metadata = score.metadata or {}
             why = stopped(metadata)
-            runs[(log.eval.model, s.metadata["arm"])].append((score.value == 1, tokens, s.total_time or 0.0, why))
+            runs[(log.eval.model, s.metadata["arm"])].append((score.value == 1, tokens, s.total_time or 0.0, why, codecite_calls(s) > 0))
             if why == "sandbox_error":
                 errors.append((log.eval.model, s.metadata["arm"], s.epoch, metadata.get("sandbox_error") or "unknown error"))
 
     rng = random.Random(SEED)
     out = [TIERS[tier], ""] if tier else []
     out += [
-        "| model | arm | runs | pass | fails | timeouts | sandbox errors | median tokens | median time | verdict |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| model | arm | runs | used codecite | pass | fails | timeouts | sandbox errors | median tokens | median time | verdict |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for model in sorted(planned):
         base, code = runs.get((model, "baseline"), []), runs.get((model, "codecite"), [])
         if len(base) < planned[model] or len(code) < planned[model]:
             verdict = f"incomplete ({len(base)}/{len(code)} of {planned[model]} runs)"
+        elif (used := sum(x[4] for x in code)) < ADOPTION * len(code):
+            verdict = f"not measured (codecite used in {used} of {len(code)} runs)"
         else:
             p = interval(rng, [r[0] for r in base], [r[0] for r in code], pass_diff)
             t = interval(rng, [r[1] for r in base], [r[1] for r in code], median_ratio)
@@ -145,7 +180,7 @@ def scorecard(logs, tier=None):
                 if r
                 else "- | - | - | - | - | -"
             )
-            out.append(f"| {model.removeprefix('openrouter/')} | {arm} | {len(r)} | {cells} | {verdict if arm == 'codecite' else ''} |")
+            out.append(f"| {model.removeprefix('openrouter/')} | {arm} | {len(r)} | {sum(x[4] for x in r)}/{len(r)} | {cells} | {verdict if arm == 'codecite' else ''} |")
     if errors:
         out += ["", "Sandbox errors (scored as failures):", ""]
         for model, arm, epoch, error in sorted(errors, key=lambda e: e[:3]):

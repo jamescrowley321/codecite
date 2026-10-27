@@ -4,7 +4,10 @@ and without codecite, on any model Inspect can reach.
     uv run inspect eval codecite_evals/fastapi_middleware --model openrouter/openai/gpt-6.1-sol -M strict_tools=false --epochs 2
 
 Each sample is one arm; epochs repeat it. pi's model calls go through
-Inspect's agent bridge, so Inspect records every call and its tokens.
+Inspect's agent bridge, so Inspect records every call, its tool list and its
+tokens. The codecite arm gives pi codecite's `search` and `read` as tools of
+their own, from `codecite mcp` through pi's built-in MCP support, and keeps
+the CLI on PATH; the baseline arm has no MCP and no codecite.
 """
 
 import json
@@ -21,19 +24,47 @@ from codecite_evals import config
 TASK = config.task_dir("fastapi-middleware")
 PROJECT = "/work/project"
 IDENTITY_MODEL = "/opt/identity-model"
+CODECITE = "/opt/codecite/bin/codecite"
+CODECITE_TOOLS = ["mcp__codecite__search", "mcp__codecite__read"]
 CODECITE_NOTE = (
-    "The `codecite` command is on your PATH. Its corpus `eval` indexes the identity-model source at "
-    f'`{IDENTITY_MODEL}`. `codecite search eval "<query>"` prints ranked results with citations, and '
-    '`codecite read eval "<citation>"` prints the text a citation points at.'
+    f"codecite indexes the identity-model source at `{IDENTITY_MODEL}` as its corpus `eval`. Its tools "
+    "`mcp__codecite__search` (ranked results with citations) and `mcp__codecite__read` (the text a "
+    "citation points at) search and read it. The `codecite` command on your PATH does the same: "
+    '`codecite search eval "<query>"` and `codecite read eval "<citation>"`.'
 )
-PI_TOOLS = "read,bash,edit,write,grep,find,ls"
-PI_FLAGS = ["--no-session", "--no-mcp", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve"]
+PI_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"]
+PI_FLAGS = ["--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve"]
+# pi's user-level MCP config. `direct` exposure declares the tools to the
+# model next to the built-in ones, with the server's descriptions, rather
+# than behind codemode or tool_search.
+PI_MCP = "/root/.pi/agent/mcp.json"
+MCP_CONFIG = {
+    "mcpServers": {
+        "codecite": {
+            "command": CODECITE,
+            "args": ["mcp"],
+            "exposure": "direct",
+        }
+    },
+    "autoEnableCodemode": False,
+}
 AGENT_TIMEOUT = 600
 
 
 def prompt(arm: str) -> str:
     text = (TASK / "prompt.md").read_text().replace("{identity_model}", IDENTITY_MODEL)
     return f"{text}\n\n{CODECITE_NOTE}\n" if arm == "codecite" else text
+
+
+def pi_command(arm: str, prompt: str) -> list[str]:
+    """pi's command line for an arm. --no-extensions drops the built-in
+    extensions too, so the codecite arm loads only the MCP one back, and only
+    it lists codecite's tools."""
+    if arm == "codecite":
+        flags, tools = [*PI_FLAGS, "-e", "builtin:mcp"], [*PI_TOOLS, *CODECITE_TOOLS]
+    else:
+        flags, tools = [*PI_FLAGS, "--no-mcp"], PI_TOOLS
+    return ["pi", "-p", "--mode", "json", "--provider", "inspect", "--model", "inspect", *flags, "--tools", ",".join(tools), "--", prompt]
 
 
 @task
@@ -64,11 +95,13 @@ def pi() -> Agent:
         arm = store().get("arm")
         if arm == "baseline":
             await sb.exec(["rm", "-rf", "/opt/codecite"])
+        else:
+            await sb.write_file(PI_MCP, json.dumps(MCP_CONFIG, indent=2))
         path = ("/opt/codecite/bin:" if arm == "codecite" else "") + "/usr/local/bin:/usr/bin:/bin"
         async with sandbox_agent_bridge(state) as bridge:
             try:
                 result = await sb.exec(
-                    ["pi", "-p", "--mode", "json", "--provider", "inspect", "--model", "inspect", *PI_FLAGS, "--tools", PI_TOOLS, "--", state.messages[0].text],
+                    pi_command(arm, state.messages[0].text),
                     cwd=PROJECT,
                     env={"PATH": path, "HOME": "/root"},
                     timeout=AGENT_TIMEOUT,

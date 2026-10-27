@@ -1,17 +1,36 @@
-"""The scorecard counts timeouts and sandbox errors apart, on logs built here."""
+"""The scorecard counts timeouts and sandbox errors apart, and codecite's
+use, on logs built here."""
 
 from datetime import datetime, timezone
 
-from inspect_ai.log import EvalConfig, EvalDataset, EvalLog, EvalSample, EvalSpec, write_eval_log
-from inspect_ai.model import ModelUsage
+import pytest
+from inspect_ai.event import ModelEvent
+from inspect_ai.log import EvalConfig, EvalDataset, EvalError, EvalLog, EvalSample, EvalSpec, write_eval_log
+from inspect_ai.model import ChatMessageAssistant, GenerateConfig, ModelOutput, ModelUsage
 from inspect_ai.scorer import Score
+from inspect_ai.tool import ToolCall
 
-from codecite_evals.report import logs, scorecard
+from codecite_evals.report import codecite_calls, logs, scorecard
 
 EPOCHS = 4
+NATIVE = ToolCall(id="n", function="mcp__codecite__search", arguments={"query": "TokenValidationMiddleware"})
 
 
-def sample(arm, epoch, passed=False, stopped=None, error=None):
+def bash(command):
+    return ToolCall(id="b", function="bash", arguments={"command": command})
+
+
+def model_call(tool_calls=None, text=""):
+    """One model call as the agent bridge logs it: its output's tool calls."""
+    message = ChatMessageAssistant(content=text, tool_calls=tool_calls or None)
+    return ModelEvent(model="m", input=[], tools=[], tool_choice="auto", config=GenerateConfig(), output=ModelOutput.from_message(message))
+
+
+def sample(arm, epoch, passed=False, stopped=None, error=None, calls=None):
+    """A scored sample. Its codecite arm calls codecite natively unless calls
+    (the tool calls of its one model call) says otherwise."""
+    if calls is None:
+        calls = [NATIVE] if arm == "codecite" else []
     metadata = {"stopped": stopped} if stopped else {}
     if error:
         metadata["sandbox_error"] = error
@@ -24,6 +43,7 @@ def sample(arm, epoch, passed=False, stopped=None, error=None):
         scores={"hidden_tests_and_checks": Score(value=1 if passed else 0, metadata=metadata)},
         model_usage={"m": ModelUsage(total_tokens=1000)},
         total_time=60.0,
+        events=[model_call(calls)],
     )
 
 
@@ -127,3 +147,71 @@ def test_a_directory_gives_each_model_its_newest_finished_log(tmp_path):
         write_eval_log(log("openrouter/m", [sample("baseline", 1)], status, created), str(tmp_path / f"{name}.eval"))
     (found,) = logs([tmp_path])
     assert found.eval.created == "2026-10-02T00:00:00+00:00"
+
+
+@pytest.mark.parametrize(
+    "calls, text, expected",
+    [
+        ([NATIVE], "", 1),
+        ([ToolCall(id="r", function="mcp__codecite__read", arguments={"citation": "c"})], "", 1),
+        ([bash('codecite search eval "token validation"')], "", 1),
+        ([bash("cd /work/project && /opt/codecite/bin/codecite read eval 'a.py:1-2'")], "", 1),
+        ([bash("RUST_LOG=warn codecite search eval x | head -40")], "", 1),
+        ([bash("echo $(codecite search eval x)")], "", 1),
+        # Naming codecite without running it is not a call.
+        ([], "I could run `codecite search eval middleware` here.", 0),
+        ([bash("grep -rn codecite /work/project"), bash("ls /opt/codecite/bin"), bash("echo codecite")], "", 0),
+        ([ToolCall(id="g", function="grep", arguments={"pattern": "codecite"})], "", 0),
+        ([NATIVE, bash("codecite search eval x")], "", 2),
+    ],
+)
+def test_codecite_calls(calls, text, expected):
+    s = sample("codecite", 1, calls=[])
+    s.events = [model_call(calls, text)]
+    assert codecite_calls(s) == expected
+
+
+def adoption(used):
+    """A clean pair whose codecite arm calls codecite in `used` of its runs:
+    one by the CLI, the rest natively; the others only mention it."""
+    calls = [[bash("codecite search eval x")]] + [[NATIVE]] * (used - 1) + [[]] * (EPOCHS - used)
+    code = [sample("codecite", e + 1, passed=True, calls=c) for e, c in enumerate(calls)]
+    for s, c in zip(code, calls):
+        if not c:
+            s.events = [model_call(text="`codecite search` might help, but grep will do.")]
+    return log(f"openrouter/used-{used}", [sample("baseline", e, passed=True) for e in range(1, EPOCHS + 1)] + code)
+
+
+def test_used_codecite_is_shown_per_arm():
+    _, rows = table(scorecard([adoption(3)]))
+    assert rows[("used-3", "codecite")]["used codecite"] == "3/4"
+    assert rows[("used-3", "baseline")]["used codecite"] == "0/4"
+
+
+def test_half_adoption_is_measured():
+    _, rows = table(scorecard([adoption(EPOCHS // 2)]))
+    assert rows[("used-2", "codecite")]["verdict"].startswith("no loss")
+
+
+def test_below_half_adoption_is_not_measured():
+    _, rows = table(scorecard([adoption(EPOCHS // 2 - 1)]))
+    assert rows[("used-1", "codecite")]["verdict"] == "not measured (codecite used in 1 of 4 runs)"
+
+
+def test_adoption_counts_usable_runs():
+    # An errored sample isn't usable: one use in two usable runs is half.
+    l = adoption(1)
+    for s in l.samples:
+        if s.metadata["arm"] == "codecite" and s.epoch > 2:
+            s.error = EvalError(message="provider error", traceback="", traceback_ansi="")
+    l.eval.config.epochs = 2
+    _, rows = table(scorecard([l]))
+    assert rows[("used-1", "codecite")]["used codecite"] == "1/2"
+    assert rows[("used-1", "codecite")]["verdict"].startswith("no loss")
+
+
+def test_calls_are_read_back_from_a_log_file(tmp_path):
+    write_eval_log(adoption(3), str(tmp_path / "used.eval"))
+    (found,) = logs([tmp_path])
+    _, rows = table(scorecard([found]))
+    assert rows[("used-3", "codecite")]["used codecite"] == "3/4"
