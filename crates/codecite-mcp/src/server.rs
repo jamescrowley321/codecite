@@ -90,7 +90,8 @@ pub struct ReadParams {
     /// the only corpus there is.
     #[serde(default)]
     pub corpus: Option<String>,
-    /// The most lines of text to return, at most 500.
+    /// The most lines of text to return, at most 500. The text is also cut
+    /// at 64 KiB, and `truncated` says when it is.
     #[serde(default = "default_max_lines", deserialize_with = "read_lines")]
     #[schemars(range(min = 1, max = MAX_READ_LINES))]
     pub max_lines: NonZeroU32,
@@ -256,7 +257,7 @@ impl Server {
 
     /// The `search` tool: the same JSON as `codecite search --json`.
     #[tool(
-        description = "Search a corpus of code and specs. Returns ranked results, best first, each with its citation, kind, role (source, test, example, docs or spec), symbol, score, license class, indexed_at and a snippet of at most 40 lines; pass a result's citation to `read` for its exact text. A search that matches nothing returns no results; an unknown corpus, a stale index or a query with no words is an error."
+        description = "Search a corpus of code and specs. Returns ranked results, best first, each with its citation, kind, role (source, test, example, docs or spec), symbol, score, license class, indexed_at and a snippet of at most 40 lines and 4 KiB. A snippet is an exact prefix of its chunk's lines, with `\\n` line endings, cut on a character boundary with no marker in the text; `snippet_truncated` is true when it stops before the chunk ends. Pass a result's citation to `read` for its exact text. A search that matches nothing returns no results; an unknown corpus, a stale index or a query with no words is an error."
     )]
     async fn search(
         &self,
@@ -282,7 +283,7 @@ impl Server {
 
     /// The `grep` tool: the same JSON as `codecite grep --json`.
     #[tool(
-        description = "Find the lines of a corpus's code and specs that match a regular expression, or with `fixed` an exact string: claim names, error messages, header names, patterns like `token_type_hint=\\w+`. Each match is one line with its citation (a code line `repo@sha:path#L12`, or the spec step or section holding it), kind, role, license class, indexed_at and text; matches come in index order, unscored. Nothing matching is no matches; an unknown corpus, a stale index, or an empty, invalid or multi-line pattern is an error."
+        description = "Find the lines of a corpus's code and specs that match a regular expression, or with `fixed` an exact string: claim names, error messages, header names, patterns like `token_type_hint=\\w+`. Each match is one line with its citation (a code line `repo@sha:path#L12`, or the spec step or section holding it), kind, role, license class, indexed_at and text, the line held to 4 KiB with `truncated` true when cut; matches come in index order, unscored. Nothing matching is no matches; an unknown corpus, a stale index, or an empty, invalid or multi-line pattern is an error."
     )]
     async fn grep(
         &self,
@@ -308,7 +309,7 @@ impl Server {
 
     /// The `read` tool: the same JSON as `codecite read --json`.
     #[tool(
-        description = "Read the exact text a citation points at, under its pinned citation, with its license class; a spec section or step adds its title and requirement keywords (strength). Text from a `quote` source carries an instruction: quote it exactly with its citation, never paraphrase. A citation that is not in the corpus is an error with candidates, never the nearest guess."
+        description = "Read the exact text a citation points at, under its pinned citation, with its license class. The text is at most `max_lines` lines and 64 KiB: an exact prefix of the cited lines, with `\\n` line endings, cut on a character boundary with no marker in the text, and `truncated` is true when it stops before the end of what was cited, whose citation still names it all. A spec section or step adds its title and requirement keywords (strength). Text from a `quote` source carries an instruction: quote it exactly with its citation, never paraphrase, and say a truncated quote is partial. A citation that is not in the corpus is an error with candidates, never the nearest guess."
     )]
     async fn read(
         &self,
@@ -699,7 +700,8 @@ mod tests {
                 "role": "spec",
                 "license_class": "quote",
                 "indexed_at": found["matches"][0]["indexed_at"],
-                "text": "The server MUST check the rfc9449 proof."
+                "text": "The server MUST check the rfc9449 proof.",
+                "truncated": false
             }])
         );
         let fixed = json!({"pattern": "is_empty()", "fixed": true, "corpus": "demo"});

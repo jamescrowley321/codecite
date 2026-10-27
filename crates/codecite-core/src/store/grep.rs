@@ -9,13 +9,9 @@ use schemars::JsonSchema;
 use serde::Serialize;
 
 use super::Store;
-use super::read::file_lines;
-use super::search::{Scope, code_citation, spec_citation};
+use super::read::{byte_prefix, file_lines};
+use super::search::{MAX_SNIPPET_BYTES, Scope, code_citation, spec_citation};
 use crate::{Error, Result, Role, SectionNumber};
-
-/// The most characters of a line a match holds. A minified file can hold a
-/// line of a megabyte; agents read the rest through its citation.
-pub const MAX_GREP_LINE_CHARS: usize = 500;
 
 /// A grep: the pattern, how to read it, the filters and how many matches to
 /// return.
@@ -70,8 +66,13 @@ pub struct GrepMatch {
     /// was indexed. Spec matches have none.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dirty: Option<bool>,
-    /// The line, cut at 500 characters (`MAX_GREP_LINE_CHARS`) with `…`.
+    /// The line, at most 4 KiB of it (`MAX_SNIPPET_BYTES`, a snippet's
+    /// budget): a minified file can hold a line of a megabyte. A cut keeps a
+    /// prefix ending on a character boundary, with no marker in it; `read`
+    /// the citation for the rest.
     pub text: String,
+    /// Whether the byte budget cut `text` short of the whole line.
+    pub truncated: bool,
 }
 
 /// A document row, as `grep` needs it.
@@ -90,6 +91,7 @@ impl DocRow {
     /// A match on this document's line, cited as `citation`.
     fn matched(&self, citation: String, kind: &str, line: &str) -> GrepMatch {
         let is_spec = self.source_kind == "document";
+        let (text, truncated) = byte_prefix(line, MAX_SNIPPET_BYTES);
         GrepMatch {
             citation,
             kind: kind.into(),
@@ -97,7 +99,8 @@ impl DocRow {
             license_class: self.license_class.clone(),
             indexed_at: self.indexed_at.clone(),
             dirty: (!is_spec).then_some(self.dirty),
-            text: cut(line, MAX_GREP_LINE_CHARS),
+            text: text.to_owned(),
+            truncated,
         }
     }
 }
@@ -310,14 +313,6 @@ fn names_newline(pattern: &str, fixed: bool) -> bool {
         }
     }
     false
-}
-
-/// `text` cut to at most `max` characters, with `…` appended when cut.
-fn cut(text: &str, max: usize) -> String {
-    match text.char_indices().nth(max) {
-        Some((end, _)) => format!("{}…", &text[..end]),
-        None => text.into(),
-    }
 }
 
 #[cfg(test)]
@@ -771,23 +766,27 @@ mod tests {
     }
 
     #[test]
-    fn a_long_line_is_cut() {
+    fn a_long_line_is_held_to_the_snippet_budget() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open_read_write(&dir.path().join("demo.db")).unwrap();
         let app = store
             .upsert_source(&source("app", "local", HEAD, true))
             .unwrap();
-        let long = format!("{}jti{}\n", "é".repeat(600), "x".repeat(10));
+        // A two-byte `é` across the budget, as in a minified file.
+        let long = format!("jti{}\nshort jti\n", "é".repeat(MAX_SNIPPET_BYTES));
         store
             .write_document(app, &code("min.js", "javascript", false, &long))
             .unwrap();
         store.set_indexed_at(30).unwrap();
         let matches = store.grep(&query("jti")).unwrap();
-        assert_eq!(
-            matches[0].text,
-            format!("{}…", "é".repeat(MAX_GREP_LINE_CHARS))
-        );
-        assert_eq!(cut("short", 500), "short");
+        let cut = &matches[0];
+        assert!(cut.truncated);
+        // An exact prefix of the line, ending on a character boundary, with
+        // no marker.
+        assert_eq!(cut.text.len(), MAX_SNIPPET_BYTES - 1);
+        assert!(long.starts_with(&cut.text));
+        assert_eq!(matches[1].text, "short jti");
+        assert!(!matches[1].truncated);
     }
 
     #[test]
@@ -804,7 +803,8 @@ mod tests {
                 "kind",
                 "license_class",
                 "role",
-                "text"
+                "text",
+                "truncated"
             ]
         );
         let spec = GrepQuery {

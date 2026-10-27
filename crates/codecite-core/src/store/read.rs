@@ -22,6 +22,11 @@ pub const DEFAULT_MAX_LINES: u32 = 80;
 /// bounded.
 pub const MAX_READ_LINES: u32 = 500;
 
+/// The most bytes of text a read returns, after the line limit: one
+/// minified or generated line can hold a whole file. The text stops at the
+/// last character that fits, and the result says it is truncated.
+pub const MAX_READ_BYTES: usize = 64 * 1024;
+
 /// The most candidates an error lists.
 const MAX_CANDIDATES: usize = 5;
 
@@ -46,6 +51,10 @@ impl Default for ReadOptions {
 /// What a `quote` read tells the agent to do with its text.
 pub const QUOTE_INSTRUCTION: &str =
     "Quote this text exactly, with its citation; never paraphrase it.";
+
+/// What a `quote` read tells the agent when its text stops before the end
+/// of what was cited, so a partial quote is never passed off as the whole.
+pub const QUOTE_TRUNCATED_INSTRUCTION: &str = "Quote this text exactly, with its citation; never paraphrase it. It stops before the end of what the citation names, so say the quote is partial.";
 
 /// The text a citation points at, in the shape the CLI prints as JSON and
 /// the MCP server returns.
@@ -72,13 +81,17 @@ pub struct ReadResult {
     /// was indexed. Spec results have none.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dirty: Option<bool>,
-    /// The exact text, at most the requested number of lines.
+    /// The exact text, at most the requested number of lines and at most
+    /// `MAX_READ_BYTES` (64 KiB): a prefix of the cited lines joined with
+    /// `\n`, cut at a character boundary, with no marker in it.
     pub text: String,
-    /// Whether the text stops before the end of what was cited.
+    /// Whether the text stops before the end of what was cited, at the
+    /// line limit or the byte budget. The citation still names it all.
     pub truncated: bool,
     /// What the license asks of the agent, when it asks more than
     /// `license_class` says: a `quote` source's text is to be quoted
-    /// exactly, with its citation, and never paraphrased.
+    /// exactly, with its citation, and never paraphrased, and said to be
+    /// partial when `truncated` is set.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instruction: Option<String>,
 }
@@ -244,7 +257,7 @@ impl Store {
             dirty: Some(dirty),
             text,
             truncated,
-            instruction: instruction(&source.license_class),
+            instruction: instruction(&source.license_class, truncated),
         })
     }
 
@@ -375,7 +388,7 @@ impl Store {
             dirty: None,
             text,
             truncated,
-            instruction: instruction(&source.license_class),
+            instruction: instruction(&source.license_class, truncated),
         })
     }
 
@@ -615,16 +628,32 @@ pub(super) fn file_lines(text: &str) -> Vec<&str> {
         .collect()
 }
 
-/// The instruction a result from a source of `license_class` carries.
-fn instruction(license_class: &str) -> Option<String> {
-    (license_class == "quote").then(|| QUOTE_INSTRUCTION.into())
+/// The instruction a result from a source of `license_class` carries, when
+/// its text is `truncated` or whole.
+fn instruction(license_class: &str, truncated: bool) -> Option<String> {
+    let text = if truncated {
+        QUOTE_TRUNCATED_INSTRUCTION
+    } else {
+        QUOTE_INSTRUCTION
+    };
+    (license_class == "quote").then(|| text.into())
 }
 
-/// The first `max_lines` of `lines` joined, and whether any were left out.
+/// The first `max_lines` of `lines` joined, cut to [`MAX_READ_BYTES`], and
+/// whether anything was left out.
 fn cap(lines: &[&str], max_lines: u32) -> (String, bool) {
     let max = usize::try_from(max_lines.max(1)).unwrap_or(usize::MAX);
     let kept = &lines[..lines.len().min(max)];
-    (kept.join("\n"), kept.len() < lines.len())
+    let text = kept.join("\n");
+    let (cut, over) = byte_prefix(&text, MAX_READ_BYTES);
+    (cut.to_owned(), over || kept.len() < lines.len())
+}
+
+/// The longest prefix of `text` that fits in `max` bytes and ends on a
+/// character boundary, and whether it is shorter than `text`.
+pub(super) fn byte_prefix(text: &str, max: usize) -> (&str, bool) {
+    let end = text.floor_char_boundary(max);
+    (&text[..end], end < text.len())
 }
 
 #[cfg(test)]
@@ -879,6 +908,60 @@ mod tests {
             .unwrap();
         assert_eq!(r.text, "4.3.  Checking DPoP Proofs");
         assert!(r.truncated);
+        // A cut `quote` text says it is partial.
+        assert_eq!(r.instruction.as_deref(), Some(QUOTE_TRUNCATED_INSTRUCTION));
+    }
+
+    #[test]
+    fn the_byte_budget_caps_a_long_line_on_a_character_boundary() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("demo.db");
+        let mut store = Store::open_read_write(&path).unwrap();
+        let app = store
+            .upsert_source(&source("app", "local", HEAD, true))
+            .unwrap();
+        // One line of a two-byte `é` past the budget, its first one across it.
+        let line = format!("a{}", "é".repeat(MAX_READ_BYTES));
+        let text = format!("{line}\nnext\n");
+        store
+            .write_document(app, &code("dist/min.js", &text))
+            .unwrap();
+        store.set_indexed_at(30).unwrap();
+        let options = ReadOptions {
+            max_lines: 1,
+            ..ReadOptions::default()
+        };
+        let r = store.read("app@0123456:dist/min.js#L1", &options).unwrap();
+        assert_eq!(r.text.len(), MAX_READ_BYTES - 1);
+        assert!(line.starts_with(&r.text));
+        assert!(r.truncated);
+        // The citation still names the whole line, and reads the same back.
+        assert_eq!(r.citation, format!("app@{HEAD}:dist/min.js#L1"));
+        assert_eq!(store.read(&r.citation, &options).unwrap(), r);
+        // A line within the budget is whole.
+        let r = store.read("app@0123456:dist/min.js#L2", &options).unwrap();
+        assert_eq!((r.text.as_str(), r.truncated), ("next", false));
+    }
+
+    #[test]
+    fn crlf_lines_read_with_newline_endings() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("demo.db");
+        let mut store = Store::open_read_write(&path).unwrap();
+        let app = store
+            .upsert_source(&source("app", "local", HEAD, true))
+            .unwrap();
+        // The budget falls inside the second line.
+        let second = "b".repeat(MAX_READ_BYTES);
+        let text = format!("a\r\n{second}\r\n");
+        store.write_document(app, &code("crlf.txt", &text)).unwrap();
+        store.set_indexed_at(30).unwrap();
+        let r = store
+            .read("app@0123456:crlf.txt#L1-L2", &ReadOptions::default())
+            .unwrap();
+        assert!(r.truncated);
+        assert_eq!(r.text.len(), MAX_READ_BYTES);
+        assert!(format!("a\n{second}").starts_with(&r.text));
     }
 
     #[test]

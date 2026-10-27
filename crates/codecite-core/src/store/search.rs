@@ -8,11 +8,16 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::Store;
+use super::read::byte_prefix;
 use crate::{Error, Result, Role, text_terms};
 
 /// The most lines of a chunk a result's snippet holds. Agents read the
 /// rest through its citation.
 pub const MAX_SNIPPET_LINES: usize = 40;
+
+/// The most bytes a result's snippet holds, after the line limit: one
+/// minified or generated line can hold a whole file.
+pub const MAX_SNIPPET_BYTES: usize = 4 * 1024;
 
 /// How many results a search returns unless asked for another number:
 /// the CLI's `--limit` and the MCP `search` tool's `limit` default.
@@ -110,9 +115,14 @@ pub struct SearchResult {
     /// was indexed. Spec results have none.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dirty: Option<bool>,
-    /// The chunk's first 40 lines (`MAX_SNIPPET_LINES`); `read` its
-    /// citation for the rest.
+    /// The chunk's first 40 lines (`MAX_SNIPPET_LINES`), and at most 4 KiB
+    /// of them (`MAX_SNIPPET_BYTES`): a prefix of the chunk's lines joined
+    /// with `\n`, cut at a character boundary, with no marker in it. `read`
+    /// its citation for the rest.
     pub snippet: String,
+    /// Whether the snippet stops before the end of the chunk, at the line
+    /// limit or the byte budget. The citation still names the whole chunk.
+    pub snippet_truncated: bool,
 }
 
 /// When a corpus was indexed, and whether that is too long ago.
@@ -263,6 +273,7 @@ impl Store {
                 let source_kind: String = row.get(9)?;
                 let revision: String = row.get(10)?;
                 let is_spec = source_kind == "document";
+                let (snippet, snippet_truncated) = snippet(&text);
                 let role = Role::of(&path, &source_kind).as_str();
                 let citation = if is_spec {
                     spec_citation(&source, &revision, &kind, number, parent_number)
@@ -278,7 +289,8 @@ impl Store {
                     license_class: row.get(11)?,
                     indexed_at: row.get(12)?,
                     dirty: (!is_spec).then_some(dirty),
-                    snippet: snippet(&text),
+                    snippet,
+                    snippet_truncated,
                 })
             },
         )?;
@@ -496,10 +508,15 @@ pub(super) fn spec_citation(
     }
 }
 
-/// The first [`MAX_SNIPPET_LINES`] lines of a chunk's text.
-fn snippet(text: &str) -> String {
-    let lines: Vec<&str> = text.lines().take(MAX_SNIPPET_LINES).collect();
-    lines.join("\n")
+/// The first [`MAX_SNIPPET_LINES`] lines of a chunk's text, cut to
+/// [`MAX_SNIPPET_BYTES`], and whether anything was left out.
+fn snippet(text: &str) -> (String, bool) {
+    let mut lines = text.lines();
+    let kept: Vec<&str> = lines.by_ref().take(MAX_SNIPPET_LINES).collect();
+    let more_lines = lines.next().is_some();
+    let joined = kept.join("\n");
+    let (cut, over) = byte_prefix(&joined, MAX_SNIPPET_BYTES);
+    (cut.to_owned(), over || more_lines)
 }
 
 #[cfg(test)]
@@ -803,6 +820,7 @@ mod tests {
         assert_eq!(code.license_class, "adapt");
         assert_eq!(code.dirty, Some(true));
         assert_eq!(code.snippet, VALIDATE);
+        assert!(!code.snippet_truncated);
         assert_eq!(code.indexed_at.len(), "2026-10-20T06:00:00Z".len());
         assert!(matches!(code.citation.parse(), Ok(Citation::Code(_))));
 
@@ -847,7 +865,8 @@ mod tests {
                 "license_class",
                 "role",
                 "score",
-                "snippet"
+                "snippet",
+                "snippet_truncated"
             ]
         );
     }
@@ -1110,8 +1129,30 @@ mod tests {
     #[test]
     fn snippets_stop_at_40_lines() {
         let text: String = (1..=50).map(|i| format!("line {i}\n")).collect();
-        let s = snippet(&text);
+        let (s, truncated) = snippet(&text);
         assert_eq!(s.lines().count(), MAX_SNIPPET_LINES);
         assert!(s.ends_with("line 40"));
+        assert!(truncated);
+        let forty: String = (1..=40).map(|i| format!("line {i}\n")).collect();
+        assert!(!snippet(&forty).1);
+    }
+
+    #[test]
+    fn snippets_stop_at_the_byte_budget_on_a_character_boundary() {
+        // One long line, with a two-byte `é` across the budget.
+        let text = format!("a{}", "é".repeat(MAX_SNIPPET_BYTES));
+        let (s, truncated) = snippet(&text);
+        assert!(truncated);
+        assert_eq!(s.len(), MAX_SNIPPET_BYTES - 1);
+        assert!(text.starts_with(&s));
+        // CRLF lines are joined with `\n`, and the cut counts those bytes.
+        let crlf = format!("a\r\n{}", "b".repeat(MAX_SNIPPET_BYTES));
+        let (s, truncated) = snippet(&crlf);
+        assert!(truncated);
+        assert_eq!(s.len(), MAX_SNIPPET_BYTES);
+        assert!(s.starts_with("a\nbbb"));
+        // Text within the budget is whole.
+        let short = "é".repeat(MAX_SNIPPET_BYTES / 2);
+        assert_eq!(snippet(&short), (short.clone(), false));
     }
 }
