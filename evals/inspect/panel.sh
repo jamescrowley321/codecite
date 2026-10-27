@@ -74,14 +74,14 @@ if [[ "${RETRY:-0}" == 1 ]]; then
   fi
 else
   models="$(printf 'openrouter/%s,' "${PANEL[@]}")"
-  uv run --locked inspect eval inspect/task.py --model "${models%,}" -M strict_tools=false \
+  uv run --locked inspect eval codecite_evals/fastapi_middleware --model "${models%,}" -M strict_tools=false \
     --epochs "$EPOCHS" "${LIMITS[@]}" --log-dir "$LOG_DIR" --display log "$@" || status=$?
 fi
 minutes=$(((SECONDS - start) / 60))
 # The scorecard shows what finished even when a model's run failed. CI posts
 # the copy in the log directory.
 {
-  uv run --locked python inspect/report.py --tier "$TIER" "$LOG_DIR"
+  uv run --locked codecite-eval-report --tier "$TIER" "$LOG_DIR"
   printf '\n%s models, %s epochs per arm, at most %s sandboxes: Inspect ran %s min (exit %s).\n' \
     "${#PANEL[@]}" "$EPOCHS" "$MAX_SANDBOXES" "$minutes" "$status"
 } | tee "$LOG_DIR/scorecard.md"
