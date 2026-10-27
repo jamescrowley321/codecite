@@ -147,6 +147,16 @@ def last_turn_error(stdout: str) -> str | None:
     return None
 
 
+def why_stopped(stopped: str | None, sandbox_error: str | None) -> str:
+    """The start of a score's explanation when the agent didn't finish: such
+    a sample is scored on what it left behind, but can't pass."""
+    return {
+        "agent_timeout": "agent timed out; ",
+        "agent_output": "agent's output overflowed or didn't decode; ",
+        "sandbox_error": f"sandbox failed ({sandbox_error}); ",
+    }.get(stopped, "")
+
+
 @scorer(metrics=[accuracy(), stderr()])
 def hidden_tests_and_checks(task_id: str):
     """Correct when the hidden tests and every deterministic check pass. The
@@ -185,11 +195,7 @@ def hidden_tests_and_checks(task_id: str):
         failed = [c["name"] for c in results if not c["passed"]] if results else ["checks-crashed"]
         stopped, sandbox_error = store().get("stopped"), store().get("sandbox_error")
         passed = tests_passed and not failed and not stopped
-        why = {
-            "agent_timeout": "agent timed out; ",
-            "agent_output": "agent's output overflowed or didn't decode; ",
-            "sandbox_error": f"sandbox failed ({sandbox_error}); ",
-        }.get(stopped, "")
+        why = why_stopped(stopped, sandbox_error)
         return Score(
             value=1 if passed else 0,
             explanation=f"{why}hidden tests {'passed' if tests_passed else 'failed'}; failed checks: {', '.join(failed) or 'none'}",
