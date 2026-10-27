@@ -21,10 +21,12 @@ starts.
      `frozen_at` passes; a changed, added or untracked file fails; a changed
      `task.json` fails unless only `frozen_at` differs; moving `frozen_at`
      fails against the base; an unfrozen task may change; an unknown commit
-     fails. Every task in `evals/tasks/` has a `frozen_at`.
-2. **`task.py`:** a generic `ab(task_id, arms)` Inspect task that reads the
-   task's directory through `config.task_dir` and records its id and arms in
-   the task's metadata; `fastapi_middleware(arms)` calls it.
+     fails; an unresolvable base fails. `fastapi-middleware` is frozen at
+     a304f6a.
+2. **`task.py`:** `ab_task(task_id, arms)` keeps only the baseline sample
+   for `arms="baseline"`. A generic `ab(task_id, arms)` Inspect task runs any
+   task by id, and each named task (`fastapi_middleware`, `client_auth_uri`)
+   takes `arms` too.
 3. **`report.py`:** tell a calibration from an A/B run by the log's `arms`
    task argument, not by which samples scored, and print the calibration
    table for it. The band, 40–80% pooled with no model at 100%, is one
@@ -33,9 +35,9 @@ starts.
    task's directory against its `frozen_at` commit, ignoring `frozen_at` in
    `task.json`; with a base ref, refuse a moved `frozen_at`. CI's
    `evals-test` job runs it with the full history and the PR's base branch.
-5. **`panel.sh`, `prepare.sh`:** `TASK_ID` picks the task; `ARMS=baseline`
-   runs the quick tier on the baseline arm alone into
-   `inspect/logs/calibration/`.
+5. **`panel.sh`:** `TASK_ID` picks the task (`prepare.sh <task-id>` stages
+   its image); `ARMS=baseline` runs the quick tier on the baseline arm alone
+   into `inspect/logs/calibration/`.
 6. **`evals.yml`:** dispatch inputs `task` and `arms`; check them before
    building; read the identity-model commit from the chosen task; name the
    log directory and artifact `calibration` for a calibration.

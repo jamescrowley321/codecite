@@ -1,15 +1,21 @@
 """The A/B eval on Inspect: pi in a Docker sandbox, with and without
-codecite, on any model Inspect can reach.
+codecite, on any model Inspect can reach. Any task in evals/tasks/ runs as
+codecite_evals/ab -T task_id=<id>, and each registered here also runs as
+codecite_evals/<name>:
 
-    uv run inspect eval codecite_evals/ab -T task_id=fastapi-middleware --model openrouter/openai/gpt-6.1-sol -M strict_tools=false --epochs 2
+    uv run inspect eval codecite_evals/fastapi_middleware --model openrouter/openai/gpt-6.1-sol -M strict_tools=false --epochs 2
 
-Each sample is one arm; epochs repeat it. `-T arms=baseline` runs only the
-baseline arm, to calibrate a task's difficulty without watching codecite's
-(evals/README.md). pi's model calls go through Inspect's agent bridge, so
-Inspect records every call and its tokens.
+`-T arms=baseline` runs only the baseline arm, to calibrate a task's
+difficulty without watching codecite's (evals/README.md).
+
+The sandbox image holds one task's project and corpus: stage it with
+`inspect/prepare.sh <task-id>` before building. Each sample is one arm; epochs
+repeat it. pi's model calls go through Inspect's agent bridge, so Inspect
+records every call and its tokens.
 """
 
 import json
+from pathlib import Path
 
 from inspect_ai import Task, task
 from inspect_ai.agent import Agent, AgentState, agent, sandbox_agent_bridge
@@ -23,40 +29,57 @@ from codecite_evals import config
 ARMS = {"both": ("baseline", "codecite"), "baseline": ("baseline",)}
 PROJECT = "/work/project"
 IDENTITY_MODEL = "/opt/identity-model"
-CODECITE_NOTE = (
-    "The `codecite` command is on your PATH. Its corpus `eval` indexes the identity-model source at "
-    f'`{IDENTITY_MODEL}`. `codecite search eval "<query>"` prints ranked results with citations, and '
-    '`codecite read eval "<citation>"` prints the text a citation points at.'
-)
 PI_TOOLS = "read,bash,edit,write,grep,find,ls"
 PI_FLAGS = ["--no-session", "--no-mcp", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve"]
 AGENT_TIMEOUT = 600
 
 
-def prompt(task_dir, arm: str) -> str:
+def codecite_note(task_dir: Path) -> str:
+    """The codecite arm's note, naming what the task's `eval` corpus indexes."""
+    corpus = json.loads((task_dir / "task.json").read_text())["corpus"]
+    indexes = f"the identity-model source at `{IDENTITY_MODEL}`"
+    if corpus.get("documents"):
+        indexes += " and the OAuth 2.0, OpenID Connect and FAPI specifications it implements"
+    return (
+        f"The `codecite` command is on your PATH. Its corpus `eval` indexes {indexes}. "
+        '`codecite search eval "<query>"` prints ranked results with citations, and '
+        '`codecite read eval "<citation>"` prints the text a citation points at.'
+    )
+
+
+def prompt(task_dir: Path, arm: str) -> str:
     text = (task_dir / "prompt.md").read_text().replace("{identity_model}", IDENTITY_MODEL)
-    return f"{text}\n\n{CODECITE_NOTE}\n" if arm == "codecite" else text
+    return f"{text}\n\n{codecite_note(task_dir)}\n" if arm == "codecite" else text
 
 
-@task
-def ab(task_id: str = "fastapi-middleware", arms: str = "both") -> Task:
-    """One task under tasks/, in both arms or (arms=baseline) the baseline
-    arm alone. The sandbox image holds that task's project (prepare.sh)."""
+def ab_task(task_id: str, arms: str = "both") -> Task:
+    """One task's A/B eval: a sample per arm, scored by its hidden tests and
+    checks. arms="baseline" keeps only the baseline arm, a calibration."""
     if arms not in ARMS:
         raise ValueError(f"arms must be one of {', '.join(ARMS)}, not {arms!r}")
     task_dir = config.task_dir(task_id)
     return Task(
         dataset=[Sample(id=arm, input=prompt(task_dir, arm), metadata={"arm": arm}) for arm in ARMS[arms]],
         solver=[arm_to_store(), pi()],
-        scorer=hidden_tests_and_checks(task_dir),
+        scorer=hidden_tests_and_checks(task_id),
         sandbox=("docker", str(config.COMPOSE)),
-        metadata={"task_id": task_id, "arms": arms},
     )
 
 
 @task
+def ab(task_id: str = "fastapi-middleware", arms: str = "both") -> Task:
+    """Any task under tasks/ by its id; the eval workflow and panel.sh run this."""
+    return ab_task(task_id, arms)
+
+
+@task
 def fastapi_middleware(arms: str = "both") -> Task:
-    return ab("fastapi-middleware", arms)
+    return ab_task("fastapi-middleware", arms)
+
+
+@task
+def client_auth_uri(arms: str = "both") -> Task:
+    return ab_task("client-auth-uri", arms)
 
 
 @solver
@@ -134,9 +157,11 @@ def last_turn_error(stdout: str) -> str | None:
 
 
 @scorer(metrics=[accuracy(), stderr()])
-def hidden_tests_and_checks(task_dir):
+def hidden_tests_and_checks(task_id: str):
     """Correct when the hidden tests and every deterministic check pass. The
-    tests and checks reach the sandbox only now, after the agent has exited."""
+    tests and checks reach the sandbox only now, after the agent has exited.
+    Takes the task's id, not its path, so the eval log records the id."""
+    task_dir = config.task_dir(task_id)
 
     async def score(state: TaskState, target: Target) -> Score:
         sb = sandbox()

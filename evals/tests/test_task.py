@@ -8,7 +8,9 @@ from inspect_ai.agent import AgentState
 from inspect_ai.model import ChatMessageUser
 from inspect_ai.util import ExecResult, OutputLimitExceededError
 
-from codecite_evals import config, task
+from codecite_evals import _registry, config, task
+
+TASKS = ["fastapi-middleware", "client-auth-uri"]
 
 
 class Store(dict):
@@ -72,8 +74,11 @@ def test_agent_output_error_is_not_a_sandbox_error(monkeypatch, error):
 
 
 class ScoringSandbox:
+    def __init__(self):
+        self.files = {}
+
     async def write_file(self, path, contents):
-        pass
+        self.files[path] = contents
 
     async def exec(self, cmd, **kwargs):
         if cmd[0] == "uv":
@@ -81,10 +86,11 @@ class ScoringSandbox:
         return ExecResult(success=True, returncode=0, stdout='{"checks": [{"name": "c", "passed": true}]}', stderr="")
 
 
-def score_with(monkeypatch, store):
-    monkeypatch.setattr(task, "sandbox", lambda: ScoringSandbox())
+def score_with(monkeypatch, store, task_id="fastapi-middleware", sb=None):
+    sb = sb or ScoringSandbox()
+    monkeypatch.setattr(task, "sandbox", lambda: sb)
     monkeypatch.setattr(task, "store", lambda: store)
-    return asyncio.run(task.hidden_tests_and_checks(config.task_dir("fastapi-middleware"))(None, None))
+    return asyncio.run(task.hidden_tests_and_checks(task_id)(None, None))
 
 
 def test_scorer_records_a_sandbox_error(monkeypatch):
@@ -115,3 +121,35 @@ def test_arms_baseline_gives_only_the_baseline_sample():
 def test_unknown_arms_are_refused():
     with pytest.raises(ValueError, match="arms must be one of both, baseline"):
         task.ab("fastapi-middleware", arms="codecite")
+
+
+def test_every_task_is_registered():
+    # Inspect finds tasks through _registry: codecite_evals/<name>.
+    assert callable(_registry.fastapi_middleware)
+    assert callable(_registry.client_auth_uri)
+    assert callable(_registry.ab)
+
+
+@pytest.mark.parametrize("task_id", TASKS)
+def test_each_arm_gets_its_own_tasks_prompt(task_id):
+    d = config.task_dir(task_id)
+    baseline, codecite = task.prompt(d, "baseline"), task.prompt(d, "codecite")
+    assert "{identity_model}" not in baseline
+    assert baseline.startswith((d / "prompt.md").read_text().splitlines()[0])
+    assert "codecite" not in baseline.lower()
+    assert codecite.startswith(baseline) and "`codecite search eval" in codecite
+
+
+def test_the_codecite_note_names_the_specs_only_when_the_corpus_has_them():
+    # client-auth-uri's corpus adds the spec documents (task.json corpus.documents).
+    assert "specifications" in task.prompt(config.task_dir("client-auth-uri"), "codecite")
+    assert "specifications" not in task.prompt(config.task_dir("fastapi-middleware"), "codecite")
+
+
+@pytest.mark.parametrize("task_id", TASKS)
+def test_scorer_copies_in_its_own_tasks_tests_and_checks(monkeypatch, task_id):
+    d, sb = config.task_dir(task_id), ScoringSandbox()
+    score_with(monkeypatch, Store(), task_id, sb)
+    assert sb.files["/score/checks.py"] == (d / "checks.py").read_text()
+    assert sb.files["/score/hidden/test_hidden.py"] == (d / "hidden" / "test_hidden.py").read_text()
+    assert sb.files["/score/start/app/main.py"] == (d / "project" / "app" / "main.py").read_text()

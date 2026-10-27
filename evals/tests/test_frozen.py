@@ -81,9 +81,10 @@ def test_an_unknown_frozen_at_fails(repo):
     assert "is not a commit here" in problems(repo / "evals")[0]
 
 
-def test_every_task_here_records_where_it_froze():
-    for spec in (config.EVALS_DIR / "tasks").glob("*/task.json"):
-        assert json.loads(spec.read_text()).get("frozen_at"), f"{spec.parent.name} has no frozen_at"
+def test_fastapi_middleware_is_frozen_at_its_first_ab_run():
+    # A task freezes when its first A/B run starts; one still calibrating has no frozen_at.
+    spec = config.task_dir("fastapi-middleware") / "task.json"
+    assert json.loads(spec.read_text())["frozen_at"] == "a304f6a8e52f48a2991e6640e644f927873c5bce"
 
 
 def test_an_unknown_base_fails_rather_than_skipping_the_check(repo):

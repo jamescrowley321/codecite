@@ -96,7 +96,7 @@ jobs:
           git init -q "$repo"
           git -C "$repo" fetch -q --depth 1 https://github.com/jamescrowley321/identity-model "$commit"
           echo "IDENTITY_MODEL_REPO=$repo" >> "$GITHUB_ENV"
-      - run: evals/inspect/prepare.sh
+      - run: evals/inspect/prepare.sh "$TASK_ID"
       # The key is the hash of every file the two images are built from, so
       # it covers the codecite binary and the identity-model commit.
       - name: Hash the image build contexts

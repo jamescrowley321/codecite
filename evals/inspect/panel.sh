@@ -18,7 +18,7 @@
 # `inspect eval` (CI passes --sandbox-prebuilt).
 #
 # TASK_ID names the task under tasks/ (default fastapi-middleware); the
-# sandbox image must be staged for it (prepare.sh). ARMS=baseline runs only
+# sandbox image must be staged for it (prepare.sh <task-id>). ARMS=baseline runs only
 # the baseline arm, a calibration (evals/README.md): quick tier only, logged
 # to inspect/logs/calibration/ and reported with no verdict.
 set -euo pipefail
