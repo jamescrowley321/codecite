@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tests for ralph/wait-review.sh against a stub `gh`, using #145's real review
-# comment (review-145.md, which reviewed head 91d7628) as the fixture.
+# Tests for ralph/wait-review.sh against a stub `gh`, using real review
+# comments as fixtures: #145's review on open (review-145.md, which reviewed
+# head 91d7628) and #149's review on a mention, an edited progress comment
+# that names no head (review-149.md).
 #
 #   ralph/tests/wait-review.test.sh
 set -euo pipefail
@@ -109,5 +111,18 @@ check "a review headed for another PR is refused" "REVIEW_FAILED the newest revi
 setup "$(comment james User "@claude review this PR at head \`$sha\`" 2026-10-27T03:00:00Z)" \
       "$(comment 'claude[bot]' Bot "$(printf '## Blind peer review — PR #145\n\nHead: `%s`, compared with `origin/main`.\n\nVerdict: **PASS**\n' "$sha")" 2026-10-27T03:50:00Z)"
 check "a head spelled 'Head: \`<sha>\`' is read" "FOUND PASS" 0
+
+# A review on a mention: claude[bot]'s progress comment, edited in place.
+progress="**Claude is working…** —— [View job](x)"
+setup "$(comment james User "@claude review this PR at head \`$sha\`" 2026-10-27T03:00:00Z)" \
+      "$(comment 'claude[bot]' Bot "$progress" 2026-10-27T03:00:05Z)"
+check "a progress comment with no verdict yet is still running" "WAITING" 4
+mention=$(sed 's/PR #149/PR #145/' "$here/review-149.md")
+setup "$(comment james User "@claude review this PR at head \`$sha\`" 2026-10-27T03:00:00Z)" \
+      "$(comment 'claude[bot]' Bot "$mention" 2026-10-27T03:00:05Z)"
+check "a finished mention review that names no head is refused" "REVIEW_FAILED the newest review names no head" 3
+setup "$(comment james User "@claude review this PR at head \`$sha\`" 2026-10-27T03:00:00Z)" \
+      "$(comment 'claude[bot]' Bot "$(printf '%s\n\nhead `%s`\n' "$mention" "${sha:0:7}")" 2026-10-27T03:00:05Z)"
+check "a finished mention review that names the head is found" "FOUND PASS" 0
 
 exit "$failed"

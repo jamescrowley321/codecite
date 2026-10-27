@@ -9,7 +9,8 @@
 # DIRTY has conflicts, BLOCKED is waiting on a required check, UNSTABLE has a
 # failing check that isn't required.
 # Review: PASS or BLOCK from the latest "Blind peer review" comment that
-# claude.yml posts (claude[bot]'s only: anyone can post the heading),
+# claude.yml posts, its own on open or its edited progress comment on a
+# mention (claude[bot]'s only: anyone can post the heading),
 # "stale" when it doesn't name the head commit (head `<sha>`), "none" before
 # the first. A stale PR gets a fresh review from an `@claude review this PR` comment.
 # Session links from scripts/cloud-launch.sh are in
@@ -28,7 +29,7 @@ for n in "${prs[@]}"; do
   # view drops the suffix.
   reviews=$(gh api "repos/{owner}/{repo}/issues/$n/comments" --paginate --jq '
     .[] | select(.user.login == "claude[bot]" and .user.type == "Bot"
-                 and ((.body // "") | startswith("## Blind peer review")))
+                 and ((.body // "") | test("(^|\n)#{2,4} Blind peer review")))
     | {body, createdAt: .created_at}' | jq -s .)
   gh pr view "$n" --json number,title,body,mergeStateStatus,headRefOid,comments,labels | jq -r --argjson reviews "$reviews" '
     # capture() emits nothing on a miss, so each match is collected in an
@@ -36,11 +37,14 @@ for n in "${prs[@]}"; do
     (.headRefOid // "") as $head
     | ($reviews | max_by(.createdAt)) as $rev
     # Every line that is a verdict ("Verdict: **BLOCK**", "### Verdict:
-    # **PASS**", "**Verdict:** PASS"), not a finding that quotes one; "?"
-    # when there is none or they disagree.
+    # **PASS**", "**Verdict:** PASS"), not a finding that quotes one;
+    # "running" while a progress comment has none yet, "?" when there is none
+    # or they disagree.
     | (if $rev == null then "none"
        else ([$rev.body | capture("(?im)^[#\\s]*\\**verdict\\**:?\\**\\s*\\**(?<v>PASS|BLOCK)\\b"; "g").v | ascii_upcase] | unique
-             | if length == 1 then .[0] else "?" end)
+             | if length == 1 then .[0]
+               elif length == 0 and ($rev.body | test("^\\*\\*Claude is working")) then "running"
+               else "?" end)
          # The author sets a commit date; the reviewed sha says what was read.
          + (([$rev.body | capture("(?i)\\bhead\\b[^`]{0,12}`(?<h>[0-9a-f]{7,40})`").h] | .[0]) as $named
             | if $named != null and ($head | startswith($named)) then "" else " stale" end)

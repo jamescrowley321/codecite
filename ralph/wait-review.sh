@@ -4,9 +4,13 @@
 #   ralph/wait-review.sh <pr> <out file>
 #
 # claude.yml reviews a PR when it opens, and again when an owner or
-# collaborator comments `@claude review this PR`. Each review posts one PR
-# comment headed "## Blind peer review — PR #<n>" that names the commit it
-# reviewed (head `<sha>`) and gives a verdict, PASS or BLOCK.
+# collaborator comments `@claude review this PR`. On open, the review is its
+# own PR comment headed "## Blind peer review — PR #<n>". On a mention, it is
+# claude[bot]'s progress comment ("Claude is working…", later "Claude
+# finished…"), edited in place, with a "### Blind peer review — PR #<n>"
+# heading inside once it is done. Either way it names the commit it reviewed
+# (head `<sha>`) and gives a verdict, PASS or BLOCK; a comment with no verdict
+# line yet is still running.
 #
 # A review belongs to the head commit only when it names that commit, and it
 # counts only when it was posted after the last request for that commit: the
@@ -55,16 +59,27 @@ sleep "${WAIT_SLEEP:-60}"
 
 for _ in $(seq 1 8); do
   # Only claude[bot], a login no user can hold: anyone can post the heading.
+  # The newest comment since the request that is, or will be, a review: one
+  # with the heading, or a progress comment.
   review=$(comments | jq --arg since "$asked" '
     [.[] | select(.user.login == "claude[bot]" and .user.type == "Bot"
-                  and ((.body // "") | startswith("## Blind peer review"))
+                  and ((.body // "") | test("(^|\n)#{2,4} Blind peer review|^\\*\\*Claude (is working|finished)"))
                   and .created_at > $since)]
     | max_by(.created_at) // empty')
   if [[ -n "$review" ]]; then
     body=$(jq -r .body <<< "$review")
     url=$(jq -r .html_url <<< "$review")
-    if ! head -1 <<< "$body" | grep -qE "PR #$pr\b"; then
-      echo "REVIEW_FAILED the newest review is headed for another PR ($url)"
+    # Every line that is a verdict, in any of the skill's spellings ("Verdict:
+    # **BLOCK**", "### Verdict: **PASS**", "**Verdict: PASS**", "**Verdict:**
+    # PASS"), must agree; a finding that quotes a verdict mid-line is not one.
+    verdicts=$(grep -oiE '^[#[:space:]]*\**verdict\**:?\**[[:space:]]*\**(PASS|BLOCK)\b' <<< "$body" \
+      | grep -oiE '(PASS|BLOCK)$' | tr a-z A-Z | sort -u || true)
+    if [[ -z "$verdicts" ]]; then
+      sleep "${WAIT_POLL:-60}"   # still running
+      continue
+    fi
+    if ! grep -qE "^#{2,4} Blind peer review — PR #$pr\b" <<< "$body"; then
+      echo "REVIEW_FAILED the newest review is headed for another PR, or not headed ($url)"
       exit 3
     fi
     # The first commit named as the head: "head `<sha>`", "Head: `<sha>`".
@@ -77,16 +92,10 @@ for _ in $(seq 1 8); do
       echo "REVIEW_FAILED the newest review is of $named, not the head $sha ($url)"
       exit 3
     fi
-    # Every line that is a verdict, in any of the skill's spellings ("Verdict:
-    # **BLOCK**", "### Verdict: **PASS**", "**Verdict:** PASS"), must agree;
-    # a finding that quotes a verdict mid-line is not one.
-    verdicts=$(grep -oiE '^[#[:space:]]*\**verdict\**:?\**[[:space:]]*\**(PASS|BLOCK)\b' <<< "$body" \
-      | grep -oiE '(PASS|BLOCK)$' | tr a-z A-Z | sort -u || true)
-    case "$verdicts" in
-      PASS|BLOCK) ;;
-      "") echo "REVIEW_FAILED the review has no verdict line ($url)"; exit 3 ;;
-      *) echo "REVIEW_FAILED the review has both a PASS and a BLOCK verdict line ($url)"; exit 3 ;;
-    esac
+    if [[ "$verdicts" != PASS && "$verdicts" != BLOCK ]]; then
+      echo "REVIEW_FAILED the review has both a PASS and a BLOCK verdict line ($url)"
+      exit 3
+    fi
     printf '%s\n' "$body" > "$out"
     echo "FOUND $verdicts"
     exit 0
