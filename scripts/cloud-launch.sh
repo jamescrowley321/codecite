@@ -38,7 +38,8 @@ for n in "$@"; do
     | grep -o 'https://claude.ai/code/session_[A-Za-z0-9]*' | head -1 || true)"
   if [[ -z "$url" ]]; then
     echo "#$n: no session created; output follows" >&2
-    sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "$TMP/$n.log" | tr -d '\r' | grep -v '^\s*$' | tail -5 >&2
+    # An empty log matches nothing; that must not stop the remaining launches.
+    sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "$TMP/$n.log" 2> /dev/null | tr -d '\r' | grep -v '^\s*$' | tail -5 >&2 || true
     status=1
     continue
   fi
