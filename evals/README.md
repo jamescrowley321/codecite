@@ -21,6 +21,7 @@ Evaluation plan):
 | `inspect/pi-models.json` | Points pi at Inspect's agent bridge |
 | `inspect/panel.sh` | Run one tier (`quick` or `full`): every model in one Inspect process, then the report |
 | `tasks/<id>/` | A task: `task.json` (with `frozen_at` once frozen), `prompt.md`, starting `project/`, `hidden/` tests, `checks.py`, `reference/`, and `check.sh`/`planted.sh` to prove the task and checks are sound |
+| `tasks/spec-questions/` | Labelled spec questions with closed answers for the spec-question task; `src/codecite_evals/spec_questions.py` checks them against the index |
 | `fixtures/node-oidc/` | The IdP the fastapi-middleware hidden tests take tokens from |
 | `retrieval/` | The retrieval benchmark's queries and corpus manifest |
 
