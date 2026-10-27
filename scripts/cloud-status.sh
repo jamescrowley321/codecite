@@ -23,11 +23,11 @@ for n in "${prs[@]}"; do
     # capture() emits nothing on a miss, so each match is collected in an
     # array and defaulted; any list gh returns can be null.
     .headRefOid as $h
-    | ([(.statusCheckRollup // [])[] | select(.name == "Merge Gate")] | sort_by(.startedAt // "") | last
+    | ([(.statusCheckRollup // [])[] | select(.name == "Merge Gate")] | sort_by(.startedAt // "") | .[-1]
         | if . == null then "pending" else (.conclusion // .status) end) as $gate
     | ([(.reviews // [])[] | select(.commit.oid == $h and .state == "CHANGES_REQUESTED")
-        | ([(.body // "") | capture("## (?<l>[^\n]+)").l] | first // "?")] | unique | join(", ")) as $cr
-    | ([(.body // "") | capture("(?i)(closes|part of) #(?<i>[0-9]+)").i] | first
+        | ([(.body // "") | capture("## (?<l>[^\r\n]+)").l] | .[0] // "?")] | unique | join(", ")) as $cr
+    | ([(.body // "") | capture("(?i)(closes|part of) #(?<i>[0-9]+)").i] | .[0]
         | if . == null then "-" else "#" + . end) as $issue
     | (if any((.comments // [])[]; (.body // "") | contains("codecite-eval-scorecard")) then "posted"
        elif any((.labels // [])[]; .name == "eval") then "label" else "-" end) as $eval
