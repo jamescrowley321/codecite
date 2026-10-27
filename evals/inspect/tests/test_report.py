@@ -113,3 +113,8 @@ def test_old_logs_read_timed_out_as_timeouts():
     old.scores["hidden_tests_and_checks"].metadata = {"timed_out": True}
     _, rows = table(scorecard([log("openrouter/old", [old])]))
     assert (rows[("old", "baseline")]["timeouts"], rows[("old", "baseline")]["sandbox errors"]) == ("1", "0")
+
+
+def test_tier_heads_the_scorecard():
+    assert scorecard(PANEL, "quick").startswith("**Quick tier** (directional, never the gate)")
+    assert scorecard(PANEL).startswith("| model |")

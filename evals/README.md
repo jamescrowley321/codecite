@@ -18,14 +18,52 @@ Evaluation plan):
 | `inspect/prepare.sh` | Stage the sandbox image's build context in `inspect/build/` |
 | `inspect/Dockerfile`, `inspect/compose.yaml` | The sandbox image and the IdP beside it, on a network with no route out |
 | `inspect/pi-models.json` | Points pi at Inspect's agent bridge |
-| `inspect/panel.sh` | Run every model in the panel, one at a time, then the report |
-| `inspect/report.py` | The scorecard: per model, both arms and the no-loss verdict |
+| `inspect/panel.sh` | Run one tier (`quick` or `full`): every model in one Inspect process, then the report |
+| `inspect/report.py` | The scorecard: per model, both arms and the no-loss verdict, headed by its tier |
 | `inspect/tests/` | Unit tests for the task's agent and the scorecard; no model key or Docker needed |
 | `tasks/<id>/` | A task: `task.json`, `prompt.md`, starting `project/`, `hidden/` tests, `checks.py`, `reference/`, and `check.sh`/`planted.sh` to prove the task and checks are sound |
 | `fixtures/node-oidc/` | The IdP the hidden tests take tokens from |
 | `retrieval/` | The retrieval benchmark's queries and corpus manifest |
 
-## Running the A/B eval
+## Two tiers
+
+The A/B eval runs at one of two tiers. They share the task, the scorer and the
+report; only the panel and the number of epochs differ.
+
+| Tier | Panel | Epochs per arm | Takes | Use it |
+| --- | --- | --- | --- | --- |
+| `quick` | claude-haiku-5.5, claude-sonnet-5.5, gpt-6.1-sol | 5 | under 20 minutes in CI | on every PR that touches indexing, search, ranking or the CLI's output |
+| `full` | all 9 models | 10 | within CI's 6-hour job limit | before a milestone closes, after a quick loss, or when the task set changes |
+
+The quick verdict is directional, never the gate: at 5 runs per arm its
+intervals are wide, so a quick loss means "run the full tier", not "stop". The
+full tier is the gate in `docs/design.md` (Evaluation plan). The quick panel's
+third model is the fastest pi model by round one's medians; change it in
+`panel.sh` when a full run's medians say another is faster.
+
+### In CI
+
+`.github/workflows/evals.yml` runs both tiers. It is advisory, like `bench`,
+and never a required check.
+
+- **Quick:** add the `eval` label to a PR. The tier runs then and again on
+  every push while the label is on, and its scorecard goes to one PR comment,
+  updated in place. A new push cancels a stale run. Fork PRs never run: they
+  get no secrets.
+- **Full:** run the workflow by hand (Actions → Evals → Run workflow) with
+  `tier: full`. Its scorecard goes to the job summary. To finish a run that
+  stopped part way, run it again with `resume` set to that run's id: it
+  downloads that run's logs and reruns only their missing samples with
+  `inspect eval-retry`.
+
+The job builds codecite, fetches identity-model at the task's pinned commit
+and caches the two sandbox images, keyed on a hash of their build contexts
+(which hold the codecite binary and the identity-model commit), so an
+unchanged binary doesn't rebuild. It reads only the `OPENROUTER_EVAL_API_KEY`
+secret. The Inspect logs, with the scorecard, upload as the `eval-logs-<tier>`
+artifact.
+
+## Running the A/B eval locally
 
 Needs Docker, [uv](https://docs.astral.sh/uv/), a release build of codecite
 and an identity-model checkout (`IDENTITY_MODEL_REPO`, default
@@ -39,25 +77,36 @@ uv sync --locked
 set -a; . ~/.config/codecite/evals.env; set +a
 export OPENROUTER_API_KEY="$OPENROUTER_EVAL_API_KEY"
 uv run --locked inspect eval inspect/task.py --model openrouter/anthropic/claude-haiku-5.5 -M strict_tools=false --epochs 2
-inspect/panel.sh                     # the whole panel, EPOCHS=10 by default
-uv run --locked python inspect/report.py
+inspect/panel.sh quick               # or: inspect/panel.sh full
+uv run --locked python inspect/report.py --tier quick
 ```
 
 The unit tests in `inspect/tests/` run offline: `uv run --locked pytest`.
 
-Logs land in `inspect/logs/` (gitignored); `uv run --locked inspect view`
-browses them. Being ignored, they go with the worktree: copy them out before
-`git worktree remove`, or pass `--log-dir` a directory outside the checkout.
-A panel takes hours: run it detached from your shell (for example
-`systemd-run --user --unit=codecite-panel -p MemoryMax=16G inspect/panel.sh`),
-since a killed run leaves its sandboxes behind and its log unfinished.
-`inspect eval-retry <log>` reruns only an unfinished log's missing samples.
+Each tier's logs land in `inspect/logs/<tier>/` (gitignored), with the last
+scorecard in `scorecard.md`; `uv run --locked inspect view` browses them. Being
+ignored, they go with the worktree: copy them out before `git worktree
+remove`, or pass `--log-dir` a directory outside the checkout. A full run
+takes an hour or more: run it detached from your shell (for example
+`systemd-run --user --unit=codecite-panel -p MemoryMax=16G inspect/panel.sh
+full`), since a killed run leaves its sandboxes behind and its log unfinished.
+`RETRY=1 inspect/panel.sh full` reruns only the unfinished logs' missing
+samples (`inspect eval-retry`). `panel.sh` raises Inspect's subprocess and docker CLI limits to twice
+`MAX_SANDBOXES`, so no sample waits on them. `EPOCHS` and `MAX_SANDBOXES` override a
+tier's defaults; arguments after the tier go to `inspect eval`.
 
-Several models can run in one `inspect eval` process (a comma-separated
-`--model`). Each sandbox creates its own Docker network, and Docker's default
-address pools hold about 31, so keep `--max-sandboxes` under that (14 works);
-past it, sandbox starts fail with "all predefined address pools have been fully
-subnetted" and take the model's whole run with them (#111).
+`panel.sh` runs every model of a tier in one Inspect process, so the slow
+models no longer add up one after another. Each sandbox creates its own Docker
+network, and Docker's default address pools hold about 31, so `MAX_SANDBOXES`
+defaults to 14; past the pools, sandbox starts fail with "all predefined
+address pools have been fully subnetted" and take the model's whole run with
+them (#111). CI gives the daemon /24 pools out of `10.200.0.0/16` (256
+networks) and runs 8 sandboxes at once, Inspect's own default for the
+runner's 4 vCPU. Past what the CPUs carry, samples wait on one another, and
+the wait counts in their wall time: at 20 sandboxes the medians were ~314 s
+against ~70 s of working time. To do the same locally, add
+`"default-address-pools": [{"base": "10.200.0.0/16", "size": 24}]` to
+`/etc/docker/daemon.json` and restart Docker.
 
 ## How a sample runs
 

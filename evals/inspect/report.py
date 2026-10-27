@@ -15,12 +15,15 @@ any has them named in its verdict, so a loss or pass they helped make doesn't
 read as clean. An agent whose own output overflowed or didn't decode is a
 plain failure, in neither column.
 
-    uv run python inspect/report.py [LOG_DIR_OR_FILES...]   (default: inspect/logs)
+    uv run python inspect/report.py [--tier quick|full] [LOG_DIR_OR_FILES...]
 
+The default logs are the tier's, inspect/logs/<tier>/, else inspect/logs/.
 Given a directory, it reads one log per model: the newest finished one, else
-the newest.
+the newest. The tier heads the scorecard: a quick verdict is directional, and
+a quick loss means run the full tier.
 """
 
+import argparse
 import random
 import sys
 from collections import defaultdict
@@ -32,12 +35,19 @@ from inspect_ai.log import list_eval_logs, read_eval_log
 MARGIN = 0.05
 RESAMPLES = 10_000
 SEED = 0
+TIERS = {
+    "quick": "**Quick tier** (directional, never the gate): a loss here means run the full tier.",
+    "full": "**Full tier**: the no-loss gate in docs/design.md (Evaluation plan).",
+}
 
 
-def logs(args):
+def logs(args, tier=None):
     if not args:
-        args = [str(Path(__file__).with_name("logs"))]
+        logs_dir = Path(__file__).with_name("logs")
+        args = [str(logs_dir / tier if tier else logs_dir)]
     for a in args:
+        if not Path(a).exists():
+            sys.exit(f"no logs at {a}")
         if not Path(a).is_dir():
             yield read_eval_log(a)
             continue
@@ -83,8 +93,8 @@ def listed(error, limit=200):
     return f"`{text[:limit]}…`" if len(text) > limit else f"`{text}`"
 
 
-def scorecard(logs):
-    """The scorecard for these eval logs, as markdown."""
+def scorecard(logs, tier=None):
+    """The scorecard for these eval logs, as markdown, headed by its tier."""
     runs = defaultdict(list)  # (model, arm) -> [(passed, tokens, seconds, stopped)]
     errors = []  # (model, arm, epoch, sandbox error)
     planned = {}
@@ -102,7 +112,8 @@ def scorecard(logs):
                 errors.append((log.eval.model, s.metadata["arm"], s.epoch, metadata.get("sandbox_error") or "unknown error"))
 
     rng = random.Random(SEED)
-    out = [
+    out = [TIERS[tier], ""] if tier else []
+    out += [
         "| model | arm | runs | pass | fails | timeouts | sandbox errors | median tokens | median time | verdict |",
         "|---|---|---|---|---|---|---|---|---|---|",
     ]
@@ -139,7 +150,11 @@ def scorecard(logs):
 
 
 def main():
-    print(scorecard(logs(sys.argv[1:])))
+    parser = argparse.ArgumentParser(description="The A/B scorecard.")
+    parser.add_argument("--tier", choices=sorted(TIERS))
+    parser.add_argument("logs", nargs="*", help="log directories or files")
+    args = parser.parse_args()
+    print(scorecard(logs(args.logs, args.tier), args.tier))
 
 
 if __name__ == "__main__":
