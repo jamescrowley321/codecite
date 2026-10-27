@@ -14,12 +14,12 @@ Evaluation plan):
 
 | Path | What |
 | --- | --- |
-| `inspect/task.py` | The Inspect task: one sample per arm, pi in a Docker sandbox, the scorer |
+| `src/codecite_evals/` | The `codecite-evals` package that `uv sync` installs: `task.py` (the Inspect task: one sample per arm, pi in a Docker sandbox, the scorer), `report.py` (the scorecard) and `config.py` (where every file below is found) |
+| `tests/` | Unit tests for the task's agent, the scorecard and the config; no model key or Docker needed |
 | `inspect/prepare.sh` | Stage the sandbox image's build context in `inspect/build/` |
 | `inspect/Dockerfile`, `inspect/compose.yaml` | The sandbox image and the IdP beside it, on a network with no route out |
 | `inspect/pi-models.json` | Points pi at Inspect's agent bridge |
 | `inspect/panel.sh` | Run one tier (`quick` or `full`): every model in one Inspect process, then the report |
-| `inspect/report.py` | The scorecard: per model, both arms and the no-loss verdict, headed by its tier |
 | `tasks/<id>/` | A task: `task.json`, `prompt.md`, starting `project/`, `hidden/` tests, `checks.py`, `reference/`, and `check.sh`/`planted.sh` to prove the task and checks are sound |
 | `fixtures/node-oidc/` | The IdP the hidden tests take tokens from |
 | `retrieval/` | The retrieval benchmark's queries and corpus manifest |
@@ -109,10 +109,20 @@ cd evals
 uv sync --locked
 set -a; . ~/.config/codecite/evals.env; set +a
 export OPENROUTER_API_KEY="$OPENROUTER_EVAL_API_KEY"
-uv run --locked inspect eval inspect/task.py --model openrouter/anthropic/claude-haiku-5.5 -M strict_tools=false --epochs 2
+uv run --locked inspect eval codecite_evals/fastapi_middleware --model openrouter/anthropic/claude-haiku-5.5 -M strict_tools=false --epochs 2
 inspect/panel.sh quick               # or: inspect/panel.sh full
-uv run --locked python inspect/report.py --tier quick
+uv run --locked codecite-eval-report --tier quick
 ```
+
+The package registers its tasks with Inspect through the `inspect_ai` entry
+point, so Inspect runs them by name (`codecite_evals/<task>`) from any
+directory, and `codecite-eval-report` is the scorecard's command. Both find
+`tasks/`, `inspect/compose.yaml` and `inspect/logs/` through
+`src/codecite_evals/config.py`: under this `evals/` directory, or under
+`CODECITE_EVALS_DIR` when it is set.
+
+The unit tests in `tests/` run offline, and CI runs them on every PR:
+`uv run --locked pytest`.
 
 Each tier's logs land in `inspect/logs/<tier>/` (gitignored), with the last
 scorecard in `scorecard.md`; `uv run --locked inspect view` browses them. Being
@@ -154,7 +164,12 @@ against ~70 s of working time. To do the same locally, add
 - The hidden tests and checks reach the sandbox only after the agent exits. A
   sample passes when the hidden tests and every check pass.
 - An agent that runs past 600 s, or whose sandbox fails mid-run, fails: what
-  it left behind is scored, but the sample can't pass. Hidden tests or checks
-  that hang fail too. A provider error that pi reports is infrastructure: the
-  sample errors and Inspect retries it (`--retry-on-error 2`); errored samples
-  are never scored.
+  it left behind is scored, but the sample can't pass. The scorecard counts
+  the two apart: `timeouts` for the agent running out of time, `sandbox
+  errors` for the sandbox failing under it, each listed under the table with
+  its model, arm and epoch and named in that model's verdict. pi's output
+  overflowing Inspect's stream limit or failing to decode is the agent's
+  failure, in neither column. Hidden tests or checks that hang fail too. A
+  provider error that pi reports is infrastructure: the sample errors and
+  Inspect retries it (`--retry-on-error 2`); errored samples are never
+  scored.

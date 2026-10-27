@@ -452,7 +452,7 @@ codecite has no network listener by default and makes no outbound calls except f
 
 ## Evaluation plan
 
-codecite earns its place only if agents using it do no worse than agents without it on correctness, tokens and time; the harness exists before most features do. The harness runs on Inspect AI (`evals/inspect/`, see `evals/README.md`); it replaced the hand-rolled harness whose design is in `docs/superpowers/specs/2026-10-20-ab-eval-harness-design.md`.
+codecite earns its place only if agents using it do no worse than agents without it on correctness, tokens and time; the harness exists before most features do. The harness runs on Inspect AI (the `codecite-evals` package in `evals/`, see `evals/README.md`); it replaced the hand-rolled harness whose design is in `docs/superpowers/specs/2026-10-20-ab-eval-harness-design.md`.
 
 **Agent benchmark**
 
@@ -474,7 +474,7 @@ codecite earns its place only if agents using it do no worse than agents without
 **Success criteria**
 
 - No loss on any of correctness, tokens or time, for any agent/model pair. Each measure is a difference between the arms: pass rate in points (codecite minus baseline), and median total tokens and median wall time relative to baseline's median (codecite / baseline - 1). Each gets a 95% percentile bootstrap interval over the usable runs (each arm resampled on its own, 10 000 times, with a fixed seed, so a scorecard is reproducible). A loss is an interval past the margin at its favourable end: the pass rate's upper bound more than 5 points below 0, or the tokens' or time's lower bound more than 5% above 0. This replaces the harness design's plain comparison of the numbers, which at 20 runs per arm stops on noise most of the time (the owner's decision). Any loss stops feature work until it is understood. A pair short of the planned usable runs in an arm, or with an unknown measure, is incomplete, not a pass.
-- Usable runs are scored samples: passed or failed. An agent past its 600 s limit, or whose sandbox fails while it runs, fails and is scored on what it left behind, since retrying would keep only the runs that survive (#117 separates the two in the scorecard). Hidden tests or checks that hang fail the same way. A provider error that pi reports (its last turn ending in an error, or pi exiting non-zero) is infrastructure, not the agent's work: the sample errors, Inspect retries it up to twice, and an errored sample is never scored. `evals/inspect/report.py` computes the verdicts.
+- Usable runs are scored samples: passed or failed. An agent past its 600 s limit, or whose sandbox fails while it runs, fails and is scored on what it left behind, since retrying would keep only the runs that survive. The scorecard counts agent timeouts and sandbox errors in separate columns, lists each sandbox error, and names them in the verdict of any model that had them. Hidden tests or checks that hang fail the same way. A provider error that pi reports (its last turn ending in an error, or pi exiting non-zero) is infrastructure, not the agent's work: the sample errors, Inspect retries it up to twice, and an errored sample is never scored. `codecite-eval-report` (`evals/src/codecite_evals/report.py`) computes the verdicts.
 - Recall@10 of at least 0.8 with BM25 alone.
 - Losses are reported alongside wins, with the tasks where retrieval hurt.
 
