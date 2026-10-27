@@ -38,7 +38,7 @@ class Sandbox:
 
 def run_pi(monkeypatch, error, arm="codecite", sb=None):
     state = AgentState(messages=[ChatMessageUser(content="do the task")])
-    store = Store(arm=arm)
+    store = Store(condition=arm)
     sb = sb or Sandbox(error)
 
     @asynccontextmanager
@@ -154,7 +154,7 @@ def test_arms_baseline_gives_only_the_baseline_sample():
 
 
 def test_unknown_arms_are_refused():
-    with pytest.raises(ValueError, match="arms must be one of both, baseline"):
+    with pytest.raises(ValueError, match="arms must be one of ab, aa, baseline"):
         task.ab("fastapi-middleware", arms="codecite")
 
 
@@ -190,3 +190,33 @@ def test_scorer_copies_in_its_own_tasks_tests_and_checks(monkeypatch, task_id):
     assert sb.files["/score/checks.py"] == (d / "checks.py").read_text()
     assert sb.files["/score/hidden/test_hidden.py"] == (d / "hidden" / "test_hidden.py").read_text()
     assert sb.files["/score/start/app/main.py"] == (d / "project" / "app" / "main.py").read_text()
+
+
+@pytest.mark.parametrize("arms, expected", [
+    ("ab", [("baseline", "baseline"), ("codecite", "codecite")]),
+    ("aa", [("baseline-a", "baseline"), ("baseline-b", "baseline")]),
+])
+def test_arms_select_the_samples(arms, expected):
+    samples = list(task.fastapi_middleware(arms=arms).dataset)
+    assert [(s.metadata["arm"], s.metadata["condition"]) for s in samples] == expected
+    assert [s.id for s in samples] == [label for label, _ in expected]
+
+
+def test_default_arms_are_baseline_against_codecite():
+    assert [s.id for s in task.fastapi_middleware().dataset] == ["baseline", "codecite"]
+
+
+def test_aa_arms_get_identical_prompts():
+    first, second = task.fastapi_middleware(arms="aa").dataset
+    assert first.input == second.input == task.prompt(config.task_dir("fastapi-middleware"), "baseline")
+    assert "codecite" not in first.input.lower()
+
+
+@pytest.mark.parametrize("name", ["fastapi_middleware", "client_auth_uri", "backchannel_logout"])
+def test_every_task_takes_the_arms(name):
+    assert [s.id for s in getattr(task, name)(arms="aa").dataset] == ["baseline-a", "baseline-b"]
+
+
+def test_unknown_arms_are_refused():
+    with pytest.raises(ValueError, match="arms must be one of"):
+        task.fastapi_middleware(arms="abc")

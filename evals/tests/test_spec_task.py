@@ -32,14 +32,20 @@ def test_one_sample_per_question_per_arm():
     assert len({s.id for s in dataset}) == len(dataset)
     for s in dataset:
         arm, _, question = s.id.partition(":")
-        assert s.metadata == {"arm": arm, "question": question}
+        assert s.metadata == {"arm": arm, "condition": arm, "question": question}
         assert arm in ("baseline", "codecite")
+
+
+def test_arms_aa_gives_two_baseline_arms_per_question():
+    dataset = spec_task.spec_questions(arms="aa").dataset
+    assert {(s.metadata["arm"], s.metadata["condition"]) for s in dataset} == {("baseline-a", "baseline"), ("baseline-b", "baseline")}
+    assert all("codecite" not in s.input for s in dataset)
 
 
 def test_arms_baseline_keeps_only_the_baseline_samples():
     dataset = spec_task.spec_questions(arms="baseline").dataset
     assert dataset and {s.metadata["arm"] for s in dataset} == {"baseline"}
-    with pytest.raises(ValueError, match="arms must be one of both, baseline"):
+    with pytest.raises(ValueError, match="arms must be one of ab, aa, baseline"):
         spec_task.spec_questions(arms="codecite")
 
 
@@ -47,7 +53,7 @@ def test_a_sample_holds_no_answer():
     # The answers reach the sandbox only with the scorer.
     for s in spec_task.spec_questions().dataset:
         assert not s.target
-        assert set(s.metadata) == {"arm", "question"}
+        assert set(s.metadata) == {"arm", "condition", "question"}
 
 
 def test_the_arms_get_the_same_question_and_the_codecite_arm_a_note():

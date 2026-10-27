@@ -134,19 +134,56 @@ and never a required check.
   one PR comment, updated in place, a table per task. A new push cancels a
   stale run. Fork PRs never run: they get no secrets.
 - **Full:** run the workflow by hand (Actions → Evals → Run workflow) with
-  `tier: full`, the `task` to run and `arms` (`both`, the default, or
+  `tier: full`, the `task` to run and `arms` (`ab`, the default; `aa`; or
   `baseline` to calibrate; see below). Its scorecard goes to the job summary.
   To finish a run that stopped part way, run it again with `resume` set to
   that run's id: it downloads that run's logs and reruns only their missing
   samples with `inspect eval-retry`.
+- **A/A:** dispatch with `arms: aa` to run an A/A round at either tier, and
+  `epochs` to run more epochs than the tier's own (a quick tier at more than
+  its 5 epochs gets the full tier's time limits).
 
 The job builds codecite, fetches identity-model at the task's pinned commit
 and caches the two sandbox images, keyed on a hash of their build contexts
 (which hold the codecite binary and the identity-model commit), so an
 unchanged binary doesn't rebuild. It reads only the `OPENROUTER_EVAL_API_KEY`
 secret. The Inspect logs, with the scorecard, upload as the
-`eval-logs-<tier>-<task>` artifact, or `eval-logs-calibration-<task>` for a
-calibration.
+`eval-logs-<tier>-<task>` artifact (`eval-logs-<tier>-aa-<task>` for an A/A
+round, `eval-logs-calibration-<task>` for a calibration).
+
+## A/A rounds
+
+An A/A round runs the task with two baseline arms, `baseline-a` and
+`baseline-b`, with the same prompt and the same sandbox. Whatever separates
+them is noise, so its intervals say how wide the A/B intervals would be with
+no effect at all, at that number of epochs. `-T arms=aa` selects it (the
+default, `ab`, is baseline against codecite); `ARMS=aa inspect/panel.sh quick`
+runs a tier that way into `inspect/logs/<tier>-aa/<task>/`. The scorecard heads the
+round as A/A and gives it no verdict: it names each measure whose interval
+noise alone pushed past the 5% margin.
+
+## The scorecard
+
+`codecite-eval-report` prints three tables per task (a calibration prints one):
+
+- **Per arm:** runs, how many called codecite (`used codecite`), pass rate, failures, timeouts, sandbox errors, median
+  total tokens and median wall time, and the model's verdict.
+- **From the transcripts:** the median turns (model calls that returned),
+  output tokens, model time (the sum of the calls' generation times), other
+  time (wall time less model time: tools, sandbox and waiting), and decode
+  rate (output tokens per second of model time), normalised time (wall time
+  with the model time recomputed at the model's decode rate over both arms,
+  so a slower host for one arm drops out), with the upstream providers
+  OpenRouter says served the calls, counted. A provider or decode-speed gap
+  between arms shows here. The provider is in each call's raw response,
+  which Inspect keeps only with `--log-model-api` (`panel.sh` passes it);
+  calls without one count as `not logged`.
+- **Intervals:** the 95% bootstrap interval of every measure, second arm
+  against the first, with `*` on each that reaches past 5% either side of 0.
+
+The verdict uses pass rate, total tokens and wall time (`docs/design.md`,
+Success criteria). Logs whose samples kept no model events leave the
+transcript measures blank.
 
 ## Running the A/B eval locally
 
@@ -168,7 +205,7 @@ uv run --locked codecite-eval-report --tier quick
 
 The package registers its tasks with Inspect through the `inspect_ai` entry
 point, so Inspect runs them by name from any directory: `codecite_evals/ab`
-takes the task's id (`-T task_id=<id>`) and its arms (`-T arms=both|baseline`),
+takes the task's id (`-T task_id=<id>`) and its arms (`-T arms=ab|aa|baseline`),
 and each registered task also runs by its own name.
 `codecite-eval-report` is the scorecard's command. Both find `tasks/`,
 `inspect/compose.yaml` and `inspect/logs/` through

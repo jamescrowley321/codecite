@@ -21,10 +21,14 @@ on:
         type: string
         default: fastapi-middleware
       arms:
-        description: both (the A/B run) or baseline (calibrate the task on the quick tier, no verdict)
+        description: ab (baseline against codecite), aa (an A/A round, two baseline arms, to measure noise) or baseline (calibrate the task on the quick tier, no verdict)
         type: choice
-        options: [both, baseline]
-        default: both
+        options: [ab, aa, baseline]
+        default: ab
+      epochs:
+        description: Epochs per arm, if not the tier's own (quick 5, full 10)
+        type: string
+        default: ""
       resume:
         description: Run id of an earlier run of this tier, task and arms whose unfinished logs to finish with inspect eval-retry
         type: string
@@ -38,7 +42,7 @@ permissions:
 # cancel nothing. Dispatches queue rather than cancel.
 concurrency:
   group: >-
-    evals-${{ github.event.pull_request.number || github.ref }}-${{ inputs.tier || 'quick' }}-${{ inputs.arms || 'both' }}-${{
+    evals-${{ github.event.pull_request.number || github.ref }}-${{ inputs.tier || 'quick' }}-${{ inputs.arms || 'ab' }}-${{
     (github.event_name == 'workflow_dispatch'
     || (github.event.action == 'labeled' && github.event.label.name == 'eval')
     || (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'eval')))
@@ -58,7 +62,8 @@ jobs:
       && ((github.event.action == 'labeled' && github.event.label.name == 'eval')
       || (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'eval'))))
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ inputs.tier == 'full' && 360 || 75 }}
+    # More epochs than the quick tier's own take the full tier's limits.
+    timeout-minutes: ${{ (inputs.tier == 'full' || inputs.epochs) && 360 || 75 }}
     permissions:
       contents: read
       actions: read # download an earlier run's logs to resume
@@ -70,9 +75,11 @@ jobs:
     env:
       TIER: ${{ inputs.tier || 'quick' }}
       TASK_ID: ${{ matrix.task }}
-      ARMS: ${{ inputs.arms || 'both' }}
-      # Where panel.sh logs, under inspect/logs/: the tier, or calibration.
-      RUN_NAME: ${{ inputs.arms == 'baseline' && 'calibration' || inputs.tier || 'quick' }}
+      ARMS: ${{ inputs.arms || 'ab' }}
+      EPOCHS: ${{ inputs.epochs }}
+      # Where panel.sh logs, under inspect/logs/: the tier, the tier's A/A
+      # round, or calibration.
+      RUN_NAME: ${{ inputs.arms == 'baseline' && 'calibration' || format('{0}{1}', inputs.tier || 'quick', inputs.arms == 'aa' && '-aa' || '') }}
       # Each sandbox is one Docker network; the daemon below gets 256 of
       # them. The runner's 4 vCPU set the limit: at 20 sandboxes, samples
       # spent three quarters of their wall time waiting, which skews the
@@ -86,7 +93,7 @@ jobs:
         run: |
           [[ "$TASK_ID" =~ ^[a-z0-9][a-z0-9-]*$ && -f "evals/tasks/$TASK_ID/task.json" ]] \
             || { echo "task must be a directory under evals/tasks/" >&2; exit 1; }
-          [[ "$ARMS" == both || "$TIER" == quick ]] || { echo "calibrate (arms: baseline) on the quick tier" >&2; exit 1; }
+          [[ "$ARMS" != baseline || "$TIER" == quick ]] || { echo "calibrate (arms: baseline) on the quick tier" >&2; exit 1; }
       - name: Install toolchain
         run: |
           rustup toolchain install
@@ -147,7 +154,7 @@ jobs:
           gh run download "$RESUME" -R "$GITHUB_REPOSITORY" -n "eval-logs-$RUN_NAME-$TASK_ID" -D "evals/inspect/logs/$RUN_NAME/$TASK_ID"
           echo RETRY=1 >> "$GITHUB_ENV"
       - name: Run the ${{ env.TIER }} tier on ${{ env.TASK_ID }} (arms ${{ env.ARMS }})
-        timeout-minutes: ${{ inputs.tier == 'full' && 345 || 60 }}
+        timeout-minutes: ${{ (inputs.tier == 'full' || inputs.epochs) && 345 || 60 }}
         working-directory: evals
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_EVAL_API_KEY }}

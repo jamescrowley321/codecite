@@ -15,6 +15,11 @@ records every call, its tool list and its tokens. The codecite arm gives pi
 codecite's `search` and `read` as tools of their own, from `codecite mcp`
 through pi's built-in MCP support, and keeps the CLI on PATH; the baseline
 arm has no MCP and no codecite.
+
+`-T arms=aa` runs an A/A round instead: two baseline arms with the same prompt
+and sandbox, labelled apart, so the scorecard shows what noise alone does.
+`-T arms=baseline` runs only the baseline arm, to calibrate a task's
+difficulty without watching codecite's (evals/README.md).
 """
 
 import json
@@ -67,30 +72,34 @@ def codecite_note(task_dir: Path) -> str:
     )
 
 
-def prompt(task_dir: Path, arm: str) -> str:
+def prompt(task_dir: Path, condition: str) -> str:
     text = (task_dir / "prompt.md").read_text().replace("{identity_model}", IDENTITY_MODEL)
-    return f"{text}\n\n{codecite_note(task_dir)}\n" if arm == "codecite" else text
+    return f"{text}\n\n{codecite_note(task_dir)}\n" if condition == "codecite" else text
 
 
-def ab_task(task_id: str, arms: str = "both") -> Task:
-    """One task's A/B eval: a sample per arm, scored by its hidden tests and
-    checks. arms="baseline" keeps only the baseline arm, a calibration."""
-    if arms not in ARMS:
-        raise ValueError(f"arms must be one of {', '.join(ARMS)}, not {arms!r}")
+def ab_task(task_id: str, arms: str = "ab") -> Task:
+    """One task's eval: a sample per arm (config.ARMS), scored by its hidden
+    tests and checks. arms="baseline" keeps only the baseline arm, a
+    calibration; arms="aa" runs two baseline arms."""
+    if arms not in config.ARMS:
+        raise ValueError(f"arms must be one of {', '.join(config.ARMS)}, not {arms!r}")
     task_dir = config.task_dir(task_id)
     return Task(
-        dataset=[Sample(id=arm, input=prompt(task_dir, arm), metadata={"arm": arm}) for arm in ARMS[arms]],
-        solver=[arm_to_store(), pi()],
+        dataset=[
+            Sample(id=label, input=prompt(task_dir, condition), metadata={"arm": label, "condition": condition})
+            for label, condition in config.ARMS[arms]
+        ],
+        solver=[condition_to_store(), pi()],
         scorer=hidden_tests_and_checks(task_id),
         sandbox=("docker", str(config.COMPOSE)),
     )
 
 
-def pi_command(arm: str, prompt: str) -> list[str]:
+def pi_command(condition: str, prompt: str) -> list[str]:
     """pi's command line for an arm. --no-extensions drops the built-in
     extensions too, so the codecite arm loads only the MCP one back, and only
     it lists codecite's tools."""
-    if arm == "codecite":
+    if condition == "codecite":
         flags, tools = [*PI_FLAGS, "-e", "builtin:mcp"], [*PI_TOOLS, *CODECITE_TOOLS]
     else:
         flags, tools = [*PI_FLAGS, "--no-mcp"], PI_TOOLS
@@ -98,32 +107,32 @@ def pi_command(arm: str, prompt: str) -> list[str]:
 
 
 @task
-def ab(task_id: str = "fastapi-middleware", arms: str = "both") -> Task:
+def ab(task_id: str = "fastapi-middleware", arms: str = "ab") -> Task:
     """Any task under tasks/ by its id; the eval workflow and panel.sh run this."""
     return ab_task(task_id, arms)
 
 
 @task
-def fastapi_middleware(arms: str = "both") -> Task:
+def fastapi_middleware(arms: str = "ab") -> Task:
     return ab_task("fastapi-middleware", arms)
 
 
 @task
-def client_auth_uri(arms: str = "both") -> Task:
+def client_auth_uri(arms: str = "ab") -> Task:
     return ab_task("client-auth-uri", arms)
 
 
 @task
-def backchannel_logout(arms: str = "both") -> Task:
+def backchannel_logout(arms: str = "ab") -> Task:
     return ab_task("backchannel-logout", arms)
 
 
 @solver
-def arm_to_store():
-    """Hand the sample's arm to the agent, which sees only its messages."""
+def condition_to_store():
+    """Hand the sample's condition to the agent, which sees only its messages."""
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
-        store().set("arm", state.metadata["arm"])
+        store().set("condition", state.metadata["condition"])
         return state
 
     return solve
@@ -133,16 +142,16 @@ def arm_to_store():
 def pi() -> Agent:
     async def execute(state: AgentState) -> AgentState:
         sb = sandbox()
-        arm = store().get("arm")
-        if arm == "baseline":
+        condition = store().get("condition")
+        if condition == "baseline":
             await sb.exec(["rm", "-rf", "/opt/codecite"])
         else:
             await sb.write_file(PI_MCP, json.dumps(MCP_CONFIG, indent=2))
-        path = ("/opt/codecite/bin:" if arm == "codecite" else "") + "/usr/local/bin:/usr/bin:/bin"
+        path = ("/opt/codecite/bin:" if condition == "codecite" else "") + "/usr/local/bin:/usr/bin:/bin"
         async with sandbox_agent_bridge(state) as bridge:
             try:
                 result = await sb.exec(
-                    pi_command(arm, state.messages[0].text),
+                    pi_command(condition, state.messages[0].text),
                     cwd=PROJECT,
                     env={"PATH": path, "HOME": "/root"},
                     timeout=AGENT_TIMEOUT,

@@ -15,15 +15,19 @@
 # caps waits, and the wait lands in its wall time; both caps are raised to
 # twice MAX_SANDBOXES. RETRY=1 reruns only the missing samples of the tier's unfinished logs
 # (`inspect eval-retry`) instead of starting over. Extra arguments go to
-# `inspect eval` (CI passes --sandbox-prebuilt).
+# `inspect eval` (CI passes --sandbox-prebuilt). --log-model-api keeps every
+# call's raw response, which names the upstream provider; by default Inspect
+# keeps only the first few.
 #
 # TASK_ID names the task under tasks/ (default fastapi-middleware), run as
 # codecite_evals/<task> with `_` for `-`; stage its image first (prepare.sh
 # <task-id>). A task's task.json may set its own epochs per tier ("epochs":
 # {"quick": 1}): spec-questions has a sample per question, so one epoch is
-# already a run per question. ARMS=baseline runs only the baseline arm, a
-# calibration (evals/README.md): quick tier only, logged to
-# inspect/logs/calibration/<task>/ and reported with no verdict.
+# already a run per question. ARMS picks the arms: ab (baseline against
+# codecite, the default), aa (an A/A round, two baseline arms, logged to
+# inspect/logs/<tier>-aa/<task>/), or baseline (a calibration,
+# evals/README.md: quick tier only, logged to inspect/logs/calibration/<task>/
+# and reported with no verdict).
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 TIER="${1:-}"
@@ -64,14 +68,19 @@ TASK_ID="${TASK_ID:-fastapi-middleware}"
 [[ -f "tasks/$TASK_ID/task.json" ]] || { echo "no task $TASK_ID under tasks/" >&2; exit 2; }
 TASK_EPOCHS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("epochs", {}).get(sys.argv[2], ""))' "tasks/$TASK_ID/task.json" "$TIER")"
 EPOCHS="${EPOCHS:-${TASK_EPOCHS:-$TIER_EPOCHS}}"
-ARMS="${ARMS:-both}"
+[[ "$EPOCHS" =~ ^[1-9][0-9]*$ ]] || { echo "EPOCHS must be a positive whole number, not '$EPOCHS'" >&2; exit 2; }
+ARMS="${ARMS:-ab}"
 case "$ARMS" in
-  both) LOG_DIR="inspect/logs/$TIER/$TASK_ID" ;;
+  ab) LOG_DIR="inspect/logs/$TIER/$TASK_ID" ;;
+  aa) LOG_DIR="inspect/logs/$TIER-aa/$TASK_ID" ;;
   baseline)
     [[ "$TIER" == quick ]] || { echo "calibrate (ARMS=baseline) on the quick tier" >&2; exit 2; }
     LOG_DIR="inspect/logs/calibration/$TASK_ID"
     ;;
-  *) echo "ARMS must be both or baseline" >&2; exit 2 ;;
+  *)
+    echo "ARMS must be ab, aa or baseline, not '$ARMS'" >&2
+    exit 2
+    ;;
 esac
 MAX_SANDBOXES="${MAX_SANDBOXES:-14}"
 mkdir -p "$LOG_DIR"
@@ -95,7 +104,7 @@ if [[ "${RETRY:-0}" == 1 ]]; then
 else
   models="$(printf 'openrouter/%s,' "${PANEL[@]}")"
   uv run --locked inspect eval "codecite_evals/${TASK_ID//-/_}" -T arms="$ARMS" --model "${models%,}" -M strict_tools=false \
-    --epochs "$EPOCHS" "${LIMITS[@]}" --log-dir "$LOG_DIR" --display log "$@" || status=$?
+    --epochs "$EPOCHS" --log-model-api "${LIMITS[@]}" --log-dir "$LOG_DIR" --display log "$@" || status=$?
 fi
 minutes=$(((SECONDS - start) / 60))
 # The scorecard shows what finished even when a model's run failed. CI posts
