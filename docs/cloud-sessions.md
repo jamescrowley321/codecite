@@ -43,6 +43,12 @@ the script runs each launch under `script`, and it appends every link to
 `~/.local/state/codecite/cloud-sessions.log`. Once it returns, nothing runs
 locally.
 
+`scripts/cloud-status.sh` shows where each open PR stands: its merge state
+(`BEHIND` needs `gh pr update-branch <n>`, `DIRTY` has conflicts), the Merge
+Gate on its head, any lens still requesting changes, the issue it closes, and
+whether the eval scorecard is posted. Sessions watch their own PRs, so a PR
+comment reaches the session working it.
+
 A session opens a PR against `main` and answers the lens reviews. If the
 change touches indexing, search, ranking or the CLI's output, it adds the
 `eval` label, and the eval workflow posts the quick A/B scorecard on the PR.
