@@ -122,7 +122,7 @@ impl fmt::Display for ReadResult {
 }
 
 /// A source row, as `read` needs it.
-struct SourceRow {
+pub(super) struct SourceRow {
     id: i64,
     name: String,
     revision: String,
@@ -285,7 +285,7 @@ impl Store {
     }
 
     /// Reads a spec citation as people write it.
-    fn read_reference(
+    pub(super) fn read_reference(
         &self,
         text: &str,
         r: &SpecReference,
@@ -469,7 +469,7 @@ impl Store {
     }
 
     /// The current version of the document `name`.
-    fn current_version(&self, name: &str) -> Result<Option<SourceRow>> {
+    pub(super) fn current_version(&self, name: &str) -> Result<Option<SourceRow>> {
         Ok(self
             .conn
             .query_row(
@@ -482,7 +482,7 @@ impl Store {
     }
 
     /// The names of the corpus's documents, or of its other sources, sorted.
-    fn source_names(&self, document: bool) -> Result<Vec<String>> {
+    pub(super) fn source_names(&self, document: bool) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT DISTINCT name FROM source WHERE (kind = 'document') = ?1 ORDER BY name",
         )?;
@@ -610,7 +610,7 @@ fn spec_chunk(row: &rusqlite::Row<'_>) -> rusqlite::Result<SpecChunk> {
 }
 
 /// A document version as citations name it: `rfc9449@sha256:1a2b3c4d5e6f`.
-fn pinned(source: &SourceRow) -> String {
+pub(super) fn pinned(source: &SourceRow) -> String {
     let hash = source.revision.get(..12).unwrap_or(&source.revision);
     format!("{}@sha256:{hash}", source.name)
 }
