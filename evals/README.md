@@ -16,7 +16,7 @@ Evaluation plan):
 | --- | --- |
 | `src/codecite_evals/` | The `codecite-evals` package that `uv sync` installs: `task.py` (the Inspect task: one sample per arm, pi in a Docker sandbox, the scorer), `report.py` (the scorecard) and `config.py` (where every file below is found) |
 | `tests/` | Unit tests for the task's agent, the scorecard and the config; no model key or Docker needed |
-| `inspect/prepare.sh` | Stage the sandbox image's build context in `inspect/build/` |
+| `inspect/prepare.sh` | Stage the sandbox image's build context in `inspect/build/` for one task (`prepare.sh <task-id>`, default `fastapi-middleware`) |
 | `inspect/Dockerfile`, `inspect/compose.yaml` | The sandbox image and the IdP beside it, on a network with no route out |
 | `inspect/pi-models.json` | Points pi at Inspect's agent bridge |
 | `inspect/panel.sh` | Run one tier (`quick` or `full`): every model in one Inspect process, then the report |
@@ -42,11 +42,15 @@ Evaluation plan):
   cites §2.3.1 of RFC 6749 (`rfc6749#section-2.3.1`, `RFC 6749 §2.3.1` or
   `Section 2.3.1 of RFC 6749`). The corpus is identity-model plus the spec
   documents of `retrieval/identity-bench.toml` (`task.json`'s
-  `corpus.documents`). It needs no IdP, so `planted.sh` runs the hidden tests
-  itself, and `check.sh` just runs it.
+  `corpus.documents`), and the codecite arm's note says so. It needs no IdP,
+  so `planted.sh` runs the hidden tests itself, and `check.sh` just runs it.
 
-`inspect/task.py`, `inspect/prepare.sh` and `.github/workflows/evals.yml` run
-`fastapi-middleware` only.
+Each task is registered in `src/codecite_evals/task.py` and runs as
+`codecite_evals/<task>` with `_` for `-`. The sandbox image holds one task's
+project and corpus, so `inspect/prepare.sh <task-id>` stages it before the
+image is built; after switching tasks, rebuild it (`docker compose -f
+inspect/compose.yaml build`). `panel.sh` and the CI workflow run
+`fastapi-middleware`.
 
 ## Two tiers
 
@@ -94,7 +98,7 @@ and an identity-model checkout (`IDENTITY_MODEL_REPO`, default
 
 ```
 cargo build --release
-evals/inspect/prepare.sh
+evals/inspect/prepare.sh             # or: evals/inspect/prepare.sh client-auth-uri
 cd evals
 uv sync --locked
 set -a; . ~/.config/codecite/evals.env; set +a

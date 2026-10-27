@@ -39,3 +39,12 @@
 
 - [ ] `evals/README.md`: a Tasks section describing both tasks.
 - [ ] `docs/design.md`: the Tasks bullet of the Agent benchmark names the task.
+
+### Task 6: Register the task in the `codecite_evals` package
+
+#131 moved the harness into `evals/src/codecite_evals/`. The task's own files (`checks.py`, `hidden/`, `project/`) stay in `evals/tasks/client-auth-uri/`, as `fastapi-middleware`'s do: they are data the sandbox runs, not harness code.
+
+- [ ] `tests/test_task.py`, first: both tasks are registered; each arm's prompt comes from its own task, and only the codecite arm's note names the specifications, only for a corpus with `corpus.documents`; the scorer copies in its own task's tests, checks and start.
+- [ ] `task.py`: `ab_task(task_id)` builds the Inspect task from `config.task_dir`; `fastapi_middleware` and `client_auth_uri` call it; `_registry.py` exports both.
+- [ ] `inspect/prepare.sh <task-id>` stages that task's project and a `documents.toml` cut from its `corpus.documents` manifest; the Dockerfile appends it to the `eval` corpus manifest.
+- [ ] Run: `uv run --locked pytest`; Inspect loads `codecite_evals/client_auth_uri`; the Dockerfile's corpus step, run on the host over the staged context, indexes identity-model and the 39 documents.
