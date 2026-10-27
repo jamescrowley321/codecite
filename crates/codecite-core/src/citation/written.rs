@@ -95,6 +95,15 @@ impl SpecReference {
         self.step
     }
 
+    /// The same reference with its document set to `doc`, such as a bare
+    /// `§3.1.3.6` given the document of the URL it links to.
+    pub fn in_document(self, doc: &str) -> Self {
+        Self {
+            doc: Some(doc.into()),
+            ..self
+        }
+    }
+
     /// Parses one written spec citation.
     ///
     /// Returns `Ok(None)` when `s` is not shaped like a written spec citation
@@ -347,6 +356,17 @@ mod tests {
         check("rfc9449 section 4.3", Some("rfc9449"), &[4, 3], None);
         check("Core §3.1.3.7 Step 13", core, &[3, 1, 3, 7], Some(13));
         check("Core §3.1.3.7(13)", core, &[3, 1, 3, 7], Some(13));
+    }
+
+    #[test]
+    fn in_document_names_the_document() {
+        let r = SpecReference::parse("§3.1.3.6 step 2", &aliases())
+            .unwrap()
+            .unwrap()
+            .in_document("openid-connect-core-1_0");
+        assert_eq!(r.doc(), Some("openid-connect-core-1_0"));
+        assert_eq!(r.target(), &SpecTarget::Section("3.1.3.6".parse().unwrap()));
+        assert_eq!(r.step(), Some(2));
     }
 
     #[test]
