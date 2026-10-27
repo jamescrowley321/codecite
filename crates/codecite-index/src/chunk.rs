@@ -224,8 +224,8 @@ mod tests {
         assert_eq!(
             outline("src/sample.rs", text),
             expect(&[
-                ("window", 1, 5, ""),
-                ("class", 6, 8, "Client#"),
+                ("window", 1, 3, ""),
+                ("class", 5, 8, "Client#"),
                 ("class", 10, 18, ""),
                 ("function", 11, 13, "Client#new()."),
                 ("function", 15, 17, "Client#validate()."),
@@ -295,8 +295,8 @@ mod tests {
         assert_eq!(
             outline("sample/sample.go", text),
             expect(&[
-                ("window", 1, 5, ""),
-                ("class", 6, 8, "Client#"),
+                ("window", 1, 3, ""),
+                ("class", 5, 8, "Client#"),
                 ("class", 10, 12, "Verifier#"),
                 ("function", 11, 11, "Verifier#Verify()."),
                 ("function", 14, 16, "NewClient()."),
@@ -407,6 +407,135 @@ mod tests {
     }
 
     #[test]
+    fn doc_comments_and_attributes_join_their_definition() {
+        // Doc comments and attributes directly above, in any order; a blank
+        // line, a plain comment or a module's `//!` doc stops the run.
+        let rust = "//! Module docs.\n\
+                    fn first() {}\n\
+                    \n\
+                    /// Fetches the metadata.\n\
+                    #[inline]\n\
+                    /** More. */\n\
+                    pub fn fetch() {}\n\
+                    \n\
+                    /// Detached.\n\
+                    \n\
+                    // Not documentation.\n\
+                    struct Plain;\n\
+                    impl Plain {\n    /// Validates.\n    fn validate() {}\n}\n";
+        assert_eq!(
+            outline("doc.rs", rust),
+            expect(&[
+                ("window", 1, 1, ""),
+                ("function", 2, 2, "first()."),
+                ("function", 4, 7, "fetch()."),
+                ("window", 9, 11, ""),
+                ("class", 12, 12, "Plain#"),
+                ("class", 13, 16, ""),
+                ("function", 14, 15, "Plain#validate()."),
+            ])
+        );
+        // Every comment directly above, through `export`, `type`, `const`
+        // and `var` keywords; never a comment that ends a line of code.
+        let go = "package p\n\
+                  \n\
+                  // FetchConfiguration fetches the discovery metadata.\n\
+                  //\n\
+                  // It caches nothing.\n\
+                  func FetchConfiguration() {}\n\
+                  \n\
+                  // Client is a client.\n\
+                  type Client struct{}\n\
+                  \n\
+                  /* Timeout is in seconds. */\n\
+                  const Timeout = 30\n\
+                  \n\
+                  var (\n\
+                  \t// A is first.\n\
+                  \tA = 1 // one\n\
+                  \tB = 2\n\
+                  )\n\
+                  \n\
+                  // Validate checks a token.\n\
+                  func (c *Client) Validate() {}\n";
+        assert_eq!(
+            outline("p/p.go", go),
+            expect(&[
+                ("window", 1, 1, ""),
+                ("function", 3, 6, "FetchConfiguration()."),
+                ("class", 8, 9, "Client#"),
+                ("variable", 11, 12, "Timeout."),
+                ("window", 14, 14, ""),
+                ("variable", 15, 16, "A."),
+                ("variable", 17, 17, "B."),
+                ("function", 20, 21, "Client#Validate()."),
+            ])
+        );
+        // JSDoc blocks and decorators, exported or not; a plain comment
+        // stays out.
+        let ts = "/** Fetches the metadata. */\n\
+                  export function fetch() {}\n\
+                  \n\
+                  // Not documentation.\n\
+                  function plain() {}\n\
+                  \n\
+                  /**\n * The client.\n */\n\
+                  @Injectable()\n\
+                  export class Client {\n\
+                  \x20 /** Validates. */\n\
+                  \x20 @Log()\n\
+                  \x20 validate() {}\n\
+                  }\n\
+                  \n\
+                  /** Parses. */\n\
+                  export const parse = (raw: string) => raw;\n";
+        let want = expect(&[
+            ("function", 1, 2, "fetch()."),
+            ("window", 4, 4, ""),
+            ("function", 5, 5, "plain()."),
+            ("class", 7, 15, "Client#"),
+            ("function", 12, 14, "Client#validate()."),
+            ("function", 17, 18, "parse()."),
+        ]);
+        assert_eq!(outline("src/doc.ts", ts), want);
+        assert_eq!(outline("src/doc.tsx", ts), want);
+        let js = "/** Fetches. */\n\
+                  function fetch() {}\n\
+                  \n\
+                  class Client {\n\
+                  \x20 /** Validates. */\n\
+                  \x20 validate() {}\n\
+                  }\n";
+        assert_eq!(
+            outline("lib/doc.js", js),
+            expect(&[
+                ("function", 1, 2, "fetch()."),
+                ("class", 4, 7, "Client#"),
+                ("function", 5, 6, "Client#validate()."),
+            ])
+        );
+        // XML doc comments (`///`) and `/** */`; a plain comment stays out.
+        let cs = "/// <summary>The client.</summary>\n\
+                  public class Client\n\
+                  {\n\
+                  \x20   /** Validates. */\n\
+                  \x20   [Obsolete]\n\
+                  \x20   public bool Validate() { return true; }\n\
+                  \n\
+                  \x20   // Not documentation.\n\
+                  \x20   public void Plain() {}\n\
+                  }\n";
+        assert_eq!(
+            outline("src/Doc.cs", cs),
+            expect(&[
+                ("class", 1, 10, "Client#"),
+                ("function", 4, 6, "Client#Validate()."),
+                ("function", 9, 9, "Client#Plain()."),
+            ])
+        );
+    }
+
+    #[test]
     fn symbols_carry_name_and_kind() {
         let text = include_str!("../tests/fixtures/chunk/sample.go");
         let mut chunker = Chunker::new().unwrap();
@@ -447,8 +576,7 @@ mod tests {
             outline("dup.rs", text),
             expect(&[
                 ("class", 1, 1, "Dup#"),
-                ("window", 2, 2, ""),
-                ("class", 3, 3, ""),
+                ("class", 2, 3, ""),
                 ("function", 4, 4, "new()."),
                 ("function", 5, 5, "new(+1)."),
                 ("class", 6, 6, ""),
