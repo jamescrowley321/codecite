@@ -77,6 +77,11 @@ def client_auth_uri(arms: str = "ab") -> Task:
     return ab_task("client-auth-uri", arms)
 
 
+@task
+def backchannel_logout(arms: str = "ab") -> Task:
+    return ab_task("backchannel-logout", arms)
+
+
 @solver
 def condition_to_store():
     """Hand the sample's condition to the agent, which sees only its messages."""
