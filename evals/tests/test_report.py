@@ -219,10 +219,13 @@ def test_transcript_medians_per_arm():
     base = [traced("baseline", e, [(4.0, 200)] * 3, wall=60.0) for e in range(1, EPOCHS + 1)]
     code = [traced("codecite", e, [(10.0, 300)] * 2, wall=50.0, failed_calls=1) for e in range(1, EPOCHS + 1)]
     header, rows = table(scorecard([log("openrouter/m", base + code)]), 1)
-    assert header[:8] == ["model", "arm", "turns", "output tokens", "model time", "other time", "decode rate", "providers"]
+    assert header == ["model", "arm", "turns", "output tokens", "model time", "other time", "decode rate", "normalised time", "providers"]
     b, c = rows[("m", "baseline")], rows[("m", "codecite")]
     assert (b["turns"], b["output tokens"], b["model time"], b["other time"], b["decode rate"]) == ("3", "600", "12s", "48s", "50 tok/s")
     assert (c["turns"], c["output tokens"], c["model time"], c["other time"], c["decode rate"]) == ("2", "600", "20s", "30s", "30 tok/s")
+    # Both arms decode at 4,800 tokens / 128 s = 37.5 tok/s pooled, so 600
+    # output tokens count as 16 s in each.
+    assert (b["normalised time"], c["normalised time"]) == ("64s", "46s")
 
 
 def test_providers_are_counted_per_arm():
@@ -249,7 +252,7 @@ def test_every_measure_gets_an_interval():
     base = [traced("baseline", e, [(4.0, 200)] * 3, wall=60.0 + e) for e in range(1, EPOCHS + 1)]
     code = [traced("codecite", e, [(10.0, 300)] * 2, wall=50.0 + e) for e in range(1, EPOCHS + 1)]
     header, spans = table(scorecard([log("openrouter/m", base + code)]), 2, ("model", "arms"))
-    measures = ["pass", "tokens", "time", "turns", "output tokens", "model time", "other time", "decode rate"]
+    measures = ["pass", "tokens", "time", "turns", "output tokens", "model time", "other time", "decode rate", "normalised time"]
     assert header == ["model", "arms", *measures]
     row = spans[("m", "codecite vs baseline")]
     assert row["pass"] == "+0..+0 pts"
@@ -275,3 +278,15 @@ def test_transcript_measures_survive_a_log_file(tmp_path):
     _, rows = table(scorecard([found]), 1)
     assert rows[("m", "codecite")]["providers"] == "Anthropic 12"
     assert rows[("m", "baseline")]["decode rate"] == "50 tok/s"
+
+
+def test_normalised_time_drops_a_decode_speed_gap():
+    # The same work in both arms, but codecite's host decodes at half the
+    # speed: wall time and model time lose, normalised time doesn't move.
+    base = [traced("baseline", e, [(5.0, 500)] * 4, wall=40.0 + e) for e in range(1, EPOCHS + 1)]
+    code = [traced("codecite", e, [(10.0, 500)] * 4, wall=60.0 + e) for e in range(1, EPOCHS + 1)]
+    out = scorecard([log("openrouter/m", base + code)])
+    _, spans = table(out, 2, ("model", "arms"))
+    row = spans[("m", "codecite vs baseline")]
+    assert row["time"].endswith(" *") and row["model time"].endswith(" *")
+    assert not row["normalised time"].endswith(" *")

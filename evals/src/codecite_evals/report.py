@@ -15,7 +15,9 @@ verdict: it reports which intervals noise alone pushes past the margin.
 From each sample's transcript (its model events) it also reads the turns
 (model calls), the output tokens, the model time (the sum of the calls'
 times), the rest of the wall time, the decode rate (output tokens per second
-of model time) and the upstream providers OpenRouter says served the calls.
+of model time) and the upstream providers OpenRouter says served the calls,
+and a normalised time: wall time with the model time recomputed at the
+model's decode rate over both arms, so a slower host for one arm drops out.
 The scorecard shows their medians per arm, the providers with counts, and a
 95% interval for every measure.
 
@@ -98,6 +100,8 @@ class Run:
     turns: int | None = None
     model_seconds: float | None = None
     providers: Counter = field(default_factory=Counter)
+    # The model's decode rate over both arms' runs, set once they are read.
+    pooled_rate: float | None = None
 
     @property
     def other_seconds(self):
@@ -107,6 +111,15 @@ class Run:
     def decode_rate(self):
         """Output tokens per second of model time."""
         return self.output_tokens / self.model_seconds if self.model_seconds else None
+
+    @property
+    def normalised_seconds(self):
+        """Wall time with the model time recomputed at the model's pooled
+        decode rate: a decode-speed gap between the arms (a slower host)
+        drops out, while more output or more tool time still counts."""
+        if self.other_seconds is None or not self.pooled_rate:
+            return None
+        return self.other_seconds + self.output_tokens / self.pooled_rate
 
 
 # Every measure with an interval: (column, how to read it from a Run, kind).
@@ -120,6 +133,7 @@ MEASURES = [
     ("model time", lambda r: r.model_seconds, "ratio"),
     ("other time", lambda r: r.other_seconds, "ratio"),
     ("decode rate", lambda r: r.decode_rate, "ratio"),
+    ("normalised time", lambda r: r.normalised_seconds, "ratio"),
 ]
 
 
@@ -212,6 +226,7 @@ def medians(runs):
         cell(lambda r: r.model_seconds, seconds),
         cell(lambda r: r.other_seconds, seconds),
         cell(lambda r: r.decode_rate, lambda m: f"{m:.0f} tok/s"),
+        cell(lambda r: r.normalised_seconds, seconds),
         ", ".join(f"{name} {n}" for name, n in providers.most_common()) or "-",
     ])
 
@@ -264,8 +279,8 @@ def scorecard(logs, tier=None):
         "",
         "Medians from the transcripts, and the upstream providers that served the model calls:",
         "",
-        "| model | arm | turns | output tokens | model time | other time | decode rate | providers |",
-        "|---|---|---|---|---|---|---|---|",
+        "| model | arm | turns | output tokens | model time | other time | decode rate | normalised time | providers |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     spans = [
         "",
@@ -278,6 +293,11 @@ def scorecard(logs, tier=None):
         name = model.removeprefix("openrouter/")
         pair = [label for label, _ in arms[model]]
         first, second = (runs.get((model, arm), []) for arm in pair)
+        timed = [r for r in first + second if r.model_seconds]
+        if timed:
+            pooled = sum(r.output_tokens for r in timed) / sum(r.model_seconds for r in timed)
+            for r in first + second:
+                r.pooled_rate = pooled
         if len(first) < planned[model] or len(second) < planned[model]:
             verdict = f"incomplete ({len(first)}/{len(second)} of {planned[model]} runs)"
             spans.append(f"| {name} | {pair[1]} vs {pair[0]} | " + " | ".join("-" for _ in MEASURES) + " |")

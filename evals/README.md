@@ -85,7 +85,9 @@ noise alone pushed past the 5% margin.
 - **From the transcripts:** the median turns (model calls that returned),
   output tokens, model time (the sum of the calls' generation times), other
   time (wall time less model time: tools, sandbox and waiting), and decode
-  rate (output tokens per second of model time), with the upstream providers
+  rate (output tokens per second of model time), normalised time (wall time
+  with the model time recomputed at the model's decode rate over both arms,
+  so a slower host for one arm drops out), with the upstream providers
   OpenRouter says served the calls, counted. A provider or decode-speed gap
   between arms shows here. The provider is in each call's raw response,
   which Inspect keeps only with `--log-model-api` (`panel.sh` passes it);
