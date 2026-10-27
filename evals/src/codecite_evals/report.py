@@ -7,7 +7,12 @@ minus baseline), median tokens and median time relative to baseline's median
 arm resampled on its own. codecite loses when an interval is past the margin
 at its favourable end: pass rate's upper bound more than 5 points below 0, or
 tokens' or time's lower bound more than 5% above 0. A model short of the
-planned runs in either arm is incomplete, not a pass.
+planned runs in either arm is incomplete, not a pass. A model's planned runs
+per arm are the arm's samples times epochs: one sample for a code task, one
+per question for spec-questions.
+
+Each task gets its own table, headed by its name, so one task's runs never
+pool with another's.
 
 Timeouts and sandbox errors both count as failures. They get columns of
 their own, each sandbox error is listed under the table, and a model with
@@ -19,8 +24,8 @@ plain failure, in neither column.
 
 The default logs are the tier's, inspect/logs/<tier>/, else inspect/logs/
 (both under evals/, see config.py).
-Given a directory, it reads one log per model: the newest finished one, else
-the newest. The tier heads the scorecard: a quick verdict is directional, and
+Given a directory, it reads one log per task and model: the newest finished
+one, else the newest. The tier heads the scorecard: a quick verdict is directional, and
 a quick loss means run the full tier.
 """
 
@@ -46,7 +51,7 @@ TIERS = {
 
 def logs(paths: list[Path], tier=None):
     """The logs at these files and directories; from a directory, one per
-    model. With no paths, the tier's log directory."""
+    task and model. With no paths, the tier's log directory."""
     if not paths:
         paths = [config.LOGS / tier if tier else config.LOGS]
     for path in paths:
@@ -55,12 +60,13 @@ def logs(paths: list[Path], tier=None):
         if not path.is_dir():
             yield read_eval_log(str(path))
             continue
-        newest = {}  # model -> header
+        newest = {}  # (task, model) -> header
         for info in list_eval_logs(str(path)):
             head = read_eval_log(info.name, header_only=True)
             key = (head.status == "success", head.eval.created)
-            if head.eval.model not in newest or key > newest[head.eval.model][0]:
-                newest[head.eval.model] = (key, info.name)
+            run = (head.eval.task, head.eval.model)
+            if run not in newest or key > newest[run][0]:
+                newest[run] = (key, info.name)
         for _, name in newest.values():
             yield read_eval_log(name)
 
@@ -97,13 +103,29 @@ def listed(error, limit=200):
     return f"`{text[:limit]}…`" if len(text) > limit else f"`{text}`"
 
 
+def task_name(log):
+    return log.eval.task.removeprefix("codecite_evals/")
+
+
+def per_arm(log, arm):
+    """How many samples of the dataset are this arm's: sample ids are the arm
+    (a code task) or `<arm>:<question>` (spec-questions)."""
+    ids = log.eval.dataset.sample_ids
+    if ids:
+        return sum(str(i) == arm or str(i).startswith(f"{arm}:") for i in ids) or 1
+    return max(1, (log.eval.dataset.samples or 2) // 2)
+
+
 def scorecard(logs, tier=None):
-    """The scorecard for these eval logs, as markdown, headed by its tier."""
-    runs = defaultdict(list)  # (model, arm) -> [(passed, tokens, seconds, stopped)]
-    errors = []  # (model, arm, epoch, sandbox error)
-    planned = {}
+    """The scorecard for these eval logs, as markdown, headed by its tier,
+    with a table per task."""
+    runs = defaultdict(list)  # (task, model, arm) -> [(passed, tokens, seconds, stopped)]
+    errors = defaultdict(list)  # task -> [(model, arm, sample, epoch, sandbox error)]
+    planned = {}  # (task, model, arm) -> runs
     for log in logs:
-        planned[log.eval.model] = log.eval.config.epochs or 1
+        name, model = task_name(log), log.eval.model
+        for arm in ("baseline", "codecite"):
+            planned[(name, model, arm)] = per_arm(log, arm) * (log.eval.config.epochs or 1)
         for s in log.samples or []:
             if s.error or not s.scores:
                 continue
@@ -111,25 +133,41 @@ def scorecard(logs, tier=None):
             tokens = sum(u.total_tokens or 0 for u in (s.model_usage or {}).values())
             metadata = score.metadata or {}
             why = stopped(metadata)
-            runs[(log.eval.model, s.metadata["arm"])].append((score.value == 1, tokens, s.total_time or 0.0, why))
+            arm = s.metadata["arm"]
+            runs[(name, model, arm)].append((score.value == 1, tokens, s.total_time or 0.0, why))
             if why == "sandbox_error":
-                errors.append((log.eval.model, s.metadata["arm"], s.epoch, metadata.get("sandbox_error") or "unknown error"))
+                # A question's sample is named by its question; a code task's by its arm alone.
+                which = s.metadata.get("question")
+                errors[name].append((model, arm, which, s.epoch, metadata.get("sandbox_error") or "unknown error"))
 
     rng = random.Random(SEED)
-    out = [TIERS[tier], ""] if tier else []
-    out += [
+    out = [TIERS[tier]] if tier else []
+    for name in sorted({k[0] for k in planned}):
+        if out:
+            out.append("")
+        out += table(rng, name, runs, planned, errors[name])
+    return "\n".join(out)
+
+
+def table(rng, name, runs, planned, errors):
+    """One task's table: per model, both arms and the verdict."""
+    out = [
+        f"**Task: `{name}`**",
+        "",
         "| model | arm | runs | pass | fails | timeouts | sandbox errors | median tokens | median time | verdict |",
         "|---|---|---|---|---|---|---|---|---|---|",
     ]
-    for model in sorted(planned):
-        base, code = runs.get((model, "baseline"), []), runs.get((model, "codecite"), [])
-        if len(base) < planned[model] or len(code) < planned[model]:
-            verdict = f"incomplete ({len(base)}/{len(code)} of {planned[model]} runs)"
+    for model in sorted({k[1] for k in planned if k[0] == name}):
+        base, code = runs.get((name, model, "baseline"), []), runs.get((name, model, "codecite"), [])
+        want_base, want_code = planned[(name, model, "baseline")], planned[(name, model, "codecite")]
+        if len(base) < want_base or len(code) < want_code:
+            of = want_base if want_base == want_code else f"{want_base}/{want_code}"
+            verdict = f"incomplete ({len(base)}/{len(code)} of {of} runs)"
         else:
             p = interval(rng, [r[0] for r in base], [r[0] for r in code], pass_diff)
             t = interval(rng, [r[1] for r in base], [r[1] for r in code], median_ratio)
             s = interval(rng, [r[2] for r in base], [r[2] for r in code], median_ratio)
-            losses = [name for name, lost in (("pass", p[1] < -MARGIN), ("tokens", t[0] > MARGIN), ("time", s[0] > MARGIN)) if lost]
+            losses = [measure for measure, lost in (("pass", p[1] < -MARGIN), ("tokens", t[0] > MARGIN), ("time", s[0] > MARGIN)) if lost]
             verdict = ("loses on " + ", ".join(losses) if losses else "no loss") + (
                 f" (pass {p[0]:+.0%}..{p[1]:+.0%}, tokens {t[0]:+.0%}..{t[1]:+.0%}, time {s[0]:+.0%}..{s[1]:+.0%})"
             )
@@ -148,9 +186,10 @@ def scorecard(logs, tier=None):
             out.append(f"| {model.removeprefix('openrouter/')} | {arm} | {len(r)} | {cells} | {verdict if arm == 'codecite' else ''} |")
     if errors:
         out += ["", "Sandbox errors (scored as failures):", ""]
-        for model, arm, epoch, error in sorted(errors, key=lambda e: e[:3]):
-            out.append(f"- {model.removeprefix('openrouter/')}, {arm}, epoch {epoch}: {listed(error)}")
-    return "\n".join(out)
+        for model, arm, which, epoch, error in sorted(errors, key=lambda e: (e[0], e[1], e[2] or "", e[3])):
+            question = f"{which}, " if which else ""
+            out.append(f"- {model.removeprefix('openrouter/')}, {arm}, {question}epoch {epoch}: {listed(error)}")
+    return out
 
 
 def main():
