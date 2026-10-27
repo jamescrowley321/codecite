@@ -283,6 +283,7 @@ name = "codecite-core"
 version = "0.0.1"
 dependencies = [
  "proptest",
+ "regex",
  "rusqlite",
  "schemars",
  "serde",

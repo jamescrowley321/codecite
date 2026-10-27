@@ -139,6 +139,47 @@ Each result shows its rank and citation, then its kind (`function`, `class`,
 `section`, `step` or `window`), symbol, score, license class and when it was
 indexed, then the first lines of its text.
 
+## Grep
+
+`grep` finds the lines that match a regular expression, or exact text, in
+everything the corpus indexed: the literal strings `search` is weak at, such
+as a claim name, an error message, a header name or a parameter pattern.
+
+```sh
+codecite grep identity '"jti"' --fixed
+codecite grep identity 'token_type_hint=\w+'
+codecite grep identity 'invalid_dpop_proof' -i --only spec
+codecite grep identity '^pub fn ' --language rust --path 'rust/src/*' --limit 20 --json
+```
+
+The pattern is [`regex` crate syntax](https://docs.rs/regex/latest/regex/#syntax)
+matched against one line at a time, so `^` and `$` are a line's ends.
+`--fixed` (`-F`) reads it as exact text and `--ignore-case` (`-i`) matches any
+case. `--language`, `--path`, `--only` and `--limit` work as they do for
+`search`.
+
+Each match is one line: a code line cites itself (`repo@sha:path#L12`), and a
+spec line cites the step or section that holds it, so `read` turns any match
+back into its text. Matches come in index order, unscored: each source in
+the manifest's order, its files by path, then lines. So a grep over code and
+specs lists code first when the manifest does; `--only spec` keeps specs.
+
+```text
+$ codecite grep identity invalid_dpop_proof -i --only spec --limit 3
+3 matches · quote · indexed 2026-10-20T22:56:30Z
+1. rfc9449@sha256:2d8657f07291#section-5
+   The DPoP HTTP header field MUST contain a valid DPoP proof JWT. If the DPoP proof is invalid, the authorization server i…
+2. rfc9449@sha256:2d8657f07291#section-7.1
+   - An error parameter ([RFC6750], Section 3) SHOULD be included to indicate the reason why the request was declined, if t…
+3. rfc9449@sha256:2d8657f07291#section-12.2
+   invalid_dpop_proof
+```
+
+An invalid regex is an error that says what is wrong with it, and so is an
+empty pattern or one that holds a newline (`\n`), since each line is matched
+on its own. Appendices, whose sections have no canonical citation yet, are
+not grepped.
+
 ## Read
 
 `read` prints the exact text a citation points at and always names the pinned
@@ -245,18 +286,21 @@ Claude Code:
 claude mcp add codecite -- codecite mcp
 ```
 
-The server's tools, `corpora`, `search` and `read`, return the same JSON as
-the CLI commands of the same name print (with `--json` for `search` and
-`read`), byte for byte, so anything an agent sees can be reproduced from a
-terminal. `search` and `read` take an optional `corpus`; left out or empty,
-it is the only corpus in the data directory. `limit` is at most 50 and
-`max_lines` at most 500, for the tools and the CLI alike. Text is also
+The server's tools, `corpora`, `search`, `grep` and `read`, return the same
+JSON as the CLI commands of the same name print (with `--json` for `search`,
+`grep` and `read`), byte for byte, so anything an agent sees can be reproduced
+from a terminal. `search`, `grep` and `read` take an optional `corpus`; left
+out or empty, it is the only corpus in the data directory. `limit` is at most
+50 for `search` and `grep`, and `max_lines` at most 500, for the tools and the
+CLI alike. Text is also
 capped in bytes, so that one minified or generated line cannot flood an
 agent's context: a search snippet holds at most 4 KiB (after its 40-line
-cap), and `read` text at most 64 KiB (after `max_lines`). A cut keeps an
+cap), a grep match's line at most 4 KiB, and `read` text at most 64 KiB
+(after `max_lines`). A cut keeps an
 exact prefix of the lines, joined with `\n` line endings and ending on a
 character boundary, and adds no marker to it; instead a search result's
-`snippet_truncated` and a read's `truncated` are `true`, and a truncated
+`snippet_truncated`, a grep match's `truncated` and a read's `truncated` are
+`true`, and a truncated
 `quote` read's `instruction` says the quote is partial. The citation still
 names the full lines, and reading it again returns the same capped text. An unknown corpus, a stale index or a
 citation that isn't in the corpus is a tool error whose structured content is
