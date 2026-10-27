@@ -10,7 +10,7 @@ from inspect_ai.util import ExecResult, OutputLimitExceededError
 
 from codecite_evals import _registry, config, task
 
-TASKS = ["fastapi-middleware", "client-auth-uri"]
+TASKS = ["fastapi-middleware", "client-auth-uri", "backchannel-logout"]
 
 
 class Store(dict):
@@ -128,6 +128,7 @@ def test_every_task_is_registered():
     assert callable(_registry.fastapi_middleware)
     assert callable(_registry.client_auth_uri)
     assert callable(_registry.ab)
+    assert callable(_registry.backchannel_logout)
 
 
 @pytest.mark.parametrize("task_id", TASKS)
@@ -143,6 +144,7 @@ def test_each_arm_gets_its_own_tasks_prompt(task_id):
 def test_the_codecite_note_names_the_specs_only_when_the_corpus_has_them():
     # client-auth-uri's corpus adds the spec documents (task.json corpus.documents).
     assert "specifications" in task.prompt(config.task_dir("client-auth-uri"), "codecite")
+    assert "specifications" in task.prompt(config.task_dir("backchannel-logout"), "codecite")
     assert "specifications" not in task.prompt(config.task_dir("fastapi-middleware"), "codecite")
 
 

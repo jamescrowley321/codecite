@@ -123,3 +123,32 @@ jobs:
       - run: target/release/codecite index identity-bench --manifest evals/retrieval/identity-bench.toml
       - name: Run the retrieval benchmark
         run: target/release/codecite-bench | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # Not a required check: it proves an eval task's hidden tests and checks
+  # pass its references and fail its planted bad solutions. No model key.
+  eval-task:
+    name: eval-task (${{ matrix.task }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        task: [backchannel-logout]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv
+        run: |
+          pipx install uv==0.11.32
+          uv --version
+      - name: Fetch identity-model at the task's pinned commit
+        env:
+          TASK: ${{ matrix.task }}
+        run: |
+          commit="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["corpus"]["commit"])' "evals/tasks/$TASK/task.json")"
+          git init -q "$RUNNER_TEMP/identity-model"
+          git -C "$RUNNER_TEMP/identity-model" fetch -q --depth 1 https://github.com/jamescrowley321/identity-model "$commit"
+      - name: Check the task
+        env:
+          TASK: ${{ matrix.task }}
+        run: IDENTITY_MODEL_REPO="$RUNNER_TEMP/identity-model" "evals/tasks/$TASK/check.sh"
