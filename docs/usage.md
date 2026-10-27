@@ -266,6 +266,43 @@ Anything else wrong is an error that exits non-zero, as `read`'s are: text that
 is no citation, a malformed one, an unknown document or version, a stale index,
 and a code citation, which `read` reads instead.
 
+## Find a definition
+
+`def` prints where a symbol is defined, from the definitions tree-sitter found
+when the corpus was indexed.
+
+```sh
+codecite def identity validate
+codecite def identity Client.callback
+codecite def identity DPoPProof --json
+```
+
+The name is matched exactly, case and all, as the code writes it. Only when
+nothing has that name, a dotted name such as `Client.callback` finds the
+`callback` defined inside `Client`. A name with several definitions lists them
+all, never one guess, and says it is ambiguous: source files first, then docs,
+examples and tests, each in citation order, at most 50.
+
+```text
+3 definitions of callback · ambiguous
+1. app@0123456789ab:src/client.rs#L4-L6 · method callback · source · adapt · indexed 2026-10-20T22:56:30Z
+   pub fn callback(&self) -> bool {
+2. app@0123456789ab:src/server.rs#L4 · method callback · source · adapt · indexed 2026-10-20T22:56:30Z
+   pub fn callback(&self) {}
+3. app@0123456789ab:tests/callback.rs#L1-L3 · function callback · test · adapt · indexed 2026-10-20T22:56:30Z
+   fn callback() {
+```
+
+`read` a definition's citation for its whole text. `--json` prints
+`{"symbol", "ambiguous", "total", "results"}`; each result also carries
+`providers` and `confidence`. A name nothing defines is an error that lists
+the names differing from it only in case, `_` or `-`:
+
+```text
+$ codecite def identity callBack
+Error: the corpus defines no symbol `callBack`; did you mean: callback
+```
+
 ## List corpora
 
 ```sh
@@ -286,10 +323,11 @@ Claude Code:
 claude mcp add codecite -- codecite mcp
 ```
 
-The server's tools, `corpora`, `search`, `grep` and `read`, return the same
-JSON as the CLI commands of the same name print (with `--json` for `search`,
-`grep` and `read`), byte for byte, so anything an agent sees can be reproduced
-from a terminal. `search`, `grep` and `read` take an optional `corpus`; left
+The server's tools, `corpora`, `search`, `grep`, `definition` and `read`,
+return the same JSON as the CLI commands `corpora`, `search`, `grep`, `def`
+and `read` print (with `--json` for all but `corpora`), byte for byte, so
+anything an agent sees can be reproduced from a terminal. `search`, `grep`,
+`definition` and `read` take an optional `corpus`; left
 out or empty, it is the only corpus in the data directory. `limit` is at most
 50 for `search` and `grep`, and `max_lines` at most 500, for the tools and the
 CLI alike. Text is also
@@ -302,8 +340,8 @@ character boundary, and adds no marker to it; instead a search result's
 `snippet_truncated`, a grep match's `truncated` and a read's `truncated` are
 `true`, and a truncated
 `quote` read's `instruction` says the quote is partial. The citation still
-names the full lines, and reading it again returns the same capped text. An unknown corpus, a stale index or a
-citation that isn't in the corpus is a tool error whose structured content is
+names the full lines, and reading it again returns the same capped text. An unknown corpus, a stale index, a
+citation that isn't in the corpus or a symbol nothing defines is a tool error whose structured content is
 `{"error": {"kind", "message", "candidates"}}`; each tool's output schema
 admits both its result and this error. A `read` of a spec, whose
 license class is `quote`, carries an `instruction` to quote the text exactly

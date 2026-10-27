@@ -15,6 +15,9 @@ pub use cite::{CiteOptions, CiteResult, Finding};
 mod corpora;
 pub use corpora::{Corpora, CorpusInfo, corpora};
 
+mod definition;
+pub use definition::{Definition, Definitions};
+
 mod grep;
 pub use grep::{GrepMatch, GrepQuery, GrepResults};
 
