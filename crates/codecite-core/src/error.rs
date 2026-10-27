@@ -102,6 +102,15 @@ pub enum Error {
         text: String,
     },
 
+    /// `cite` checks spec citations, and the text is a code citation.
+    #[error(
+        "{text:?} is a code citation; cite checks spec citations, and read reads code citations"
+    )]
+    NotASpecCitation {
+        /// The text as given.
+        text: String,
+    },
+
     /// The text has the shape of a citation but is malformed.
     #[error("invalid citation {text:?}")]
     BadCitation {
@@ -235,6 +244,7 @@ impl Error {
             Error::EmptyQuery => "empty_query",
             Error::BadPattern { .. } => "bad_pattern",
             Error::NotACitation { .. } => "not_a_citation",
+            Error::NotASpecCitation { .. } => "not_a_spec_citation",
             Error::BadCitation { .. } => "bad_citation",
             Error::UnknownSource { .. } => "unknown_source",
             Error::UnknownVersion { .. } => "unknown_version",
