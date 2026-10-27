@@ -84,11 +84,29 @@ pub enum Error {
     #[error("the query has no words to search for")]
     EmptyQuery,
 
+    /// A grep pattern that is not a valid regular expression.
+    #[error("invalid pattern {pattern:?}: {reason}")]
+    BadPattern {
+        /// The pattern as given.
+        pattern: String,
+        /// What the regex parser says is wrong with it.
+        reason: String,
+    },
+
     /// The text matches none of the citation forms `read` accepts.
     #[error(
         "{text:?} is not a citation; write repo@sha:path#L10-L42, doc@sha256:<hash>#section-4.3, a spec URL, or a form like RFC 9449 §4.3"
     )]
     NotACitation {
+        /// The text as given.
+        text: String,
+    },
+
+    /// `cite` checks spec citations, and the text is a code citation.
+    #[error(
+        "{text:?} is a code citation; cite checks spec citations, and read reads code citations"
+    )]
+    NotASpecCitation {
         /// The text as given.
         text: String,
     },
@@ -187,6 +205,19 @@ pub enum Error {
         candidates: Vec<String>,
     },
 
+    /// No definition in the corpus has this name.
+    #[error(
+        "the corpus defines no symbol `{}`; {}",
+        escape_controls(symbol),
+        list_of("did you mean", candidates)
+    )]
+    NoSuchSymbol {
+        /// The symbol as asked for.
+        symbol: String,
+        /// Defined names that differ from it only in case, `_` or `-`.
+        candidates: Vec<String>,
+    },
+
     /// A code citation runs past the end of its file.
     #[error("{citation} runs past the end of the file, which has {lines} lines")]
     LinesPastEnd {
@@ -211,7 +242,9 @@ impl Error {
             Error::NoCorpusNamed { .. } => "no_corpus_named",
             Error::StaleIndex { .. } => "stale_index",
             Error::EmptyQuery => "empty_query",
+            Error::BadPattern { .. } => "bad_pattern",
             Error::NotACitation { .. } => "not_a_citation",
+            Error::NotASpecCitation { .. } => "not_a_spec_citation",
             Error::BadCitation { .. } => "bad_citation",
             Error::UnknownSource { .. } => "unknown_source",
             Error::UnknownVersion { .. } => "unknown_version",
@@ -220,6 +253,7 @@ impl Error {
             Error::UncitableSection { .. } => "uncitable_section",
             Error::NoSuchStep { .. } => "no_such_step",
             Error::NoSuchFile { .. } => "no_such_file",
+            Error::NoSuchSymbol { .. } => "no_such_symbol",
             Error::LinesPastEnd { .. } => "lines_past_end",
         }
     }
@@ -236,7 +270,8 @@ impl Error {
             Error::AmbiguousDocument { candidates, .. }
             | Error::NoSuchSection { candidates, .. }
             | Error::NoSuchStep { candidates, .. }
-            | Error::NoSuchFile { candidates, .. } => candidates,
+            | Error::NoSuchFile { candidates, .. }
+            | Error::NoSuchSymbol { candidates, .. } => candidates,
             _ => &[],
         }
     }
@@ -460,6 +495,28 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "app@0123abc has no indexed file \"src/nope.rs\"; no candidates"
+        );
+    }
+
+    #[test]
+    fn no_such_symbol_lists_the_names_it_could_mean() {
+        let err = Error::NoSuchSymbol {
+            symbol: "callBack".into(),
+            candidates: vec!["callback".into()],
+        };
+        assert_eq!(err.kind(), "no_such_symbol");
+        assert_eq!(err.candidates(), ["callback"]);
+        assert_eq!(
+            err.to_string(),
+            "the corpus defines no symbol `callBack`; did you mean: callback"
+        );
+        let err = Error::NoSuchSymbol {
+            symbol: "nope\u{1b}".into(),
+            candidates: vec![],
+        };
+        assert_eq!(
+            err.to_string(),
+            "the corpus defines no symbol `nope\\u{1b}`; no candidates"
         );
     }
 

@@ -11,7 +11,10 @@ from pathlib import Path
 
 EVALS_DIR = Path(os.environ.get("CODECITE_EVALS_DIR") or Path(__file__).resolve().parents[2])
 COMPOSE = EVALS_DIR / "inspect" / "compose.yaml"
+COMPOSE_OFFLINE = EVALS_DIR / "inspect" / "compose-offline.yaml"
 LOGS = EVALS_DIR / "inspect" / "logs"
+QUERIES = EVALS_DIR / "retrieval" / "queries.toml"
+BENCH_MANIFEST = EVALS_DIR / "retrieval" / "identity-bench.toml"
 
 
 def task_dir(task_id: str) -> Path:

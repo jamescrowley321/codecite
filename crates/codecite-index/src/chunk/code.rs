@@ -139,7 +139,13 @@ impl CodeChunker {
             return Vec::new();
         };
 
-        let defs = definitions(query, tree.root_node(), source, lines.len() as u32);
+        let defs = definitions(
+            language,
+            query,
+            tree.root_node(),
+            source,
+            lines.len() as u32,
+        );
         // Each definition's full descriptor, built from its innermost
         // parent's, which comes earlier in `defs`; `None` when it doesn't
         // fit (see [`MAX_DESCRIPTOR`]).
@@ -271,7 +277,13 @@ impl Definition {
     }
 }
 
-fn definitions(query: &Query, root: Node<'_>, source: &[u8], last: u32) -> Vec<Definition> {
+fn definitions(
+    language: Language,
+    query: &Query,
+    root: Node<'_>,
+    source: &[u8],
+    last: u32,
+) -> Vec<Definition> {
     let names = query.capture_names();
     let mut cursor = QueryCursor::new();
     let mut matches = cursor.matches(query, root, source);
@@ -344,6 +356,9 @@ fn definitions(query: &Query, root: Node<'_>, source: &[u8], last: u32) -> Vec<D
     for (node, def) in &mut found {
         let span = decorated.get(&node.id()).unwrap_or(node);
         (def.start_line, def.end_line) = line_range(*span, last);
+        def.start_line = def
+            .start_line
+            .min(documented_start(language, *span, source) as u32 + 1);
     }
     // Sort by position so every parent comes before what it encloses.
     found.sort_by_key(|(n, _)| (n.start_byte(), std::cmp::Reverse(n.end_byte())));
@@ -371,6 +386,73 @@ fn definitions(query: &Query, root: Node<'_>, source: &[u8], last: u32) -> Vec<D
         defs.push(def);
     }
     defs
+}
+
+/// The nodes that wrap a definition without naming it: `export`, and the
+/// `type`, `const`, `var` or `let` keyword that holds a single spec. A
+/// comment above the wrapper documents the definition inside it.
+const WRAPPERS: [&str; 6] = [
+    "export_statement",
+    "lexical_declaration",
+    "variable_declaration",
+    "type_declaration",
+    "const_declaration",
+    "var_declaration",
+];
+
+/// The row a definition's chunk starts on once it takes in the doc comments
+/// and attributes directly above it, without a blank line between. A comment
+/// that ends a line of code belongs to that code, so it stops the run.
+fn documented_start(language: Language, node: Node<'_>, source: &[u8]) -> usize {
+    let mut node = node;
+    while let Some(parent) = node.parent() {
+        let alone = WRAPPERS.contains(&parent.kind())
+            && (0..parent.named_child_count()).all(|i| {
+                parent
+                    .named_child(i as u32)
+                    .is_none_or(|c| c.id() == node.id() || attaches(language, c, source))
+            });
+        if !alone {
+            break;
+        }
+        node = parent;
+    }
+    let mut start = node.start_position().row;
+    let mut above = node.prev_sibling();
+    while let Some(sibling) = above {
+        let row = sibling.start_position().row;
+        if !attaches(language, sibling, source) || last_row(sibling) + 1 < start {
+            break;
+        }
+        above = sibling.prev_sibling();
+        if above.is_some_and(|a| last_row(a) == row && !attaches(language, a, source)) {
+            break;
+        }
+        start = start.min(row);
+    }
+    start
+}
+
+/// Whether `node` documents or annotates the definition below it: a doc
+/// comment or attribute in Rust (`///`, `/** */`, `#[...]`; not `//!`, which
+/// documents the module), any comment in Go, a JSDoc block or decorator in
+/// TypeScript and JavaScript, an XML doc comment in C# (`///`, `/** */`).
+/// Python's decorators are part of the definition already, and its docstring
+/// sits inside it.
+fn attaches(language: Language, node: Node<'_>, source: &[u8]) -> bool {
+    let text = node.utf8_text(source).unwrap_or_default();
+    let doc_line = text.starts_with("///") && !text.starts_with("////");
+    let doc_block = text.starts_with("/**") && !text.starts_with("/***") && text != "/**/";
+    match (language, node.kind()) {
+        (Language::Rust, "attribute_item") => true,
+        (Language::Rust, "line_comment") => doc_line,
+        (Language::Rust, "block_comment") => doc_block,
+        (Language::Go, "comment") => true,
+        (Language::TypeScript | Language::Tsx | Language::JavaScript, "decorator") => true,
+        (Language::TypeScript | Language::Tsx | Language::JavaScript, "comment") => doc_block,
+        (Language::CSharp, "comment") => doc_line || doc_block,
+        _ => false,
+    }
 }
 
 /// The kinds of value node that the language's query already captures as
@@ -440,15 +522,21 @@ fn type_name(mut node: Node<'_>) -> Node<'_> {
 /// A node's lines, from 1, inclusive, and never past `last`. A node that
 /// ends at the start of a line ends on the line before.
 fn line_range(node: Node<'_>, last: u32) -> (u32, u32) {
+    let start = (node.start_position().row as u32 + 1).min(last);
+    (start, (last_row(node) as u32 + 1).clamp(start, last))
+}
+
+/// The row a node's last character is on, from 0: a node that ends at the
+/// start of a row, like a Rust line comment with its newline, ends on the
+/// row before.
+fn last_row(node: Node<'_>) -> usize {
     let start = node.start_position().row;
     let end = node.end_position();
-    let end_row = if end.column == 0 && end.row > start {
+    if end.column == 0 && end.row > start {
         end.row - 1
     } else {
         end.row
-    };
-    let start = (start as u32 + 1).min(last);
-    (start, (end_row as u32 + 1).clamp(start, last))
+    }
 }
 
 /// A SCIP descriptor name: bare when it's only ASCII letters, digits, `_`, `+`,

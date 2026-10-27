@@ -6,8 +6,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use codecite_core::{
-    DEFAULT_MAX_LINES, DEFAULT_SEARCH_LIMIT, MAX_READ_LINES, MAX_SEARCH_LIMIT, ReadOptions,
-    ReadResult, Scope, SearchQuery, SearchResult, SearchResults, Store, is_corpus_name,
+    CiteOptions, CiteResult, DEFAULT_MAX_LINES, DEFAULT_SEARCH_LIMIT, Definitions, GrepMatch,
+    GrepQuery, GrepResults, MAX_READ_LINES, MAX_SEARCH_LIMIT, ReadOptions, ReadResult, Scope,
+    SearchQuery, SearchResult, SearchResults, Store, is_corpus_name,
 };
 use codecite_index::{Clones, Fetcher, LicenseClass, Manifest, Source, WalkOptions, index_corpus};
 
@@ -60,6 +61,53 @@ enum Command {
         #[arg(long)]
         allow_stale: bool,
     },
+    /// Print the lines of a corpus that match a regex or exact text, each
+    /// cited, in index order.
+    Grep {
+        /// The corpus to grep.
+        corpus: String,
+        /// A regular expression, matched against one line at a time.
+        pattern: String,
+        /// Read the pattern as exact text, not a regular expression.
+        #[arg(short = 'F', long)]
+        fixed: bool,
+        /// Match letters whatever their case.
+        #[arg(short, long)]
+        ignore_case: bool,
+        /// Only files in this language, such as `rust` or `markdown`.
+        #[arg(long)]
+        language: Option<String>,
+        /// Only files whose path matches this glob; `*` matches `/` too.
+        #[arg(long)]
+        path: Option<String>,
+        /// Only spec sections or only code. Without it, both.
+        #[arg(long, value_enum)]
+        only: Option<Only>,
+        /// The most matches to print, at most 50.
+        #[arg(long, default_value_t = DEFAULT_SEARCH_LIMIT, value_parser = clap::value_parser!(u32).range(1..=i64::from(MAX_SEARCH_LIMIT)))]
+        limit: u32,
+        /// Print the matches as JSON: `{"matches": [...]}`, as the MCP
+        /// `grep` tool returns them.
+        #[arg(long)]
+        json: bool,
+        /// Grep an index older than its manifest's `max_age_days`.
+        #[arg(long)]
+        allow_stale: bool,
+    },
+    /// Print where a symbol is defined: every definition, cited.
+    Def {
+        /// The corpus to look in.
+        corpus: String,
+        /// The symbol's name as written, such as `callback`, or dotted with
+        /// the names it is inside, such as `Client.callback`.
+        symbol: String,
+        /// Print the result as JSON, as the MCP `definition` tool returns it.
+        #[arg(long)]
+        json: bool,
+        /// Look in an index older than its manifest's `max_age_days`.
+        #[arg(long)]
+        allow_stale: bool,
+    },
     /// Print the exact text a citation points at, with its pinned citation.
     Read {
         /// The corpus to read from.
@@ -77,6 +125,22 @@ enum Command {
         #[arg(long)]
         allow_stale: bool,
     },
+    /// Check a spec citation: whether it resolves, what it points at, and
+    /// findings for one that doesn't.
+    Cite {
+        /// The corpus to check against.
+        corpus: String,
+        /// A spec citation, as `read` takes it, or a Markdown link whose
+        /// text is a citation and whose target is a spec URL with an
+        /// anchor: `[OIDC Core §3.1.3.6](https://openid.net/specs/…#IDTokenValidation)`.
+        citation: String,
+        /// Print the result as JSON.
+        #[arg(long)]
+        json: bool,
+        /// Check against an index older than its manifest's `max_age_days`.
+        #[arg(long)]
+        allow_stale: bool,
+    },
     /// List the corpora with their age, size, source count and staleness,
     /// as JSON.
     Corpora,
@@ -84,7 +148,7 @@ enum Command {
     Mcp,
 }
 
-/// The sources `search --only` keeps.
+/// The sources `search --only` and `grep --only` keep.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum Only {
     /// Spec sections and steps.
@@ -129,6 +193,36 @@ fn main() -> anyhow::Result<()> {
             };
             search(&corpus, &query, json)
         }
+        Command::Grep {
+            corpus,
+            pattern,
+            fixed,
+            ignore_case,
+            language,
+            path,
+            only,
+            limit,
+            json,
+            allow_stale,
+        } => {
+            let query = GrepQuery {
+                pattern: &pattern,
+                fixed,
+                ignore_case,
+                language: language.as_deref(),
+                path: path.as_deref(),
+                only: only.map(Scope::from),
+                limit,
+                allow_stale,
+            };
+            grep(&corpus, &query, json)
+        }
+        Command::Def {
+            corpus,
+            symbol,
+            json,
+            allow_stale,
+        } => def(&corpus, &symbol, allow_stale, json),
         Command::Read {
             corpus,
             citation,
@@ -142,6 +236,12 @@ fn main() -> anyhow::Result<()> {
             };
             read(&corpus, &citation, &options, json)
         }
+        Command::Cite {
+            corpus,
+            citation,
+            json,
+            allow_stale,
+        } => cite(&corpus, &citation, &CiteOptions { allow_stale }, json),
         Command::Corpora => corpora(),
         Command::Mcp => mcp(),
     }
@@ -211,6 +311,24 @@ fn search(corpus: &str, query: &SearchQuery<'_>, json: bool) -> anyhow::Result<(
     to_stdout(|out| write_results(out, results, json))
 }
 
+/// `codecite grep`: opens the corpus read-only and prints the matching
+/// lines, as JSON or in a short human form.
+fn grep(corpus: &str, query: &GrepQuery<'_>, json: bool) -> anyhow::Result<()> {
+    let dirs = project_dirs()?;
+    let store = Store::open_corpus(dirs.data_dir(), corpus)?;
+    let matches = store.grep(query)?;
+    to_stdout(|out| write_matches(out, matches, json))
+}
+
+/// `codecite def`: opens the corpus read-only and prints every definition
+/// of the symbol, as JSON or in a short human form.
+fn def(corpus: &str, symbol: &str, allow_stale: bool, json: bool) -> anyhow::Result<()> {
+    let dirs = project_dirs()?;
+    let store = Store::open_corpus(dirs.data_dir(), corpus)?;
+    let found = store.definition(symbol, allow_stale)?;
+    to_stdout(|out| write_definitions(out, &found, json))
+}
+
 /// `codecite read`: opens the corpus read-only and prints the cited text,
 /// as JSON or in its human form.
 fn read(corpus: &str, citation: &str, options: &ReadOptions, json: bool) -> anyhow::Result<()> {
@@ -218,6 +336,16 @@ fn read(corpus: &str, citation: &str, options: &ReadOptions, json: bool) -> anyh
     let store = Store::open_corpus(dirs.data_dir(), corpus)?;
     let result = store.read(citation, options)?;
     to_stdout(|out| write_read(out, &result, json))
+}
+
+/// `codecite cite`: opens the corpus read-only and prints what the
+/// citation resolves to, or its findings, as JSON or in its human form. A
+/// citation with findings is still a successful check.
+fn cite(corpus: &str, citation: &str, options: &CiteOptions, json: bool) -> anyhow::Result<()> {
+    let dirs = project_dirs()?;
+    let store = Store::open_corpus(dirs.data_dir(), corpus)?;
+    let result = store.cite(citation, options)?;
+    to_stdout(|out| write_cite(out, &result, json))
 }
 
 /// `codecite corpora`: prints the corpora as the MCP `corpora` tool returns
@@ -278,6 +406,23 @@ fn write_read(
     out.flush()
 }
 
+/// Writes a cite result to `out`: as JSON, or its `Display` form with
+/// control characters escaped line by line.
+fn write_cite(
+    out: &mut impl std::io::Write,
+    result: &CiteResult,
+    json: bool,
+) -> std::io::Result<()> {
+    if json {
+        write_json(out, serde_json::to_value(result)?)?;
+    } else {
+        for line in result.to_string().lines() {
+            writeln!(out, "{}", escape_controls(line))?;
+        }
+    }
+    out.flush()
+}
+
 /// Writes the results to `out`, as `{"results": [...]}` JSON or in the
 /// short human form. Unlike `println!`, which panics when stdout
 /// is closed, a failed write comes back as an error.
@@ -292,6 +437,135 @@ fn write_results(
         out.write_all(human(&results).as_bytes())?;
     }
     out.flush()
+}
+
+/// Writes grep matches to `out`, as `{"matches": [...]}` JSON or in the
+/// short human form.
+fn write_matches(
+    out: &mut impl std::io::Write,
+    matches: Vec<GrepMatch>,
+    json: bool,
+) -> std::io::Result<()> {
+    if json {
+        write_json(out, serde_json::to_value(GrepResults { matches })?)?;
+    } else {
+        out.write_all(human_matches(&matches).as_bytes())?;
+    }
+    out.flush()
+}
+
+/// The short human form of grep matches, as [`human`]'s for search: a
+/// header with the license class and `indexed_at` when every match shares
+/// them, otherwise on each match's line. Per match: one line with its
+/// number and citation, then the line it matched, trimmed and cut.
+fn human_matches(matches: &[GrepMatch]) -> String {
+    use std::fmt::Write as _;
+
+    let Some(first) = matches.first() else {
+        return "no matches\n".into();
+    };
+    let shared = matches
+        .iter()
+        .all(|m| m.license_class == first.license_class && m.indexed_at == first.indexed_at);
+    let mut out = String::new();
+    // `write!` to a `String` can't fail.
+    if shared {
+        let n = matches.len();
+        let _ = writeln!(
+            out,
+            "{n} match{} · {} · indexed {}",
+            if n == 1 { "" } else { "es" },
+            escape_controls(&first.license_class),
+            escape_controls(&first.indexed_at)
+        );
+    }
+    for (rank, m) in (1..).zip(matches) {
+        let _ = write!(
+            out,
+            "{rank}. {}",
+            escape_controls(&abbreviate_commit(&m.citation))
+        );
+        if m.dirty == Some(true) {
+            out.push_str(" · dirty");
+        }
+        if !shared {
+            let _ = write!(
+                out,
+                " · {} · indexed {}",
+                escape_controls(&m.license_class),
+                escape_controls(&m.indexed_at)
+            );
+        }
+        let _ = writeln!(
+            out,
+            "\n   {}",
+            escape_controls(&cut(m.text.trim(), HUMAN_SNIPPET_CHARS))
+        );
+    }
+    out
+}
+
+/// Writes definitions to `out`, as JSON or in the short human form.
+fn write_definitions(
+    out: &mut impl std::io::Write,
+    found: &Definitions,
+    json: bool,
+) -> std::io::Result<()> {
+    if json {
+        write_json(out, serde_json::to_value(found)?)?;
+    } else {
+        out.write_all(human_definitions(found).as_bytes())?;
+    }
+    out.flush()
+}
+
+/// The short human form of definitions: a header with how many there are
+/// and whether the name is ambiguous, then per definition one line with its
+/// rank, citation, kind, symbol, role, license class and `indexed_at`, and
+/// its snippet's first non-blank line.
+fn human_definitions(found: &Definitions) -> String {
+    use std::fmt::Write as _;
+
+    let mut out = String::new();
+    let n = found.total;
+    // `write!` to a `String` can't fail.
+    let _ = write!(
+        out,
+        "{n} definition{} of {}",
+        if n == 1 { "" } else { "s" },
+        escape_controls(&found.symbol)
+    );
+    if found.results.len() < n {
+        let _ = write!(out, ", the first {}", found.results.len());
+    }
+    if found.ambiguous {
+        out.push_str(" · ambiguous");
+    }
+    out.push('\n');
+    for (rank, d) in (1..).zip(&found.results) {
+        let _ = write!(
+            out,
+            "{rank}. {} · {} {} · {} · {} · indexed {}",
+            escape_controls(&abbreviate_commit(&d.citation)),
+            escape_controls(&d.kind),
+            escape_controls(&d.symbol),
+            d.role,
+            escape_controls(&d.license_class),
+            escape_controls(&d.indexed_at)
+        );
+        if d.dirty {
+            out.push_str(" · dirty");
+        }
+        out.push('\n');
+        if let Some(line) = d.snippet.lines().map(str::trim).find(|l| !l.is_empty()) {
+            let _ = writeln!(
+                out,
+                "   {}",
+                escape_controls(&cut(line, HUMAN_SNIPPET_CHARS))
+            );
+        }
+    }
+    out
 }
 
 /// The most characters of a snippet line the human form shows.
@@ -596,6 +870,166 @@ mod tests {
     }
 
     #[test]
+    fn cite_takes_a_corpus_and_a_citation() {
+        assert!(Cli::try_parse_from(["codecite", "cite", "identity"]).is_err());
+        let cli = Cli::try_parse_from(["codecite", "cite", "identity", "RFC 9449 §4.3"]).unwrap();
+        let Command::Cite {
+            corpus,
+            citation,
+            json,
+            allow_stale,
+        } = cli.command
+        else {
+            panic!("not cite");
+        };
+        assert_eq!(
+            (corpus.as_str(), citation.as_str()),
+            ("identity", "RFC 9449 §4.3")
+        );
+        assert!(!json && !allow_stale);
+        let args = [
+            "codecite",
+            "cite",
+            "identity",
+            "§4.3",
+            "--json",
+            "--allow-stale",
+        ];
+        let Command::Cite {
+            json, allow_stale, ..
+        } = Cli::try_parse_from(args).unwrap().command
+        else {
+            panic!("not cite");
+        };
+        assert!(json && allow_stale);
+        let lines = ["codecite", "cite", "identity", "§4.3", "--max-lines", "5"];
+        assert!(Cli::try_parse_from(lines).is_err());
+    }
+
+    #[test]
+    fn the_cite_form_escapes_control_characters() {
+        let result = CiteResult {
+            resolved: true,
+            citation: Some("rfc9449@sha256:1a2b3c4d5e6f#section-4.3".into()),
+            kind: Some("section".into()),
+            title: Some("Checking\u{1b}[2J".into()),
+            license_class: Some("quote".into()),
+            indexed_at: Some("2026-10-20T06:00:00Z".into()),
+            text: Some("4.3.\u{1b}]52;c;ZWNobyBoaQ==\u{7}\n\tend".into()),
+            truncated: Some(false),
+            strength: Some(vec!["MUST".into()]),
+            ..CiteResult::default()
+        };
+        let mut out = Vec::new();
+        write_cite(&mut out, &result, false).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "rfc9449@sha256:1a2b3c4d5e6f#section-4.3
+section · Checking\\u{1b}[2J · MUST · quote · indexed 2026-10-20T06:00:00Z
+
+4.3.\\u{1b}]52;c;ZWNobyBoaQ==\\u{7}
+\tend
+"
+        );
+        let mut out = Vec::new();
+        write_cite(&mut out, &result, true).unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(json["findings"], serde_json::json!([]));
+        let err = write_cite(&mut ClosedPipe, &result, true).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::BrokenPipe);
+    }
+
+    #[test]
+    fn def_takes_a_corpus_and_a_symbol() {
+        assert!(Cli::try_parse_from(["codecite", "def", "identity"]).is_err());
+        let cli = Cli::try_parse_from(["codecite", "def", "identity", "Client.callback"]).unwrap();
+        let Command::Def {
+            corpus,
+            symbol,
+            json,
+            allow_stale,
+        } = cli.command
+        else {
+            panic!("not def");
+        };
+        assert_eq!(
+            (corpus.as_str(), symbol.as_str()),
+            ("identity", "Client.callback")
+        );
+        assert!(!json && !allow_stale);
+        let args = [
+            "codecite",
+            "def",
+            "identity",
+            "x",
+            "--json",
+            "--allow-stale",
+        ];
+        let Command::Def {
+            json, allow_stale, ..
+        } = Cli::try_parse_from(args).unwrap().command
+        else {
+            panic!("not def");
+        };
+        assert!(json && allow_stale);
+    }
+
+    fn definition(path: &str, role: &'static str) -> codecite_core::Definition {
+        codecite_core::Definition {
+            citation: format!("app@{SHA}:{path}#L1-L5"),
+            symbol: "callback".into(),
+            kind: "method".into(),
+            role,
+            license_class: "adapt".into(),
+            indexed_at: "2026-10-20T06:00:00Z".into(),
+            dirty: false,
+            snippet: "\n  pub fn callback(&self) {\n}".into(),
+            snippet_truncated: false,
+            providers: vec!["treesitter"],
+            confidence: 2,
+        }
+    }
+
+    #[test]
+    fn the_definitions_form_says_how_many_and_whether_ambiguous() {
+        let mut test = definition("tests/a.rs", "test");
+        test.dirty = true;
+        let found = Definitions {
+            symbol: "callback".into(),
+            ambiguous: true,
+            total: 3,
+            results: vec![definition("src/a.rs", "source"), test],
+        };
+        assert_eq!(
+            human_definitions(&found),
+            "3 definitions of callback, the first 2 · ambiguous
+1. app@0123456789ab:src/a.rs#L1-L5 · method callback · source · adapt · indexed 2026-10-20T06:00:00Z
+   pub fn callback(&self) {
+2. app@0123456789ab:tests/a.rs#L1-L5 · method callback · test · adapt · indexed 2026-10-20T06:00:00Z · dirty
+   pub fn callback(&self) {
+"
+        );
+        let mut one = definition("src/a\u{1b}.rs", "source");
+        one.snippet = "fn x() {} \u{7}".into();
+        let found = Definitions {
+            symbol: "Client.callback\u{1b}".into(),
+            ambiguous: false,
+            total: 1,
+            results: vec![one],
+        };
+        let out = human_definitions(&found);
+        assert!(
+            out.starts_with("1 definition of Client.callback\\u{1b}\n"),
+            "{out}"
+        );
+        assert!(out.contains("src/a\\u{1b}.rs"), "{out}");
+        assert!(out.contains("fn x() {} \\u{7}"), "{out}");
+        assert!(!out.chars().any(|c| c.is_control() && c != '\n'), "{out}");
+        let err = write_definitions(&mut ClosedPipe, &found, true).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::BrokenPipe);
+    }
+
+    #[test]
     fn corpora_and_mcp_take_no_arguments() {
         let cli = Cli::try_parse_from(["codecite", "corpora"]).unwrap();
         assert!(matches!(cli.command, Command::Corpora));
@@ -737,6 +1171,129 @@ code · adapt · indexed 2026-10-20T06:00:00Z
         let exact = "a".repeat(120);
         let out = human(&[code("a.rs", None, &exact)]);
         assert_eq!(out.lines().nth(2).unwrap(), format!("   {exact}"));
+    }
+
+    #[test]
+    fn grep_takes_a_corpus_a_pattern_and_search_filters() {
+        assert!(Cli::try_parse_from(["codecite", "grep", "identity"]).is_err());
+        let cli = Cli::try_parse_from(["codecite", "grep", "identity", r"jti=\w+"]).unwrap();
+        let Command::Grep {
+            corpus,
+            pattern,
+            fixed,
+            ignore_case,
+            language,
+            path,
+            only,
+            limit,
+            json,
+            allow_stale,
+        } = cli.command
+        else {
+            panic!("not grep");
+        };
+        assert_eq!(
+            (corpus.as_str(), pattern.as_str()),
+            ("identity", r"jti=\w+")
+        );
+        assert!(!fixed && !ignore_case && !json && !allow_stale);
+        assert_eq!((language, path, only, limit), (None, None, None, 5));
+        for args in [["--fixed", "--ignore-case"], ["-F", "-i"]] {
+            let mut all = vec!["codecite", "grep", "identity", "jti"];
+            all.extend(args);
+            let cli = Cli::try_parse_from(all).unwrap();
+            let Command::Grep {
+                fixed, ignore_case, ..
+            } = cli.command
+            else {
+                panic!("not grep");
+            };
+            assert!(fixed && ignore_case, "{args:?}");
+        }
+        let cli = Cli::try_parse_from([
+            "codecite",
+            "grep",
+            "identity",
+            "jti",
+            "--language",
+            "rust",
+            "--path",
+            "src/*",
+            "--only",
+            "code",
+            "--limit",
+            "50",
+            "--json",
+            "--allow-stale",
+        ])
+        .unwrap();
+        let Command::Grep {
+            language,
+            path,
+            only,
+            limit,
+            json,
+            allow_stale,
+            ..
+        } = cli.command
+        else {
+            panic!("not grep");
+        };
+        assert_eq!(language.as_deref(), Some("rust"));
+        assert_eq!(path.as_deref(), Some("src/*"));
+        assert_eq!(only.map(Scope::from), Some(Scope::Code));
+        assert_eq!(limit, 50);
+        assert!(json && allow_stale);
+        for limit in ["0", "51"] {
+            let args = ["codecite", "grep", "identity", "jti", "--limit", limit];
+            assert!(Cli::try_parse_from(args).is_err(), "{limit}");
+        }
+    }
+
+    fn matched(citation: &str, text: &str) -> GrepMatch {
+        GrepMatch {
+            citation: citation.into(),
+            kind: "code".into(),
+            role: "source",
+            license_class: "adapt".into(),
+            indexed_at: "2026-10-20T06:00:00Z".into(),
+            dirty: Some(false),
+            text: text.into(),
+            truncated: false,
+        }
+    }
+
+    #[test]
+    fn the_grep_human_form_lists_cited_lines() {
+        let mut dirty = matched(&format!("app@{SHA}:src/b.rs#L7"), "  let jti = x;\u{1b}");
+        dirty.dirty = Some(true);
+        assert_eq!(
+            human_matches(&[matched(&format!("app@{SHA}:src/a.rs#L3"), "jti"), dirty]),
+            "2 matches · adapt · indexed 2026-10-20T06:00:00Z
+1. app@0123456789ab:src/a.rs#L3
+   jti
+2. app@0123456789ab:src/b.rs#L7 · dirty
+   let jti = x;\\u{1b}
+"
+        );
+        let mut spec = matched("rfc9449@sha256:0123456789ab#section-4.3/step-2", "The jti");
+        spec.license_class = "quote".into();
+        spec.dirty = None;
+        let out = human_matches(&[matched("app@0123456:a.rs#L1", "x"), spec]);
+        assert_eq!(
+            out,
+            "1. app@0123456:a.rs#L1 · adapt · indexed 2026-10-20T06:00:00Z
+   x
+2. rfc9449@sha256:0123456789ab#section-4.3/step-2 · quote · indexed 2026-10-20T06:00:00Z
+   The jti
+"
+        );
+        assert_eq!(human_matches(&[]), "no matches\n");
+        let mut out = Vec::new();
+        write_matches(&mut out, Vec::new(), true).unwrap();
+        assert_eq!(out, b"{\"matches\":[]}\n");
+        let err = write_matches(&mut ClosedPipe, Vec::new(), false).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::BrokenPipe);
     }
 
     /// A writer whose every write fails, like stdout after its reader has

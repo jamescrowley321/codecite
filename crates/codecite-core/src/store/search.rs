@@ -469,7 +469,7 @@ fn query_names(text: &str) -> Vec<String> {
 }
 
 /// A name as the search compares it: lowercase, without `_` or `-`.
-fn name_key(name: &str) -> String {
+pub(super) fn name_key(name: &str) -> String {
     name.chars()
         .filter(|&c| c != '_' && c != '-')
         .flat_map(char::to_lowercase)
@@ -493,7 +493,7 @@ pub(super) fn code_citation(
 
 /// `doc@sha256:<12 hex>#section-<n>`, or `…#section-<n>/step-<k>` for a step,
 /// whose section is its parent's number.
-fn spec_citation(
+pub(super) fn spec_citation(
     doc: &str,
     sha256: &str,
     kind: &str,
@@ -510,7 +510,7 @@ fn spec_citation(
 
 /// The first [`MAX_SNIPPET_LINES`] lines of a chunk's text, cut to
 /// [`MAX_SNIPPET_BYTES`], and whether anything was left out.
-fn snippet(text: &str) -> (String, bool) {
+pub(super) fn snippet(text: &str) -> (String, bool) {
     let mut lines = text.lines();
     let kept: Vec<&str> = lines.by_ref().take(MAX_SNIPPET_LINES).collect();
     let more_lines = lines.next().is_some();

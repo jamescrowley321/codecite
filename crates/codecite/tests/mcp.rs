@@ -9,7 +9,7 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 use codecite_core::{
     ChunkRecord, DocumentRecord, Keyword, MAX_READ_BYTES, MAX_SEARCH_LIMIT, MAX_SNIPPET_BYTES,
-    SourceRecord, Store,
+    SourceRecord, Store, SymbolRecord,
 };
 use serde_json::{Value, json};
 
@@ -33,7 +33,11 @@ fn data_home() -> tempfile::TempDir {
         title: None,
         parent: None,
         strength: &[],
-        symbol: None,
+        symbol: Some(SymbolRecord {
+            id: "codecite . app . src/`lib.rs`/validate().".into(),
+            display_name: "validate",
+            kind: "function",
+        }),
     };
     let source = SourceRecord {
         name: "app",
@@ -75,6 +79,7 @@ fn data_home() -> tempfile::TempDir {
         anchor: Some("section-4.3"),
         title: Some("Checking DPoP Proofs"),
         strength: &[Keyword::Must],
+        symbol: None,
         ..chunk
     };
     let spec = DocumentRecord {
@@ -252,14 +257,18 @@ fn mcp_answers_on_stdout_and_logs_on_stderr() {
     let tools = list["result"]["tools"].as_array().unwrap();
     let mut names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     names.sort_unstable();
-    assert_eq!(names, ["corpora", "read", "search"], "{list}");
+    assert_eq!(
+        names,
+        ["corpora", "definition", "grep", "read", "search"],
+        "{list}"
+    );
     for tool in tools {
         assert_eq!(tool["inputSchema"]["type"], "object", "{tool}");
     }
 
     // Each tool's text is what the CLI prints for the same query, byte for
-    // byte: corpora, a search, a read of code and of a spec, and an empty
-    // search.
+    // byte: corpora, a search, greps, a read of code and of a spec, an
+    // empty search and a definition.
     let cases = [
         ("corpora", json!({}), vec!["corpora"]),
         (
@@ -278,6 +287,18 @@ fn mcp_answers_on_stdout_and_logs_on_stderr() {
             vec!["search", "demo", "zzzz", "--json"],
         ),
         (
+            "grep",
+            json!({"pattern": "valid", "limit": 2}),
+            vec!["grep", "demo", "valid", "--limit", "2", "--json"],
+        ),
+        (
+            "grep",
+            json!({"pattern": "MUST", "fixed": true, "only": "spec"}),
+            vec![
+                "grep", "demo", "MUST", "--fixed", "--only", "spec", "--json",
+            ],
+        ),
+        (
             "read",
             json!({"citation": "RFC 9449 §4.3"}),
             vec!["read", "demo", "RFC 9449 §4.3", "--json"],
@@ -293,6 +314,11 @@ fn mcp_answers_on_stdout_and_logs_on_stderr() {
                 "2",
                 "--json",
             ],
+        ),
+        (
+            "definition",
+            json!({"symbol": "validate"}),
+            vec!["def", "demo", "validate", "--json"],
         ),
     ];
     for (id, (tool, arguments, args)) in (3..).zip(cases) {

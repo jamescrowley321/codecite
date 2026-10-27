@@ -9,8 +9,17 @@ use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionB
 
 use crate::{Error, Result};
 
+mod cite;
+pub use cite::{CiteOptions, CiteResult, Finding};
+
 mod corpora;
 pub use corpora::{Corpora, CorpusInfo, corpora};
+
+mod definition;
+pub use definition::{Definition, Definitions};
+
+mod grep;
+pub use grep::{GrepMatch, GrepQuery, GrepResults};
 
 mod read;
 pub use read::{

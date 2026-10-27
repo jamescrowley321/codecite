@@ -10,7 +10,7 @@ from inspect_ai.util import ExecResult, OutputLimitExceededError
 
 from codecite_evals import _registry, config, task
 
-TASKS = ["fastapi-middleware", "client-auth-uri"]
+TASKS = ["fastapi-middleware", "client-auth-uri", "backchannel-logout"]
 
 
 class Store(dict):
@@ -107,10 +107,28 @@ def test_scorer_passes_an_agent_that_finished(monkeypatch):
     assert score.metadata["stopped"] is None
 
 
+def test_arms_both_gives_both_samples():
+    t = task.ab("fastapi-middleware")
+    assert [s.metadata["arm"] for s in t.dataset] == ["baseline", "codecite"]
+
+
+def test_arms_baseline_gives_only_the_baseline_sample():
+    t = task.ab("fastapi-middleware", arms="baseline")
+    assert [s.metadata["arm"] for s in t.dataset] == ["baseline"]
+    assert "codecite" not in t.dataset[0].input
+
+
+def test_unknown_arms_are_refused():
+    with pytest.raises(ValueError, match="arms must be one of both, baseline"):
+        task.ab("fastapi-middleware", arms="codecite")
+
+
 def test_every_task_is_registered():
     # Inspect finds tasks through _registry: codecite_evals/<name>.
     assert callable(_registry.fastapi_middleware)
     assert callable(_registry.client_auth_uri)
+    assert callable(_registry.ab)
+    assert callable(_registry.backchannel_logout)
 
 
 @pytest.mark.parametrize("task_id", TASKS)
@@ -126,6 +144,7 @@ def test_each_arm_gets_its_own_tasks_prompt(task_id):
 def test_the_codecite_note_names_the_specs_only_when_the_corpus_has_them():
     # client-auth-uri's corpus adds the spec documents (task.json corpus.documents).
     assert "specifications" in task.prompt(config.task_dir("client-auth-uri"), "codecite")
+    assert "specifications" in task.prompt(config.task_dir("backchannel-logout"), "codecite")
     assert "specifications" not in task.prompt(config.task_dir("fastapi-middleware"), "codecite")
 
 

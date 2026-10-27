@@ -193,6 +193,25 @@ fn the_identity_corpus_indexes_and_its_lookups_resolve() {
         assert!(text.contains(lookup.holds), "{}: {text}", lookup.citation);
     }
 
+    // `cite` resolves the same step with no findings.
+    let citation = "OIDC Core §3.1.3.7 step 13";
+    let cited = run(data.path(), &["cite", "identity", citation, "--json"]);
+    assert!(
+        cited.status.success(),
+        "{}",
+        String::from_utf8_lossy(&cited.stderr)
+    );
+    let result: serde_json::Value = serde_json::from_slice(&cited.stdout).unwrap();
+    println!("\n$ codecite cite identity {citation:?} --json\n{result}");
+    assert_eq!(result["resolved"], true, "{result}");
+    assert_eq!(result["findings"], serde_json::json!([]), "{result}");
+    let pinned = result["citation"].as_str().unwrap();
+    assert!(
+        pinned.starts_with("openid-connect-core-1_0@sha256:")
+            && pinned.ends_with("#section-3.1.3.7/step-13"),
+        "{pinned}"
+    );
+
     // Three current documents have a §2.6, so a bare one is not guessed.
     let ambiguous = run(data.path(), &["read", "identity", "§2.6"]);
     let stderr = String::from_utf8_lossy(&ambiguous.stderr);

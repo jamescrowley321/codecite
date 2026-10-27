@@ -139,6 +139,47 @@ Each result shows its rank and citation, then its kind (`function`, `class`,
 `section`, `step` or `window`), symbol, score, license class and when it was
 indexed, then the first lines of its text.
 
+## Grep
+
+`grep` finds the lines that match a regular expression, or exact text, in
+everything the corpus indexed: the literal strings `search` is weak at, such
+as a claim name, an error message, a header name or a parameter pattern.
+
+```sh
+codecite grep identity '"jti"' --fixed
+codecite grep identity 'token_type_hint=\w+'
+codecite grep identity 'invalid_dpop_proof' -i --only spec
+codecite grep identity '^pub fn ' --language rust --path 'rust/src/*' --limit 20 --json
+```
+
+The pattern is [`regex` crate syntax](https://docs.rs/regex/latest/regex/#syntax)
+matched against one line at a time, so `^` and `$` are a line's ends.
+`--fixed` (`-F`) reads it as exact text and `--ignore-case` (`-i`) matches any
+case. `--language`, `--path`, `--only` and `--limit` work as they do for
+`search`.
+
+Each match is one line: a code line cites itself (`repo@sha:path#L12`), and a
+spec line cites the step or section that holds it, so `read` turns any match
+back into its text. Matches come in index order, unscored: each source in
+the manifest's order, its files by path, then lines. So a grep over code and
+specs lists code first when the manifest does; `--only spec` keeps specs.
+
+```text
+$ codecite grep identity invalid_dpop_proof -i --only spec --limit 3
+3 matches · quote · indexed 2026-10-20T22:56:30Z
+1. rfc9449@sha256:2d8657f07291#section-5
+   The DPoP HTTP header field MUST contain a valid DPoP proof JWT. If the DPoP proof is invalid, the authorization server i…
+2. rfc9449@sha256:2d8657f07291#section-7.1
+   - An error parameter ([RFC6750], Section 3) SHOULD be included to indicate the reason why the request was declined, if t…
+3. rfc9449@sha256:2d8657f07291#section-12.2
+   invalid_dpop_proof
+```
+
+An invalid regex is an error that says what is wrong with it, and so is an
+empty pattern or one that holds a newline (`\n`), since each line is matched
+on its own. Appendices, whose sections have no canonical citation yet, are
+not grepped.
+
 ## Read
 
 `read` prints the exact text a citation points at and always names the pinned
@@ -169,6 +210,99 @@ $ codecite read identity "§4.3"
 Error: §4.3 names no document and is not in exactly one current document; name one: rfc6749@sha256:535362fa3b4c#section-4.3, rfc9449@sha256:2d8657f07291#section-4.3, …
 ```
 
+## Check a citation
+
+`cite` checks a spec citation: whether it names exactly one section or step in
+the corpus, what that text is, and why not when it doesn't.
+
+```sh
+codecite cite identity "OIDC Core §3.1.3.7 step 13"
+codecite cite identity "§4.3" --json
+codecite cite identity "[OIDC Core §3.1.3.6](https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation)"
+```
+
+It accepts every spec form `read` does, and one more:
+
+| Form | Example |
+| --- | --- |
+| A Markdown link, its text a citation and its target a spec URL with its anchor | `[OIDC Core §3.1.3.7](https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation)` |
+| The same, with a bare section taking the URL's document | `[§3.1.3.7 step 13](https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation)` |
+
+A citation that resolves prints as `read` prints it, with its text cut to 40
+lines. An older pinned version, or a document another obsoletes, says what
+supersedes it:
+
+```text
+$ codecite cite identity "RFC 2616 §14.9"
+rfc2616@sha256:261600000000#section-14.9
+section · Cache-Control · quote · indexed 2026-10-20T22:56:30Z
+superseded by rfc9110
+…
+```
+
+One that doesn't resolve is still a successful check, exiting 0, with its
+findings and the pinned citations it could have meant:
+
+```text
+$ codecite cite identity "[OIDC Core §3.1.3.6](https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation)"
+unresolved
+anchor_label_mismatch: OIDC Core §3.1.3.6 is openid-connect-core-1_0@sha256:4d016752a645#section-3.1.3.6, but https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation is openid-connect-core-1_0@sha256:4d016752a645#section-3.1.3.7
+candidates:
+  openid-connect-core-1_0@sha256:4d016752a645#section-3.1.3.6
+  openid-connect-core-1_0@sha256:4d016752a645#section-3.1.3.7
+```
+
+`--json` prints the result as one compact JSON object, here for
+`"RFC 9449 §4.3 step 99"`:
+
+```json
+{"candidates":["rfc9449@sha256:2d8657f07291#section-4.3/step-12","rfc9449@sha256:2d8657f07291#section-4.3/step-11","rfc9449@sha256:2d8657f07291#section-4.3/step-10","rfc9449@sha256:2d8657f07291#section-4.3/step-9","rfc9449@sha256:2d8657f07291#section-4.3/step-8"],"findings":[{"candidates":["rfc9449@sha256:2d8657f07291#section-4.3/step-12","rfc9449@sha256:2d8657f07291#section-4.3/step-11","rfc9449@sha256:2d8657f07291#section-4.3/step-10","rfc9449@sha256:2d8657f07291#section-4.3/step-9","rfc9449@sha256:2d8657f07291#section-4.3/step-8"],"section":"rfc9449@sha256:2d8657f07291#section-4.3","step":99,"type":"no_such_step"}],"resolved":false}
+```
+
+The findings are `no_such_section`, `no_such_step`, `anchor_label_mismatch`
+(a link whose anchor is another section than its text) and
+`ambiguous_document` (a bare § that is not in exactly one current document).
+Anything else wrong is an error that exits non-zero, as `read`'s are: text that
+is no citation, a malformed one, an unknown document or version, a stale index,
+and a code citation, which `read` reads instead.
+
+## Find a definition
+
+`def` prints where a symbol is defined, from the definitions tree-sitter found
+when the corpus was indexed.
+
+```sh
+codecite def identity validate
+codecite def identity Client.callback
+codecite def identity DPoPProof --json
+```
+
+The name is matched exactly, case and all, as the code writes it. Only when
+nothing has that name, a dotted name such as `Client.callback` finds the
+`callback` defined inside `Client`. A name with several definitions lists them
+all, never one guess, and says it is ambiguous: source files first, then docs,
+examples and tests, each in citation order, at most 50.
+
+```text
+3 definitions of callback · ambiguous
+1. app@0123456789ab:src/client.rs#L4-L6 · method callback · source · adapt · indexed 2026-10-20T22:56:30Z
+   pub fn callback(&self) -> bool {
+2. app@0123456789ab:src/server.rs#L4 · method callback · source · adapt · indexed 2026-10-20T22:56:30Z
+   pub fn callback(&self) {}
+3. app@0123456789ab:tests/callback.rs#L1-L3 · function callback · test · adapt · indexed 2026-10-20T22:56:30Z
+   fn callback() {
+```
+
+`read` a definition's citation for its whole text. `--json` prints
+`{"symbol", "ambiguous", "total", "results"}`; each result also carries
+`providers` and `confidence`. A name nothing defines is an error that lists
+the names differing from it only in case, `_` or `-`:
+
+```text
+$ codecite def identity callBack
+Error: the corpus defines no symbol `callBack`; did you mean: callback
+```
+
 ## List corpora
 
 ```sh
@@ -189,21 +323,25 @@ Claude Code:
 claude mcp add codecite -- codecite mcp
 ```
 
-The server's tools, `corpora`, `search` and `read`, return the same JSON as
-the CLI commands of the same name print (with `--json` for `search` and
-`read`), byte for byte, so anything an agent sees can be reproduced from a
-terminal. `search` and `read` take an optional `corpus`; left out or empty,
-it is the only corpus in the data directory. `limit` is at most 50 and
-`max_lines` at most 500, for the tools and the CLI alike. Text is also
+The server's tools, `corpora`, `search`, `grep`, `definition` and `read`,
+return the same JSON as the CLI commands `corpora`, `search`, `grep`, `def`
+and `read` print (with `--json` for all but `corpora`), byte for byte, so
+anything an agent sees can be reproduced from a terminal. `search`, `grep`,
+`definition` and `read` take an optional `corpus`; left
+out or empty, it is the only corpus in the data directory. `limit` is at most
+50 for `search` and `grep`, and `max_lines` at most 500, for the tools and the
+CLI alike. Text is also
 capped in bytes, so that one minified or generated line cannot flood an
 agent's context: a search snippet holds at most 4 KiB (after its 40-line
-cap), and `read` text at most 64 KiB (after `max_lines`). A cut keeps an
+cap), a grep match's line at most 4 KiB, and `read` text at most 64 KiB
+(after `max_lines`). A cut keeps an
 exact prefix of the lines, joined with `\n` line endings and ending on a
 character boundary, and adds no marker to it; instead a search result's
-`snippet_truncated` and a read's `truncated` are `true`, and a truncated
+`snippet_truncated`, a grep match's `truncated` and a read's `truncated` are
+`true`, and a truncated
 `quote` read's `instruction` says the quote is partial. The citation still
-names the full lines, and reading it again returns the same capped text. An unknown corpus, a stale index or a
-citation that isn't in the corpus is a tool error whose structured content is
+names the full lines, and reading it again returns the same capped text. An unknown corpus, a stale index, a
+citation that isn't in the corpus or a symbol nothing defines is a tool error whose structured content is
 `{"error": {"kind", "message", "candidates"}}`; each tool's output schema
 admits both its result and this error. A `read` of a spec, whose
 license class is `quote`, carries an `instruction` to quote the text exactly
