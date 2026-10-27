@@ -5,6 +5,9 @@ and without codecite, on any model Inspect can reach.
 
 Each sample is one arm; epochs repeat it. pi's model calls go through
 Inspect's agent bridge, so Inspect records every call and its tokens.
+
+`-T arms=aa` runs an A/A round instead: two baseline arms with the same prompt
+and sandbox, labelled apart, so the scorecard shows what noise alone does.
 """
 
 import json
@@ -31,27 +34,32 @@ PI_FLAGS = ["--no-session", "--no-mcp", "--no-extensions", "--no-skills", "--no-
 AGENT_TIMEOUT = 600
 
 
-def prompt(arm: str) -> str:
+def prompt(condition: str) -> str:
     text = (TASK / "prompt.md").read_text().replace("{identity_model}", IDENTITY_MODEL)
-    return f"{text}\n\n{CODECITE_NOTE}\n" if arm == "codecite" else text
+    return f"{text}\n\n{CODECITE_NOTE}\n" if condition == "codecite" else text
 
 
 @task
-def fastapi_middleware() -> Task:
+def fastapi_middleware(arms: str = "ab") -> Task:
+    if arms not in config.ARMS:
+        raise ValueError(f"arms must be one of {', '.join(config.ARMS)}, not {arms!r}")
     return Task(
-        dataset=[Sample(id=arm, input=prompt(arm), metadata={"arm": arm}) for arm in ("baseline", "codecite")],
-        solver=[arm_to_store(), pi()],
+        dataset=[
+            Sample(id=label, input=prompt(condition), metadata={"arm": label, "condition": condition})
+            for label, condition in config.ARMS[arms]
+        ],
+        solver=[condition_to_store(), pi()],
         scorer=hidden_tests_and_checks(),
         sandbox=("docker", str(config.COMPOSE)),
     )
 
 
 @solver
-def arm_to_store():
-    """Hand the sample's arm to the agent, which sees only its messages."""
+def condition_to_store():
+    """Hand the sample's condition to the agent, which sees only its messages."""
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
-        store().set("arm", state.metadata["arm"])
+        store().set("condition", state.metadata["condition"])
         return state
 
     return solve
@@ -61,10 +69,10 @@ def arm_to_store():
 def pi() -> Agent:
     async def execute(state: AgentState) -> AgentState:
         sb = sandbox()
-        arm = store().get("arm")
-        if arm == "baseline":
+        condition = store().get("condition")
+        if condition == "baseline":
             await sb.exec(["rm", "-rf", "/opt/codecite"])
-        path = ("/opt/codecite/bin:" if arm == "codecite" else "") + "/usr/local/bin:/usr/bin:/bin"
+        path = ("/opt/codecite/bin:" if condition == "codecite" else "") + "/usr/local/bin:/usr/bin:/bin"
         async with sandbox_agent_bridge(state) as bridge:
             try:
                 result = await sb.exec(

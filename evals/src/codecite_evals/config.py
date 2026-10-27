@@ -12,6 +12,13 @@ from pathlib import Path
 EVALS_DIR = Path(os.environ.get("CODECITE_EVALS_DIR") or Path(__file__).resolve().parents[2])
 COMPOSE = EVALS_DIR / "inspect" / "compose.yaml"
 LOGS = EVALS_DIR / "inspect" / "logs"
+# The task's arm settings (`-T arms=`), each two arms of (label, condition).
+# The label names the arm on the scorecard, the first being the reference; the
+# condition sets its prompt and sandbox.
+ARMS = {
+    "ab": (("baseline", "baseline"), ("codecite", "codecite")),
+    "aa": (("baseline-a", "baseline"), ("baseline-b", "baseline")),
+}
 
 
 def task_dir(task_id: str) -> Path:

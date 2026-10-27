@@ -28,7 +28,7 @@ class Sandbox:
 
 def run_pi(monkeypatch, error):
     state = AgentState(messages=[ChatMessageUser(content="do the task")])
-    store = Store(arm="codecite")
+    store = Store(condition="codecite")
 
     @asynccontextmanager
     async def bridge(s):
@@ -99,3 +99,28 @@ def test_scorer_passes_an_agent_that_finished(monkeypatch):
     score = score_with(monkeypatch, Store())
     assert score.value == 1
     assert score.metadata["stopped"] is None
+
+
+@pytest.mark.parametrize("arms, expected", [
+    ("ab", [("baseline", "baseline"), ("codecite", "codecite")]),
+    ("aa", [("baseline-a", "baseline"), ("baseline-b", "baseline")]),
+])
+def test_arms_select_the_samples(arms, expected):
+    samples = list(task.fastapi_middleware(arms=arms).dataset)
+    assert [(s.metadata["arm"], s.metadata["condition"]) for s in samples] == expected
+    assert [s.id for s in samples] == [label for label, _ in expected]
+
+
+def test_default_arms_are_baseline_against_codecite():
+    assert [s.id for s in task.fastapi_middleware().dataset] == ["baseline", "codecite"]
+
+
+def test_aa_arms_get_identical_prompts():
+    first, second = task.fastapi_middleware(arms="aa").dataset
+    assert first.input == second.input == task.prompt("baseline")
+    assert task.CODECITE_NOTE not in first.input
+
+
+def test_unknown_arms_are_refused():
+    with pytest.raises(ValueError, match="arms must be one of"):
+        task.fastapi_middleware(arms="abc")

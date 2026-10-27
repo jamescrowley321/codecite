@@ -13,8 +13,17 @@ on:
         type: choice
         options: [quick, full]
         default: quick
+      arms:
+        description: ab (baseline against codecite) or aa (an A/A round, two baseline arms, to measure noise)
+        type: choice
+        options: [ab, aa]
+        default: ab
+      epochs:
+        description: Epochs per arm, if not the tier's own (quick 5, full 10)
+        type: string
+        default: ""
       resume:
-        description: Run id of an earlier run of this tier whose unfinished logs to finish with inspect eval-retry
+        description: Run id of an earlier run of this tier and arms whose unfinished logs to finish with inspect eval-retry
         type: string
         default: ""
 
@@ -26,7 +35,7 @@ permissions:
 # cancel nothing. Dispatches queue rather than cancel.
 concurrency:
   group: >-
-    evals-${{ github.event.pull_request.number || github.ref }}-${{ inputs.tier || 'quick' }}-${{
+    evals-${{ github.event.pull_request.number || github.ref }}-${{ inputs.tier || 'quick' }}-${{ inputs.arms || 'ab' }}-${{
     (github.event_name == 'workflow_dispatch'
     || (github.event.action == 'labeled' && github.event.label.name == 'eval')
     || (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'eval')))
@@ -46,12 +55,17 @@ jobs:
       && ((github.event.action == 'labeled' && github.event.label.name == 'eval')
       || (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'eval'))))
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ inputs.tier == 'full' && 360 || 45 }}
+    # More epochs than the quick tier's own take the full tier's limits.
+    timeout-minutes: ${{ (inputs.tier == 'full' || inputs.epochs) && 360 || 45 }}
     permissions:
       contents: read
       actions: read # download an earlier run's logs to resume
     env:
       TIER: ${{ inputs.tier || 'quick' }}
+      ARMS: ${{ inputs.arms || 'ab' }}
+      EPOCHS: ${{ inputs.epochs }}
+      # panel.sh's log directory for the tier and arms.
+      LOGS: ${{ inputs.tier || 'quick' }}${{ inputs.arms == 'aa' && '-aa' || '' }}
       # Each sandbox is one Docker network; the daemon below gets 256 of
       # them. The runner's 4 vCPU set the limit: at 20 sandboxes, samples
       # spent three quarters of their wall time waiting, which skews the
@@ -120,10 +134,10 @@ jobs:
           RESUME: ${{ inputs.resume }}
         run: |
           [[ "$RESUME" =~ ^[0-9]+$ ]] || { echo "resume must be a run id" >&2; exit 1; }
-          gh run download "$RESUME" -R "$GITHUB_REPOSITORY" -n "eval-logs-$TIER" -D "evals/inspect/logs/$TIER"
+          gh run download "$RESUME" -R "$GITHUB_REPOSITORY" -n "eval-logs-$LOGS" -D "evals/inspect/logs/$LOGS"
           echo RETRY=1 >> "$GITHUB_ENV"
       - name: Run the ${{ env.TIER }} tier
-        timeout-minutes: ${{ inputs.tier == 'full' && 345 || 35 }}
+        timeout-minutes: ${{ (inputs.tier == 'full' || inputs.epochs) && 345 || 35 }}
         working-directory: evals
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_EVAL_API_KEY }}
@@ -132,15 +146,15 @@ jobs:
         id: scorecard
         if: always()
         run: |
-          card="evals/inspect/logs/$TIER/scorecard.md"
+          card="evals/inspect/logs/$LOGS/scorecard.md"
           [[ -s "$card" ]] || exit 0
           cat "$card" >> "$GITHUB_STEP_SUMMARY"
           { echo 'scorecard<<SCORECARD_EOF'; cat "$card"; echo 'SCORECARD_EOF'; } >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
-          name: eval-logs-${{ env.TIER }}
-          path: evals/inspect/logs/${{ env.TIER }}
+          name: eval-logs-${{ env.LOGS }}
+          path: evals/inspect/logs/${{ env.LOGS }}
           if-no-files-found: ignore
           overwrite: true
 

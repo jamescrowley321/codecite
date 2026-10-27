@@ -14,8 +14,10 @@
 # count and twice it, and every sandbox exec takes one, so a sample past those
 # caps waits, and the wait lands in its wall time; both caps are raised to
 # twice MAX_SANDBOXES. RETRY=1 reruns only the missing samples of the tier's unfinished logs
-# (`inspect eval-retry`) instead of starting over. Extra arguments go to
-# `inspect eval` (CI passes --sandbox-prebuilt).
+# (`inspect eval-retry`) instead of starting over. ARMS=aa runs an A/A round
+# (two baseline arms) instead of baseline against codecite, into logs of its
+# own (inspect/logs/<tier>-aa). Extra arguments go to `inspect eval` (CI
+# passes --sandbox-prebuilt).
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 TIER="${1:-}"
@@ -52,8 +54,17 @@ case "$TIER" in
     exit 2
     ;;
 esac
+[[ "$EPOCHS" =~ ^[1-9][0-9]*$ ]] || { echo "EPOCHS must be a positive whole number, not '$EPOCHS'" >&2; exit 2; }
+ARMS="${ARMS:-ab}"
+case "$ARMS" in
+  ab) LOG_DIR="inspect/logs/$TIER" ;;
+  aa) LOG_DIR="inspect/logs/$TIER-aa" ;;
+  *)
+    echo "ARMS must be ab or aa, not '$ARMS'" >&2
+    exit 2
+    ;;
+esac
 MAX_SANDBOXES="${MAX_SANDBOXES:-14}"
-LOG_DIR="inspect/logs/$TIER"
 mkdir -p "$LOG_DIR"
 export INSPECT_DOCKER_CLI_CONCURRENCY="${INSPECT_DOCKER_CLI_CONCURRENCY:-$((2 * MAX_SANDBOXES))}"
 LIMITS=(--max-tasks "${#PANEL[@]}" --max-samples 10 --max-sandboxes "$MAX_SANDBOXES"
@@ -75,14 +86,14 @@ if [[ "${RETRY:-0}" == 1 ]]; then
 else
   models="$(printf 'openrouter/%s,' "${PANEL[@]}")"
   uv run --locked inspect eval codecite_evals/fastapi_middleware --model "${models%,}" -M strict_tools=false \
-    --epochs "$EPOCHS" "${LIMITS[@]}" --log-dir "$LOG_DIR" --display log "$@" || status=$?
+    -T arms="$ARMS" --epochs "$EPOCHS" "${LIMITS[@]}" --log-dir "$LOG_DIR" --display log "$@" || status=$?
 fi
 minutes=$(((SECONDS - start) / 60))
 # The scorecard shows what finished even when a model's run failed. CI posts
 # the copy in the log directory.
 {
   uv run --locked codecite-eval-report --tier "$TIER" "$LOG_DIR"
-  printf '\n%s models, %s epochs per arm, at most %s sandboxes: Inspect ran %s min (exit %s).\n' \
-    "${#PANEL[@]}" "$EPOCHS" "$MAX_SANDBOXES" "$minutes" "$status"
+  printf '\n%s models, %s epochs per arm (arms %s), at most %s sandboxes: Inspect ran %s min (exit %s).\n' \
+    "${#PANEL[@]}" "$EPOCHS" "$ARMS" "$MAX_SANDBOXES" "$minutes" "$status"
 } | tee "$LOG_DIR/scorecard.md"
 exit "$status"

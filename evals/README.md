@@ -54,13 +54,46 @@ and never a required check.
   stopped part way, run it again with `resume` set to that run's id: it
   downloads that run's logs and reruns only their missing samples with
   `inspect eval-retry`.
+- **A/A:** dispatch with `arms: aa` to run an A/A round at either tier, and
+  `epochs` to run more epochs than the tier's own (a quick tier at more than
+  its 5 epochs gets the full tier's time limits).
 
 The job builds codecite, fetches identity-model at the task's pinned commit
 and caches the two sandbox images, keyed on a hash of their build contexts
 (which hold the codecite binary and the identity-model commit), so an
 unchanged binary doesn't rebuild. It reads only the `OPENROUTER_EVAL_API_KEY`
 secret. The Inspect logs, with the scorecard, upload as the `eval-logs-<tier>`
-artifact.
+artifact (`eval-logs-<tier>-aa` for an A/A round).
+
+## A/A rounds
+
+An A/A round runs the task with two baseline arms, `baseline-a` and
+`baseline-b`, with the same prompt and the same sandbox. Whatever separates
+them is noise, so its intervals say how wide the A/B intervals would be with
+no effect at all, at that number of epochs. `-T arms=aa` selects it (the
+default, `ab`, is baseline against codecite); `ARMS=aa inspect/panel.sh quick`
+runs a tier that way into `inspect/logs/<tier>-aa/`. The scorecard heads the
+round as A/A and gives it no verdict: it names each measure whose interval
+noise alone pushed past the 5% margin.
+
+## The scorecard
+
+`codecite-eval-report` prints three tables per run:
+
+- **Per arm:** runs, pass rate, failures, timeouts, sandbox errors, median
+  total tokens and median wall time, and the model's verdict.
+- **From the transcripts:** the median turns (model calls that returned),
+  output tokens, model time (the sum of the calls' generation times), other
+  time (wall time less model time: tools, sandbox and waiting), and decode
+  rate (output tokens per second of model time), with the upstream providers
+  OpenRouter says served the calls, counted. A provider or decode-speed gap
+  between arms shows here.
+- **Intervals:** the 95% bootstrap interval of every measure, second arm
+  against the first, with `*` on each that reaches past 5% either side of 0.
+
+The verdict uses pass rate, total tokens and wall time (`docs/design.md`,
+Success criteria). Logs whose samples kept no model events leave the
+transcript measures blank.
 
 ## Running the A/B eval locally
 
