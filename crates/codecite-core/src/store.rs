@@ -13,12 +13,15 @@ mod corpora;
 pub use corpora::{Corpora, CorpusInfo, corpora};
 
 mod read;
-pub use read::{DEFAULT_MAX_LINES, MAX_READ_LINES, QUOTE_INSTRUCTION, ReadOptions, ReadResult};
+pub use read::{
+    DEFAULT_MAX_LINES, MAX_READ_BYTES, MAX_READ_LINES, QUOTE_INSTRUCTION,
+    QUOTE_TRUNCATED_INSTRUCTION, ReadOptions, ReadResult,
+};
 
 mod search;
 pub use search::{
-    DEFAULT_MAX_AGE_DAYS, DEFAULT_SEARCH_LIMIT, Freshness, MAX_SEARCH_LIMIT, MAX_SNIPPET_LINES,
-    Scope, SearchQuery, SearchResult, SearchResults,
+    DEFAULT_MAX_AGE_DAYS, DEFAULT_SEARCH_LIMIT, Freshness, MAX_SEARCH_LIMIT, MAX_SNIPPET_BYTES,
+    MAX_SNIPPET_LINES, Scope, SearchQuery, SearchResult, SearchResults,
 };
 
 mod write;
