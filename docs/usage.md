@@ -194,7 +194,15 @@ the CLI commands of the same name print (with `--json` for `search` and
 `read`), byte for byte, so anything an agent sees can be reproduced from a
 terminal. `search` and `read` take an optional `corpus`; left out or empty,
 it is the only corpus in the data directory. `limit` is at most 50 and
-`max_lines` at most 500, for the tools and the CLI alike. An unknown corpus, a stale index or a
+`max_lines` at most 500, for the tools and the CLI alike. Text is also
+capped in bytes, so that one minified or generated line cannot flood an
+agent's context: a search snippet holds at most 4 KiB (after its 40-line
+cap), and `read` text at most 64 KiB (after `max_lines`). A cut keeps an
+exact prefix of the lines, joined with `\n` line endings and ending on a
+character boundary, and adds no marker to it; instead a search result's
+`snippet_truncated` and a read's `truncated` are `true`, and a truncated
+`quote` read's `instruction` says the quote is partial. The citation still
+names the full lines, and reading it again returns the same capped text. An unknown corpus, a stale index or a
 citation that isn't in the corpus is a tool error whose structured content is
 `{"error": {"kind", "message", "candidates"}}`; each tool's output schema
 admits both its result and this error. A `read` of a spec, whose
