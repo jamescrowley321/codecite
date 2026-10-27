@@ -45,6 +45,18 @@ calibration table, with pass rate, median turns, tokens and time per model and
 the pooled pass rate against the band, and no verdict. A calibration is never
 a pass.
 
+A pair whose codecite arm called codecite in fewer than half its usable runs
+is not measured: the arms then differ by a tool the agent never used, so the
+comparison says nothing about codecite. "used codecite" counts, per arm, the
+runs with at least one call, read from the model calls in the log: a call to
+one of codecite's native tools, or a `bash` call that runs `codecite`.
+
+A run of the baseline arm alone (`-T arms=baseline`, recorded in the log's
+task arguments) is a calibration, not an A/B run: per task, it gets a
+calibration table, with pass rate, median turns, tokens and time per model and
+the pooled pass rate against the band, and no verdict. A calibration is never
+a pass.
+
     uv run codecite-eval-report [--tier quick|full] [LOG_DIR_OR_FILES...]
 
 The default logs are the tier's, inspect/logs/<tier>/, else inspect/logs/
@@ -305,6 +317,11 @@ def per_arm(log, arm, arms=2):
     if ids:
         return sum(str(i) == arm or str(i).startswith(f"{arm}:") for i in ids) or 1
     return max(1, (log.eval.dataset.samples or arms) // arms)
+
+
+def calibrating(log):
+    """Whether this log ran the baseline arm alone."""
+    return (log.eval.task_args or {}).get("arms") == "baseline"
 
 
 def calibrating(log):

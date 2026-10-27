@@ -5,6 +5,9 @@ codecite_evals/<name>:
 
     uv run inspect eval codecite_evals/fastapi_middleware --model openrouter/openai/gpt-6.1-sol -M strict_tools=false --epochs 2
 
+`-T arms=baseline` runs only the baseline arm, to calibrate a task's
+difficulty without watching codecite's (evals/README.md).
+
 The sandbox image holds one task's project and corpus: stage it with
 `inspect/prepare.sh <task-id>` before building. Each sample is one arm; epochs
 repeat it. pi's model calls go through Inspect's agent bridge, so Inspect
@@ -31,6 +34,7 @@ from inspect_ai.util import OutputLimitExceededError, sandbox, store
 
 from codecite_evals import config
 
+ARMS = {"both": ("baseline", "codecite"), "baseline": ("baseline",)}
 PROJECT = "/work/project"
 IDENTITY_MODEL = "/opt/identity-model"
 CODECITE = "/opt/codecite/bin/codecite"

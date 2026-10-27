@@ -3,7 +3,7 @@
 codecite issues can be worked unattended in [Claude Code cloud
 sessions](https://code.claude.com/docs/en/claude-code-on-the-web). Each session
 takes one issue and follows `AGENTS.md` ("Working an issue end to end"). CI and
-the lens reviews give the feedback, and the eval workflow runs the A/B eval.
+the blind peer review (`claude.yml`, on James's Claude subscription) give the feedback, and the eval workflow runs the A/B eval.
 James merges.
 
 ## The queue
@@ -44,12 +44,14 @@ the script runs each launch under `script`, and it appends every link to
 locally.
 
 `scripts/cloud-status.sh` shows where each open PR stands: its merge state
-(`BEHIND` needs `gh pr update-branch <n>`, `DIRTY` has conflicts), the Merge
-Gate on its head, any lens still requesting changes, the issue it closes, and
-whether the eval scorecard is posted. Sessions watch their own PRs, so a PR
+(`BEHIND` needs `gh pr update-branch <n>`, `DIRTY` has conflicts), the
+verdict of the latest blind peer review (`stale` when commits landed after it),
+the issue it closes, and whether the eval scorecard is posted. Sessions watch their own PRs, so a PR
 comment reaches the session working it.
 
-A session opens a PR against `main` and answers the lens reviews. If the
+A session opens a PR against `main` and answers the review. After pushing
+fixes it comments `@claude review this PR` for a fresh one; the session posts
+as James, so the workflow's owner check lets it through. If the
 change touches indexing, search, ranking or the CLI's output, it adds the
 `eval` label, and the eval workflow posts the quick A/B scorecard on the PR.
 Sessions never merge.

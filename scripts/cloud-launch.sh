@@ -5,6 +5,8 @@
 #   scripts/cloud-launch.sh 111 117 105
 #
 # Each session works its issue per AGENTS.md "Working an issue end to end".
+# Only open issues labelled cloud-ready launch; CODECITE_CLOUD_FORCE=1 skips
+# that check. Needs util-linux `script` and GNU coreutils (Linux).
 # The sessions run in the cloud: once this script returns, nothing stays
 # running locally, and the machine can go offline.
 #
@@ -38,13 +40,26 @@ for n in "$@"; do
     continue
   fi
   seen[$n]=1
+  # Only issues marked ready: a session takes the issue's text as its task.
+  if [[ -z "${CODECITE_CLOUD_FORCE:-}" ]] \
+    && ! gh issue view "$n" --json state,labels -q 'select(.state == "OPEN") | .labels[].name' 2> /dev/null | grep -qx cloud-ready; then
+    echo "#$n: not an open cloud-ready issue; skipped (CODECITE_CLOUD_FORCE=1 overrides)" >&2
+    status=1
+    continue
+  fi
   prompt="Work codecite#$n per AGENTS.md 'Working an issue end to end'"
   # `script` records the session's output, terminal escapes and all.
-  timeout 120 script -qfc "claude --cloud \"$prompt\"" "$TMP/$n.log" < /dev/null > /dev/null 2>&1 || true
+  rc=0
+  timeout 120 script -qfc "claude --cloud \"$prompt\"" "$TMP/$n.log" < /dev/null > /dev/null 2>&1 || rc=$?
   url="$(sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "$TMP/$n.log" | tr -d '\r' \
     | grep -o 'https://claude.ai/code/session_[A-Za-z0-9]*' | head -1 || true)"
   if [[ -z "$url" ]]; then
-    echo "#$n: no session created; output follows" >&2
+    if [[ $rc -eq 124 ]]; then
+      # A session may exist without its link printed; check before relaunching.
+      echo "#$n: timed out after 120 s; check claude.ai/code before launching it again" >&2
+    else
+      echo "#$n: no session created; output follows" >&2
+    fi
     # An empty log matches nothing; that must not stop the remaining launches.
     sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "$TMP/$n.log" 2> /dev/null | tr -d '\r' | grep -v '^\s*$' | tail -5 >&2 || true
     status=1
