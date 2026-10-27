@@ -11,6 +11,7 @@ from pathlib import Path
 
 EVALS_DIR = Path(os.environ.get("CODECITE_EVALS_DIR") or Path(__file__).resolve().parents[2])
 COMPOSE = EVALS_DIR / "inspect" / "compose.yaml"
+COMPOSE_OFFLINE = EVALS_DIR / "inspect" / "compose-offline.yaml"
 LOGS = EVALS_DIR / "inspect" / "logs"
 # The task's arm settings (`-T arms=`), each two arms of (label, condition).
 # The label names the arm on the scorecard, the first being the reference; the
@@ -18,6 +19,8 @@ LOGS = EVALS_DIR / "inspect" / "logs"
 ARMS = {
     "ab": (("baseline", "baseline"), ("codecite", "codecite")),
     "aa": (("baseline-a", "baseline"), ("baseline-b", "baseline")),
+    # A calibration: the baseline arm alone, reported with no verdict.
+    "baseline": (("baseline", "baseline"),),
 }
 
 QUERIES = EVALS_DIR / "retrieval" / "queries.toml"

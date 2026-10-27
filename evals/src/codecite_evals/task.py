@@ -1,16 +1,22 @@
 """The A/B eval on Inspect: pi in a Docker sandbox, with and without
-codecite, on any model Inspect can reach. Each task in evals/tasks/ that is
-registered here runs as codecite_evals/<name>:
+codecite, on any model Inspect can reach. Any task in evals/tasks/ runs as
+codecite_evals/ab -T task_id=<id>, and each registered here also runs as
+codecite_evals/<name>:
 
     uv run inspect eval codecite_evals/fastapi_middleware --model openrouter/openai/gpt-6.1-sol -M strict_tools=false --epochs 2
 
 The sandbox image holds one task's project and corpus: stage it with
 `inspect/prepare.sh <task-id>` before building. Each sample is one arm; epochs
 repeat it. pi's model calls go through Inspect's agent bridge, so Inspect
-records every call and its tokens.
+records every call, its tool list and its tokens. The codecite arm gives pi
+codecite's `search` and `read` as tools of their own, from `codecite mcp`
+through pi's built-in MCP support, and keeps the CLI on PATH; the baseline
+arm has no MCP and no codecite.
 
 `-T arms=aa` runs an A/A round instead: two baseline arms with the same prompt
 and sandbox, labelled apart, so the scorecard shows what noise alone does.
+`-T arms=baseline` runs only the baseline arm, to calibrate a task's
+difficulty without watching codecite's (evals/README.md).
 """
 
 import json
@@ -27,8 +33,24 @@ from codecite_evals import config
 
 PROJECT = "/work/project"
 IDENTITY_MODEL = "/opt/identity-model"
-PI_TOOLS = "read,bash,edit,write,grep,find,ls"
-PI_FLAGS = ["--no-session", "--no-mcp", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve"]
+CODECITE = "/opt/codecite/bin/codecite"
+CODECITE_TOOLS = ["mcp__codecite__search", "mcp__codecite__read"]
+PI_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"]
+PI_FLAGS = ["--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve"]
+# pi's user-level MCP config. `direct` exposure declares the tools to the
+# model next to the built-in ones, with the server's descriptions, rather
+# than behind codemode or tool_search.
+PI_MCP = "/root/.pi/agent/mcp.json"
+MCP_CONFIG = {
+    "mcpServers": {
+        "codecite": {
+            "command": CODECITE,
+            "args": ["mcp"],
+            "exposure": "direct",
+        }
+    },
+    "autoEnableCodemode": False,
+}
 AGENT_TIMEOUT = 600
 
 
@@ -39,9 +61,10 @@ def codecite_note(task_dir: Path) -> str:
     if corpus.get("documents"):
         indexes += " and the OAuth 2.0, OpenID Connect and FAPI specifications it implements"
     return (
-        f"The `codecite` command is on your PATH. Its corpus `eval` indexes {indexes}. "
-        '`codecite search eval "<query>"` prints ranked results with citations, and '
-        '`codecite read eval "<citation>"` prints the text a citation points at.'
+        f"codecite indexes {indexes} as its corpus `eval`. Its tools `mcp__codecite__search` (ranked "
+        "results with citations) and `mcp__codecite__read` (the text a citation points at) search and "
+        'read it. The `codecite` command on your PATH does the same: `codecite search eval "<query>"` and '
+        '`codecite read eval "<citation>"`.'
     )
 
 
@@ -52,7 +75,8 @@ def prompt(task_dir: Path, condition: str) -> str:
 
 def ab_task(task_id: str, arms: str = "ab") -> Task:
     """One task's eval: a sample per arm (config.ARMS), scored by its hidden
-    tests and checks."""
+    tests and checks. arms="baseline" keeps only the baseline arm, a
+    calibration; arms="aa" runs two baseline arms."""
     if arms not in config.ARMS:
         raise ValueError(f"arms must be one of {', '.join(config.ARMS)}, not {arms!r}")
     task_dir = config.task_dir(task_id)
@@ -65,6 +89,23 @@ def ab_task(task_id: str, arms: str = "ab") -> Task:
         scorer=hidden_tests_and_checks(task_id),
         sandbox=("docker", str(config.COMPOSE)),
     )
+
+
+def pi_command(condition: str, prompt: str) -> list[str]:
+    """pi's command line for an arm. --no-extensions drops the built-in
+    extensions too, so the codecite arm loads only the MCP one back, and only
+    it lists codecite's tools."""
+    if condition == "codecite":
+        flags, tools = [*PI_FLAGS, "-e", "builtin:mcp"], [*PI_TOOLS, *CODECITE_TOOLS]
+    else:
+        flags, tools = [*PI_FLAGS, "--no-mcp"], PI_TOOLS
+    return ["pi", "-p", "--mode", "json", "--provider", "inspect", "--model", "inspect", *flags, "--tools", ",".join(tools), "--", prompt]
+
+
+@task
+def ab(task_id: str = "fastapi-middleware", arms: str = "ab") -> Task:
+    """Any task under tasks/ by its id; the eval workflow and panel.sh run this."""
+    return ab_task(task_id, arms)
 
 
 @task
@@ -100,11 +141,13 @@ def pi() -> Agent:
         condition = store().get("condition")
         if condition == "baseline":
             await sb.exec(["rm", "-rf", "/opt/codecite"])
+        else:
+            await sb.write_file(PI_MCP, json.dumps(MCP_CONFIG, indent=2))
         path = ("/opt/codecite/bin:" if condition == "codecite" else "") + "/usr/local/bin:/usr/bin:/bin"
         async with sandbox_agent_bridge(state) as bridge:
             try:
                 result = await sb.exec(
-                    ["pi", "-p", "--mode", "json", "--provider", "inspect", "--model", "inspect", *PI_FLAGS, "--tools", PI_TOOLS, "--", state.messages[0].text],
+                    pi_command(condition, state.messages[0].text),
                     cwd=PROJECT,
                     env={"PATH": path, "HOME": "/root"},
                     timeout=AGENT_TIMEOUT,
@@ -156,6 +199,16 @@ def last_turn_error(stdout: str) -> str | None:
     return None
 
 
+def why_stopped(stopped: str | None, sandbox_error: str | None) -> str:
+    """The start of a score's explanation when the agent didn't finish: such
+    a sample is scored on what it left behind, but can't pass."""
+    return {
+        "agent_timeout": "agent timed out; ",
+        "agent_output": "agent's output overflowed or didn't decode; ",
+        "sandbox_error": f"sandbox failed ({sandbox_error}); ",
+    }.get(stopped, "")
+
+
 @scorer(metrics=[accuracy(), stderr()])
 def hidden_tests_and_checks(task_id: str):
     """Correct when the hidden tests and every deterministic check pass. The
@@ -194,11 +247,7 @@ def hidden_tests_and_checks(task_id: str):
         failed = [c["name"] for c in results if not c["passed"]] if results else ["checks-crashed"]
         stopped, sandbox_error = store().get("stopped"), store().get("sandbox_error")
         passed = tests_passed and not failed and not stopped
-        why = {
-            "agent_timeout": "agent timed out; ",
-            "agent_output": "agent's output overflowed or didn't decode; ",
-            "sandbox_error": f"sandbox failed ({sandbox_error}); ",
-        }.get(stopped, "")
+        why = why_stopped(stopped, sandbox_error)
         return Score(
             value=1 if passed else 0,
             explanation=f"{why}hidden tests {'passed' if tests_passed else 'failed'}; failed checks: {', '.join(failed) or 'none'}",

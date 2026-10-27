@@ -1,6 +1,7 @@
 """pi() records why the agent stopped, without a model key or a live sandbox."""
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
 
 import pytest
@@ -21,26 +22,60 @@ class Store(dict):
 class Sandbox:
     def __init__(self, error):
         self.error = error
+        self.files, self.commands = {}, []
+
+    async def write_file(self, path, contents):
+        self.files[path] = contents
 
     async def exec(self, cmd, **kwargs):
+        self.commands.append(cmd)
         if cmd[0] == "pi":
             raise self.error
+        if cmd == ["rm", "-rf", "/opt/codecite"]:
+            return ExecResult(success=True, returncode=0, stdout="", stderr="")
         raise AssertionError(f"unexpected exec: {cmd}")
 
 
-def run_pi(monkeypatch, error):
+def run_pi(monkeypatch, error, arm="codecite", sb=None):
     state = AgentState(messages=[ChatMessageUser(content="do the task")])
-    store = Store(condition="codecite")
+    store = Store(condition=arm)
+    sb = sb or Sandbox(error)
 
     @asynccontextmanager
     async def bridge(s):
         yield type("Bridge", (), {"state": s})()
 
-    monkeypatch.setattr(task, "sandbox", lambda: Sandbox(error))
+    monkeypatch.setattr(task, "sandbox", lambda: sb)
     monkeypatch.setattr(task, "store", lambda: store)
     monkeypatch.setattr(task, "sandbox_agent_bridge", bridge)
     assert asyncio.run(task.pi()(state)) is state
     return store
+
+
+def test_only_the_codecite_arm_has_codecite_tools(monkeypatch):
+    code, base = Sandbox(TimeoutError()), Sandbox(TimeoutError())
+    run_pi(monkeypatch, TimeoutError(), "codecite", code)
+    run_pi(monkeypatch, TimeoutError(), "baseline", base)
+    config = json.loads(code.files[task.PI_MCP])["mcpServers"]["codecite"]
+    assert (config["command"], config["args"], config["exposure"]) == (task.CODECITE, ["mcp"], "direct")
+    assert base.files == {} and ["rm", "-rf", "/opt/codecite"] in base.commands
+    (code_pi,), (base_pi,) = ([c for c in sb.commands if c[0] == "pi"] for sb in (code, base))
+    tools = lambda cmd: cmd[cmd.index("--tools") + 1].split(",")
+    assert tools(code_pi) == task.PI_TOOLS + ["mcp__codecite__search", "mcp__codecite__read"]
+    assert tools(base_pi) == task.PI_TOOLS
+    assert "--no-mcp" in base_pi and "builtin:mcp" not in base_pi
+    assert "--no-mcp" not in code_pi and code_pi[code_pi.index("-e") + 1] == "builtin:mcp"
+    # Apart from the tools and the note, the arms run the same command.
+    strip = lambda cmd: [a for a in cmd if a not in ("--no-mcp", "-e", "builtin:mcp") and a != cmd[cmd.index("--tools") + 1]]
+    assert strip(code_pi) == strip(base_pi)
+
+
+@pytest.mark.parametrize("task_id", TASKS)
+def test_prompts_differ_only_by_the_note(task_id):
+    d = config.task_dir(task_id)
+    note = task.codecite_note(d)
+    assert task.prompt(d, "codecite") == f"{task.prompt(d, 'baseline')}\n\n{note}\n"
+    assert "mcp__codecite__search" in note and "mcp__codecite__read" in note
 
 
 def test_timeout_is_an_agent_timeout(monkeypatch):
@@ -107,10 +142,27 @@ def test_scorer_passes_an_agent_that_finished(monkeypatch):
     assert score.metadata["stopped"] is None
 
 
+def test_arms_both_gives_both_samples():
+    t = task.ab("fastapi-middleware")
+    assert [s.metadata["arm"] for s in t.dataset] == ["baseline", "codecite"]
+
+
+def test_arms_baseline_gives_only_the_baseline_sample():
+    t = task.ab("fastapi-middleware", arms="baseline")
+    assert [s.metadata["arm"] for s in t.dataset] == ["baseline"]
+    assert "codecite" not in t.dataset[0].input
+
+
+def test_unknown_arms_are_refused():
+    with pytest.raises(ValueError, match="arms must be one of ab, aa, baseline"):
+        task.ab("fastapi-middleware", arms="codecite")
+
+
 def test_every_task_is_registered():
     # Inspect finds tasks through _registry: codecite_evals/<name>.
     assert callable(_registry.fastapi_middleware)
     assert callable(_registry.client_auth_uri)
+    assert callable(_registry.ab)
     assert callable(_registry.backchannel_logout)
 
 
