@@ -23,10 +23,10 @@ pub use role::Role;
 mod store;
 pub use store::{
     ChunkRecord, Corpora, CorpusInfo, DEFAULT_MAX_AGE_DAYS, DEFAULT_MAX_LINES,
-    DEFAULT_SEARCH_LIMIT, DocumentRecord, Freshness, MAX_READ_LINES, MAX_SEARCH_LIMIT,
-    MAX_SNIPPET_LINES, QUOTE_INSTRUCTION, ReadOptions, ReadResult, SCHEMA_VERSION, Scope,
-    SearchQuery, SearchResult, SearchResults, SourceRecord, Store, SymbolRecord, corpora,
-    is_corpus_name,
+    DEFAULT_SEARCH_LIMIT, DocumentRecord, Freshness, MAX_READ_BYTES, MAX_READ_LINES,
+    MAX_SEARCH_LIMIT, MAX_SNIPPET_BYTES, MAX_SNIPPET_LINES, QUOTE_INSTRUCTION,
+    QUOTE_TRUNCATED_INSTRUCTION, ReadOptions, ReadResult, SCHEMA_VERSION, Scope, SearchQuery,
+    SearchResult, SearchResults, SourceRecord, Store, SymbolRecord, corpora, is_corpus_name,
 };
 
 mod terms;
