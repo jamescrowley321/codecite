@@ -19,24 +19,56 @@ from pathlib import Path
 
 IGNORED_PARTS = {".venv", "__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache"}
 IGNORED_FILES = {"uv.lock"}
+# The hidden tests' own modules (hidden/): an agent file of the same name
+# would shadow one when pytest imports it.
+HIDDEN_MODULES = {"conftest.py", "test_hidden.py"}
 
 # RFC 6749 §2.3.1 and no other section: not 2.3, not 2.3.10, not 2.3.1.2.
 # The forms are codecite's citation (with or without its @sha256 pin), the
 # spec URL with its anchor, "RFC 6749 §2.3.1" / "RFC 6749, Section 2.3.1",
-# and "Section 2.3.1 of RFC 6749".
+# and "Section 2.3.1 of RFC 6749". A section may be one of a list
+# ("RFC 6749 section 2.3 / 2.3.1", "RFC 6749 §2.3, §2.3.1", "Sections 2.3.1
+# and 3.2 of RFC 6749"), but not one that a later "of RFC <n>" gives to
+# another RFC ("RFC 6749 §3.2 and 2.3.1 of RFC 7523").
 RFC = r"rfc[\s-]?6749(?!\d)"
 SECTION = r"2\.3\.1(?!\.?\d)"
-SECTION_WORD = r"(?:§|sec(?:tion|\.)?)"
+SECTION_WORD = r"(?:§§?|sec(?:tions?|s?\.)?)"
+JOIN = r"\s*(?:/|,|&|and)\s*"
+ITEM = r"(?:§§?\s*)?\d+(?:\.\d+)*"
+# Sections listed before 2.3.1 ("2.3 / ", "§2.3, ") and after it (" and 3.2").
+BEFORE = r"(?:" + ITEM + JOIN + r")*(?:§§?\s*)?"
+AFTER = r"(?:" + JOIN + ITEM + r")*"
+# The rest of a list after 2.3.1: bare numbers only, since a "§3.2" starts a
+# citation of its own ("RFC 6749 §2.3.1 and §3.2 of RFC 7523").
+REST = r"(?:" + JOIN + r"\d+(?:\.\d+)*)*"
+OF_RFC = r"\s*,?\s*(?:of|in)\s+(?:the\s+)?rfc[\s-]?(\d+)(?!\d)"
 CITATION = re.compile(
     "|".join(
         (
             RFC + r"[^\s#]*#section-" + SECTION,
-            RFC + r"\s*,?\s*" + SECTION_WORD + r"\s*" + SECTION,
-            SECTION_WORD + r"\s*" + SECTION + r"\s*,?\s*(?:of|in)\s+(?:the\s+)?" + RFC,
+            r"(?P<lead>" + RFC + r"\s*,?\s*" + SECTION_WORD + r"\s*(?P<before>" + BEFORE + r")" + SECTION + r")",
+            SECTION_WORD + r"\s*" + BEFORE + SECTION + AFTER + r"\s*,?\s*(?:of|in)\s+(?:the\s+)?" + RFC,
         )
     ),
     re.IGNORECASE,
 )
+# What follows a match: the rest of its list, then "of RFC <n>" if any.
+TAIL = re.compile(REST + OF_RFC, re.IGNORECASE)
+
+
+def cites(block: str):
+    """The first citation of RFC 6749 §2.3.1 in a comment block, or None.
+    Only the "RFC 6749 §… 2.3.1" form, with sections listed before 2.3.1,
+    can end in a list that a later "of RFC <n>" hands to another RFC; when
+    2.3.1 comes straight after "RFC 6749 §", or in the other forms, it is
+    6749's."""
+    for m in CITATION.finditer(block):
+        tail = TAIL.match(block, m.end())
+        listed = m.group("lead") and re.search(r"\d", m.group("before") or "")
+        if listed and tail and tail.group(1) != "6749":
+            continue  # the list's 2.3.1 is another RFC's
+        return m
+    return None
 
 
 def py_files(project: Path):
@@ -82,7 +114,7 @@ def check_citation(final: Path):
         except (OSError, UnicodeDecodeError):
             continue
         for block in comment_blocks(source):
-            if m := CITATION.search(block):
+            if m := cites(block):
                 return True, f"{path.name}: {m.group(0)!r}"
             if re.search(r"rfc[\s-]?\d{4}|§|section", block, re.IGNORECASE):
                 seen.append(block[:80])
@@ -133,18 +165,33 @@ def files(project: Path):
 def check_scope(start: Path, final: Path):
     a, b = files(start), files(final)
     problems = []
-    # Docs may change or be added; pyproject.toml is deps-unchanged's.
+    # Docs may change or be added; pyproject.toml is deps-unchanged's. An
+    # agent may add Python tests of its own (test_*.py, *_test.py, and a
+    # conftest.py or __init__.py beside them, below the project root): the
+    # score command runs pytest on the hidden directory alone, from the
+    # project root, so it loads none of them. A conftest.py at the root is out
+    # of scope, since pytest loads it for the hidden run, and so is a file
+    # named like a hidden test module, which would shadow it on import. Any
+    # other new file, under tests/ or not, is out of scope too.
     def guarded(rel):
         return not rel.startswith("app/") and not rel.endswith(".md")
+    def own_test(rel):
+        name = rel.rsplit("/", 1)[-1]
+        nested = "/" in rel
+        if name in ("conftest.py", "__init__.py"):
+            return nested
+        if name in HIDDEN_MODULES:
+            return False
+        return name.endswith(".py") and (name.startswith("test_") or name.endswith("_test.py"))
     for rel, p in a.items():
         if rel not in b:
             problems.append(f"deleted {rel}")
         elif guarded(rel) and rel != "pyproject.toml" and p.read_bytes() != b[rel].read_bytes():
             problems.append(f"changed {rel}")
-    problems += [f"added {rel}" for rel in sorted(b.keys() - a.keys()) if guarded(rel)]
+    problems += [f"added {rel}" for rel in sorted(b.keys() - a.keys()) if guarded(rel) and not own_test(rel)]
     if problems:
         return False, "; ".join(problems[:5])
-    return True, "no start file deleted, and none outside app/ added or changed but docs"
+    return True, "no start file deleted, and none outside app/ added or changed but docs and tests"
 
 
 def main():

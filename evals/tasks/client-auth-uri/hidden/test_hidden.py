@@ -4,6 +4,9 @@ RFC 6749 §2.3.1: servers MUST support HTTP Basic, MAY accept credentials in
 the request body, and the credentials MUST NOT be in the request URI. §5.2:
 failed client authentication is `invalid_client`, with a 401 and a
 WWW-Authenticate header when the client used the Authorization header.
+Credentials in the URI may be refused either way: as failed authentication
+(`invalid_client`) or as a malformed request (`invalid_request`, §5.2's "or is
+otherwise malformed"), so the query-string tests take both.
 """
 
 import base64
@@ -26,11 +29,15 @@ def assert_token(resp):
     assert str(body.get("token_type", "")).lower() == "bearer"
 
 
-def assert_invalid_client(resp):
+def assert_invalid_client(resp, allowed=("invalid_client",)):
     assert resp.status_code in (400, 401), resp.text
     body = resp.json()
-    assert body.get("error") == "invalid_client"
+    assert body.get("error") in allowed
     assert "access_token" not in body
+
+
+def assert_uri_refused(resp):
+    assert_invalid_client(resp, allowed=("invalid_client", "invalid_request"))
 
 
 def test_basic_gets_token(client):
@@ -43,12 +50,12 @@ def test_form_body_gets_token(client):
 
 def test_query_credentials_rejected(client):
     resp = client.post("/token", params={"client_id": CLIENT_ID, "client_secret": SECRET}, data=GRANT)
-    assert_invalid_client(resp)
+    assert_uri_refused(resp)
 
 
 def test_query_secret_rejected(client):
     resp = client.post("/token", params={"client_secret": SECRET}, data={**GRANT, "client_id": CLIENT_ID})
-    assert_invalid_client(resp)
+    assert_uri_refused(resp)
 
 
 def test_wrong_basic_secret_rejected(client):
