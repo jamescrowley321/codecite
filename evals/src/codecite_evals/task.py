@@ -1,16 +1,20 @@
-"""The fastapi-middleware A/B eval on Inspect: pi in a Docker sandbox, with
-and without codecite, on any model Inspect can reach.
+"""The A/B eval on Inspect: pi in a Docker sandbox, with and without
+codecite, on any model Inspect can reach. Each task in evals/tasks/ that is
+registered here runs as codecite_evals/<name>:
 
     uv run inspect eval codecite_evals/fastapi_middleware --model openrouter/openai/gpt-6.1-sol -M strict_tools=false --epochs 2
 
-Each sample is one arm; epochs repeat it. pi's model calls go through
-Inspect's agent bridge, so Inspect records every call, its tool list and its
-tokens. The codecite arm gives pi codecite's `search` and `read` as tools of
-their own, from `codecite mcp` through pi's built-in MCP support, and keeps
-the CLI on PATH; the baseline arm has no MCP and no codecite.
+The sandbox image holds one task's project and corpus: stage it with
+`inspect/prepare.sh <task-id>` before building. Each sample is one arm; epochs
+repeat it. pi's model calls go through Inspect's agent bridge, so Inspect
+records every call, its tool list and its tokens. The codecite arm gives pi
+codecite's `search` and `read` as tools of their own, from `codecite mcp`
+through pi's built-in MCP support, and keeps the CLI on PATH; the baseline
+arm has no MCP and no codecite.
 """
 
 import json
+from pathlib import Path
 
 from inspect_ai import Task, task
 from inspect_ai.agent import Agent, AgentState, agent, sandbox_agent_bridge
@@ -21,17 +25,10 @@ from inspect_ai.util import OutputLimitExceededError, sandbox, store
 
 from codecite_evals import config
 
-TASK = config.task_dir("fastapi-middleware")
 PROJECT = "/work/project"
 IDENTITY_MODEL = "/opt/identity-model"
 CODECITE = "/opt/codecite/bin/codecite"
 CODECITE_TOOLS = ["mcp__codecite__search", "mcp__codecite__read"]
-CODECITE_NOTE = (
-    f"codecite indexes the identity-model source at `{IDENTITY_MODEL}` as its corpus `eval`. Its tools "
-    "`mcp__codecite__search` (ranked results with citations) and `mcp__codecite__read` (the text a "
-    "citation points at) search and read it. The `codecite` command on your PATH does the same: "
-    '`codecite search eval "<query>"` and `codecite read eval "<citation>"`.'
-)
 PI_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"]
 PI_FLAGS = ["--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve"]
 # pi's user-level MCP config. `direct` exposure declares the tools to the
@@ -51,9 +48,34 @@ MCP_CONFIG = {
 AGENT_TIMEOUT = 600
 
 
-def prompt(arm: str) -> str:
-    text = (TASK / "prompt.md").read_text().replace("{identity_model}", IDENTITY_MODEL)
-    return f"{text}\n\n{CODECITE_NOTE}\n" if arm == "codecite" else text
+def codecite_note(task_dir: Path) -> str:
+    """The codecite arm's note, naming what the task's `eval` corpus indexes."""
+    corpus = json.loads((task_dir / "task.json").read_text())["corpus"]
+    indexes = f"the identity-model source at `{IDENTITY_MODEL}`"
+    if corpus.get("documents"):
+        indexes += " and the OAuth 2.0, OpenID Connect and FAPI specifications it implements"
+    return (
+        f"codecite indexes {indexes} as its corpus `eval`. Its tools `mcp__codecite__search` (ranked "
+        "results with citations) and `mcp__codecite__read` (the text a citation points at) search and "
+        'read it. The `codecite` command on your PATH does the same: `codecite search eval "<query>"` and '
+        '`codecite read eval "<citation>"`.'
+    )
+
+
+def prompt(task_dir: Path, arm: str) -> str:
+    text = (task_dir / "prompt.md").read_text().replace("{identity_model}", IDENTITY_MODEL)
+    return f"{text}\n\n{codecite_note(task_dir)}\n" if arm == "codecite" else text
+
+
+def ab_task(task_id: str) -> Task:
+    """One task's A/B eval: a sample per arm, scored by its hidden tests and checks."""
+    task_dir = config.task_dir(task_id)
+    return Task(
+        dataset=[Sample(id=arm, input=prompt(task_dir, arm), metadata={"arm": arm}) for arm in ("baseline", "codecite")],
+        solver=[arm_to_store(), pi()],
+        scorer=hidden_tests_and_checks(task_id),
+        sandbox=("docker", str(config.COMPOSE)),
+    )
 
 
 def pi_command(arm: str, prompt: str) -> list[str]:
@@ -69,12 +91,12 @@ def pi_command(arm: str, prompt: str) -> list[str]:
 
 @task
 def fastapi_middleware() -> Task:
-    return Task(
-        dataset=[Sample(id=arm, input=prompt(arm), metadata={"arm": arm}) for arm in ("baseline", "codecite")],
-        solver=[arm_to_store(), pi()],
-        scorer=hidden_tests_and_checks(),
-        sandbox=("docker", str(config.COMPOSE)),
-    )
+    return ab_task("fastapi-middleware")
+
+
+@task
+def client_auth_uri() -> Task:
+    return ab_task("client-auth-uri")
 
 
 @solver
@@ -154,16 +176,18 @@ def last_turn_error(stdout: str) -> str | None:
 
 
 @scorer(metrics=[accuracy(), stderr()])
-def hidden_tests_and_checks():
+def hidden_tests_and_checks(task_id: str):
     """Correct when the hidden tests and every deterministic check pass. The
-    tests and checks reach the sandbox only now, after the agent has exited."""
+    tests and checks reach the sandbox only now, after the agent has exited.
+    Takes the task's id, not its path, so the eval log records the id."""
+    task_dir = config.task_dir(task_id)
 
     async def score(state: TaskState, target: Target) -> Score:
         sb = sandbox()
-        for f in (TASK / "hidden").glob("*.py"):
+        for f in (task_dir / "hidden").glob("*.py"):
             await sb.write_file(f"/score/hidden/{f.name}", f.read_text())
-        await sb.write_file("/score/checks.py", (TASK / "checks.py").read_text())
-        start = TASK / "project"
+        await sb.write_file("/score/checks.py", (task_dir / "checks.py").read_text())
+        start = task_dir / "project"
         for f in start.rglob("*"):
             if f.is_file():
                 text = f.read_text().replace("@IDENTITY_MODEL@", IDENTITY_MODEL)
