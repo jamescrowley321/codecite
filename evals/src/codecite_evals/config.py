@@ -20,6 +20,9 @@ ARMS = {
     "aa": (("baseline-a", "baseline"), ("baseline-b", "baseline")),
 }
 
+QUERIES = EVALS_DIR / "retrieval" / "queries.toml"
+BENCH_MANIFEST = EVALS_DIR / "retrieval" / "identity-bench.toml"
+
 
 def task_dir(task_id: str) -> Path:
     """A task's directory: task.json, prompt.md, project/, hidden/, checks.py."""
