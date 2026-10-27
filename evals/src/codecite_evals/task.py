@@ -1,10 +1,13 @@
-"""The fastapi-middleware A/B eval on Inspect: pi in a Docker sandbox, with
-and without codecite, on any model Inspect can reach.
+"""The A/B eval on Inspect: pi in a Docker sandbox, with and without
+codecite, on any model Inspect can reach. Each task in evals/tasks/ that is
+registered here runs as codecite_evals/<name>:
 
-    uv run inspect eval inspect/task.py --model openrouter/openai/gpt-6.1-sol -M strict_tools=false --epochs 2
+    uv run inspect eval codecite_evals/fastapi_middleware --model openrouter/openai/gpt-6.1-sol -M strict_tools=false --epochs 2
 
-Each sample is one arm; epochs repeat it. pi's model calls go through
-Inspect's agent bridge, so Inspect records every call and its tokens.
+The sandbox image holds one task's project and corpus: stage it with
+`inspect/prepare.sh <task-id>` before building. Each sample is one arm; epochs
+repeat it. pi's model calls go through Inspect's agent bridge, so Inspect
+records every call and its tokens.
 """
 
 import json
@@ -15,34 +18,54 @@ from inspect_ai.agent import Agent, AgentState, agent, sandbox_agent_bridge
 from inspect_ai.dataset import Sample
 from inspect_ai.scorer import Score, Target, accuracy, scorer, stderr
 from inspect_ai.solver import Generate, TaskState, solver
-from inspect_ai.util import sandbox, store
+from inspect_ai.util import OutputLimitExceededError, sandbox, store
 
-TASK = Path(__file__).resolve().parent.parent / "tasks" / "fastapi-middleware"
+from codecite_evals import config
+
 PROJECT = "/work/project"
 IDENTITY_MODEL = "/opt/identity-model"
-CODECITE_NOTE = (
-    "The `codecite` command is on your PATH. Its corpus `eval` indexes the identity-model source at "
-    f'`{IDENTITY_MODEL}`. `codecite search eval "<query>"` prints ranked results with citations, and '
-    '`codecite read eval "<citation>"` prints the text a citation points at.'
-)
 PI_TOOLS = "read,bash,edit,write,grep,find,ls"
 PI_FLAGS = ["--no-session", "--no-mcp", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve"]
 AGENT_TIMEOUT = 600
 
 
-def prompt(arm: str) -> str:
-    text = (TASK / "prompt.md").read_text().replace("{identity_model}", IDENTITY_MODEL)
-    return f"{text}\n\n{CODECITE_NOTE}\n" if arm == "codecite" else text
+def codecite_note(task_dir: Path) -> str:
+    """The codecite arm's note, naming what the task's `eval` corpus indexes."""
+    corpus = json.loads((task_dir / "task.json").read_text())["corpus"]
+    indexes = f"the identity-model source at `{IDENTITY_MODEL}`"
+    if corpus.get("documents"):
+        indexes += " and the OAuth 2.0, OpenID Connect and FAPI specifications it implements"
+    return (
+        f"The `codecite` command is on your PATH. Its corpus `eval` indexes {indexes}. "
+        '`codecite search eval "<query>"` prints ranked results with citations, and '
+        '`codecite read eval "<citation>"` prints the text a citation points at.'
+    )
+
+
+def prompt(task_dir: Path, arm: str) -> str:
+    text = (task_dir / "prompt.md").read_text().replace("{identity_model}", IDENTITY_MODEL)
+    return f"{text}\n\n{codecite_note(task_dir)}\n" if arm == "codecite" else text
+
+
+def ab_task(task_id: str) -> Task:
+    """One task's A/B eval: a sample per arm, scored by its hidden tests and checks."""
+    task_dir = config.task_dir(task_id)
+    return Task(
+        dataset=[Sample(id=arm, input=prompt(task_dir, arm), metadata={"arm": arm}) for arm in ("baseline", "codecite")],
+        solver=[arm_to_store(), pi()],
+        scorer=hidden_tests_and_checks(task_id),
+        sandbox=("docker", str(config.COMPOSE)),
+    )
 
 
 @task
 def fastapi_middleware() -> Task:
-    return Task(
-        dataset=[Sample(id=arm, input=prompt(arm), metadata={"arm": arm}) for arm in ("baseline", "codecite")],
-        solver=[arm_to_store(), pi()],
-        scorer=hidden_tests_and_checks(),
-        sandbox=("docker", str(Path(__file__).with_name("compose.yaml"))),
-    )
+    return ab_task("fastapi-middleware")
+
+
+@task
+def client_auth_uri() -> Task:
+    return ab_task("client-auth-uri")
 
 
 @solver
@@ -72,13 +95,23 @@ def pi() -> Agent:
                     env={"PATH": path, "HOME": "/root"},
                     timeout=AGENT_TIMEOUT,
                 )
-            except Exception:
+            except TimeoutError:
                 # Running out of time is the agent's failure, not infra: score
                 # whatever it left behind. Erroring would retry the sample and
-                # keep only the runs fast enough to finish. Other sandbox
-                # failures (connection loss, process kill) are treated the same
-                # so transient failures do not bias results by retrying.
-                store().set("timed_out", True)
+                # keep only the runs fast enough to finish.
+                store().set("stopped", "agent_timeout")
+                return bridge.state
+            except (OutputLimitExceededError, UnicodeDecodeError):
+                # pi's output overflowing the stream limit or failing to
+                # decode is the agent's doing too, not the sandbox's.
+                store().set("stopped", "agent_output")
+                return bridge.state
+            except Exception as e:
+                # A sandbox failure (connection loss, process kill) is scored
+                # the same way, so retrying doesn't keep only the runs that
+                # survive it, but labelled apart so the scorecard shows it.
+                store().set("stopped", "sandbox_error")
+                store().set("sandbox_error", f"{type(e).__name__}: {e}"[:2000])
                 return bridge.state
             if not result.success:
                 raise RuntimeError(f"pi exited {result.returncode}: {result.stderr[-2000:]}")
@@ -110,16 +143,18 @@ def last_turn_error(stdout: str) -> str | None:
 
 
 @scorer(metrics=[accuracy(), stderr()])
-def hidden_tests_and_checks():
+def hidden_tests_and_checks(task_id: str):
     """Correct when the hidden tests and every deterministic check pass. The
-    tests and checks reach the sandbox only now, after the agent has exited."""
+    tests and checks reach the sandbox only now, after the agent has exited.
+    Takes the task's id, not its path, so the eval log records the id."""
+    task_dir = config.task_dir(task_id)
 
     async def score(state: TaskState, target: Target) -> Score:
         sb = sandbox()
-        for f in (TASK / "hidden").glob("*.py"):
+        for f in (task_dir / "hidden").glob("*.py"):
             await sb.write_file(f"/score/hidden/{f.name}", f.read_text())
-        await sb.write_file("/score/checks.py", (TASK / "checks.py").read_text())
-        start = TASK / "project"
+        await sb.write_file("/score/checks.py", (task_dir / "checks.py").read_text())
+        start = task_dir / "project"
         for f in start.rglob("*"):
             if f.is_file():
                 text = f.read_text().replace("@IDENTITY_MODEL@", IDENTITY_MODEL)
@@ -143,12 +178,17 @@ def hidden_tests_and_checks():
         except (TimeoutError, ValueError, KeyError, TypeError):
             results = []
         failed = [c["name"] for c in results if not c["passed"]] if results else ["checks-crashed"]
-        timed_out = store().get("timed_out", False)
-        passed = tests_passed and not failed and not timed_out
+        stopped, sandbox_error = store().get("stopped"), store().get("sandbox_error")
+        passed = tests_passed and not failed and not stopped
+        why = {
+            "agent_timeout": "agent timed out; ",
+            "agent_output": "agent's output overflowed or didn't decode; ",
+            "sandbox_error": f"sandbox failed ({sandbox_error}); ",
+        }.get(stopped, "")
         return Score(
             value=1 if passed else 0,
-            explanation=f"{'agent timed out; ' if timed_out else ''}hidden tests {'passed' if tests_passed else 'failed'}; failed checks: {', '.join(failed) or 'none'}",
-            metadata={"timed_out": timed_out, "tests_passed": tests_passed, "tests_tail": tests_tail, "checks": results},
+            explanation=f"{why}hidden tests {'passed' if tests_passed else 'failed'}; failed checks: {', '.join(failed) or 'none'}",
+            metadata={"stopped": stopped, "sandbox_error": sandbox_error, "tests_passed": tests_passed, "tests_tail": tests_tail, "checks": results},
         )
 
     return score
