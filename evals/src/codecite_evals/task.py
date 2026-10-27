@@ -99,6 +99,11 @@ def client_auth_uri() -> Task:
     return ab_task("client-auth-uri")
 
 
+@task
+def backchannel_logout() -> Task:
+    return ab_task("backchannel-logout")
+
+
 @solver
 def arm_to_store():
     """Hand the sample's arm to the agent, which sees only its messages."""
