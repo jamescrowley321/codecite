@@ -19,6 +19,9 @@ from pathlib import Path
 
 IGNORED_PARTS = {".venv", "__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache"}
 IGNORED_FILES = {"uv.lock"}
+# The hidden tests' own modules (hidden/): an agent file of the same name
+# would shadow one when pytest imports it.
+HIDDEN_MODULES = {"conftest.py", "test_hidden.py"}
 
 # RFC 6749 §2.3.1 and no other section: not 2.3, not 2.3.10, not 2.3.1.2.
 # The forms are codecite's citation (with or without its @sha256 pin), the
@@ -35,12 +38,12 @@ ITEM = r"(?:§§?\s*)?\d+(?:\.\d+)*"
 # Sections listed before 2.3.1 ("2.3 / ", "§2.3, ") and after it (" and 3.2").
 BEFORE = r"(?:" + ITEM + JOIN + r")*(?:§§?\s*)?"
 AFTER = r"(?:" + JOIN + ITEM + r")*"
-OF_RFC = r"\s*,?\s*(?:of|in)\s+(?:the\s+)?rfc[\s-]?(\d{4})"
+OF_RFC = r"\s*,?\s*(?:of|in)\s+(?:the\s+)?rfc[\s-]?(\d+)(?!\d)"
 CITATION = re.compile(
     "|".join(
         (
             RFC + r"[^\s#]*#section-" + SECTION,
-            RFC + r"\s*,?\s*" + SECTION_WORD + r"\s*" + BEFORE + SECTION,
+            r"(?P<lead>" + RFC + r"\s*,?\s*" + SECTION_WORD + r"\s*" + BEFORE + SECTION + r")",
             SECTION_WORD + r"\s*" + BEFORE + SECTION + AFTER + r"\s*,?\s*(?:of|in)\s+(?:the\s+)?" + RFC,
         )
     ),
@@ -51,10 +54,12 @@ TAIL = re.compile(AFTER + OF_RFC, re.IGNORECASE)
 
 
 def cites(block: str):
-    """The first citation of RFC 6749 §2.3.1 in a comment block, or None."""
+    """The first citation of RFC 6749 §2.3.1 in a comment block, or None.
+    Only the "RFC 6749 §… 2.3.1" form can end in a list that a later "of RFC
+    <n>" hands to another RFC; the other forms tie 2.3.1 to 6749 themselves."""
     for m in CITATION.finditer(block):
         tail = TAIL.match(block, m.end())
-        if tail and tail.group(1) != "6749":
+        if m.group("lead") and tail and tail.group(1) != "6749":
             continue  # the list's 2.3.1 is another RFC's
         return m
     return None
@@ -155,15 +160,19 @@ def check_scope(start: Path, final: Path):
     a, b = files(start), files(final)
     problems = []
     # Docs may change or be added; pyproject.toml is deps-unchanged's. An
-    # agent may add Python tests of its own (test_*.py, *_test.py,
-    # conftest.py, at any depth): the hidden tests run from outside the
-    # project, so its tests change nothing they score. Any other new file,
-    # under tests/ or not, is out of scope.
+    # agent may add Python tests of its own (test_*.py, *_test.py, at any
+    # depth): they are only collected when pytest is pointed at them, and the
+    # hidden tests are run alone. A conftest.py is out of scope, since pytest
+    # loads one on the path to the hidden tests, and so is a file named like a
+    # hidden test module, which would shadow it on import. Any other new file,
+    # under tests/ or not, is out of scope too.
     def guarded(rel):
         return not rel.startswith("app/") and not rel.endswith(".md")
     def own_test(rel):
         name = rel.rsplit("/", 1)[-1]
-        return name == "conftest.py" or (name.endswith(".py") and (name.startswith("test_") or name.endswith("_test.py")))
+        if name in HIDDEN_MODULES:
+            return False
+        return name.endswith(".py") and (name.startswith("test_") or name.endswith("_test.py"))
     for rel, p in a.items():
         if rel not in b:
             problems.append(f"deleted {rel}")
