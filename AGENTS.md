@@ -81,15 +81,19 @@ loop.
 3. **Build test-first.** Before every push, run what CI runs:
    `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D
    warnings` and `cargo test --workspace --locked`.
-4. **Open the PR against `main`**, never stacked: the lenses review only PRs to
+4. **Open the PR against `main`**, never stacked: the review runs only on PRs to
    `main`. Use a conventional title and put `Closes #<n>`, the issue's
    acceptance criteria and the provenance section in the body.
-5. **Read the feedback.** CI and the lens reviews come back on the PR: one
-   review per lens from `github-actions[bot]`, then the Merge Gate's verdict.
-   Fix every MUST FIX at its cause, test-first. Lenses see only diff hunks, so
-   before fixing a "missing" line read the whole file; for a false positive,
-   reply on the PR saying why. Fix a SHOULD FIX when it's cheap. After three
-   review rounds, stop and summarise what's left in a PR comment.
+5. **Read the feedback.** CI and the blind peer review come back on the PR.
+   `claude.yml` runs the review when the PR opens and posts one comment,
+   "Blind peer review — PR #<n>", with a table per lens and a `Verdict:` line
+   (PASS or BLOCK). Fix every MUST FIX at its cause, test-first. Lenses see
+   only diff hunks, so before fixing a "missing" line read the whole file; for
+   a false positive, reply on the PR saying why. Fix every SHOULD FIX and
+   actionable NITPICK (an Acceptance Criteria NITPICK that only restates a
+   pass needs nothing). After pushing fixes, comment `@claude review this PR`
+   to get a fresh review of the new head. After three review rounds, stop and
+   summarise what's left in a PR comment.
 6. **Ask for an eval.** If the PR changes indexing, search, ranking or the
    CLI's output, add the `eval` label. The eval workflow runs the quick A/B
    eval on every push while the label is on and keeps its scorecard in one PR
