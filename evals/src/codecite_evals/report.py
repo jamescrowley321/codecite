@@ -144,8 +144,12 @@ def transcript(sample):
             continue
         turns += 1
         seconds += call_seconds(event)
-        response = (event.call.response if event.call else None) or {}
-        providers[clean(str(response.get("provider") or "unknown"))] += 1
+        # Inspect keeps a call's raw response only with --log-model-api
+        # (panel.sh passes it); without, only each model's first few.
+        if event.call is None:
+            providers["not logged"] += 1
+        else:
+            providers[clean(str((event.call.response or {}).get("provider") or "unknown"))] += 1
     return (turns, seconds, providers) if turns else (None, None, providers)
 
 

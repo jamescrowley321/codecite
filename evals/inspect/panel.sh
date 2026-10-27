@@ -17,7 +17,8 @@
 # (`inspect eval-retry`) instead of starting over. ARMS=aa runs an A/A round
 # (two baseline arms) instead of baseline against codecite, into logs of its
 # own (inspect/logs/<tier>-aa). Extra arguments go to `inspect eval` (CI
-# passes --sandbox-prebuilt).
+# passes --sandbox-prebuilt). --log-model-api keeps every call's raw response,
+# which names the upstream provider; by default Inspect keeps only the first few.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 TIER="${1:-}"
@@ -86,7 +87,7 @@ if [[ "${RETRY:-0}" == 1 ]]; then
 else
   models="$(printf 'openrouter/%s,' "${PANEL[@]}")"
   uv run --locked inspect eval codecite_evals/fastapi_middleware --model "${models%,}" -M strict_tools=false \
-    -T arms="$ARMS" --epochs "$EPOCHS" "${LIMITS[@]}" --log-dir "$LOG_DIR" --display log "$@" || status=$?
+    -T arms="$ARMS" --epochs "$EPOCHS" --log-model-api "${LIMITS[@]}" --log-dir "$LOG_DIR" --display log "$@" || status=$?
 fi
 minutes=$(((SECONDS - start) / 60))
 # The scorecard shows what finished even when a model's run failed. CI posts

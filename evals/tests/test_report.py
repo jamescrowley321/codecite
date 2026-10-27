@@ -158,12 +158,13 @@ def call(seconds, output_tokens, provider="Google"):
             usage=ModelUsage(output_tokens=output_tokens, total_tokens=output_tokens),
             time=seconds,
         ),
-        call=ModelCall(request={}, response={"provider": provider} if provider else {}),
+        call=None if provider == "-" else ModelCall(request={}, response={"provider": provider} if provider else {}),
     )
 
 
 def traced(arm, epoch, calls, wall=60.0, passed=True, failed_calls=0):
-    """A sample whose model calls took these (seconds, output tokens, provider)."""
+    """A sample whose model calls took these (seconds, output tokens, provider);
+    provider None leaves it out of the response, "-" logs no response."""
     s = sample(arm, epoch, passed=passed)
     s.total_time = wall
     s.model_usage = {"m": ModelUsage(total_tokens=1000, output_tokens=sum(c[1] for c in calls))}
@@ -230,6 +231,12 @@ def test_providers_are_counted_per_arm():
     _, rows = table(scorecard([log("openrouter/m", base + code)]), 1)
     assert rows[("m", "baseline")]["providers"] == "Google 4, Google-Vertex 4"
     assert rows[("m", "codecite")]["providers"] == "Google 4, unknown 4"
+
+
+def test_calls_without_a_logged_response_are_not_logged():
+    s = traced("baseline", 1, [(4.0, 200, "Google"), (4.0, 200, "-"), (4.0, 200, "-")])
+    _, rows = table(scorecard([log("openrouter/m", [s])]), 1)
+    assert rows[("m", "baseline")]["providers"] == "not logged 2, Google 1"
 
 
 def test_provider_names_cannot_break_the_table():
