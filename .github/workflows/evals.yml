@@ -39,12 +39,13 @@ permissions:
 
 # A push to a labelled PR cancels its stale eval. Events that run nothing (any
 # other label, a push to an unlabelled PR) get a group of their own, so they
-# cancel nothing. Dispatches queue rather than cancel, one group per task, tier
-# and arms: GitHub keeps one pending run per group and cancels the one before,
-# so without the task, calibrating two tasks at once dropped the first.
+# cancel nothing. Dispatches queue rather than cancel, one group per set of
+# inputs (task, tier, arms, epochs, resume): GitHub keeps one pending run per
+# group and cancels the one before, so without the task, calibrating two tasks
+# at once dropped the first. Only an identical dispatch replaces a pending one.
 concurrency:
   group: >-
-    evals-${{ github.event.pull_request.number || github.ref }}-${{ inputs.task || 'pr' }}-${{ inputs.tier || 'quick' }}-${{ inputs.arms || 'ab' }}-${{
+    evals-${{ github.event.pull_request.number || github.ref }}-${{ inputs.task || 'pr' }}-${{ inputs.tier || 'quick' }}-${{ inputs.arms || 'ab' }}-${{ inputs.epochs || 'default' }}-${{ inputs.resume || 'fresh' }}-${{
     (github.event_name == 'workflow_dispatch'
     || (github.event.action == 'labeled' && github.event.label.name == 'eval')
     || (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'eval')))
