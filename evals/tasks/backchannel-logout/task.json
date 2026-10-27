@@ -20,6 +20,8 @@
     "--no-project",
     "--with",
     "pytest==9.1.1",
+    "--with",
+    "httpx==0.28.1",
     "python",
     "-c",
     ""
@@ -29,6 +31,8 @@
     "run",
     "--with",
     "pytest==9.1.1",
+    "--with",
+    "httpx==0.28.1",
     "pytest",
     "-q",
     "-p",
