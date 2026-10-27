@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
-# Wait for the CI blind peer review (blind-peer-review.yml) on a PR's head commit.
+# Wait for the claude.yml blind peer review of a PR's head commit.
 #
 #   ralph/wait-review.sh <pr> <out file>
 #
-# The lenses run on every push to a PR that targets main, and each posts a PR
-# review. The workflow's Merge Gate job adjudicates them: it passes, or it
-# fails on a MUST FIX. This script reads that verdict for the PR's current head
-# commit, so a push re-reviews without any request.
+# claude.yml reviews a PR when it opens, and again when an owner or
+# collaborator comments `@claude review this PR`. Each review posts one PR
+# comment headed "## Blind peer review" with a verdict line, PASS or BLOCK.
+# This script takes the newest such comment from claude[bot] posted after the
+# head commit, so a review of an older commit is never read. A review that
+# names its head (head `<sha>`) must name this one.
 #
 # Sleeps a minute first, then polls for up to 8 minutes, so a call fits inside
 # one foreground Bash call (10-minute cap). The review phase calls it again on
 # WAITING. Prints one line:
-#   FOUND <PASS|BLOCK>          exit 0   (the lens reviews are written to <out file>)
-#   REVIEW_FAILED <reason>      exit 3   (no CI verdict will come for this commit)
+#   FOUND <PASS|BLOCK>          exit 0   (the review comment is written to <out file>)
+#   REVIEW_FAILED <reason>      exit 3   (no verdict will come for this commit)
 #   WAITING                     exit 4   (still running; call again)
 set -euo pipefail
 
@@ -20,55 +22,30 @@ pr="$1"
 out="$2"
 repo=jamescrowley321/codecite
 
-read -r base sha < <(gh pr view "$pr" -R "$repo" --json baseRefName,headRefOid \
-  --jq '"\(.baseRefName) \(.headRefOid)"')
-
-# The workflow only runs on PRs to main; a stacked PR gets no CI review.
-if [[ "$base" != main ]]; then
-  echo "REVIEW_FAILED no CI review: the lenses run only on PRs to main, and this one targets $base"
-  exit 3
-fi
+read -r sha committed < <(gh pr view "$pr" -R "$repo" --json headRefOid,commits \
+  --jq '"\(.headRefOid) \(.commits[-1].committedDate)"')
 
 sleep "${WAIT_SLEEP:-60}"
 
 for _ in $(seq 1 8); do
-  # The newest lens run on this commit; a description edit starts another one
-  # and cancels the old.
-  run=$(gh run list -R "$repo" --workflow blind-peer-review.yml --commit "$sha" --limit 5 \
-    --json databaseId,status,conclusion,createdAt --jq 'max_by(.createdAt) // empty')
-  if [[ -n "$run" && $(jq -r .status <<< "$run") == completed ]]; then
-    id=$(jq -r .databaseId <<< "$run")
-    gate=$(gh run view "$id" -R "$repo" --json jobs --jq '.jobs[] | select(.name == "Merge Gate")')
-    # Which gate step failed tells a BLOCK from a review that never finished.
-    step() { jq -r --arg n "$1" '(.steps // [])[] | select(.name == $n) | .conclusion' <<< "$gate"; }
-    if [[ $(jq -r .conclusion <<< "$run") == cancelled ]]; then
-      :  # superseded; the newer run shows up on a later poll
-    elif [[ -z "$gate" || $(jq -r .conclusion <<< "$gate") == skipped ]]; then
-      echo "REVIEW_FAILED run $id ran no Merge Gate (lenses disabled by RUN_LENSES?)"
-      exit 3
-    elif [[ $(step "Fail closed when prerequisites did not succeed") == failure ]]; then
-      echo "REVIEW_FAILED run $id: a lens or its preflight did not finish (see the run)"
-      exit 3
-    elif [[ $(step "Adjudicate lenses") == success ]]; then
-      verdict=PASS
-    elif [[ $(step "Adjudicate lenses") == failure ]]; then
-      verdict=BLOCK
-    else
-      echo "REVIEW_FAILED run $id: the Merge Gate did not adjudicate (exempt PR?)"
-      exit 3
-    fi
-    if [[ -n "${verdict:-}" ]]; then
-      # Every lens review on this commit, as the review-fix phase reads them.
-      # Only the workflow's bot: anyone can post a review carrying the marker.
-      gh api "repos/$repo/pulls/$pr/reviews" --paginate --jq \
-        ".[] | select(.user.login == \"github-actions[bot]\" and .user.type == \"Bot\"
-                      and .commit_id == \"$sha\" and ((.body // \"\") | contains(\"blind-peer-review:rendered-v1\")))
-         | \"\(.body)\n\n---\n\"" \
-        | python3 -I -c 'import html, sys; sys.stdout.write(html.unescape(sys.stdin.read()))' > "$out"
-      if [[ $verdict == BLOCK && ! -s "$out" ]]; then
-        echo "REVIEW_FAILED run $id: the Merge Gate blocked but no lens review was found"
+  # Only claude[bot]: anyone can post a comment with the heading.
+  review=$(gh api "repos/$repo/issues/$pr/comments" --paginate --jq "
+    .[] | select(.user.login == \"claude[bot]\" and .user.type == \"Bot\"
+                 and ((.body // \"\") | startswith(\"## Blind peer review\"))
+                 and .created_at > \"$committed\")" | jq -s 'max_by(.created_at) // empty')
+  if [[ -n "$review" ]]; then
+    body=$(jq -r .body <<< "$review")
+    named=$(grep -oE 'head `[0-9a-f]{7,40}`' <<< "$body" | head -1 | tr -d '`' | cut -d' ' -f2 || true)
+    if [[ -z "$named" || "$sha" == "$named"* ]]; then
+      # The first line that is a verdict, in any of the skill's spellings
+      # ("Verdict: **BLOCK**", "### Verdict: **PASS**", "**Verdict:** PASS").
+      # A finding that quotes a verdict mid-line is not one.
+      verdict=$(grep -m1 -oiE '^[#[:space:]]*\**verdict\**:?\**[[:space:]]*\**(PASS|BLOCK)\b' <<< "$body" | grep -oiE '(PASS|BLOCK)$' | tr a-z A-Z || true)
+      if [[ -z "$verdict" ]]; then
+        echo "REVIEW_FAILED the review comment has no Verdict: line ($(jq -r .html_url <<< "$review"))"
         exit 3
       fi
+      printf '%s\n' "$body" > "$out"
       echo "FOUND $verdict"
       exit 0
     fi

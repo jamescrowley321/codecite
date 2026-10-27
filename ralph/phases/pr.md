@@ -7,7 +7,7 @@
    - `Closes #<issue>`. If `<base_branch>` isn't `main`: "Stacked on #<parent PR>. Review and merge that one first."
    - **What this adds:** what changed and why, file by file where useful.
    - **Rust notes:** each idiom or design choice the owner should learn from this change, a few sentences each. This is the most important part of the PR for a learning repo.
-   - **Review:** "The blind peer review lenses run in CI on PRs to main (a stacked PR gets a local review instead); the loop answers each round in a PR comment."
+   - **Review:** "The blind peer review runs in CI (claude.yml) and posts its verdict as a PR comment; the loop answers each round in a PR comment."
    - **Checks:** the gate commands and their results.
    - **Provenance:** "Written by Claude Code (model: <the model running this session>) in the ralph loop. James Crowley (@jamescrowley321) is the accountable human and reviews before merge." The CI review's policy lens blocks a PR whose description doesn't name both the harness and the model, plus an accountable human.
    - End with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.

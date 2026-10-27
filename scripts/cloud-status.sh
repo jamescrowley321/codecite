@@ -9,7 +9,7 @@
 # DIRTY has conflicts, BLOCKED is waiting on a required check, UNSTABLE has a
 # failing check that isn't required.
 # Review: PASS or BLOCK from the latest "Blind peer review" comment that
-# claude.yml posts, "stale" when commits landed after it, "none" before the
+# claude.yml posts (claude[bot]'s only: anyone can post the heading), "stale" when commits landed after it, "none" before the
 # first. A stale PR gets a fresh review from an `@claude review this PR` comment.
 # Session links from scripts/cloud-launch.sh are in
 # ~/.local/state/codecite/cloud-sessions.log.
@@ -23,13 +23,21 @@ fi
 
 printf '%-6s %-8s %-12s %-8s %-6s %s\n' PR STATE REVIEW ISSUE EVAL TITLE
 for n in "${prs[@]}"; do
-  gh pr view "$n" --json number,title,body,mergeStateStatus,commits,comments,labels | jq -r '
+  # The REST API names the bot claude[bot], a login no user can hold; gh pr
+  # view drops the suffix.
+  reviews=$(gh api "repos/{owner}/{repo}/issues/$n/comments" --paginate --jq '
+    .[] | select(.user.login == "claude[bot]" and .user.type == "Bot"
+                 and ((.body // "") | startswith("## Blind peer review")))
+    | {body, createdAt: .created_at}' | jq -s .)
+  gh pr view "$n" --json number,title,body,mergeStateStatus,commits,comments,labels | jq -r --argjson reviews "$reviews" '
     # capture() emits nothing on a miss, so each match is collected in an
     # array and defaulted; any list gh returns can be null.
     ((.commits // []) | .[-1].committedDate // "") as $pushed
-    | ([(.comments // [])[] | select((.body // "") | startswith("## Blind peer review"))] | .[-1]) as $rev
+    | ($reviews | max_by(.createdAt)) as $rev
+    # The first line that is a verdict ("Verdict: **BLOCK**", "### Verdict:
+    # **PASS**", "**Verdict:** PASS"), not a finding that quotes one.
     | (if $rev == null then "none"
-       else ([$rev.body | capture("Verdict: \\*\\*(?<v>[A-Z]+)\\*\\*").v] | .[0] // "?")
+       else ([$rev.body | capture("(?im)^[#\\s]*\\**verdict\\**:?\\**\\s*\\**(?<v>PASS|BLOCK)\\b").v] | .[0] // "?" | ascii_upcase)
          + (if $rev.createdAt < $pushed then " stale" else "" end)
        end) as $review
     | ([(.body // "") | capture("(?i)(closes|part of) #(?<i>[0-9]+)").i] | .[0]

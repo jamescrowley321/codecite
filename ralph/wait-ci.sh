@@ -4,7 +4,7 @@
 #   ralph/wait-ci.sh <branch> [sha]     # sha defaults to HEAD
 #
 # Covers every workflow that runs on the commit (CI, Security, CodeQL,
-# OSV-Scanner, Dependency Review, ...) except the review workflows, which are
+# OSV-Scanner, Dependency Review, ...) except the review workflow, which is
 # the review phase's concern. main's required checks live across all of them.
 #
 # Sleeps a minute first so GitHub has registered the push, then waits for the
@@ -22,8 +22,8 @@ set -euo pipefail
 branch="$1"
 sha="${2:-$(git rev-parse HEAD)}"
 repo=jamescrowley321/codecite
-# Advisory review workflows: never a CI failure.
-skip='["Blind Peer Review", "Claude Code"]'
+# The advisory review workflow: never a CI failure.
+skip='["Claude Code"]'
 
 sleep "${WAIT_SLEEP:-60}"
 
