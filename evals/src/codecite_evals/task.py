@@ -1,23 +1,24 @@
 """The fastapi-middleware A/B eval on Inspect: pi in a Docker sandbox, with
 and without codecite, on any model Inspect can reach.
 
-    uv run inspect eval inspect/task.py --model openrouter/openai/gpt-6.1-sol -M strict_tools=false --epochs 2
+    uv run inspect eval codecite_evals/fastapi_middleware --model openrouter/openai/gpt-6.1-sol -M strict_tools=false --epochs 2
 
 Each sample is one arm; epochs repeat it. pi's model calls go through
 Inspect's agent bridge, so Inspect records every call and its tokens.
 """
 
 import json
-from pathlib import Path
 
 from inspect_ai import Task, task
 from inspect_ai.agent import Agent, AgentState, agent, sandbox_agent_bridge
 from inspect_ai.dataset import Sample
 from inspect_ai.scorer import Score, Target, accuracy, scorer, stderr
 from inspect_ai.solver import Generate, TaskState, solver
-from inspect_ai.util import sandbox, store
+from inspect_ai.util import OutputLimitExceededError, sandbox, store
 
-TASK = Path(__file__).resolve().parent.parent / "tasks" / "fastapi-middleware"
+from codecite_evals import config
+
+TASK = config.task_dir("fastapi-middleware")
 PROJECT = "/work/project"
 IDENTITY_MODEL = "/opt/identity-model"
 CODECITE_NOTE = (
@@ -41,7 +42,7 @@ def fastapi_middleware() -> Task:
         dataset=[Sample(id=arm, input=prompt(arm), metadata={"arm": arm}) for arm in ("baseline", "codecite")],
         solver=[arm_to_store(), pi()],
         scorer=hidden_tests_and_checks(),
-        sandbox=("docker", str(Path(__file__).with_name("compose.yaml"))),
+        sandbox=("docker", str(config.COMPOSE)),
     )
 
 
@@ -72,13 +73,23 @@ def pi() -> Agent:
                     env={"PATH": path, "HOME": "/root"},
                     timeout=AGENT_TIMEOUT,
                 )
-            except Exception:
+            except TimeoutError:
                 # Running out of time is the agent's failure, not infra: score
                 # whatever it left behind. Erroring would retry the sample and
-                # keep only the runs fast enough to finish. Other sandbox
-                # failures (connection loss, process kill) are treated the same
-                # so transient failures do not bias results by retrying.
-                store().set("timed_out", True)
+                # keep only the runs fast enough to finish.
+                store().set("stopped", "agent_timeout")
+                return bridge.state
+            except (OutputLimitExceededError, UnicodeDecodeError):
+                # pi's output overflowing the stream limit or failing to
+                # decode is the agent's doing too, not the sandbox's.
+                store().set("stopped", "agent_output")
+                return bridge.state
+            except Exception as e:
+                # A sandbox failure (connection loss, process kill) is scored
+                # the same way, so retrying doesn't keep only the runs that
+                # survive it, but labelled apart so the scorecard shows it.
+                store().set("stopped", "sandbox_error")
+                store().set("sandbox_error", f"{type(e).__name__}: {e}"[:2000])
                 return bridge.state
             if not result.success:
                 raise RuntimeError(f"pi exited {result.returncode}: {result.stderr[-2000:]}")
@@ -143,12 +154,17 @@ def hidden_tests_and_checks():
         except (TimeoutError, ValueError, KeyError, TypeError):
             results = []
         failed = [c["name"] for c in results if not c["passed"]] if results else ["checks-crashed"]
-        timed_out = store().get("timed_out", False)
-        passed = tests_passed and not failed and not timed_out
+        stopped, sandbox_error = store().get("stopped"), store().get("sandbox_error")
+        passed = tests_passed and not failed and not stopped
+        why = {
+            "agent_timeout": "agent timed out; ",
+            "agent_output": "agent's output overflowed or didn't decode; ",
+            "sandbox_error": f"sandbox failed ({sandbox_error}); ",
+        }.get(stopped, "")
         return Score(
             value=1 if passed else 0,
-            explanation=f"{'agent timed out; ' if timed_out else ''}hidden tests {'passed' if tests_passed else 'failed'}; failed checks: {', '.join(failed) or 'none'}",
-            metadata={"timed_out": timed_out, "tests_passed": tests_passed, "tests_tail": tests_tail, "checks": results},
+            explanation=f"{why}hidden tests {'passed' if tests_passed else 'failed'}; failed checks: {', '.join(failed) or 'none'}",
+            metadata={"stopped": stopped, "sandbox_error": sandbox_error, "tests_passed": tests_passed, "tests_tail": tests_tail, "checks": results},
         )
 
     return score
