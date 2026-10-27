@@ -38,28 +38,34 @@ ITEM = r"(?:§§?\s*)?\d+(?:\.\d+)*"
 # Sections listed before 2.3.1 ("2.3 / ", "§2.3, ") and after it (" and 3.2").
 BEFORE = r"(?:" + ITEM + JOIN + r")*(?:§§?\s*)?"
 AFTER = r"(?:" + JOIN + ITEM + r")*"
+# The rest of a list after 2.3.1: bare numbers only, since a "§3.2" starts a
+# citation of its own ("RFC 6749 §2.3.1 and §3.2 of RFC 7523").
+REST = r"(?:" + JOIN + r"\d+(?:\.\d+)*)*"
 OF_RFC = r"\s*,?\s*(?:of|in)\s+(?:the\s+)?rfc[\s-]?(\d+)(?!\d)"
 CITATION = re.compile(
     "|".join(
         (
             RFC + r"[^\s#]*#section-" + SECTION,
-            r"(?P<lead>" + RFC + r"\s*,?\s*" + SECTION_WORD + r"\s*" + BEFORE + SECTION + r")",
+            r"(?P<lead>" + RFC + r"\s*,?\s*" + SECTION_WORD + r"\s*(?P<before>" + BEFORE + r")" + SECTION + r")",
             SECTION_WORD + r"\s*" + BEFORE + SECTION + AFTER + r"\s*,?\s*(?:of|in)\s+(?:the\s+)?" + RFC,
         )
     ),
     re.IGNORECASE,
 )
 # What follows a match: the rest of its list, then "of RFC <n>" if any.
-TAIL = re.compile(AFTER + OF_RFC, re.IGNORECASE)
+TAIL = re.compile(REST + OF_RFC, re.IGNORECASE)
 
 
 def cites(block: str):
     """The first citation of RFC 6749 §2.3.1 in a comment block, or None.
-    Only the "RFC 6749 §… 2.3.1" form can end in a list that a later "of RFC
-    <n>" hands to another RFC; the other forms tie 2.3.1 to 6749 themselves."""
+    Only the "RFC 6749 §… 2.3.1" form, with sections listed before 2.3.1,
+    can end in a list that a later "of RFC <n>" hands to another RFC; when
+    2.3.1 comes straight after "RFC 6749 §", or in the other forms, it is
+    6749's."""
     for m in CITATION.finditer(block):
         tail = TAIL.match(block, m.end())
-        if m.group("lead") and tail and tail.group(1) != "6749":
+        listed = m.group("lead") and re.search(r"\d", m.group("before") or "")
+        if listed and tail and tail.group(1) != "6749":
             continue  # the list's 2.3.1 is another RFC's
         return m
     return None
@@ -160,16 +166,20 @@ def check_scope(start: Path, final: Path):
     a, b = files(start), files(final)
     problems = []
     # Docs may change or be added; pyproject.toml is deps-unchanged's. An
-    # agent may add Python tests of its own (test_*.py, *_test.py, at any
-    # depth): they are only collected when pytest is pointed at them, and the
-    # hidden tests are run alone. A conftest.py is out of scope, since pytest
-    # loads one on the path to the hidden tests, and so is a file named like a
-    # hidden test module, which would shadow it on import. Any other new file,
-    # under tests/ or not, is out of scope too.
+    # agent may add Python tests of its own (test_*.py, *_test.py, and a
+    # conftest.py or __init__.py beside them, below the project root): the
+    # score command runs pytest on the hidden directory alone, from the
+    # project root, so it loads none of them. A conftest.py at the root is out
+    # of scope, since pytest loads it for the hidden run, and so is a file
+    # named like a hidden test module, which would shadow it on import. Any
+    # other new file, under tests/ or not, is out of scope too.
     def guarded(rel):
         return not rel.startswith("app/") and not rel.endswith(".md")
     def own_test(rel):
         name = rel.rsplit("/", 1)[-1]
+        nested = "/" in rel
+        if name in ("conftest.py", "__init__.py"):
+            return nested
         if name in HIDDEN_MODULES:
             return False
         return name.endswith(".py") and (name.startswith("test_") or name.endswith("_test.py"))

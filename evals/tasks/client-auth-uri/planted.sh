@@ -90,12 +90,15 @@ plant section-list-without "" cites-section "sed -i 's|RFC 6749 §2.3.1:|RFC 674
 plant section-signs-list "" "" "sed -i 's|RFC 6749 §2.3.1:|RFC 6749 §2.3, §2.3.1:|' app/main.py" || status=1
 plant sections-of-rfc "" "" "sed -i 's|RFC 6749 §2.3.1:|Sections 2.3.1 and 3.2 of RFC 6749:|' app/main.py" || status=1
 plant section-of-rfc-then-other "" "" "sed -i 's|RFC 6749 §2.3.1:|Section 2.3.1 of RFC 6749 and §3.2 of RFC 7523:|' app/main.py" || status=1
+plant first-then-other-rfc "" "" "sed -i 's|RFC 6749 §2.3.1:|RFC 6749 §2.3.1 and §3.2 of RFC 7523:|' app/main.py" || status=1
+plant listed-then-other-rfc "" "" "sed -i 's|RFC 6749 §2.3.1:|RFC 6749 §2.3, 2.3.1 and §3.2 of RFC 7523:|' app/main.py" || status=1
 plant anchor-then-other "" "" "sed -i 's|RFC 6749 §2.3.1:|rfc6749#section-2.3.1 and 3 of RFC 7523:|' app/main.py" || status=1
 plant list-of-three-digit-rfc "" cites-section "sed -i 's|RFC 6749 §2.3.1:|RFC 6749 §3.2 and 2.3.1 of RFC 822:|' app/main.py" || status=1
 plant list-of-other-rfc "" cites-section "sed -i 's|RFC 6749 §2.3.1:|RFC 6749 §3.2 and 2.3.1 of RFC 7523:|' app/main.py" || status=1
 # The agent's own tests are not out of scope; other new files still are.
 plant added-tests "" "" "mkdir -p tests && echo 'def test_x(): pass' > tests/test_token.py && echo 'def test_y(): pass' > test_app.py && echo 'def test_z(): pass' > tests/token_test.py" || status=1
 plant added-conftest "" scope "echo '' > conftest.py" || status=1
+plant tests-package "" "" "mkdir -p tests && echo 'def test_x(): pass' > tests/test_token.py && echo '' > tests/__init__.py && echo 'import pytest' > tests/conftest.py" || status=1
 plant shadows-hidden-module "" scope "echo 'def test_x(): pass' > test_hidden.py" || status=1
 plant added-non-test-under-tests "" scope "mkdir -p tests && echo 'echo hi' > tests/run.sh" || status=1
 exit "$status"
