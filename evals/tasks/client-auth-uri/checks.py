@@ -23,16 +23,19 @@ IGNORED_FILES = {"uv.lock"}
 # RFC 6749 §2.3.1 and no other section: not 2.3, not 2.3.10, not 2.3.1.2.
 # The forms are codecite's citation (with or without its @sha256 pin), the
 # spec URL with its anchor, "RFC 6749 §2.3.1" / "RFC 6749, Section 2.3.1",
-# and "Section 2.3.1 of RFC 6749".
+# and "Section 2.3.1 of RFC 6749". A section may be one of a list
+# ("RFC 6749 section 2.3 / 2.3.1", "§§2.3, 2.3.1 and 3.2").
 RFC = r"rfc[\s-]?6749(?!\d)"
 SECTION = r"2\.3\.1(?!\.?\d)"
-SECTION_WORD = r"(?:§|sec(?:tion|\.)?)"
+SECTION_WORD = r"(?:§§?|sec(?:tions?|s?\.)?)"
+# Sections listed before 2.3.1: "2.3 / ", "2.3, ", "2.3 and ".
+BEFORE = r"(?:\d+(?:\.\d+)*\s*(?:/|,|&|and)\s*)*"
 CITATION = re.compile(
     "|".join(
         (
             RFC + r"[^\s#]*#section-" + SECTION,
-            RFC + r"\s*,?\s*" + SECTION_WORD + r"\s*" + SECTION,
-            SECTION_WORD + r"\s*" + SECTION + r"\s*,?\s*(?:of|in)\s+(?:the\s+)?" + RFC,
+            RFC + r"\s*,?\s*" + SECTION_WORD + r"\s*" + BEFORE + SECTION,
+            SECTION_WORD + r"\s*" + BEFORE + SECTION + r"\s*,?\s*(?:of|in)\s+(?:the\s+)?" + RFC,
         )
     ),
     re.IGNORECASE,
@@ -133,18 +136,23 @@ def files(project: Path):
 def check_scope(start: Path, final: Path):
     a, b = files(start), files(final)
     problems = []
-    # Docs may change or be added; pyproject.toml is deps-unchanged's.
+    # Docs may change or be added; pyproject.toml is deps-unchanged's. An
+    # agent may add tests of its own (tests/, test_*.py): the hidden tests
+    # run from outside the project, so its tests change nothing they score.
     def guarded(rel):
         return not rel.startswith("app/") and not rel.endswith(".md")
+    def own_test(rel):
+        name = rel.rsplit("/", 1)[-1]
+        return rel.startswith("tests/") or (name.startswith("test_") and name.endswith(".py"))
     for rel, p in a.items():
         if rel not in b:
             problems.append(f"deleted {rel}")
         elif guarded(rel) and rel != "pyproject.toml" and p.read_bytes() != b[rel].read_bytes():
             problems.append(f"changed {rel}")
-    problems += [f"added {rel}" for rel in sorted(b.keys() - a.keys()) if guarded(rel)]
+    problems += [f"added {rel}" for rel in sorted(b.keys() - a.keys()) if guarded(rel) and not own_test(rel)]
     if problems:
         return False, "; ".join(problems[:5])
-    return True, "no start file deleted, and none outside app/ added or changed but docs"
+    return True, "no start file deleted, and none outside app/ added or changed but docs and tests"
 
 
 def main():
