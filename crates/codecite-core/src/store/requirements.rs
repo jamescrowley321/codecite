@@ -64,9 +64,10 @@ pub struct RequirementSection {
     /// Its heading.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
-    /// Why it governs: `asked`; `subsection` of it; `referenced` by it or
-    /// a subsection (`Section 2.4`, or a section whose title its title
-    /// holds); `referring` to it or a subsection; or `context`, the
+    /// Why it governs: `asked`; `subsection` of it; `enclosing` it, short
+    /// of the top-level section; `referenced` by it, a subsection or an
+    /// enclosing section (`Section 2.4`, or a section whose title one of
+    /// their titles holds); `referring` to one of those; or `context`, the
     /// enclosing section of a referring subsection.
     pub relation: String,
     /// Its statements: `MUST`-level first, then its steps in order, then
@@ -137,6 +138,7 @@ struct Chunk {
 enum Relation {
     Asked,
     Subsection,
+    Enclosing,
     Referenced,
     Referring,
     Context,
@@ -147,6 +149,7 @@ impl Relation {
         match self {
             Self::Asked => "asked",
             Self::Subsection => "subsection",
+            Self::Enclosing => "enclosing",
             Self::Referenced => "referenced",
             Self::Referring => "referring",
             Self::Context => "context",
@@ -161,6 +164,8 @@ impl Store {
     ///
     /// The governing sections are, in one document version: the section,
     /// with every one of its steps; its subsections, with theirs; the
+    /// sections enclosing it, short of the top-level one, whose links below
+    /// count as its own; the
     /// sections it or a subsection names (`Section 2.4`, but not
     /// `Section 2 of [JWT]`) or whose title of two or more words its title
     /// holds; the sections that name it or a subsection; and the enclosing
@@ -382,26 +387,47 @@ fn governing(sections: &[Chunk], asked: usize) -> HashMap<usize, Relation> {
         }
         k += 1;
     }
-    let family_set: HashSet<usize> = family.iter().copied().collect();
-    let family_numbers: HashSet<&str> = family
+    // The enclosing sections, up to but not including the top-level one,
+    // whose links are a whole chapter's: a rule for §2.3.1 can hang off
+    // §2.3 (RFC 6749 §3.2.1 names §2.3, not §2.3.1).
+    let mut enclosing = Vec::new();
+    let mut parent = sections[asked].parent.and_then(|p| index.get(&p).copied());
+    while let Some(p) = parent {
+        let grandparent = sections[p].parent.and_then(|g| index.get(&g).copied());
+        if grandparent.is_none() {
+            break;
+        }
+        enclosing.push(p);
+        add(&mut relations, p, Relation::Enclosing);
+        parent = grandparent;
+    }
+
+    // The sections whose links count: the asked one, its subsections and
+    // its enclosing sections.
+    let linked: Vec<usize> = family.iter().chain(&enclosing).copied().collect();
+    let linked_set: HashSet<usize> = linked.iter().copied().collect();
+    let linked_numbers: HashSet<&str> = linked
         .iter()
         .map(|&i| sections[i].number.as_str())
         .collect();
 
-    // What the asked section and its subsections name.
-    for &i in &family {
+    // What they name.
+    for &i in &linked {
         for number in section_references(&sections[i].text) {
             if let Some(&j) = by_number.get(number.as_str())
-                && !family_set.contains(&j)
+                && !linked_set.contains(&j)
             {
                 add(&mut relations, j, Relation::Referenced);
             }
         }
     }
-    if let Some(title) = sections[asked].title.as_deref() {
+    for &i in std::iter::once(&asked).chain(&enclosing) {
+        let Some(title) = sections[i].title.as_deref() else {
+            continue;
+        };
         for (j, s) in sections.iter().enumerate() {
             if let Some(other) = s.title.as_deref()
-                && !family_set.contains(&j)
+                && !linked_set.contains(&j)
                 && other.split_whitespace().count() >= 2
                 && holds_phrase(title, other)
             {
@@ -413,16 +439,16 @@ fn governing(sections: &[Chunk], asked: usize) -> HashMap<usize, Relation> {
     // What names them, and the enclosing section of a referring
     // subsection.
     for (j, s) in sections.iter().enumerate() {
-        if family_set.contains(&j) {
+        if linked_set.contains(&j) {
             continue;
         }
         let refers = section_references(&s.text)
             .iter()
-            .any(|n| family_numbers.contains(n.as_str()));
+            .any(|n| linked_numbers.contains(n.as_str()));
         if refers && citable(&j) {
             add(&mut relations, j, Relation::Referring);
             if let Some(&parent) = s.parent.as_ref().and_then(|p| index.get(p))
-                && !family_set.contains(&parent)
+                && !linked_set.contains(&parent)
             {
                 add(&mut relations, parent, Relation::Context);
             }
@@ -846,6 +872,35 @@ mod tests {
             human.contains("  [REQUIRED] exp: REQUIRED. Expiration time."),
             "{human}"
         );
+    }
+
+    #[test]
+    fn a_subsection_takes_in_its_enclosing_sections_links() {
+        let (store, _dir) = fixture();
+        let r = store
+            .requirements("Logout §2.2.1", &RequirementsOptions::default())
+            .unwrap();
+        let relations: Vec<(String, String)> = summary(&r)
+            .into_iter()
+            .map(|(citation, relation, _)| (citation, relation))
+            .collect();
+        let want = [
+            ("#section-2.2.1", "asked"),
+            ("#section-2.2", "enclosing"),
+            ("#section-2.1", "referenced"),
+            ("#section-3", "referenced"),
+            ("#section-4", "context"),
+            ("#section-4.1", "referring"),
+        ];
+        let want: Vec<(String, String)> = want
+            .iter()
+            .map(|(c, r)| ((*c).to_owned(), (*r).to_owned()))
+            .collect();
+        assert_eq!(relations, want);
+        // An enclosing section lists only its steps with a keyword.
+        let enclosing = &r.sections[1].statements;
+        assert!(enclosing.iter().any(|s| s.citation.ends_with("/step-1")));
+        assert!(!enclosing.iter().any(|s| s.citation.ends_with("/step-2")));
     }
 
     #[test]

@@ -203,6 +203,43 @@ fn rfc_6749_2_3_lays_out_its_rules() {
 }
 
 #[test]
+fn a_subsection_takes_in_what_governs_its_enclosing_sections() {
+    let home = indexed();
+    // Agents ask for the subsection; the token endpoint's rule hangs off
+    // §2.3, which §3.2.1 names.
+    let result = requirements(home.path(), &["RFC 6749 §2.3.1"]);
+    let order: Vec<&str> = sections(&result);
+    assert!(order[0].ends_with("#section-2.3.1"), "{order:?}");
+    assert_eq!(group(&result, "2.3.1")["relation"], "asked");
+    assert_eq!(group(&result, "2.3")["relation"], "enclosing");
+    assert!(holds(
+        group(&result, "2.3"),
+        "MUST NOT use more than one authentication method"
+    ));
+    assert_eq!(group(&result, "3.2")["relation"], "context");
+    assert!(holds(
+        group(&result, "3.2"),
+        "MUST NOT be included more than once"
+    ));
+    // A sibling of the subsection is not taken in, nor the top-level §2.
+    for number in ["2.3.2", "2"] {
+        let anchor = format!("#section-{number}");
+        assert!(!order.iter().any(|c| c.ends_with(&anchor)), "{order:?}");
+    }
+}
+
+#[test]
+fn a_section_under_a_top_level_one_does_not_balloon() {
+    // §2.6's only ancestor is the top-level §2, whose links are the whole
+    // chapter's: they are not taken in.
+    let home = indexed();
+    let result = requirements(home.path(), &["Back-Channel Logout §2.6"]);
+    let order = sections(&result);
+    assert_eq!(order.len(), 2, "{order:?}");
+    assert!(order[1].ends_with("#section-2.4"), "{order:?}");
+}
+
+#[test]
 fn a_topic_and_a_document_pick_the_section() {
     let home = indexed();
     let result = requirements(
