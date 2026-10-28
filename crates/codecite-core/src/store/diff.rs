@@ -7,7 +7,9 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::LazyLock;
 
+use regex::Regex;
 use rusqlite::params;
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -91,12 +93,9 @@ impl fmt::Display for DiffResult {
                 self.reworded.len()
             )?;
             for c in &self.reworded {
-                writeln!(
-                    f,
-                    "  {} → {}",
-                    c.from.as_deref().unwrap_or("-"),
-                    c.to.as_deref().unwrap_or("-")
-                )?;
+                let first = c.to_text.as_deref().and_then(|t| t.lines().next());
+                let first: String = first.unwrap_or_default().trim().chars().take(80).collect();
+                writeln!(f, "  {} · {first}", c.to.as_deref().unwrap_or("-"))?;
             }
         }
         Ok(())
@@ -314,12 +313,25 @@ const MONTHS: [&str; 12] = [
 ];
 
 /// A unit's content words: runs of letters, digits and `_`, lower-cased,
-/// without month names or four-digit years, which a reference's
-/// publication date is made of.
+/// without what changes between versions with no change to a rule.
 ///
-/// `MAY` lower-cases to the month `may`, so a keyword is kept: only a
-/// word that is not all uppercase is dropped as a month.
+/// An OpenID page renders each reference's tooltip inline, so a citation
+/// reads `[RFC6749] (Hardt, D., Ed., “The OAuth 2.0 …,” October 2012.)`:
+/// the parenthesis with a quoted title is dropped and the label kept. A
+/// cross-reference reads `Section 7.1 (TLS Requirements)`: its number is
+/// dropped and its title kept, so a renumbering is no change. Month names
+/// and four-digit years go too, which a date is made of; `MAY` lower-cases
+/// to the month `may`, so only a word that is not all uppercase is dropped
+/// as a month.
 fn content_key(text: &str) -> Vec<String> {
+    static ANNOTATION: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"\([^()“]*“[^”]*”[^()]*\)|Section\s+[0-9A-Z][0-9.]*\s*(?:\()")
+            .expect("a valid regex")
+    });
+    let text = ANNOTATION.replace_all(text, |c: &regex::Captures<'_>| {
+        // A cross-reference keeps its parenthesis, whose title follows.
+        if c[0].starts_with('(') { " " } else { " (" }
+    });
     text.split(|c: char| !(c.is_alphanumeric() || c == '_'))
         .filter(|w| !w.is_empty())
         .filter(|w| {
@@ -862,6 +874,26 @@ mod tests {
         let old = unit("iat\nREQUIRED. Issued at time, per [Core] (Core, November 2014.).");
         let new = unit("iat\nREQUIRED. Issued at time, per [Core] (Core, December 2023.).");
         assert_eq!(classify(&old, &new), Some("reworded"));
+    }
+
+    #[test]
+    fn a_reference_annotation_or_renumbered_cross_reference_is_rewording() {
+        let old = unit(
+            "Clients MUST use TLS as in [RFC6749] (Hardt, D., Ed., “The OAuth 2.0 Framework,” October 2012.). See Section 7.1 (TLS Requirements).",
+        );
+        let new = unit("Clients MUST use TLS as in [RFC6749]. See Section 6.1 (TLS Requirements).");
+        assert_eq!(classify(&old, &new), Some("reworded"));
+        // A title may hold parentheses of its own.
+        let jws = unit(
+            "Clients MUST use TLS as in [RFC6749] (Jones, M., “JSON Web Signature (JWS),” May 2015.). See Section 6.1 (TLS Requirements).",
+        );
+        assert_eq!(classify(&jws, &new), Some("reworded"));
+        // Another reference, or another section, is a change.
+        let other =
+            unit("Clients MUST use TLS as in [RFC9110]. See Section 6.1 (TLS Requirements).");
+        assert_eq!(classify(&new, &other), Some("changed"));
+        let other = unit("Clients MUST use TLS as in [RFC6749]. See Section 6.1 (Security).");
+        assert_eq!(classify(&new, &other), Some("changed"));
     }
 
     #[test]
