@@ -1,6 +1,6 @@
 # Phase: ci
 
-Watch CI on the commit just pushed and fix what it reports. This covers every workflow on the commit (CI, Security, CodeQL, OSV-Scanner, Dependency Review), because main's required checks span them all. The review workflows (Blind Peer Review, Claude Code) are the review phase's concern, so never treat them as a CI failure here.
+Watch CI on the commit just pushed and fix what it reports. This covers every workflow on the commit (CI, Security, CodeQL, OSV-Scanner, Dependency Review), because main's required checks span them all. The review workflow (Claude Code) is the review phase's concern, so never treat it as a CI failure here.
 
 `cd <worktree>`.
 

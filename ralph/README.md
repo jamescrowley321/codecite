@@ -4,9 +4,9 @@
 
 - `PROMPT.md`: the router. It reads the queue from GitHub issues and routes each iteration to one phase file.
 - `phases/`: `restack → setup → plan → implement → pr → ci → review → review-fix → complete`. Planning and TDD use the superpowers skills.
-- Review runs in CI: `.github/workflows/blind-peer-review.yml` runs the lenses on every push to a PR that targets `main`, and its Merge Gate gives the verdict. The loop waits for that verdict on the head commit, answers each round in a PR comment, and pushes its fixes, which re-runs the review, for up to two re-reviews. If CI doesn't review, as for every stacked PR, the loop runs `blind-peer-review:check` locally and posts the result. The plugin chooses the lenses, so tuning the review means changing the plugin pin in `blind-peer-review.yml`.
+- Review runs in CI: `.github/workflows/claude.yml` runs the lenses when a PR opens and on each `@claude review this PR` comment, and posts one `## Blind peer review` comment with the verdict. The loop waits for that comment on the head commit, answers each round in a PR comment, pushes its fixes and comments `@claude review this PR`, for up to two re-reviews. If CI doesn't review, the loop runs `blind-peer-review:check` locally and posts the result. The plugin chooses the lenses, so tuning the review means changing the plugin pin in `claude.yml`.
 - `run.sh`: launches or resumes the loop from the runner worktree `~/repos/codecite-worktrees/ralph-loop`.
-- `wait-ci.sh` and `wait-review.sh`: after each push, sleep a minute, then wait for every non-review workflow on that commit, or for the lens Merge Gate. `ci` fixes failures from the log the script prints and pushes again (up to 3 attempts).
+- `wait-ci.sh` and `wait-review.sh`: after each push, sleep a minute, then wait for every non-review workflow on that commit, or for claude[bot]'s review of it. `request-review.sh` posts the one `@claude review this PR at head <sha>` request the loop uses; `wait-review.sh` calls it when a head has no request. `tests/wait-review.test.sh` tests `wait-review.sh` against a stub `gh` and runs in CI as `ralph-test`. A verdict read from a comment is advice: the review is a model reading untrusted PR content, and the owner still reviews before merging. `ci` fixes failures from the log the script prints and pushes again (up to 3 attempts).
 
 ## Run
 
