@@ -264,3 +264,182 @@ text = "When my app registers itself on the fly, which response field holds the 
 answer = ["client_id"]
 accepted = ["rfc7591#section-3.2.1"]
 source = "dynamic registration client: storing the registration"
+
+# Closed-form names and values from the documents the first set barely
+# touched (#129's follow-up: the first 34 were mostly yes/no, and every
+# quick-panel model answered about 94% of them).
+
+[[question]]
+id = "spec-plain-swap-credential-grant-value"
+text = "What grant type value does my service send when it trades a token it holds for a new one meant for a downstream service?"
+answer = ["urn:ietf:params:oauth:grant-type:token-exchange"]
+accepted = ["rfc8693#section-2.1"]
+source = "token-exchange client"
+
+[[question]]
+id = "spec-plain-swap-response-kind-member"
+text = "After trading one access token for another, which response member says what kind of token came back?"
+answer = ["issued_token_type"]
+accepted = ["rfc8693#section-2.2.1"]
+source = "token-exchange client: reading the response"
+
+[[question]]
+id = "spec-plain-swap-identity-blob-type-uri"
+text = "When I hand over a sign-in identity blob as the thing to trade, which type URI identifies it?"
+answer = ["urn:ietf:params:oauth:token-type:id_token"]
+accepted = ["rfc8693#section-3"]
+source = "token-exchange client: subject_token_type"
+
+[[question]]
+id = "spec-plain-cert-bound-confirmation-member"
+text = "In an access token tied to the client's TLS certificate, which member holds the certificate's hash?"
+answer = ["x5t#S256"]
+accepted = ["rfc8705#section-3.1"]
+source = "resource server: certificate-bound token check"
+
+[[question]]
+id = "spec-plain-cert-bound-client-metadata"
+text = "Which client registration field asks the provider to bind issued credentials to the client's TLS certificate?"
+answer = ["tls_client_certificate_bound_access_tokens"]
+accepted = ["rfc8705#section-3.4"]
+source = "client registration for mutual TLS"
+
+[[question]]
+id = "spec-plain-cert-endpoint-aliases-metadata"
+text = "Which provider metadata entry lists the other endpoint addresses to use when presenting a client certificate?"
+answer = ["mtls_endpoint_aliases"]
+accepted = ["rfc8705#section-5"]
+source = "client: discovering mutual TLS endpoints"
+
+[[question]]
+id = "spec-plain-signed-sign-in-request-typ"
+text = "What JWT type header value is recommended when my app puts all its login request parameters inside one JWT?"
+answer = ["oauth-authz-req+jwt"]
+accepted = ["rfc9101#section-4", "rfc9101#section-10.8"]
+source = "client: building a signed authorization request"
+
+[[question]]
+id = "spec-plain-preregistered-request-forced-metadata"
+text = "Which provider metadata flag says every sign-in request must first be posted to it directly, before the browser redirect?"
+answer = ["require_pushed_authorization_requests"]
+accepted = ["rfc9126#section-5"]
+source = "client: discovering whether pushed requests are required"
+
+[[question]]
+id = "spec-plain-preregistered-request-status"
+text = "What HTTP status code does the provider answer with when it accepts a login request my backend sent it ahead of the redirect?"
+answer = ["201"]
+accepted = ["rfc9126#section-2.2"]
+source = "client: posting a pushed authorization request"
+
+[[question]]
+id = "spec-plain-redirect-issuer-flag-metadata"
+text = "Which provider metadata flag tells my app the redirect back from sign-in will carry the provider's identifier?"
+answer = ["authorization_response_iss_parameter_supported"]
+accepted = ["rfc9207#section-3"]
+source = "client: mix-up defence"
+
+[[question]]
+id = "spec-plain-fine-grained-consent-error"
+text = "Which error does the provider return when the structured, fine-grained permissions in my login request are malformed?"
+answer = ["invalid_authorization_details"]
+accepted = ["rfc9396#section-5"]
+source = "client: rich authorization requests"
+
+[[question]]
+id = "spec-plain-fine-grained-consent-required-member"
+text = "Which member must every entry of the structured, fine-grained permissions list in a login request carry?"
+answer = ["type"]
+accepted = ["rfc9396#section-2"]
+source = "client: building authorization_details"
+
+[[question]]
+id = "spec-plain-key-proof-server-nonce-header"
+text = "When my client signs a proof with its own key on each request, which response header does the server use to hand it a fresh one-off value to include?"
+answer = ["DPoP-Nonce"]
+accepted = ["rfc9449#section-8", "rfc9449#section-8.2"]
+source = "sender-constrained client: server-supplied nonce"
+
+[[question]]
+id = "spec-plain-key-proof-nonce-required-error"
+text = "Which error code tells my key-proof client that its proof must include a one-off value the server handed out?"
+answer = ["use_dpop_nonce"]
+accepted = ["rfc9449#section-8"]
+source = "sender-constrained client: retrying with a nonce"
+
+[[question]]
+id = "spec-plain-key-proof-credential-hash-claim"
+text = "Which claim in a per-request key proof carries the hash of the credential being presented to the API?"
+answer = ["ath"]
+accepted = ["rfc9449#section-4.2"]
+source = "sender-constrained client: calling a resource server"
+
+[[question]]
+id = "spec-plain-key-proof-typ"
+text = "What JWT type header value must a per-request key proof carry?"
+answer = ["dpop+jwt"]
+accepted = ["rfc9449#section-4.2"]
+source = "sender-constrained client: building the proof"
+
+[[question]]
+id = "spec-plain-key-proof-bound-confirmation-member"
+text = "In an access token tied to the client's proof key, which member holds the key's hash?"
+answer = ["jkt"]
+accepted = ["rfc9449#section-6.1"]
+source = "resource server: checking key binding"
+
+[[question]]
+id = "spec-plain-key-proof-algs-metadata"
+text = "Which provider metadata entry lists the signing algorithms it accepts for per-request key proofs?"
+answer = ["dpop_signing_alg_values_supported"]
+accepted = ["rfc9449#section-5.1"]
+source = "sender-constrained client: discovery"
+
+[[question]]
+id = "spec-plain-delete-registration-status"
+text = "What HTTP status code does the provider return after my app deletes its own dynamic registration?"
+answer = ["204"]
+accepted = ["rfc7592#section-2.3"]
+source = "client registration management"
+
+[[question]]
+id = "spec-plain-signed-assertion-client-auth-type"
+text = "What assertion type value does my client send when it proves who it is with a JWT it signed itself?"
+answer = ["urn:ietf:params:oauth:client-assertion-type:jwt-bearer"]
+accepted = ["rfc7523#section-2.2"]
+source = "client: private_key_jwt"
+
+[[question]]
+id = "spec-plain-target-api-error"
+text = "Which error does the provider return when the service address my app names as the token's intended destination gets refused?"
+answer = ["invalid_target"]
+accepted = ["rfc8707#section-2", "rfc8707#section-2.1"]
+source = "client: resource indicators"
+
+[[question]]
+id = "spec-plain-tv-sign-in-slowdown-amount"
+text = "When a device that signs in on a second screen is told to slow down, by how many seconds must it lengthen the gap between its checks?"
+answer = ["5"]
+accepted = ["rfc8628#section-3.5"]
+source = "device client: polling"
+
+[[question]]
+id = "spec-plain-high-security-login-code-lifetime"
+text = "Under the high-security financial-grade profile, what is the longest a login code may live, in seconds?"
+answer = ["60"]
+accepted = ["fapi-security-profile-2_0#section-5.3.2.1"]
+source = "authorization server: high-security profile"
+
+[[question]]
+id = "spec-plain-high-security-preposted-request-lifetime"
+text = "Under the high-security financial-grade profile, a pre-sent login request's reference must expire in under how many seconds?"
+answer = ["600"]
+accepted = ["fapi-security-profile-2_0#section-5.3.2.2"]
+source = "authorization server: high-security profile"
+
+[[question]]
+id = "spec-plain-high-security-rsa-size"
+text = "Under the high-security financial-grade profile, how big must an RSA key be at the smallest?"
+answer = ["2048"]
+accepted = ["fapi-security-profile-2_0#section-5.4.1"]
+source = "client and server keys: high-security profile"
