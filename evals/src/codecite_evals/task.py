@@ -67,8 +67,8 @@ def codecite_note(task_dir: Path) -> str:
     return (
         f"codecite indexes {indexes} as its corpus `eval`. Its tools `mcp__codecite__search` (ranked "
         "results with citations) and `mcp__codecite__read` (the text a citation points at) search and "
-        "read it, and `mcp__codecite__requirements` lists every rule governing a spec section, with its "
-        "citation: use it before implementing or fixing anything a spec governs. The `codecite` command on "
+        "read it, and `mcp__codecite__requirements` lists the normative statements governing a spec section, each "
+        "with its citation: use it before implementing or fixing anything a spec governs. The `codecite` command on "
         'your PATH does the same: `codecite search eval "<query>"`, `codecite read eval "<citation>"` and '
         '`codecite requirements eval "<citation>"`.'
     )

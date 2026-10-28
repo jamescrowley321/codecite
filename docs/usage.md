@@ -268,9 +268,12 @@ and a code citation, which `read` reads instead.
 
 ## List a section's requirements
 
-`requirements` lists every rule that governs a spec section, each with its
-pinned citation, grouped by the section that states it. Run it before
-implementing or fixing anything a spec governs, so no rule goes unread.
+`requirements` lists the normative statements that govern a spec section,
+each with its pinned citation, grouped by the section that states it. Run it
+before implementing or fixing anything a spec governs. It finds only what the
+rules below match: uppercase BCP 14 keywords, never `must` in lowercase or
+other wording, and only sections of the same document, so `read` a section
+when you need all of it.
 
 ```sh
 codecite requirements identity "Back-Channel Logout §2.6"
@@ -280,7 +283,8 @@ codecite requirements identity --topic "logout token validation" --document "Bac
 
 It takes a spec section or step citation in any form `read` does (a step asks
 about its section), or `--topic` and `--document` (a name or alias), where the
-best spec search hit in that document's current version picks the section. It
+first of the top ten spec search hits in that document's current version that
+has a citation form (an appendix has none) picks the section. It
 reads only what `index` stored. A rule is:
 
 - a sentence with MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD
@@ -293,7 +297,9 @@ reads only what `index` stored. A rule is:
 
 The sections it spans, each once, are the one asked about (`asked`), its
 subsections (`subsection`), the sections of the same document it or a
-subsection names (`referenced`: `Section 2.4`, but not `Section 2 of [JWT]`,
+subsection names (`referenced`: `Section 2.4`, but not a reference into
+another document such as `Section 2 of [JWT]`, `Section 7.1 in [RFC7519]`,
+`[RFC6749], Section 4.1` or `RFC 7519 Section 4`,
 or a section whose title of two or more words its title holds, as §2.6
 "Logout Token Validation" holds §2.4 "Logout Token"), the sections that name
 it or a subsection (`referring`), and the enclosing section of each referring

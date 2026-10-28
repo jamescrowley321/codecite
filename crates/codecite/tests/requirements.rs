@@ -87,7 +87,18 @@ fn group<'a>(result: &'a Value, number: &str) -> &'a Value {
         .unwrap()
         .iter()
         .find(|g| g["citation"].as_str().unwrap().ends_with(&anchor))
-        .unwrap_or_else(|| panic!("no group for §{number}: {result:#}"))
+        .unwrap_or_else(|| panic!("no group for §{number}: {:?}", sections(result)))
+}
+
+/// The citations of the groups, for a failure message. The statements
+/// themselves stay out of it: RFC 6749's hold example credentials.
+fn sections(result: &Value) -> Vec<&str> {
+    result["sections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|g| g["citation"].as_str().unwrap())
+        .collect()
 }
 
 /// Whether a statement of the group holds `words`.
@@ -160,22 +171,20 @@ fn rfc_6749_2_3_lays_out_its_rules() {
             group(&result, "2.3"),
             "MUST NOT use more than one authentication method"
         ),
-        "{result:#}"
+        "{:?}",
+        sections(&result)
     );
     let password = group(&result, "2.3.1");
     assert_eq!(password["relation"], "subsection");
     assert!(holds(password, "MUST NOT be included in the request URI"));
-    assert!(holds(password, "client_id: REQUIRED."), "{password:#}");
+    assert!(holds(password, "client_id: REQUIRED."));
     // §3.2.1 names §2.3, and has its title, which comes first; its
     // enclosing §3.2, the token endpoint, holds the rule on repeated
     // parameters.
     assert_eq!(group(&result, "3.2.1")["relation"], "referenced");
     let endpoint = group(&result, "3.2");
     assert_eq!(endpoint["relation"], "context");
-    assert!(
-        holds(endpoint, "MUST NOT be included more than once"),
-        "{endpoint:#}"
-    );
+    assert!(holds(endpoint, "MUST NOT be included more than once"));
     // Statements cite their own section, MUSTs first.
     let first = &group(&result, "2.3")["statements"][0];
     assert!(

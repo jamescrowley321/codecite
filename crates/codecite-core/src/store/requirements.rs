@@ -18,6 +18,10 @@ use crate::{
     normative_statements, requirement_keywords,
 };
 
+/// How many search hits a topic looks through for one with a citation
+/// form; appendices have none.
+const TOPIC_HITS: u32 = 10;
+
 /// How to gather requirements.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RequirementsOptions {
@@ -197,7 +201,8 @@ impl Store {
     }
 
     /// The requirements of the section of `document` (a name or alias)
-    /// that a spec search for `topic` ranks first in its current version.
+    /// that a spec search for `topic` ranks first in its current version,
+    /// among the first ten hits with a citation form.
     /// No such section is [`Error::NoSectionOnTopic`].
     pub fn requirements_on(
         &self,
@@ -228,10 +233,12 @@ impl Store {
             language: None,
             path: Some(&glob),
             only: Some(Scope::Spec),
-            limit: 1,
+            limit: TOPIC_HITS,
             allow_stale: options.allow_stale,
         })?;
-        let Some(top) = results.first() else {
+        // An appendix is indexed and found, but has no citation form.
+        let citable = |citation: &str| matches!(citation.parse(), Ok(Citation::Spec(_)));
+        let Some(top) = results.iter().find(|r| citable(&r.citation)) else {
             return Err(Error::NoSectionOnTopic {
                 document: pinned(&source),
                 topic: topic.into(),
@@ -499,18 +506,32 @@ static SECTION_REFERENCE: LazyLock<Regex> = LazyLock::new(|| {
 static NUMBER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\d+(?:\.\d+)*").expect("a valid pattern"));
 
+/// A document named just before a reference: `RFC 7519`, `BCP 14`, `STD 68`.
+static DOCUMENT_BEFORE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\b(?:RFC|BCP|STD)\s*\d+$").expect("a valid pattern"));
+
+/// A document named just after a reference: `of [JWT]`, `in RFC 7519`,
+/// but not `of this specification`.
+static DOCUMENT_AFTER: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(?:of|in)\s+(?:\[|(?:RFC|BCP|STD)\s*\d|[A-Z][A-Za-z0-9.-]*\s*\[)")
+        .expect("a valid pattern")
+});
+
 /// The section numbers `text` names in its own document. A reference into
-/// another document, `Section 2 of [JWT]` or `[RFC3986] Section 3.4`, is
-/// left out; so is `Section 3 of RFC 7519`, though `of this` stays.
+/// another document is left out: one with a document right before it
+/// (`[RFC3986] Section 3.4`, `[RFC6749], Section 4.1`, `[RFC2617]
+/// (Section 2)`, `RFC 7519 Section 4`) or right after it (`Section 2 of
+/// [JWT]`, `Section 7.1 in [RFC7519]`, `Section 3 of RFC 7519`).
 pub(crate) fn section_references(text: &str) -> Vec<String> {
     let mut found = Vec::new();
     for m in SECTION_REFERENCE.find_iter(text) {
-        let before = text[..m.start()].trim_end();
+        let before = text[..m.start()]
+            .trim_end_matches(|c: char| c.is_whitespace() || matches!(c, ',' | '('));
         let after = text[m.end()..].trim_start();
-        let of_other = after.strip_prefix("of").is_some_and(|rest| {
-            rest.starts_with(char::is_whitespace) && !rest.trim_start().starts_with("this")
-        });
-        if before.ends_with(']') || of_other {
+        if before.ends_with(']')
+            || DOCUMENT_BEFORE.is_match(before)
+            || DOCUMENT_AFTER.is_match(after)
+        {
             continue;
         }
         found.extend(NUMBER.find_iter(m.as_str()).map(|n| n.as_str().to_owned()));
@@ -830,6 +851,31 @@ mod tests {
             .requirements_on("decrypt", "Nope", &options)
             .unwrap_err();
         assert_eq!(err.kind(), "unknown_source");
+    }
+
+    #[test]
+    fn references_into_other_documents_are_not_sections_of_this_one() {
+        let text = "See Section 2.4 and Sections 3, 4.1 or 5. Not [RFC6749], Section 4.1, \
+            RFC 7519 Section 6, Section 7.1 in [RFC7519], [RFC2617] (Section 8), \
+            Section 9 of [JWT], [RFC3986] Section 10, Section 11 of RFC 7519 \
+            or BCP 14 Section 12, but Section 13 of this specification.";
+        assert_eq!(section_references(text), ["2.4", "3", "4.1", "5", "13"]);
+    }
+
+    #[test]
+    fn a_topic_skips_hits_that_have_no_citation_form() {
+        let (store, _dir) = fixture();
+        let options = RequirementsOptions::default();
+        // Only the appendix holds "follow".
+        let err = store
+            .requirements_on("follow", "Logout", &options)
+            .unwrap_err();
+        assert_eq!(err.kind(), "no_section_on_topic", "{err}");
+        // The appendix ranks first for "follow section", §4.1 next.
+        let r = store
+            .requirements_on("follow section", "Logout", &options)
+            .unwrap();
+        assert!(r.citation.starts_with(PINNED), "{}", r.citation);
     }
 
     #[test]
