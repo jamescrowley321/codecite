@@ -170,8 +170,13 @@ impl Store {
             ],
             |row| row.get(0),
         )?;
+        let is_spec: bool = tx.query_row(
+            "SELECT kind = 'document' FROM source WHERE id = ?1",
+            [source_id],
+            |row| row.get(0),
+        )?;
         clear_document(&tx, document_id)?;
-        insert_chunks(&tx, document_id, document)?;
+        insert_chunks(&tx, document_id, document, is_spec)?;
         tx.commit()?;
         Ok(document.chunks.len())
     }
@@ -255,7 +260,8 @@ impl Store {
 /// Deletes a document's chunks, their full-text rows, its symbols and the
 /// edges it is evidence for, keeping the document row.
 fn clear_document(tx: &Transaction<'_>, document_id: i64) -> Result<()> {
-    // The `chunk_fts_delete` trigger deletes each chunk's full-text row.
+    // The `chunk_fts_delete` and `spec_fts_delete` triggers delete each
+    // chunk's full-text row.
     for table_filter in [
         "chunk WHERE document_id = ?1",
         "symbol WHERE document_id = ?1",
@@ -267,11 +273,15 @@ fn clear_document(tx: &Transaction<'_>, document_id: i64) -> Result<()> {
     Ok(())
 }
 
-/// Inserts a document's symbols, chunks and full-text rows.
+/// Inserts a document's symbols, chunks and full-text rows: every chunk's
+/// into `chunk_fts`, and a spec's into the stemmed `spec_fts` as well. Code
+/// ranks against `chunk_fts`, whose BM25 statistics count spec chunks, so
+/// they stay in it.
 fn insert_chunks(
     tx: &Transaction<'_>,
     document_id: i64,
     document: &DocumentRecord<'_>,
+    is_spec: bool,
 ) -> Result<()> {
     let mut symbol = tx.prepare_cached(
         "INSERT INTO symbol (id, display_name, kind, document_id, start_line, end_line)
@@ -284,6 +294,9 @@ fn insert_chunks(
     )?;
     let mut fts = tx.prepare_cached(
         "INSERT INTO chunk_fts (rowid, symbol, path, terms) VALUES (?1, ?2, ?3, ?4)",
+    )?;
+    let mut spec_fts = tx.prepare_cached(
+        "INSERT INTO spec_fts (rowid, symbol, path, terms) VALUES (?1, ?2, ?3, ?4)",
     )?;
     let path_terms = text_terms(document.path);
     // Chunk IDs as they are assigned, so a later chunk can name its parent.
@@ -326,6 +339,9 @@ fn insert_chunks(
             .as_ref()
             .map_or_else(String::new, |s| identifier_terms(s.display_name));
         fts.execute(params![chunk_id, symbol_terms, path_terms, terms])?;
+        if is_spec {
+            spec_fts.execute(params![chunk_id, symbol_terms, path_terms, terms])?;
+        }
     }
     Ok(())
 }
@@ -415,10 +431,15 @@ mod tests {
     }
 
     fn matches(store: &Store, query: &str) -> i64 {
+        matches_in(store, "chunk_fts", query)
+    }
+
+    /// How many rows of the full-text `table` match `query`.
+    fn matches_in(store: &Store, table: &str, query: &str) -> i64 {
         store
             .conn
             .query_row(
-                "SELECT count(*) FROM chunk_fts WHERE chunk_fts MATCH ?1",
+                &format!("SELECT count(*) FROM {table} WHERE {table} MATCH ?1"),
                 [query],
                 |row| row.get(0),
             )
@@ -770,13 +791,19 @@ mod tests {
                 ),
             ]
         );
+        // Spec chunks go in the stemmed table, so "checked" finds
+        // "Checking", and in the unstemmed one, which doesn't.
+        assert_eq!(matches_in(&store, "spec_fts", "dpop"), 2);
+        assert_eq!(matches_in(&store, "spec_fts", "checked"), 1);
         assert_eq!(matches(&store, "dpop"), 2);
+        assert_eq!(matches(&store, "checked"), 0);
 
         // Deleting the source takes the document, both chunks and their
         // full-text rows with it.
         assert_eq!(store.delete_sources_except(&[]).unwrap().len(), 1);
         assert_eq!(count(&store, "SELECT count(*) FROM document"), 0);
         assert_eq!(count(&store, "SELECT count(*) FROM chunk"), 0);
+        assert_eq!(matches_in(&store, "spec_fts", "dpop"), 0);
         assert_eq!(matches(&store, "dpop"), 0);
         drop(store);
         fs::remove_dir_all(&dir).unwrap();

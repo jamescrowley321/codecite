@@ -40,11 +40,15 @@ Evaluation plan):
   is RFC 6749 §2.3.1: credentials MUST NOT be in the request URI, HTTP Basic
   MUST be supported, and the form body is allowed. The hidden tests reject
   query-string credentials, even valid ones, with `invalid_client` or
-  `invalid_request` (both readings of §5.2), and
+  `invalid_request` (both readings of §5.2); reject HTTP Basic plus a
+  `client_secret` in the body, since a client MUST NOT use more than one
+  authentication method in a request (§2.3); refuse a body that repeats
+  `client_id` (§3.2, an `invalid_request` under §5.2); and
   still issue tokens over Basic and the form body; an agent that removes too
   much fails. `checks.py` passes only when a comment or docstring in `app/`
-  cites §2.3.1 of RFC 6749 (`rfc6749#section-2.3.1`, `RFC 6749 §2.3.1` or
-  `Section 2.3.1 of RFC 6749`, alone or in a list of sections). The agent may
+  cites §2.3.1, §2.3 or §3.2 of RFC 6749, the sections of its three fixes
+  (`rfc6749#section-2.3.1`, `RFC 6749 §2.3` or `Section 2.3.1 of RFC 6749`,
+  alone or in a list of sections). The agent may
   add Python tests of its own (`test_*.py`, `*_test.py`, and a `conftest.py` or `__init__.py` beside them), but no `conftest.py` at the project root. The corpus is identity-model plus the spec
   documents of `retrieval/identity-bench.toml` (`task.json`'s
   `corpus.documents`), and the codecite arm's note says so. It needs no IdP,
@@ -59,13 +63,20 @@ Evaluation plan):
   spec documents of `retrieval/identity-bench.toml`, at their pinned commit
   and `sha256`. Hidden tests mint logout tokens with a test key and serve
   discovery and JWKS from a stub in their conftest, so the task needs no IdP:
-  a valid token (with `sub` and `sid`, `sid` only, `sub` only) ends the
-  session, and a bad signature, wrong `iss` or `aud`, a `nonce`, a missing or
-  malformed `events`, neither `sub` nor `sid`, or a missing `iat` or `jti` is
-  rejected with 400 and leaves the session alone. `checks.py` fails a new
+  a valid token (with `sub` and `sid`, `sid` only, `sub` only, `aud` as a
+  list) ends the session, a `sub`-only token ends every session of that `sub`
+  and a `sid` ends only its own, and a bad signature, wrong `iss` or `aud`, a
+  `nonce`, a missing or malformed `events` or event member, neither `sub` nor
+  `sid`, a missing `iat`, `jti` or `exp`, or an expired token is rejected with
+  400, an empty body or a JSON one with an `error` member (§2.8), and leaves
+  the session alone. The spec as pinned is errata set 1, which makes `exp`
+  REQUIRED and the event member's value a JSON object (§2.4): identity-model's
+  `validate_logout_token` checks neither, so calling it is not enough
+  (`planted.sh`'s `library-only`). `checks.py` fails a new
   dependency, a change outside `app/` other than docs and the agent's own test
   modules, and a provider URL written into `app/`. Its `reference/` holds a
-  solution that calls identity-model and a hand-written one.
+  solution that calls identity-model and adds those two checks, a hand-written
+  one, and identity-model alone (`library-only`, which fails).
 
 - **`spec-questions`**: one question about the identity specs per sample,
   asked in an agent's words rather than the spec's (`questions.toml`, from
@@ -115,7 +126,7 @@ report; only the panel and the number of epochs differ.
 
 A code task has one sample per arm, so its runs per arm are its epochs. The
 spec-question task has one sample per question per arm, so its runs per arm
-are questions × epochs: 34 on the quick tier, 102 on the full. A task's
+are questions × epochs: 59 on the quick tier, 177 on the full. A task's
 `task.json` sets its own epochs (`"epochs": {"quick": 1, "full": 3}`), and
 `EPOCHS` overrides both.
 

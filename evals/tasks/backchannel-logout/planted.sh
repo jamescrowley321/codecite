@@ -24,16 +24,18 @@ for a in json.load(open(sys.argv[1]))["score"]:
 ' "$HERE/task.json" "$HERE/hidden")
 
 R="test_rejected_with_400_and_session_kept"
-START_FAILS="$R[events_missing],$R[events_not_object],$R[events_without_logout_member],$R[iat_missing],$R[jti_missing],$R[no_sub_or_sid],$R[nonce],$R[wrong_iss]"
+START_FAILS="$R[event_member_not_object],$R[events_missing],$R[events_not_object],$R[events_without_logout_member],$R[exp_missing],$R[iat_missing],$R[jti_missing],$R[no_sub_or_sid],$R[nonce],$R[wrong_iss]"
 
 # plant <name> <base> <failing tests, or "skip"> <failing checks> <edit run in the copy>
-# base: start (the project as given), library (reference/app) or handwritten
-# (reference/handwritten/app). Expected failures are comma-separated, sorted.
+# base: start (the project as given), library (reference/app), library-only
+# (reference/library-only/app: identity-model's validate_logout_token and
+# nothing more) or handwritten (reference/handwritten/app). Expected failures are comma-separated, sorted.
 plant() {
   local name="$1" base="$2" want_tests="$3" want_checks="$4" edit="$5" dest="$WORK/$1"
   cp -r "$HERE/project" "$dest"
   case "$base" in
     library) cp "$HERE"/reference/app/*.py "$dest/app/" ;;
+    library-only) cp "$HERE"/reference/app/*.py "$dest/app/" && cp "$HERE"/reference/library-only/app/*.py "$dest/app/" ;;
     handwritten) cp "$HERE"/reference/handwritten/app/*.py "$dest/app/" ;;
   esac
   # `set -e` is off inside a function called from `||`: check the edit here.
@@ -52,8 +54,8 @@ except (OSError, ET.ParseError):
     print("no-report"); sys.exit()
 cases = list(root.iter("testcase"))
 bad = sorted(c.get("name") for c in cases if c.find("failure") is not None or c.find("error") is not None)
-# 13 tests: anything fewer means collection broke.
-print(",".join(bad) if len(cases) == 13 else f"collected-{len(cases)}")
+# 19 tests: anything fewer means collection broke.
+print(",".join(bad) if len(cases) == 19 else f"collected-{len(cases)}")
 PY
 )"
     if [[ "$got_tests" != "$want_tests" ]]; then
@@ -71,9 +73,20 @@ plant reference library "" "" ":" || status=1
 plant handwritten handwritten "" "" ":" || status=1
 # The unchanged start: signature and audience only.
 plant start start "$START_FAILS" "" ":" || status=1
+# identity-model alone misses two §2.4 rules (errata set 1): exp REQUIRED,
+# and the event member's value a JSON object.
+plant library-only library-only "$R[event_member_not_object],$R[exp_missing]" "" ":" || status=1
 # Bad solutions that miss one spec rule each.
 plant no-nonce-check handwritten "$R[nonce]" "" \
   "sed -i '/if \"nonce\" in claims:/,+1d' app/logout.py && ! grep -q nonce app/logout.py" || status=1
+plant no-exp-required handwritten "$R[exp_missing]" "" \
+  "sed -i 's/\"iat\", \"exp\", \"jti\"/\"iat\", \"jti\"/' app/logout.py && ! grep -q '\"exp\"' app/logout.py" || status=1
+plant detail-error-body handwritten "$(printf '%s,' $(for c in bad_signature event_member_not_object events_missing events_not_object events_without_logout_member exp_missing expired iat_missing jti_missing no_sub_or_sid nonce wrong_aud wrong_iss; do echo "$R[$c]"; done) | sed 's/,$//')" "" \
+  "sed -i 's/return Response(status_code=400)$/return JSONResponse({\"detail\": \"invalid logout token\"}, status_code=400)/; s/^from fastapi import FastAPI, Request, Response$/from fastapi import FastAPI, Request, Response\nfrom fastapi.responses import JSONResponse/' app/main.py && grep -q detail app/main.py" || status=1
+plant error-body handwritten "" "" \
+  "sed -i 's/return Response(status_code=400)$/return JSONResponse({\"error\": \"invalid_request\"}, status_code=400)/; s/^from fastapi import FastAPI, Request, Response$/from fastapi import FastAPI, Request, Response\nfrom fastapi.responses import JSONResponse/' app/main.py && grep -q invalid_request app/main.py" || status=1
+plant sid-ends-all handwritten test_sid_ends_only_that_session "" \
+  "sed -i 's/sessions.end(sub=claims.get(\"sub\"), sid=claims.get(\"sid\"))/sessions.end(sub=claims.get(\"sub\")) if claims.get(\"sub\") else sessions.end(sid=claims.get(\"sid\"))/' app/main.py && grep -q 'if claims.get' app/main.py" || status=1
 plant no-sub-sid-check handwritten "$R[no_sub_or_sid]" "" \
   "sed -i '/if \"sub\" not in claims and \"sid\" not in claims:/,+1d' app/logout.py && ! grep -q 'neither sub' app/logout.py" || status=1
 # Bad solutions each check must catch.
