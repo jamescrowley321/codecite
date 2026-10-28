@@ -40,7 +40,8 @@ enum Command {
     Search {
         /// The corpus to search.
         corpus: String,
-        /// What to search for: words, identifiers or both.
+        /// What to search for: words, identifiers or both. For a spec, the
+        /// terms the spec would use, not the asker's words.
         query: String,
         /// Only files in this language, such as `rust` or `markdown`.
         #[arg(long)]
