@@ -54,7 +54,11 @@ sections, in two passes:
 
 1. **Same content.** Units pair, in order, when their content keys are
    equal. A content key is the unit's words, lower-cased, without
-   punctuation, month names or four-digit years. Reference strings carry a
+   punctuation, month names or four-digit years, and without the reference
+   tooltips an OpenID page renders inline (`[RFC6749] (Hardt, D., Ed., “…,”
+   October 2012.)`, the label kept) or a cross-reference's number when its
+   title follows (`Section 7.1 (TLS Requirements)`), so a renumbering is no
+   change. Reference strings carry a
    publication date ("OpenID Connect Core 1.0, November 2014" became
    "December 2023" in every claim of §2.4), so without this every claim
    would look changed, and in pass 2 the new `exp` would pair with the old
