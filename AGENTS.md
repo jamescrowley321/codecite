@@ -81,8 +81,7 @@ loop.
 3. **Build test-first.** Before every push, run what CI runs:
    `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D
    warnings` and `cargo test --workspace --locked`.
-4. **Open the PR against `main`**, never stacked: the review runs only on PRs to
-   `main`. Use a conventional title and put `Closes #<n>`, the issue's
+4. **Open the PR against `main`**, never stacked. Use a conventional title and put `Closes #<n>`, the issue's
    acceptance criteria and the provenance section in the body.
 5. **Read the feedback.** CI and the blind peer review come back on the PR.
    `claude.yml` runs the review when the PR opens and posts one comment,
