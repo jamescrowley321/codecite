@@ -54,9 +54,10 @@ sections, in two passes:
 
 1. **Same content.** Units pair, in order, when their content keys are
    equal. A content key is the unit's words, lower-cased, without
-   punctuation, month names or four-digit years, and without the reference
-   tooltips an OpenID page renders inline (`[RFC6749] (Hardt, D., Ed., “…,”
-   October 2012.)`, the label kept) or a cross-reference's number when its
+   punctuation or a month followed by a year (other numbers are content),
+   and without the reference tooltips an OpenID page renders inline, a
+   parenthesis with a quoted title that ends in a year (`[RFC6749] (Hardt,
+   D., Ed., “…,” October 2012.)`, the label kept) or a cross-reference's number when its
    title follows (`Section 7.1 (TLS Requirements)`), so a renumbering is no
    change. Reference strings carry a
    publication date ("OpenID Connect Core 1.0, November 2014" became
@@ -73,8 +74,11 @@ Unpaired units are added (in `to` only) or removed (in `from` only).
 
 - Keyword sets differ: `strength_changed`, with both keyword lists
   (OPTIONAL → REQUIRED, SHOULD → MUST, none → MUST).
-- Same content key, or the differing words pair off one to one within an
-  edit distance of 2 (a spelling fix: "occured" → "occurred"): `reworded`.
+- Same content key, or the differing words pair off one to one as spelling
+  fixes, at least five letters long, one edit apart and neither the other
+  with a letter added at an end ("occured" → "occurred"): `reworded`. Two
+  edits reach opposites (`signed`, `unsigned`), and the same words in
+  another order are a change.
   Listed apart, in `reworded`, not in `changes`.
 - Otherwise: `changed`. "Validate the iss, aud, and iat Claims" becoming
   "… iss, aud, iat, and exp Claims" adds a word, so it is a change, though

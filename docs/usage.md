@@ -286,8 +286,10 @@ codecite diff identity "OIDC Core" --section 3.1.3.7 --from sha256:c9a06af238e2
 ```
 
 The document is a name or an alias; `--section` takes a number (`2.4`, or
-`§2.4`); `--from` and `--to` take a version's hash, as in a citation, with or
-without `sha256:`.
+`§2.4`); `--from` and `--to` take a version's hash, with or without `sha256:`, or a
+pinned version as `older_versions` and errors list it
+(`openid-connect-backchannel-1_0@sha256:02343424f9e5`). With `--to` alone,
+`--from` is the version pinned before it.
 
 ```text
 $ codecite diff identity "Back-Channel Logout"
@@ -318,11 +320,15 @@ citation in each version (or, for one added or removed, the section it is
 missing from), its text and its keywords. Statements whose wording changed but
 not their content, such as a reference's date or a spelling fix, are listed
 apart as `reworded`; prose without a keyword is left out. At most 50 of each
-are listed, and `total` counts the changes. A document with no older version,
+are listed, with their texts held to 64 KiB in all and 4 KiB each; `total` and
+`reworded_total` count them all, `truncated` says a list was cut, and a cut
+text sets its change's `text_truncated`: `read` its citation for the whole
+statement. A document with no older version,
 or a version or section it doesn't have, is an error with candidates.
 
 `--json` prints `{"document", "from", "to", "section", "changes", "reworded",
-"total", "truncated", "license_class", "indexed_at", "instruction"}`, the
+"total", "reworded_total", "truncated", "license_class", "indexed_at",
+"instruction"}`, the
 `diff` tool's JSON.
 
 ## Find a definition

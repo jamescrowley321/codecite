@@ -15,7 +15,9 @@ use schemars::JsonSchema;
 use serde::Serialize;
 
 use super::Store;
-use super::read::{QUOTE_INSTRUCTION, SourceRow, byte_prefix, pinned};
+use super::read::{
+    MAX_READ_BYTES, QUOTE_INSTRUCTION, QUOTE_TRUNCATED_INSTRUCTION, SourceRow, byte_prefix, pinned,
+};
 use crate::requirement_keywords;
 use crate::{Error, Keyword, MAX_SEARCH_LIMIT, MAX_SNIPPET_BYTES, Result, SectionNumber};
 
@@ -58,7 +60,10 @@ pub struct DiffResult {
     pub reworded: Vec<VersionChange>,
     /// How many changes there are, listed or not.
     pub total: usize,
-    /// Whether `changes` or `reworded` stops short of all of them.
+    /// How many rewordings there are, listed or not.
+    pub reworded_total: usize,
+    /// Whether `changes` or `reworded` stops short of all of them: each
+    /// lists at most 50, and their texts together hold at most 64 KiB.
     pub truncated: bool,
     /// What the license asks of the agent: a `quote` source's text is to be
     /// quoted exactly, with its citation.
@@ -83,19 +88,30 @@ impl fmt::Display for DiffResult {
             writeln!(f)?;
             write_change(f, n + 1, c)?;
         }
-        if self.truncated {
-            writeln!(f, "\n… (truncated)")?;
+        if self.changes.len() < self.total {
+            writeln!(
+                f,
+                "\n… ({} more not shown)",
+                self.total - self.changes.len()
+            )?;
         }
-        if !self.reworded.is_empty() {
+        if self.reworded_total > 0 {
             writeln!(
                 f,
                 "\n{} reworded, with no normative change:",
-                self.reworded.len()
+                self.reworded_total
             )?;
             for c in &self.reworded {
                 let first = c.to_text.as_deref().and_then(|t| t.lines().next());
                 let first: String = first.unwrap_or_default().trim().chars().take(80).collect();
                 writeln!(f, "  {} · {first}", c.to.as_deref().unwrap_or("-"))?;
+            }
+            if self.reworded.len() < self.reworded_total {
+                writeln!(
+                    f,
+                    "  … ({} more not shown)",
+                    self.reworded_total - self.reworded.len()
+                )?;
             }
         }
         Ok(())
@@ -167,6 +183,10 @@ pub struct VersionChange {
     /// The requirement keywords of the newer statement.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to_strength: Option<Vec<String>>,
+    /// Whether `from_text` or `to_text` was cut at 4 KiB; `read` the
+    /// citation for the whole statement.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub text_truncated: bool,
 }
 
 /// One statement of a section: a step, a definition with its term, a
@@ -325,25 +345,36 @@ const MONTHS: [&str; 12] = [
 /// as a month.
 fn content_key(text: &str) -> Vec<String> {
     static ANNOTATION: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"\([^()“]*“[^”]*”[^()]*\)|Section\s+[0-9A-Z][0-9.]*\s*(?:\()")
+        Regex::new(r"\([^()“]*“[^”]*”[^()]*\d{4}\.?\)|Section\s+[0-9A-Z][0-9.]*\s*(?:\()")
             .expect("a valid regex")
     });
     let text = ANNOTATION.replace_all(text, |c: &regex::Captures<'_>| {
         // A cross-reference keeps its parenthesis, whose title follows.
         if c[0].starts_with('(') { " " } else { " (" }
     });
-    text.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+    let words: Vec<&str> = text
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
         .filter(|w| !w.is_empty())
-        .filter(|w| {
-            let lower = w.to_lowercase();
-            let month = MONTHS.contains(&lower.as_str()) && *w != w.to_uppercase();
-            let year = w.len() == 4
-                && w.chars().all(|c| c.is_ascii_digit())
-                && (w.starts_with("19") || w.starts_with("20"));
-            !month && !year
-        })
-        .map(str::to_lowercase)
-        .collect()
+        .collect();
+    let month = |w: &str| MONTHS.contains(&w.to_lowercase().as_str()) && w != w.to_uppercase();
+    let year = |w: &str| {
+        w.len() == 4
+            && w.chars().all(|c| c.is_ascii_digit())
+            && (w.starts_with("19") || w.starts_with("20"))
+    };
+    let mut key = Vec::with_capacity(words.len());
+    let mut i = 0;
+    while i < words.len() {
+        // Only a month followed by a year is a date; a number alone, like
+        // 2048 bits, is content.
+        if month(words[i]) && words.get(i + 1).is_some_and(|w| year(w)) {
+            i += 2;
+            continue;
+        }
+        key.push(words[i].to_lowercase());
+        i += 1;
+    }
+    key
 }
 
 /// How a pair of units, one per version, differs, if it is reported: the
@@ -361,8 +392,11 @@ fn classify(old: &Unit, new: &Unit) -> Option<&'static str> {
 }
 
 /// Whether the words that differ between two keys pair off one to one as
-/// spelling fixes: both at least five letters long and at most two edits
-/// apart. Short words are identifiers (`sub`, `sid`) and never count.
+/// spelling fixes: both at least five letters long, one edit apart, and
+/// neither the other with a letter added in front or behind. Short words
+/// are identifiers (`sub`, `sid`) and never count, and two edits already
+/// reach opposites (`signed`, `unsigned`; `include`, `exclude`). Keys that
+/// differ only in order are not spelling fixes: moving a word moves a rule.
 fn spelling_only(old: &[String], new: &[String]) -> bool {
     let (mut removed, mut added) = (counts(old), counts(new));
     for (word, n) in counts(new) {
@@ -373,12 +407,15 @@ fn spelling_only(old: &[String], new: &[String]) -> bool {
         }
     }
     let (removed, mut added) = (flatten(removed), flatten(added));
-    if removed.len() != added.len() {
+    if removed.is_empty() || removed.len() != added.len() {
         return false;
     }
     removed.iter().all(|r| {
         let found = added.iter().position(|a| {
-            r.chars().count() >= 5 && a.chars().count() >= 5 && edit_distance(r, a) <= 2
+            r.chars().count() >= 5
+                && a.chars().count() >= 5
+                && edit_distance(r, a) == 1
+                && !(a.ends_with(r) || r.ends_with(a) || a.starts_with(r) || r.starts_with(a))
         });
         found.map(|i| added.swap_remove(i)).is_some()
     })
@@ -439,6 +476,10 @@ fn dice(a: &[String], b: &[String]) -> f64 {
     score
 }
 
+/// The most unpaired (old, new) unit pairs one section scores by
+/// similarity: a section of 500 statements in each version.
+const MAX_SIMILARITY_PAIRS: usize = 250_000;
+
 /// The least [`dice`] score at which two units pair.
 const MIN_SIMILARITY: f64 = 0.5;
 
@@ -459,17 +500,28 @@ fn pair(old: &[Unit], new: &[Unit]) -> (Vec<(usize, usize)>, Vec<usize>, Vec<usi
     let mut old_used = vec![false; old.len()];
     let mut new_used = vec![false; new.len()];
     let mut pairs = Vec::new();
+    let mut by_key: HashMap<&[String], Vec<usize>> = HashMap::new();
+    for (i, o) in old.iter().enumerate() {
+        by_key.entry(o.key.as_slice()).or_default().push(i);
+    }
     for (j, n) in new.iter().enumerate() {
-        if let Some(i) =
-            (0..old.len()).find(|&i| !old_used[i] && may_pair(&old[i], n) && old[i].key == n.key)
-        {
+        let same = by_key.get(n.key.as_slice()).map_or(&[][..], Vec::as_slice);
+        if let Some(&i) = same.iter().find(|&&i| !old_used[i] && may_pair(&old[i], n)) {
             old_used[i] = true;
             new_used[j] = true;
             pairs.push((i, j));
         }
     }
     let mut candidates = Vec::new();
-    for (i, o) in old.iter().enumerate().filter(|(i, _)| !old_used[*i]) {
+    let left = |used: &[bool]| used.iter().filter(|u| !**u).count();
+    // Scoring every pair is quadratic; past a bound, what is left unpaired
+    // is reported as added and removed rather than paired by similarity.
+    let bounded = left(&old_used).saturating_mul(left(&new_used)) <= MAX_SIMILARITY_PAIRS;
+    for (i, o) in old
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| bounded && !old_used[*i])
+    {
         for (j, n) in new.iter().enumerate().filter(|(j, _)| !new_used[*j]) {
             let score = dice(&o.key, &n.key);
             if may_pair(o, n) && score >= MIN_SIMILARITY {
@@ -514,8 +566,42 @@ fn strength(keywords: &[Keyword]) -> Vec<String> {
     keywords.iter().map(|k| k.as_str().to_owned()).collect()
 }
 
-fn capped(text: &str) -> String {
-    byte_prefix(text, MAX_SNIPPET_BYTES).0.to_owned()
+/// The most bytes of statement text one diff returns, over all its
+/// changes and rewordings: `read`'s budget, so one call can't flood an
+/// agent's context.
+const MAX_DIFF_BYTES: usize = MAX_READ_BYTES;
+
+/// Cuts a change's texts to [`MAX_SNIPPET_BYTES`] each, setting
+/// `text_truncated` when either is cut, and returns their size.
+fn cap_texts(c: &mut VersionChange) -> usize {
+    let mut size = 0;
+    for text in [&mut c.from_text, &mut c.to_text].into_iter().flatten() {
+        let (cut, over) = byte_prefix(text, MAX_SNIPPET_BYTES);
+        let cut = cut.to_owned();
+        c.text_truncated |= over;
+        size += cut.len();
+        *text = cut;
+    }
+    size
+}
+
+/// Keeps the entries of `list` that fit in the limits: at most
+/// [`MAX_SEARCH_LIMIT`] entries, and texts within `budget` bytes, which it
+/// spends. Returns whether any were dropped.
+fn keep_within(list: &mut Vec<VersionChange>, budget: &mut usize) -> bool {
+    let max = MAX_SEARCH_LIMIT as usize;
+    let mut kept = 0;
+    for c in list.iter_mut() {
+        let size = cap_texts(c);
+        if kept == max || size > *budget {
+            break;
+        }
+        *budget -= size;
+        kept += 1;
+    }
+    let dropped = kept < list.len();
+    list.truncate(kept);
+    dropped
 }
 
 impl Store {
@@ -553,8 +639,17 @@ impl Store {
             version: version.into(),
             known: known.clone(),
         };
+        let aliases = self.aliases()?;
         let pick = |asked: &str| -> Result<&SourceRow> {
-            let hex = asked.trim();
+            let mut hex = asked.trim();
+            // A pinned version, as errors and `older_versions` list it:
+            // `doc@sha256:…`, the document by name or alias.
+            if let Some((doc, rest)) = hex.rsplit_once('@') {
+                if doc != name && aliases.get(doc) != Some(name.as_str()) {
+                    return Err(unknown(asked));
+                }
+                hex = rest;
+            }
             let hex = hex.strip_prefix("sha256:").unwrap_or(hex).to_lowercase();
             let mut found = versions.iter().filter(|s| s.revision.starts_with(&hex));
             match (hex.chars().all(|c| c.is_ascii_hexdigit()) && !hex.is_empty())
@@ -572,11 +667,14 @@ impl Store {
                 .find(|s| Some(s.id) == current)
                 .ok_or_else(|| unknown("the current version"))?,
         };
+        // With `to` asked for, the default `from` is pinned before it, so
+        // the diff never runs backwards.
         let from = match options.from {
             Some(v) => pick(v)?,
             None => versions
                 .iter()
                 .rev()
+                .filter(|s| options.to.is_none() || s.id < to.id)
                 .find(|s| s.id != to.id && Some(s.id) != current)
                 .ok_or_else(|| unknown("an older version"))?,
         };
@@ -652,10 +750,11 @@ impl Store {
                             section: number.clone(),
                             from: Some(unit_cite(&from_pin, os, ou)),
                             to: Some(unit_cite(&to_pin, ns, nu)),
-                            from_text: Some(capped(&ou.text)),
-                            to_text: Some(capped(&nu.text)),
+                            from_text: Some(ou.text.clone()),
+                            to_text: Some(nu.text.clone()),
                             from_strength: Some(strength(&ou.keywords)),
                             to_strength: Some(strength(&nu.keywords)),
+                            text_truncated: false,
                         },
                     ));
                 }
@@ -673,9 +772,10 @@ impl Store {
                             from: section_cite(&from_pin, o),
                             to: Some(unit_cite(&to_pin, ns, nu)),
                             from_text: None,
-                            to_text: Some(capped(&nu.text)),
+                            to_text: Some(nu.text.clone()),
                             from_strength: None,
                             to_strength: Some(strength(&nu.keywords)),
+                            text_truncated: false,
                         },
                     ));
                 }
@@ -693,10 +793,11 @@ impl Store {
                         section: number.clone(),
                         from: Some(unit_cite(&from_pin, os, ou)),
                         to: section_cite(&to_pin, n),
-                        from_text: Some(capped(&ou.text)),
+                        from_text: Some(ou.text.clone()),
                         to_text: None,
                         from_strength: Some(strength(&ou.keywords)),
                         to_strength: None,
+                        text_truncated: false,
                     });
                 }
             }
@@ -708,11 +809,16 @@ impl Store {
                 }
             }
         }
-        let max = MAX_SEARCH_LIMIT as usize;
-        let total = changes.len();
-        let truncated = total > max || reworded.len() > max;
-        changes.truncate(max);
-        reworded.truncate(max);
+        let (total, reworded_total) = (changes.len(), reworded.len());
+        let mut budget = MAX_DIFF_BYTES;
+        let changes_cut = keep_within(&mut changes, &mut budget);
+        let reworded_cut = keep_within(&mut reworded, &mut budget);
+        let texts_cut = changes.iter().chain(&reworded).any(|c| c.text_truncated);
+        let instruction = if texts_cut {
+            QUOTE_TRUNCATED_INSTRUCTION
+        } else {
+            QUOTE_INSTRUCTION
+        };
         Ok(DiffResult {
             document: name,
             from: from_pin,
@@ -723,8 +829,9 @@ impl Store {
             changes,
             reworded,
             total,
-            truncated,
-            instruction: (to.license_class == "quote").then(|| QUOTE_INSTRUCTION.into()),
+            reworded_total,
+            truncated: changes_cut || reworded_cut,
+            instruction: (to.license_class == "quote").then(|| instruction.into()),
         })
     }
 
@@ -894,6 +1001,48 @@ mod tests {
         assert_eq!(classify(&new, &other), Some("changed"));
         let other = unit("Clients MUST use TLS as in [RFC6749]. See Section 6.1 (Security).");
         assert_eq!(classify(&new, &other), Some("changed"));
+    }
+
+    #[test]
+    fn an_opposite_is_never_a_spelling_fix() {
+        for (old, new) in [
+            (
+                "The Logout Token MUST be signed.",
+                "The Logout Token MUST be unsigned.",
+            ),
+            (
+                "The response MUST include it.",
+                "The response MUST exclude it.",
+            ),
+            ("The client MUST encrypt it.", "The client MUST decrypt it."),
+            (
+                "The token MUST be valid here.",
+                "The token MUST be invalid here.",
+            ),
+        ] {
+            assert_eq!(classify(&unit(old), &unit(new)), Some("changed"), "{new}");
+        }
+    }
+
+    #[test]
+    fn reordered_words_are_a_change() {
+        let old = unit("X MUST be signed and Y MAY be encrypted.");
+        let new = unit("X MAY be signed and Y MUST be encrypted.");
+        assert_eq!(classify(&old, &new), Some("changed"));
+        let old = unit("The client MUST NOT send it to the server.");
+        let new = unit("The server MUST NOT send it to the client.");
+        assert_eq!(classify(&old, &new), Some("changed"));
+    }
+
+    #[test]
+    fn a_number_is_a_year_only_after_a_month() {
+        let old = unit("The OP MUST NOT wait more than 2000 seconds.");
+        let new = unit("The OP MUST NOT wait more than 2048 seconds.");
+        assert_eq!(classify(&old, &new), Some("changed"));
+        // A quoted value in a parenthesis is no reference tooltip.
+        let old = unit("It MUST NOT use an alg (the value “none”).");
+        let new = unit("It MUST NOT use an alg (the value “HS256”).");
+        assert_eq!(classify(&old, &new), Some("changed"));
     }
 
     #[test]
@@ -1228,6 +1377,116 @@ mod tests {
             )
             .unwrap_err();
         assert!(matches!(err, Error::NoSuchSection { .. }), "{err}");
+    }
+
+    #[test]
+    fn a_pinned_version_as_errors_and_results_list_it_names_a_version() {
+        let f = fixture();
+        let options = DiffOptions {
+            from: Some(OLD_PIN),
+            to: Some(NEW_PIN),
+            section: Some("2.4"),
+            ..DiffOptions::default()
+        };
+        let d = f.store.diff("Back-Channel Logout", &options).unwrap();
+        assert_eq!((d.from.as_str(), d.to.as_str()), (OLD_PIN, NEW_PIN));
+        // Another document's pin is not one of this one's versions.
+        let options = DiffOptions {
+            from: Some("rfc9449@sha256:02343424f9e5"),
+            ..DiffOptions::default()
+        };
+        assert!(matches!(
+            f.store.diff(DOC, &options),
+            Err(Error::UnknownVersion { .. })
+        ));
+    }
+
+    #[test]
+    fn the_default_from_is_older_than_an_asked_for_to() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open_read_write(&dir.path().join("three.db")).unwrap();
+        let v1 = "a1".repeat(32);
+        let v2 = "b2".repeat(32);
+        for (rev, current) in [(v1.as_str(), false), (v2.as_str(), false), (NEW, true)] {
+            write(
+                &mut store,
+                rev,
+                current,
+                vec![section("2.5", 1, "2.5. R\n\nX MUST.")],
+            );
+        }
+        store.set_indexed_at(30).unwrap();
+        let to_v2 = DiffOptions {
+            to: Some(&v2),
+            ..DiffOptions::default()
+        };
+        let d = store.diff(DOC, &to_v2).unwrap();
+        assert_eq!(d.from, format!("{DOC}@sha256:{}", &v1[..12]));
+        let to_v1 = DiffOptions {
+            to: Some(&v1),
+            ..DiffOptions::default()
+        };
+        let err = store.diff(DOC, &to_v1).unwrap_err();
+        assert!(matches!(err, Error::UnknownVersion { .. }), "{err}");
+    }
+
+    #[test]
+    fn long_texts_and_long_diffs_say_they_are_cut() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open_read_write(&dir.path().join("big.db")).unwrap();
+        let long = format!("2.5. R\n\nThe client MUST {}.", "send it ".repeat(1000));
+        write(
+            &mut store,
+            OLD,
+            false,
+            vec![section("2.5", 1, "2.5. R\n\nNothing.")],
+        );
+        let many: String = (0..200)
+            .map(|i| format!("Rule {i}: the client MUST do thing number {i} quickly{i}.\n"))
+            .collect();
+        let many = format!("2.6. S\n\n{many}");
+        write(
+            &mut store,
+            NEW,
+            true,
+            vec![section("2.5", 1, &long), section("2.6", 10, &many)],
+        );
+        store.set_indexed_at(30).unwrap();
+        let d = store.diff(DOC, &DiffOptions::default()).unwrap();
+        let first = &d.changes[0];
+        assert!(first.text_truncated, "{first:?}");
+        assert!(first.to_text.as_deref().unwrap().len() <= MAX_SNIPPET_BYTES);
+        assert_eq!(
+            d.instruction.as_deref(),
+            Some(crate::QUOTE_TRUNCATED_INSTRUCTION)
+        );
+        assert_eq!(d.total, 201);
+        assert!(d.truncated);
+        let bytes: usize = d
+            .changes
+            .iter()
+            .chain(&d.reworded)
+            .map(|c| {
+                c.from_text.as_deref().map_or(0, str::len)
+                    + c.to_text.as_deref().map_or(0, str::len)
+            })
+            .sum();
+        assert!(bytes <= crate::MAX_READ_BYTES, "{bytes}");
+    }
+
+    #[test]
+    fn a_huge_section_still_diffs_in_bounded_work() {
+        let old: Vec<Unit> = (0..3000)
+            .map(|i| unit(&format!("The client MUST send value {i}.")))
+            .collect();
+        let new: Vec<Unit> = (0..3000)
+            .map(|i| unit(&format!("The client MUST send value {}.", i + 5000)))
+            .collect();
+        let started = std::time::Instant::now();
+        let (pairs, old_left, new_left) = pair(&old, &new);
+        assert_eq!(pairs.len() + old_left.len(), 3000);
+        assert_eq!(pairs.len() + new_left.len(), 3000);
+        assert!(started.elapsed().as_secs() < 5, "{:?}", started.elapsed());
     }
 
     #[test]
