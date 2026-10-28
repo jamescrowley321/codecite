@@ -717,7 +717,7 @@ mod tests {
                 "Appendix",
                 None,
                 90,
-                "A.1. Appendix\n\nIt MUST follow Section 2.2.",
+                "A.1. Appendix\n\nIt MUST zigzag per Section 2.2.",
             ),
         ];
         let doc = DocumentRecord {
@@ -866,14 +866,14 @@ mod tests {
     fn a_topic_skips_hits_that_have_no_citation_form() {
         let (store, _dir) = fixture();
         let options = RequirementsOptions::default();
-        // Only the appendix holds "follow".
+        // Only the appendix holds "zigzag".
         let err = store
-            .requirements_on("follow", "Logout", &options)
+            .requirements_on("zigzag", "Logout", &options)
             .unwrap_err();
         assert_eq!(err.kind(), "no_section_on_topic", "{err}");
-        // The appendix ranks first for "follow section", §4.1 next.
+        // The appendix ranks first for "zigzag token"; sections with "token" follow.
         let r = store
-            .requirements_on("follow section", "Logout", &options)
+            .requirements_on("zigzag token", "Logout", &options)
             .unwrap();
         assert!(r.citation.starts_with(PINNED), "{}", r.citation);
     }
