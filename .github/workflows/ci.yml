@@ -83,6 +83,16 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: uv run --locked codecite-eval-frozen ${BASE_REF:+--base "origin/$BASE_REF"}
 
+  ralph-test:
+    name: ralph-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Against a stub gh: no token, no network.
+      - run: ralph/tests/wait-review.test.sh
+
   deny:
     name: deny
     runs-on: ubuntu-latest
