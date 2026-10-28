@@ -781,18 +781,46 @@ fn cut(text: &str, max: usize) -> std::borrow::Cow<'_, str> {
 }
 
 /// Indexed text is untrusted: an escape sequence in it could drive the
-/// terminal, such as OSC 52 writing to the clipboard. Control characters
-/// other than tab print as Rust escapes like `\u{1b}` instead.
+/// terminal, such as OSC 52 writing to the clipboard, and an invisible
+/// character could hide text from a person reading output a model also
+/// reads. Control characters other than tab, and the invisible format
+/// characters (zero-width spaces and joiners, bidi controls, Unicode tag
+/// characters, the byte order mark), print as Rust escapes like `\u{1b}`
+/// instead.
 fn escape_controls(text: &str) -> String {
     text.chars()
         .map(|c| {
-            if c.is_control() && c != '\t' {
+            if (c.is_control() && c != '\t') || is_invisible_format(c) {
                 c.escape_unicode().to_string()
             } else {
                 c.to_string()
             }
         })
         .collect()
+}
+
+/// Whether `c` is a Unicode format character (category Cf) that renders
+/// as nothing: the soft hyphen, zero-width spaces and joiners, bidi marks,
+/// embeddings, overrides and isolates, invisible operators, the byte order
+/// mark, interlinear annotation marks and the tag characters.
+fn is_invisible_format(c: char) -> bool {
+    matches!(
+        c,
+        '\u{ad}'
+            | '\u{600}'..='\u{605}'
+            | '\u{61c}'
+            | '\u{6dd}'
+            | '\u{70f}'
+            | '\u{180e}'
+            | '\u{200b}'..='\u{200f}'
+            | '\u{202a}'..='\u{202e}'
+            | '\u{2060}'..='\u{2064}'
+            | '\u{2066}'..='\u{206f}'
+            | '\u{feff}'
+            | '\u{fff9}'..='\u{fffb}'
+            | '\u{e0001}'
+            | '\u{e0020}'..='\u{e007f}'
+    )
 }
 
 /// `codecite index --print-hashes`: downloads each document source, and
@@ -835,6 +863,15 @@ mod tests {
     fn open() -> anyhow::Result<()> {
         let err = codecite_core::Error::from(std::io::Error::other("disk on fire"));
         Err(err).context("opening corpus /tmp/corpus")
+    }
+
+    #[test]
+    fn invisible_format_characters_are_escaped() {
+        let text = "a\u{200b}b\u{202e}c\u{e0041}d\u{feff}e\u{ad}f é\tg";
+        assert_eq!(
+            escape_controls(text),
+            "a\\u{200b}b\\u{202e}c\\u{e0041}d\\u{feff}e\\u{ad}f é\tg"
+        );
     }
 
     #[test]

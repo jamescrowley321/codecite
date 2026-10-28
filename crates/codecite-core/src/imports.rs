@@ -21,7 +21,10 @@ pub fn imports(language: Language, text: &str) -> Vec<String> {
     let mut found: Vec<String> = Vec::new();
     let mut push = |module: &str| {
         let module = module.trim();
-        if !module.is_empty() && !is_relative(module) && !found.iter().any(|m| m == module) {
+        if !module.is_empty()
+            && !is_relative(language, module)
+            && !found.iter().any(|m| m == module)
+        {
             found.push(module.to_owned());
         }
     };
@@ -65,8 +68,18 @@ pub fn imports(language: Language, text: &str) -> Vec<String> {
                     }
                 } else if let Some(rest) = line.strip_prefix("import") {
                     let rest = rest.trim_start();
-                    if rest.starts_with('(') {
-                        block = true;
+                    if let Some(inner) = rest.strip_prefix('(') {
+                        // `import ("fmt"; "os")` opens and closes on one line.
+                        let (specs, closed) = match inner.find(')') {
+                            Some(end) => (&inner[..end], true),
+                            None => (inner, false),
+                        };
+                        for spec in specs.split(';') {
+                            if let Some(c) = GO_SPEC.captures(spec.trim()) {
+                                push(&c[1]);
+                            }
+                        }
+                        block = !closed;
                     } else if let Some(c) = GO_SPEC.captures(rest) {
                         push(&c[1]);
                     }
@@ -86,21 +99,23 @@ pub fn imports(language: Language, text: &str) -> Vec<String> {
 }
 
 /// Whether `module`, an import a file writes, is `dependency` or inside it:
-/// `requests` covers `requests` and `requests.adapters`, and `node:fs` only
-/// itself. Modules are compared whole, part by part, so `request` does not
-/// cover `requests`.
+/// `requests` covers `requests` and `requests.adapters`, `std` covers
+/// `std::collections`, and `node:fs` only itself. Modules are compared
+/// whole, part by part, so `request` does not cover `requests`.
 pub fn imports_dependency(module: &str, dependency: &str) -> bool {
-    module
-        .strip_prefix(dependency)
-        .is_some_and(|rest| rest.is_empty() || rest.starts_with(['.', '/', ':']))
+    module.strip_prefix(dependency).is_some_and(|rest| {
+        rest.is_empty() || rest.starts_with(['.', '/']) || rest.starts_with("::")
+    })
 }
 
-/// An import of the file's own package rather than a dependency.
-fn is_relative(module: &str) -> bool {
+/// An import of the file's own package rather than a dependency: one that
+/// starts with `.`, or in Rust one under `crate`, `self` or `super`.
+fn is_relative(language: Language, module: &str) -> bool {
     module.starts_with('.')
-        || ["crate", "self", "super"]
-            .iter()
-            .any(|word| imports_dependency(module, word))
+        || (language == Language::Rust
+            && ["crate", "self", "super"]
+                .iter()
+                .any(|word| imports_dependency(module, word)))
 }
 
 /// `from x.y import z`: the module is `x.y`. A relative `from .x` starts
@@ -196,6 +211,26 @@ mod tests {
     }
 
     #[test]
+    fn a_go_import_block_on_one_line_closes() {
+        let text = "import (\"fmt\"; h \"net/http\")\nfunc f() string {\n\treturn \"ok\"\n}\n";
+        assert_eq!(imports(Language::Go, text), ["fmt", "net/http"]);
+        assert!(imports(Language::Go, "import ()\nx \"y\"\n").is_empty());
+    }
+
+    #[test]
+    fn only_rust_has_crate_self_and_super() {
+        assert_eq!(
+            imports(Language::Python, "from crate import client\n"),
+            ["crate"]
+        );
+        assert_eq!(
+            imports(Language::JavaScript, "import x from \"self\";\n"),
+            ["self"]
+        );
+        assert!(imports(Language::Rust, "use crate::x;\n").is_empty());
+    }
+
+    #[test]
     fn csharp_usings() {
         let text = "using System;\nglobal using static System.Math;\nusing Http = System.Net.Http;\nusing (var x = y) {}\n";
         assert_eq!(
@@ -215,6 +250,8 @@ mod tests {
         assert!(imports_dependency("requests.adapters", "requests"));
         assert!(imports_dependency("github.com/a/b/c", "github.com/a/b"));
         assert!(imports_dependency("std::collections", "std"));
+        assert!(!imports_dependency("node:fs", "node"));
+        assert!(imports_dependency("node:fs", "node:fs"));
         assert!(!imports_dependency("requests_oauthlib", "requests"));
         assert!(!imports_dependency("request", "requests"));
         assert!(!imports_dependency("requests", "request"));

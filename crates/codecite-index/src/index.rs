@@ -108,6 +108,14 @@ pub fn index_corpus(
                 source,
             })?;
             let revision = crate::fetch::hex(&Sha256::digest(&bytes));
+            if let Some(pinned) = rules.sha256.as_ref().filter(|p| **p != revision) {
+                return Err(Error::GuidanceChanged {
+                    name: rules.name.clone(),
+                    path: path.clone(),
+                    expected: pinned.clone(),
+                    actual: revision,
+                });
+            }
             guidance.push((rules, bytes, revision));
         }
     }
@@ -976,6 +984,28 @@ mod tests {
         assert_eq!(
             summary.removed_sources,
             [format!("house-rules@sha256:{}", &sha256(RULES)[..12])]
+        );
+    }
+
+    #[test]
+    fn a_pinned_guidance_file_that_changed_stops_the_run() {
+        let corpus = Corpus::new();
+        let file = corpus.dir.path().join("RULES.md");
+        std::fs::write(&file, RULES).unwrap();
+        let mut rules = guidance(Some(file.clone()), None, Some(sha256(RULES)));
+        corpus.index(&manifest(vec![Source::Guidance(rules.clone())]));
+        std::fs::write(&file, RULES.replace("SHOULD", "MUST")).unwrap();
+        let err = corpus
+            .try_index(&manifest(vec![Source::Guidance(rules.clone())]))
+            .unwrap_err();
+        assert!(matches!(err, Error::GuidanceChanged { .. }), "{err:?}");
+        assert!(err.to_string().contains(&sha256(RULES)), "{err}");
+        rules.sha256 = None;
+        assert_eq!(
+            corpus
+                .index(&manifest(vec![Source::Guidance(rules)]))
+                .written,
+            1
         );
     }
 

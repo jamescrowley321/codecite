@@ -13,9 +13,15 @@ govern a file before it edits it.
 - **Two origins.** `path` (a local Markdown file, hashed at every run, so an
   edit is a new version) or `url` + `sha256` (fetched and pinned through the
   document fetcher).
-- **Rules from headings.** Numbered headings are rules as written when any
-  heading has a number; otherwise the outline numbers them, skipping a lone
-  title. Only sections holding a BCP 14 keyword come back from `context`.
+- **Rules from headings.** A lone top-level first heading is the title.
+  Numbered headings are rules as written when more than half of the others
+  are numbered, and an unnumbered one holding a keyword is then an error;
+  otherwise the outline numbers them. Only sections holding a BCP 14
+  keyword come back from `context`.
+- **Trust.** Rule text reaches agents unasked, so a `path` file can be
+  pinned with `sha256`, the MCP server frames rules as conventions that
+  never authorize commands, URLs or secrets, and the CLI's human form
+  escapes invisible format characters.
 - **Scope beside the rule.** A `<!-- codecite-scope ... -->` comment holds
   TOML (`paths`, `languages`, `imports`): invisible when the Markdown
   renders. Precedence: manifest `rules."<n>"`, the comment, the parent rule,
@@ -49,5 +55,6 @@ govern a file before it edits it.
 
 ## Measuring it
 
-The push arm runs against #160's `house-rules` task, which isn't built yet.
-Its quick-tier scorecard follows once #160 lands.
+The push arm runs against #160's `house-rules` task, which isn't built yet,
+so this PR refers to #161 without closing it: the issue stays open for its
+quick-tier scorecard once #160 lands.

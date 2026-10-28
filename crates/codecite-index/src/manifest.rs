@@ -106,8 +106,9 @@ pub struct DocumentSource {
 
 /// A team's rules: a Markdown document whose headings are rules, each
 /// governing the files its scope matches. It is read from `path`, a file on
-/// this machine whose hash is taken at each run, or fetched from `url` and
-/// pinned by `sha256` as a document is.
+/// this machine whose hash is taken at each run and checked against
+/// `sha256` when that is given, or fetched from `url` and pinned by
+/// `sha256` as a document is.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GuidanceSource {
@@ -117,8 +118,8 @@ pub struct GuidanceSource {
     pub path: Option<PathBuf>,
     /// Where the document is fetched from, with `sha256`.
     pub url: Option<String>,
-    /// The pinned content hash of a fetched document: 64 lowercase hex
-    /// digits.
+    /// The pinned content hash: 64 lowercase hex digits. Required with
+    /// `url`; with `path`, an optional pin that a changed file fails.
     pub sha256: Option<String>,
     /// The license as written by a person (an SPDX expression or a name).
     pub license: Option<String>,
@@ -242,7 +243,7 @@ pub enum ManifestError {
 
     /// A guidance source names neither a file nor a pinned URL, or both.
     #[error(
-        "source {source_name}: a guidance source needs `path`, or `url` and `sha256`, not both"
+        "source {source_name}: a guidance source needs `path` or `url`, not both, and `url` needs `sha256`"
     )]
     GuidanceOrigin {
         /// The source's label: its name, URL or path, else its position.
@@ -364,7 +365,7 @@ fn parse_source(
         }
         Source::Guidance(rules) => {
             match (&rules.path, &rules.url, &rules.sha256) {
-                (Some(_), None, None) | (None, Some(_), Some(_)) => {}
+                (Some(_), None, _) | (None, Some(_), Some(_)) => {}
                 _ => {
                     return Err(ManifestError::GuidanceOrigin {
                         source_name: source_name.clone(),
@@ -809,7 +810,7 @@ updated_by = "openid-connect-core-1_0-errata2"
 
     #[test]
     fn a_guidance_source_needs_one_origin() {
-        let want = "source `g`: a guidance source needs `path`, or `url` and `sha256`, not both";
+        let want = "source `g`: a guidance source needs `path` or `url`, not both, and `url` needs `sha256`";
         for origin in [
             String::new(),
             "url = \"u\"\n".to_owned(),
@@ -821,6 +822,15 @@ updated_by = "openid-connect-core-1_0-errata2"
             .unwrap_err();
             assert_eq!(err.to_string(), want, "{origin:?}");
         }
+        // A file may be pinned too.
+        let pinned = Manifest::parse(&manifest(&format!(
+            "[[source]]\nkind = \"guidance\"\nname = \"g\"\npath = \"/a\"\nsha256 = \"{SHA256}\"\nuse = \"quote\"\n"
+        )))
+        .unwrap();
+        let Source::Guidance(rules) = &pinned.sources[0] else {
+            panic!()
+        };
+        assert!(rules.as_document().is_none());
         let err = Manifest::parse(&manifest(
             "[[source]]\nkind = \"guidance\"\nname = \"g\"\nurl = \"u\"\nsha256 = \"abc\"\nuse = \"quote\"\n",
         ))

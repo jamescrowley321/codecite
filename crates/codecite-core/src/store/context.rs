@@ -274,7 +274,8 @@ impl Store {
     /// `RECOMMENDED` and `NOT RECOMMENDED`, then `MAY` and `OPTIONAL`), then
     /// by document name and in document order. At most
     /// [`MAX_SEARCH_LIMIT`] rules and [`MAX_CONTEXT_BYTES`] of their text
-    /// are returned; the rest are cited in `omitted`.
+    /// are returned: they stop at the first rule that doesn't fit, and it
+    /// and every rule after it are cited in `omitted`.
     ///
     /// A corpus with no guidance answers with no rules. An index older than
     /// its maximum age is [`StaleIndex`](crate::Error::StaleIndex) unless `allow_stale` is set.
@@ -293,8 +294,12 @@ impl Store {
         let total = rows.len();
         let limit = usize::try_from(MAX_SEARCH_LIMIT).unwrap_or(usize::MAX);
         let (mut rules, mut omitted, mut bytes) = (Vec::new(), Vec::new(), 0);
+        // Once one rule doesn't fit, every later one is left out too, so a
+        // short SHOULD never comes back in place of a MUST.
+        let mut full = false;
         for row in rows {
-            if rules.len() < limit && bytes + row.rule.text.len() <= MAX_CONTEXT_BYTES {
+            full = full || rules.len() >= limit || bytes + row.rule.text.len() > MAX_CONTEXT_BYTES;
+            if !full {
                 bytes += row.rule.text.len();
                 rules.push(row.rule);
             } else if omitted.len() < limit {
@@ -660,13 +665,15 @@ mod tests {
                 updated_by: None,
             })
             .unwrap();
-        // 20 rules of about 4 KiB each: 16 fit in 64 KiB.
+        // 20 MUSTs of about 4 KiB each, of which 16 fit in 64 KiB, then a
+        // short SHOULD that would fit in what is left.
         let text = format!("You MUST {}", "x".repeat(4000));
         let numbers: Vec<String> = (1..=20).map(|n| n.to_string()).collect();
-        let chunks = numbers
+        let mut chunks: Vec<ChunkRecord<'_>> = numbers
             .iter()
             .map(|n| rule(n, &text, &[Keyword::Must]))
             .collect();
+        chunks.push(rule("21", "You SHOULD.", &[Keyword::Should]));
         store
             .write_document(
                 id,
@@ -684,13 +691,65 @@ mod tests {
         store.set_guidance(id, &[]).unwrap();
         store.set_indexed_at(30).unwrap();
         let context = ask(&store, ContextTarget::describe("a.rs".into(), None, None));
-        assert_eq!(context.total, 20);
+        assert_eq!(context.total, 21);
         assert_eq!(context.rules.len(), 16);
         let bytes: usize = context.rules.iter().map(|r| r.text.len()).sum();
         assert!(bytes <= MAX_CONTEXT_BYTES, "{bytes}");
-        assert_eq!(context.omitted.len(), 4);
+        assert_eq!(context.omitted.len(), 5);
         assert_eq!(context.omitted[0], "big@sha256:1a2b3c4d5e6f#section-17");
+        assert_eq!(context.omitted[4], "big@sha256:1a2b3c4d5e6f#section-21");
         assert!(context.rules[0].instruction.is_none());
+    }
+
+    #[test]
+    fn a_source_upserted_again_is_not_guidance_until_marked() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("demo.db");
+        let mut store = Store::open_read_write(&path).unwrap();
+        let record = SourceRecord {
+            name: "house-rules",
+            kind: "document",
+            url: "u",
+            revision: RULES,
+            license_spdx: None,
+            license_class: "quote",
+            is_current: true,
+            obsoleted_by: None,
+            updated_by: None,
+        };
+        let id = store.upsert_source(&record).unwrap();
+        let chunks = vec![rule("1", "You MUST.", &[Keyword::Must])];
+        store
+            .write_document(
+                id,
+                &DocumentRecord {
+                    path: "house-rules",
+                    language: None,
+                    content_hash: b"x",
+                    size_bytes: 1,
+                    dirty: false,
+                    text: None,
+                    chunks,
+                },
+            )
+            .unwrap();
+        let scope = RuleScope {
+            languages: vec!["python".into()],
+            ..RuleScope::default()
+        };
+        store.set_guidance(id, &[("1", &scope)]).unwrap();
+        store.set_indexed_at(30).unwrap();
+        let target = ContextTarget::describe("a.py".into(), None, None);
+        assert_eq!(ask(&store, target.clone()).total, 1);
+
+        // The manifest now lists it as a plain document, same bytes.
+        assert_eq!(store.upsert_source(&record).unwrap(), id);
+        assert_eq!(ask(&store, target).total, 0);
+        let scopes: i64 = store
+            .conn
+            .query_row("SELECT count(*) FROM rule_scope", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(scopes, 0);
     }
 
     #[test]

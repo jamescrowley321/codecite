@@ -31,6 +31,18 @@ pub enum GuidanceError {
     #[error("no Markdown headings found; each rule is a heading and the text under it")]
     NoRules,
 
+    /// The document numbers its rules, but a heading without a number holds
+    /// a requirement keyword, so its rule would be lost.
+    #[error(
+        "the heading {title:?} on line {line} holds a requirement keyword but no number; number it like the other rules"
+    )]
+    UnnumberedRule {
+        /// The heading's text.
+        title: String,
+        /// Its line, counting from 1.
+        line: u32,
+    },
+
     /// A rule's scope comment is not TOML with `paths`, `languages` and
     /// `imports`, or is never closed.
     #[error("rule {number}: bad codecite-scope comment: {message}")]
@@ -45,29 +57,41 @@ pub enum GuidanceError {
 /// Splits a Markdown guidance document into its rules.
 ///
 /// Each ATX heading outside fenced code is a section, running to the line
-/// before the next heading. When some heading starts with a section number
-/// (`## 3.1 Read settings once`, or `3.1.`), only the numbered headings are
-/// rules, numbered as written, and a number written twice keeps its first.
-/// Otherwise every heading is a rule, numbered by its place in the outline
-/// (1, 1.1, 1.2, 2, …); a first heading that is the only one at the
+/// before the next heading. A first heading that is the only one at the
 /// shallowest level, with every other heading below it, is the document's
-/// title and not a rule. A rule's parent is the rule whose number it
-/// extends by one part. Its anchor is the heading's GitHub-style slug.
+/// title and never a rule. When more than half of the other headings start
+/// with a section number (`## 3.1 Read settings once`, or `3.1.`), only the
+/// numbered headings are rules, numbered as written, and a number written
+/// twice keeps its first; an unnumbered heading whose text holds a
+/// requirement keyword is then [`GuidanceError::UnnumberedRule`], so no
+/// rule is lost unseen. Otherwise every heading is a rule, numbered by its
+/// place in the outline (1, 1.1, 1.2, 2, …). A rule's parent is the rule
+/// whose number it extends by one part. Its anchor is the heading's
+/// GitHub-style slug.
 pub fn split_guidance(markdown: &str) -> Result<Vec<GuidanceRule>, GuidanceError> {
     let headings = markdown_headings(markdown);
     if headings.is_empty() {
         return Err(GuidanceError::NoRules);
     }
     let lines: Vec<&str> = markdown.split('\n').collect();
-    let numbered = numbered(&headings);
+    let (numbered, written) = numbered(&headings);
     let mut slugs = Slugs::default();
     let mut rules: Vec<GuidanceRule> = Vec::new();
-    for (heading, number) in headings.iter().zip(numbered) {
+    for (i, (heading, number)) in headings.iter().zip(numbered).enumerate() {
         let anchor = slugs.slug(&heading.title);
+        let text = span(&lines, heading.line, heading.end_line);
         let Some((number, title)) = number else {
+            if written
+                && !(i == 0 && is_title(&headings))
+                && !requirement_keywords(&text).is_empty()
+            {
+                return Err(GuidanceError::UnnumberedRule {
+                    title: heading.title.clone(),
+                    line: heading.line,
+                });
+            }
             continue;
         };
-        let text = span(&lines, heading.line, heading.end_line);
         let parent_number = number.rsplit_once('.').map(|(p, _)| p);
         let parent = parent_number.and_then(|p| rules.iter().rposition(|r| r.section.number == p));
         let scope = scope(&text).map_err(|message| GuidanceError::Scope {
@@ -92,21 +116,35 @@ pub fn split_guidance(markdown: &str) -> Result<Vec<GuidanceRule>, GuidanceError
     Ok(rules)
 }
 
-/// Each heading's number and title when it is a rule, `None` when it isn't.
-fn numbered(headings: &[Heading]) -> Vec<Option<(String, String)>> {
-    let written: Vec<Option<(String, String)>> =
+/// Whether the first heading is the document's title: the only one at the
+/// shallowest level, with every other heading below it.
+fn is_title(headings: &[Heading]) -> bool {
+    let shallowest = headings.iter().map(|h| h.level).min().unwrap_or(1);
+    headings.len() > 1
+        && headings[0].level == shallowest
+        && headings[1..].iter().all(|h| h.level > shallowest)
+}
+
+/// Each heading's number and title when it is a rule, `None` when it
+/// isn't, and whether the numbers are the ones the document writes.
+fn numbered(headings: &[Heading]) -> (Vec<Option<(String, String)>>, bool) {
+    let is_title = is_title(headings);
+    let skip = usize::from(is_title);
+    let mut written: Vec<Option<(String, String)>> =
         headings.iter().map(|h| written_number(&h.title)).collect();
-    if written.iter().any(Option::is_some) {
+    let numbered = written[skip..].iter().filter(|w| w.is_some()).count();
+    if numbered * 2 > headings.len() - skip {
+        if is_title {
+            written[0] = None;
+        }
         let mut seen = HashSet::new();
-        return written
+        let rules = written
             .into_iter()
             .map(|w| w.filter(|(number, _)| seen.insert(number.clone())))
             .collect();
+        return (rules, true);
     }
     let shallowest = headings.iter().map(|h| h.level).min().unwrap_or(1);
-    let is_title = headings.len() > 1
-        && headings[0].level == shallowest
-        && headings[1..].iter().all(|h| h.level > shallowest);
     let base = if is_title {
         headings[1..]
             .iter()
@@ -117,7 +155,7 @@ fn numbered(headings: &[Heading]) -> Vec<Option<(String, String)>> {
         shallowest
     };
     let mut counters: Vec<u32> = Vec::new();
-    headings
+    let rules = headings
         .iter()
         .enumerate()
         .map(|(i, h)| {
@@ -134,7 +172,8 @@ fn numbered(headings: &[Heading]) -> Vec<Option<(String, String)>> {
             let number: Vec<String> = counters.iter().map(u32::to_string).collect();
             Some((number.join("."), h.title.clone()))
         })
-        .collect()
+        .collect();
+    (rules, false)
 }
 
 /// The section number a heading starts with, in its canonical form, and
@@ -161,9 +200,34 @@ fn span(lines: &[&str], start: u32, end: u32) -> String {
 }
 
 /// The scope a rule's text gives in its first `<!-- codecite-scope ... -->`
-/// comment, or `None` when it has none. The comment's body is TOML.
+/// comment, or `None` when it has none. The comment starts a line of its
+/// own outside fenced code, so an example of one in a fence is not it, and
+/// `codecite-scope` ends at whitespace or `-->`. Its body is TOML.
 fn scope(text: &str) -> Result<Option<RuleScope>, String> {
-    let Some(start) = text.find(SCOPE_OPEN) else {
+    let mut fence: Option<(char, usize)> = None;
+    let mut offset = 0;
+    let mut start = None;
+    for line in text.split('\n') {
+        let body = line.trim_start();
+        if let Some(marker @ ('`' | '~')) = body.chars().next() {
+            let run = body.chars().take_while(|&c| c == marker).count();
+            if run >= 3 {
+                match fence {
+                    None => fence = Some((marker, run)),
+                    Some((open, len)) if open == marker && run >= len => fence = None,
+                    Some(_) => {}
+                }
+            }
+        } else if fence.is_none()
+            && let Some(rest) = body.strip_prefix(SCOPE_OPEN)
+            && (rest.is_empty() || rest.starts_with(char::is_whitespace) || rest.starts_with("-->"))
+        {
+            start = Some(offset + (line.len() - body.len()));
+            break;
+        }
+        offset += line.len() + 1;
+    }
+    let Some(start) = start else {
         return Ok(None);
     };
     let body = &text[start + SCOPE_OPEN.len()..];
@@ -366,6 +430,54 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("no closing `-->`")
+        );
+    }
+
+    #[test]
+    fn a_scope_comment_in_a_fence_or_mid_line_is_not_a_scope() {
+        let text = "## 1 Writing scopes\n\n```markdown\n<!-- codecite-scope paths = [\"a/[\"] -->\n```\n\n\
+                    Say `<!-- codecite-scope languages = [\"go\"] -->` above a rule. You MAY.\n\n\
+                    <!-- codecite-scopes paths = [] -->\n";
+        let rules = split_guidance(text).unwrap();
+        assert_eq!(rules[0].scope, None);
+        // After the fence closes, a comment on its own line counts.
+        let text =
+            "## 1 Rule\n```\nx\n```\n  <!-- codecite-scope languages = [\"go\"] -->\nMUST.\n";
+        assert_eq!(
+            split_guidance(text).unwrap()[0]
+                .scope
+                .as_ref()
+                .unwrap()
+                .languages,
+            ["go"]
+        );
+    }
+
+    #[test]
+    fn one_numbered_heading_does_not_drop_the_others() {
+        // A numbered title and a heading that starts with a number are a
+        // minority: the outline numbers every rule.
+        let text = "# 2024 Engineering Standards\n\n## Settings\nMUST.\n## 2 factor auth\nMUST.\n## Logging\nSHOULD.\n";
+        let rules = split_guidance(text).unwrap();
+        let got: Vec<(&str, &str)> = rules
+            .iter()
+            .map(|r| (r.section.number.as_str(), r.section.title.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            [("1", "Settings"), ("2", "2 factor auth"), ("3", "Logging")]
+        );
+    }
+
+    #[test]
+    fn an_unnumbered_rule_among_numbered_ones_is_an_error() {
+        let text = "## 1 Settings\nMUST.\n## 2 Logging\nSHOULD.\n## Notes\nYou MUST NOT.\n";
+        assert_eq!(
+            split_guidance(text),
+            Err(GuidanceError::UnnumberedRule {
+                title: "Notes".into(),
+                line: 5
+            })
         );
     }
 
