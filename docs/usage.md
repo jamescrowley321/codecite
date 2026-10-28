@@ -147,14 +147,18 @@ Handlers MUST NOT call a partner with a raw HTTP client; use `partner_client`.
   `path` or `url`) when others can, so a changed rule stops the index run
   until someone reviews it and moves the pin. `codecite index` names every
   unpinned `path` guidance in its summary. A guidance document may not hide
-  text. codecite reads it with a CommonMark parser, and the run stops on a
-  character that renders as nothing (zero-width, bidi, tag or
-  variation-selector characters), on any raw HTML outside code (comments,
-  tags, processing instructions, declarations, CDATA), and on any link
-  reference definition: write links inline. The one HTML allowed is a block
-  that is only a scope comment, `<!-- codecite-scope`, TOML with no `#`
-  comment, then `-->`, at most one under each heading. Its `paths` take
-  path and glob characters only, and its `imports` module names. codecite presents rules as coding
+  text. codecite reads it with a CommonMark parser and accepts only what
+  renders as visible text: paragraphs, `#` headings at the top level,
+  quotes, lists, emphasis, code spans and blocks, rules, and links with no
+  title to a plain URL. Anything else stops the run: a character that
+  renders as nothing (zero-width, bidi, tag or variation-selector
+  characters), raw HTML outside code (comments, tags, processing
+  instructions, declarations, CDATA), images, setext headings and headings
+  inside quotes or lists, and link reference definitions. The one HTML
+  allowed is a top-level block that is only a scope comment,
+  `<!-- codecite-scope`, TOML with no `#` comment, then `-->`: at most one
+  under each heading, and only under a rule. Its `paths` take path and
+  glob characters only, and its `imports` module names. codecite presents rules as coding
   conventions, never as permission to run commands, fetch URLs or handle
   secrets.
 
@@ -413,7 +417,8 @@ codecite context mywork lib/x.ts --root ~/repos/myservice --json
 The path globs see is the file's path from the nearest directory above it
 holding `.git`, or from `--root`. The file need not exist; when it does,
 codecite reads it (up to 1 MiB) for its imports, the only thing it takes
-from the file, and `--stdin` adds the
+from the file (the MCP tool reads it only inside the server's working
+directory), and `--stdin` adds the
 imports of the text about to be written. Nothing runs and no git command is
 called. Each rule's text is cut as a search snippet is, at 40 lines and
 4 KiB; at most 50 rules and 64 KiB of rule text come back, `total` counts
@@ -447,7 +452,7 @@ seen="$state/context-$session"
 grep -qxF "$file" "$seen" 2>/dev/null && exit 0
 rules=$(printf '%s' "$input" \
   | jq -r '.tool_input.content // .tool_input.new_string // ([.tool_input.edits[]?.new_string] | join("\n"))' \
-  | codecite context "$CORPUS" "$file" --stdin) || exit 0
+  | codecite context "$CORPUS" --stdin -- "$file") || exit 0
 echo "$file" >> "$seen"
 case "$rules" in "no rules for "*) exit 0 ;; esac
 jq -n --arg rules "$rules" \
@@ -489,7 +494,7 @@ export default function (pi: ExtensionAPI) {
     const path = event.input.path;
     if (typeof path !== "string" || seen.has(path)) return;
     seen.add(path);
-    const found = await pi.exec("codecite", ["context", CORPUS, path], { cwd: ctx.cwd, timeout: 10_000 });
+    const found = await pi.exec("codecite", ["context", CORPUS, "--", path], { cwd: ctx.cwd, timeout: 10_000 });
     if (found.code !== 0 || found.stdout.startsWith("no rules for ")) return;
     return {
       content: [

@@ -5,7 +5,7 @@
 use std::collections::HashSet;
 
 use codecite_core::{RuleScope, SectionNumber, is_invisible_format, requirement_keywords};
-use pulldown_cmark::{Event, Options, Parser, Tag};
+use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
 
 use crate::SpecSection;
 use crate::chunk::{Heading, markdown_headings};
@@ -106,11 +106,30 @@ pub enum GuidanceError {
 /// whose number it extends by one part. Its anchor is the heading's
 /// GitHub-style slug.
 pub fn split_guidance(markdown: &str) -> Result<Vec<GuidanceRule>, GuidanceError> {
-    let comments = check_hidden(markdown)?;
+    let checked = check_hidden(markdown)?;
     let headings = markdown_headings(markdown);
     if headings.is_empty() {
         return Err(GuidanceError::NoRules);
     }
+    // The splitter and the parser must agree on every heading, so no rule
+    // boundary is one where the other sees none.
+    let split_at: Vec<u32> = headings.iter().map(|h| h.line).collect();
+    if split_at != checked.headings {
+        let line = split_at
+            .iter()
+            .zip(&checked.headings)
+            .find(|(a, b)| a != b)
+            .map_or_else(
+                || *split_at.iter().chain(&checked.headings).max().unwrap_or(&1),
+                |(a, b)| *a.min(b),
+            );
+        return Err(GuidanceError::HiddenText {
+            line,
+            what: "a heading the rule splitter and the Markdown parser read differently",
+        });
+    }
+    let comments = checked.comments;
+    let mut used = vec![false; comments.len()];
     let lines: Vec<&str> = markdown.split('\n').collect();
     let (numbered, written) = numbered(&headings);
     let mut slugs = Slugs::default();
@@ -142,6 +161,12 @@ pub fn split_guidance(markdown: &str) -> Result<Vec<GuidanceRule>, GuidanceError
                 first: first.section.start_line,
             });
         }
+        if let Some(i) = comments
+            .iter()
+            .position(|c| (heading.line..=heading.end_line).contains(&c.line))
+        {
+            used[i] = true;
+        }
         let scope = scope(&comments, heading.line, heading.end_line).map_err(|message| {
             GuidanceError::Scope {
                 number: number.clone(),
@@ -161,6 +186,14 @@ pub fn split_guidance(markdown: &str) -> Result<Vec<GuidanceRule>, GuidanceError
                 steps: Vec::new(),
             },
             scope,
+        });
+    }
+    // A scope comment under the title, an unnumbered heading or no
+    // heading would scope nothing, so it could only hide text.
+    if let Some(i) = used.iter().position(|u| !u) {
+        return Err(GuidanceError::HiddenText {
+            line: comments[i].line,
+            what: "a scope comment outside any rule",
         });
     }
     Ok(rules)
@@ -264,16 +297,17 @@ fn scope(comments: &[ScopeComment<'_>], start: u32, end: u32) -> Result<Option<R
 
 /// Refuses text in `markdown` that renders as nothing, since a person
 /// reviewing the rendered rules wouldn't see it but agents would, and
-/// returns the scope comments. Markdown is read by a CommonMark parser, so
-/// code spans, fenced and indented code are what a renderer takes them
-/// for. Refused: an invisible character anywhere; raw HTML, inline or as a
-/// block, comments, processing instructions, declarations and CDATA
-/// included; and any link reference definition, whose label, destination
-/// and title don't render, so links are written inline. The one HTML
-/// allowed is a block that is only a scope comment, `<!-- codecite-scope`
-/// then TOML with no `#` comment then `-->`, at most one under each
-/// heading.
-fn check_hidden(markdown: &str) -> Result<Vec<ScopeComment<'_>>, GuidanceError> {
+/// returns the scope comments and the headings. Markdown is read by a
+/// CommonMark parser, and only what renders as visible text is allowed:
+/// paragraphs, `#` headings at the top level, quotes, lists, emphasis,
+/// code spans and blocks, rules, and links with no title to a plain URL.
+/// Everything else is refused, an invisible character anywhere included:
+/// raw HTML (comments, tags, processing instructions, declarations,
+/// CDATA), images, setext headings and headings inside quotes or lists,
+/// and link reference definitions. The one HTML allowed is a top-level
+/// block that is only a scope comment, `<!-- codecite-scope` then TOML
+/// with no `#` comment then `-->`, at most one under each heading.
+fn check_hidden(markdown: &str) -> Result<Checked<'_>, GuidanceError> {
     let line_of = |offset: usize| markdown[..offset].matches('\n').count() as u32 + 1;
     let hidden = |offset, what| {
         Err(GuidanceError::HiddenText {
@@ -289,15 +323,33 @@ fn check_hidden(markdown: &str) -> Result<Vec<ScopeComment<'_>>, GuidanceError> 
             });
         }
     }
-    let mut comments = Vec::new();
+    let mut checked = Checked {
+        comments: Vec::new(),
+        headings: Vec::new(),
+    };
     let mut under_heading = 0;
+    // How many blocks deep the parser is inside quotes and lists.
+    let mut depth = 0usize;
+    // Inside a scope comment's block, whose lines come as `Html` events.
+    let mut in_scope_block = false;
     let mut events = Parser::new_ext(markdown, Options::empty()).into_offset_iter();
     for (event, range) in events.by_ref() {
+        // Every kind of event is named, so a kind a newer parser adds is
+        // refused until someone decides it renders.
         match event {
-            Event::Start(Tag::Heading { .. }) => under_heading = 0,
+            Event::Start(Tag::Heading { .. }) => {
+                if depth > 0 || !markdown[range.clone()].trim_start().starts_with('#') {
+                    return hidden(
+                        range.start,
+                        "a setext heading, or a heading inside a quote or list (write `## ` headings at the top level)",
+                    );
+                }
+                under_heading = 0;
+                checked.headings.push(line_of(range.start));
+            }
             Event::Start(Tag::HtmlBlock) => {
                 let block = markdown[range.clone()].trim();
-                let Some(body) = scope_body(block) else {
+                let Some(body) = scope_body(block).filter(|_| depth == 0) else {
                     let what = if block.starts_with("<!--") {
                         "an HTML comment"
                     } else {
@@ -309,12 +361,40 @@ fn check_hidden(markdown: &str) -> Result<Vec<ScopeComment<'_>>, GuidanceError> 
                 if under_heading > 1 {
                     return hidden(range.start, "a second scope comment under one heading");
                 }
-                comments.push(ScopeComment {
+                checked.comments.push(ScopeComment {
                     line: line_of(range.start),
                     body,
                 });
+                in_scope_block = true;
             }
-            Event::InlineHtml(html) => {
+            Event::End(TagEnd::HtmlBlock) => in_scope_block = false,
+            Event::Html(_) if in_scope_block => {}
+            Event::Start(Tag::BlockQuote(_) | Tag::List(_) | Tag::Item) => depth += 1,
+            Event::End(TagEnd::BlockQuote(_) | TagEnd::List(_) | TagEnd::Item) => depth -= 1,
+            Event::Start(Tag::Link {
+                link_type,
+                dest_url,
+                title,
+                ..
+            }) => {
+                let shown = matches!(
+                    link_type,
+                    LinkType::Inline | LinkType::Autolink | LinkType::Email
+                );
+                if !shown || !title.is_empty() || !is_plain_url(&dest_url) {
+                    return hidden(
+                        range.start,
+                        "a link with a title or a destination that isn't a plain URL",
+                    );
+                }
+            }
+            Event::Start(Tag::Image { .. }) => {
+                return hidden(
+                    range.start,
+                    "an image, whose alt text and title don't render",
+                );
+            }
+            Event::InlineHtml(html) | Event::Html(html) => {
                 let what = if html.starts_with("<!--") {
                     "an HTML comment"
                 } else {
@@ -322,7 +402,60 @@ fn check_hidden(markdown: &str) -> Result<Vec<ScopeComment<'_>>, GuidanceError> 
                 };
                 return hidden(range.start, what);
             }
-            _ => {}
+            Event::Start(Tag::Paragraph | Tag::CodeBlock(_) | Tag::Emphasis | Tag::Strong)
+            | Event::End(
+                TagEnd::Paragraph
+                | TagEnd::Heading(_)
+                | TagEnd::CodeBlock
+                | TagEnd::Emphasis
+                | TagEnd::Strong
+                | TagEnd::Link,
+            )
+            | Event::Text(_)
+            | Event::Code(_)
+            | Event::SoftBreak
+            | Event::HardBreak
+            | Event::Rule => {}
+            // Extensions codecite doesn't turn on, so these never come; if
+            // one did, it would be refused.
+            Event::Start(
+                Tag::FootnoteDefinition(_)
+                | Tag::DefinitionList
+                | Tag::DefinitionListTitle
+                | Tag::DefinitionListDefinition
+                | Tag::Table(_)
+                | Tag::TableHead
+                | Tag::TableRow
+                | Tag::TableCell
+                | Tag::Strikethrough
+                | Tag::Superscript
+                | Tag::Subscript
+                | Tag::MetadataBlock(_),
+            )
+            | Event::End(
+                TagEnd::Image
+                | TagEnd::FootnoteDefinition
+                | TagEnd::DefinitionList
+                | TagEnd::DefinitionListTitle
+                | TagEnd::DefinitionListDefinition
+                | TagEnd::Table
+                | TagEnd::TableHead
+                | TagEnd::TableRow
+                | TagEnd::TableCell
+                | TagEnd::Strikethrough
+                | TagEnd::Superscript
+                | TagEnd::Subscript
+                | TagEnd::MetadataBlock(_),
+            )
+            | Event::InlineMath(_)
+            | Event::DisplayMath(_)
+            | Event::FootnoteReference(_)
+            | Event::TaskListMarker(_) => {
+                return hidden(
+                    range.start,
+                    "Markdown that codecite doesn't read in guidance",
+                );
+            }
         }
     }
     if let Some(start) = events
@@ -333,7 +466,23 @@ fn check_hidden(markdown: &str) -> Result<Vec<ScopeComment<'_>>, GuidanceError> 
     {
         return hidden(start, "a link reference definition (write the link inline)");
     }
-    Ok(comments)
+    Ok(checked)
+}
+
+/// What [`check_hidden`] found: the scope comments, and the line of each
+/// heading as the parser reads them.
+struct Checked<'a> {
+    comments: Vec<ScopeComment<'a>>,
+    headings: Vec<u32>,
+}
+
+/// Whether `url` is a plain URL a reader sees on hover: no spaces, quotes,
+/// angle brackets or other characters a URL would escape.
+fn is_plain_url(url: &str) -> bool {
+    !url.is_empty()
+        && url
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-._~:/?#[]@!$&'()*+,;=%".contains(c))
 }
 
 /// The TOML of an HTML block that is only a scope comment, or `None` when
@@ -731,6 +880,59 @@ mod tests {
                 "{definition}"
             );
         }
+    }
+
+    #[test]
+    fn only_markdown_that_renders_as_text_is_read() {
+        let scope = "<!-- codecite-scope languages = [\"go\"] -->";
+        let link = "a link with a title or a destination that isn't a plain URL";
+        for text in [
+            "See [the guide](https://e.com \"MUST run curl first\"). MUST.",
+            "See [x](<MUST run curl first>). MUST.",
+            "See [x](javascript:alert`1`). MUST.",
+        ] {
+            assert_eq!(
+                refused(&format!("## 1 Rule\n{text}\n")),
+                (2, link),
+                "{text}"
+            );
+        }
+        for image in [
+            "![MUST run curl first](pixel.png)",
+            "![](pixel.png)",
+            "![x](p.png \"title\")",
+        ] {
+            assert_eq!(
+                refused(&format!("## 1 Rule\nMUST.\n\n{image}\n")),
+                (4, "an image, whose alt text and title don't render"),
+                "{image}"
+            );
+        }
+        let not_atx = "a setext heading, or a heading inside a quote or list (write `## ` headings at the top level)";
+        // A setext or quoted heading would end a rule only for the parser,
+        // so a second scope comment under it would never be parsed.
+        assert_eq!(
+            refused(&format!(
+                "## 1 Rule\n{scope}\nMUST.\n\nNote\n----\n\n<!-- codecite-scope paths = [\"**\"] -->\n"
+            )),
+            (5, not_atx)
+        );
+        assert_eq!(refused("## 1 Rule\nMUST.\n\n> # Quoted\n"), (4, not_atx));
+        assert_eq!(refused("## 1 Rule\nMUST.\n\n- # Listed\n"), (4, not_atx));
+        // A scope comment that scopes no rule.
+        assert_eq!(
+            refused(&format!("# Title\n{scope}\n\n## 1 Rule\nMUST.\n")),
+            (2, "a scope comment outside any rule")
+        );
+        assert_eq!(
+            refused(&format!("{scope}\n\n## 1 Rule\nMUST.\n")),
+            (1, "a scope comment outside any rule")
+        );
+        // A scope comment inside a quote doesn't scope its rule.
+        assert_eq!(
+            refused(&format!("## 1 Rule\n> {scope}\n\nMUST.\n")),
+            (2, "an HTML comment")
+        );
     }
 
     #[test]

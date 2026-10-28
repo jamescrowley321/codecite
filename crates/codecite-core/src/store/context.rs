@@ -72,7 +72,9 @@ impl RuleScope {
             matcher(glob).map_err(|e| format!("invalid glob {glob:?}: {e}"))?;
         }
         for module in &self.imports {
+            // A trailing separator (`lodash/`, `std::`) would match nothing.
             let named = !module.is_empty()
+                && !module.ends_with(['.', '/', ':'])
                 && module
                     .chars()
                     .all(|c| c.is_alphanumeric() || "_.-/:@".contains(c));
@@ -151,6 +153,20 @@ impl ContextTarget {
     /// together with those of `content`, the text about to be written. Only
     /// the file is read: nothing runs, and no git command.
     pub fn inspect(path: &Path, root: Option<&Path>, content: Option<&str>) -> Result<Self> {
+        Self::inspect_within(path, root, content, None)
+    }
+
+    /// Describes the file at `path` as [`ContextTarget::inspect`] does, but
+    /// reads it from disk only when it is inside `within` once both paths'
+    /// symlinks are resolved; a file anywhere else counts only the imports
+    /// of `content`. The MCP server passes its working directory, so a
+    /// model can't point it at files outside the project.
+    pub fn inspect_within(
+        path: &Path,
+        root: Option<&Path>,
+        content: Option<&str>,
+        within: Option<&Path>,
+    ) -> Result<Self> {
         let cwd = std::env::current_dir()?;
         let absolute = normalize(&cwd.join(path));
         let root = match root {
@@ -175,7 +191,13 @@ impl ContextTarget {
         } else {
             shown.join("/")
         };
-        let on_disk = read_capped(&absolute);
+        let inside = within.is_none_or(|dir| {
+            match (std::fs::canonicalize(&absolute), std::fs::canonicalize(dir)) {
+                (Ok(file), Ok(dir)) => file.starts_with(dir),
+                _ => false,
+            }
+        });
+        let on_disk = inside.then(|| read_capped(&absolute)).flatten();
         // The text to be written is scanned to the same cap as the file.
         let content =
             content.map(|text| super::read::byte_prefix(text, MAX_INSPECTED_BYTES as usize).0);
@@ -963,6 +985,34 @@ mod tests {
             ..RuleScope::default()
         };
         assert!(fine.check().is_ok());
+        for trailing in ["requests.", "lodash/", "std::"] {
+            let scope = RuleScope {
+                imports: vec![trailing.into()],
+                ..RuleScope::default()
+            };
+            assert!(scope.check().is_err(), "{trailing}");
+        }
+    }
+
+    #[test]
+    fn a_file_outside_within_is_not_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let inside = dir.path().join("project");
+        std::fs::create_dir_all(&inside).unwrap();
+        let file = dir.path().join("elsewhere.py");
+        std::fs::write(&file, "import secret_sdk\n").unwrap();
+        let target =
+            ContextTarget::inspect_within(&file, None, Some("import os\n"), Some(&inside)).unwrap();
+        assert_eq!(target.imports, ["os"]);
+        // Through `..`, still outside.
+        let dotted = inside.join("../elsewhere.py");
+        let target = ContextTarget::inspect_within(&dotted, None, None, Some(&inside)).unwrap();
+        assert!(target.imports.is_empty());
+        // Inside, it is read.
+        let own = inside.join("own.py");
+        std::fs::write(&own, "import requests\n").unwrap();
+        let target = ContextTarget::inspect_within(&own, None, None, Some(&inside)).unwrap();
+        assert_eq!(target.imports, ["requests"]);
     }
 
     #[test]

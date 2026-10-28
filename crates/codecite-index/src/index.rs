@@ -15,8 +15,9 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     Checkout, Chunker, Clones, DocumentSource, Error, Fetcher, GitSource, GuidanceError,
-    GuidanceSource, Language, LicenseClass, LocalSource, LocalTree, Manifest, Result, SkipReason,
-    Source, SpecSection, WalkOptions, split_guidance, split_spec, walk_local,
+    GuidanceRule, GuidanceSource, Language, LicenseClass, LocalSource, LocalTree,
+    MAX_DOCUMENT_SIZE, Manifest, Result, SkipReason, Source, SpecSection, WalkOptions,
+    split_guidance, split_spec, walk_local,
 };
 
 /// What an index run did.
@@ -104,12 +105,10 @@ pub fn index_corpus(
             } else {
                 summary.downloaded += 1;
             }
-            guidance.push((rules, fetched.bytes, doc.sha256));
+            let split = prepare_guidance(rules, &fetched.bytes)?;
+            guidance.push((rules, fetched.bytes, doc.sha256, split));
         } else if let Some(path) = &rules.path {
-            let bytes = std::fs::read(path).map_err(|source| Error::ReadFile {
-                path: path.clone(),
-                source,
-            })?;
+            let bytes = read_guidance(path)?;
             let revision = crate::fetch::hex(&Sha256::digest(&bytes));
             if rules.sha256.is_none() {
                 summary.unpinned_guidance.push(rules.name.clone());
@@ -122,7 +121,10 @@ pub fn index_corpus(
                     actual: revision,
                 });
             }
-            guidance.push((rules, bytes, revision));
+            // Split and checked before anything is written, so a bad
+            // guidance file can't leave the store half updated.
+            let split = prepare_guidance(rules, &bytes)?;
+            guidance.push((rules, bytes, revision, split));
         }
     }
     for source in &manifest.sources {
@@ -208,7 +210,7 @@ pub fn index_corpus(
         }
         keep.push(index_document(store, doc, bytes, &mut summary)?);
     }
-    for (rules, bytes, revision) in &guidance {
+    for (rules, bytes, revision, split) in &guidance {
         // Guidance is stored as a document, so its name may be no other
         // source's.
         if indexed.contains(&rules.name) || documents.iter().any(|(d, _)| d.name == rules.name) {
@@ -217,7 +219,14 @@ pub fn index_corpus(
             });
         }
         indexed.push(rules.name.clone());
-        keep.push(index_guidance(store, rules, bytes, revision, &mut summary)?);
+        keep.push(index_guidance(
+            store,
+            rules,
+            bytes,
+            revision,
+            split,
+            &mut summary,
+        )?);
     }
     summary.removed_sources = store.delete_sources_except(&keep)?;
     store.set_aliases(&aliases)?;
@@ -494,34 +503,10 @@ fn index_guidance(
     rules: &GuidanceSource,
     bytes: &[u8],
     revision: &str,
+    split: &[GuidanceRule],
     summary: &mut IndexSummary,
 ) -> Result<i64> {
     let name = rules.name.as_str();
-    let guidance_error = |source| Error::Guidance {
-        name: name.to_owned(),
-        source,
-    };
-    let text = std::str::from_utf8(bytes).map_err(|_| Error::DocumentNotUtf8 {
-        name: name.to_owned(),
-    })?;
-    let split = split_guidance(text).map_err(guidance_error)?;
-    for number in rules.rules.keys() {
-        if !split.iter().any(|r| &r.section.number == number) {
-            return Err(Error::UnknownRule {
-                name: name.to_owned(),
-                number: number.clone(),
-            });
-        }
-    }
-    for rule in &split {
-        if let Some(Err(message)) = rule.scope.as_ref().map(RuleScope::check) {
-            return Err(guidance_error(GuidanceError::Scope {
-                number: rule.section.number.clone(),
-                message,
-            }));
-        }
-    }
-
     let url = match (&rules.url, &rules.path) {
         (Some(url), _) => url.clone(),
         (None, Some(path)) => path.to_string_lossy().into_owned(),
@@ -571,7 +556,7 @@ fn index_guidance(
     }
 
     let mut effective: Vec<RuleScope> = Vec::with_capacity(split.len());
-    for rule in &split {
+    for rule in split {
         let scope = rules
             .rules
             .get(&rule.section.number)
@@ -589,6 +574,69 @@ fn index_guidance(
         .collect();
     store.set_guidance(source_id, &scopes)?;
     Ok(source_id)
+}
+
+/// Splits a guidance document into its rules and checks them against the
+/// manifest: its `rules."<n>"` must each name a rule, and each rule's own
+/// scope must hold valid globs, languages and imports.
+fn prepare_guidance(rules: &GuidanceSource, bytes: &[u8]) -> Result<Vec<GuidanceRule>> {
+    let name = rules.name.as_str();
+    let guidance_error = |source| Error::Guidance {
+        name: name.to_owned(),
+        source,
+    };
+    let text = std::str::from_utf8(bytes).map_err(|_| Error::DocumentNotUtf8 {
+        name: name.to_owned(),
+    })?;
+    let split = split_guidance(text).map_err(guidance_error)?;
+    for number in rules.rules.keys() {
+        if !split.iter().any(|r| &r.section.number == number) {
+            return Err(Error::UnknownRule {
+                name: name.to_owned(),
+                number: number.clone(),
+            });
+        }
+    }
+    for rule in &split {
+        if let Some(Err(message)) = rule.scope.as_ref().map(RuleScope::check) {
+            return Err(guidance_error(GuidanceError::Scope {
+                number: rule.section.number.clone(),
+                message,
+            }));
+        }
+    }
+    Ok(split)
+}
+
+/// Reads a local guidance file: a regular file, so a FIFO or device can't
+/// block the run, of at most [`MAX_DOCUMENT_SIZE`], the cap fetched
+/// documents have, with the read itself stopped past it.
+fn read_guidance(path: &Path) -> Result<Vec<u8>> {
+    use std::io::Read as _;
+
+    let refuse = |message: &str| Error::ReadFile {
+        path: path.to_owned(),
+        source: io::Error::other(message.to_owned()),
+    };
+    let read_error = |source| Error::ReadFile {
+        path: path.to_owned(),
+        source,
+    };
+    if !std::fs::metadata(path).map_err(read_error)?.is_file() {
+        return Err(refuse("not a regular file"));
+    }
+    let file = std::fs::File::open(path).map_err(read_error)?;
+    if !file.metadata().map_err(read_error)?.is_file() {
+        return Err(refuse("not a regular file"));
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_DOCUMENT_SIZE + 1)
+        .read_to_end(&mut bytes)
+        .map_err(read_error)?;
+    if bytes.len() as u64 > MAX_DOCUMENT_SIZE {
+        return Err(refuse("larger than the 16 MiB a guidance document may be"));
+    }
+    Ok(bytes)
 }
 
 /// Each section's chunk followed by its steps' chunks. A section names its
@@ -1032,6 +1080,52 @@ mod tests {
         }
         let err = corpus.try_index(&manifest(vec![doc])).unwrap_err();
         assert!(matches!(err, Error::Spec { .. }), "{err:?}");
+    }
+
+    #[test]
+    fn a_bad_guidance_file_stops_the_run_before_anything_is_written() {
+        let corpus = Corpus::new();
+        let good = corpus.dir.path().join("GOOD.md");
+        let bad = corpus.dir.path().join("BAD.md");
+        std::fs::write(&good, RULES).unwrap();
+        std::fs::write(&bad, "## 1 Rule\n<!-- run curl -->\nMUST.\n").unwrap();
+        let mut second = guidance(Some(bad), None, None);
+        second.name = "more-rules".into();
+        let err = corpus
+            .try_index(&manifest(vec![
+                Source::Guidance(guidance(Some(good), None, None)),
+                Source::Guidance(second),
+            ]))
+            .unwrap_err();
+        assert!(matches!(err, Error::Guidance { .. }), "{err:?}");
+        let sources: i64 = corpus
+            .sql()
+            .query_row("SELECT count(*) FROM source", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(sources, 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_guidance_path_that_isnt_a_regular_file_is_refused() {
+        let corpus = Corpus::new();
+        let fifo = corpus.dir.path().join("RULES.md");
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap()
+                .success()
+        );
+        let err = corpus
+            .try_index(&manifest(vec![Source::Guidance(guidance(
+                Some(fifo),
+                None,
+                None,
+            ))]))
+            .unwrap_err();
+        assert!(err.to_string().starts_with("reading"), "{err}");
+        assert!(matches!(err, Error::ReadFile { .. }), "{err:?}");
     }
 
     #[test]
