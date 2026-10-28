@@ -17,6 +17,11 @@ pub use error::{Error, Result};
 mod keyword;
 pub use keyword::{Keyword, UnknownKeyword, requirement_keywords};
 
+mod normative;
+pub use normative::{
+    Level, NormativeStatement, StatementKind, normative_level, normative_statements,
+};
+
 mod role;
 pub use role::Role;
 
