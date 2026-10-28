@@ -745,11 +745,10 @@ mod tests {
     }
 
     #[test]
-    fn version_5_moves_spec_chunks_out_of_the_code_table() {
+    fn version_5_makes_the_next_run_rewrite_specs() {
         let dir = scratch("v4");
         let path = dir.join("corpus.db");
-        // A version 4 corpus with a code chunk and a spec chunk, both in
-        // chunk_fts.
+        // A version 4 corpus with a code file and a spec version.
         raw(&path)
             .execute_batch(&format!(
                 "{}
@@ -761,35 +760,26 @@ mod tests {
                    VALUES (1, 'app', 'local', '/src/app', 'abc', 'adapt', 'then'),
                           (2, 'rfc9449', 'document', 'https://x', 'def', 'quote', 'then');
                  INSERT INTO document (id, source_id, path, content_hash)
-                   VALUES (1, 1, 'src/lib.rs', x'01'), (2, 2, 'rfc9449', x'02');
-                 INSERT INTO chunk (id, document_id, start_line, end_line, kind, text, terms)
-                   VALUES (1, 1, 1, 1, 'window', 'validate', 'validate'),
-                          (2, 2, 1, 1, 'section', 'validate', 'validate');
-                 INSERT INTO chunk_fts (rowid, symbol, path, terms)
-                   VALUES (1, '', 'lib', 'validate'), (2, '', 'rfc9449', 'validate');",
+                   VALUES (1, 1, 'src/lib.rs', x'01'), (2, 2, 'rfc9449', x'02');",
                 MIGRATIONS[0], MIGRATIONS[1], MIGRATIONS[2], MIGRATIONS[3]
             ))
             .unwrap();
 
         let store = Store::open_read_write(&path).unwrap();
         assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
-        let ids = |sql: &str| -> Vec<i64> {
-            let mut stmt = store.conn.prepare(sql).unwrap();
+        // spec_fts starts empty, and the spec's empty hash makes the next
+        // run rewrite it into both tables. The code file is left alone.
+        let hashes: Vec<Vec<u8>> = {
+            let mut stmt = store
+                .conn
+                .prepare("SELECT content_hash FROM document ORDER BY id")
+                .unwrap();
             stmt.query_map([], |row| row.get(0))
                 .unwrap()
                 .collect::<rusqlite::Result<_>>()
                 .unwrap()
         };
-        assert_eq!(
-            ids("SELECT rowid FROM chunk_fts WHERE chunk_fts MATCH 'validate'"),
-            [1]
-        );
-        // The spec keeps its chunk until the next run rewrites it, which
-        // its empty hash makes sure of.
-        assert_eq!(
-            ids("SELECT id FROM document WHERE content_hash = x'' ORDER BY id"),
-            [2]
-        );
+        assert_eq!(hashes, [vec![1], vec![]]);
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }

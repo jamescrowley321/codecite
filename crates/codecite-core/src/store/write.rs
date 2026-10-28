@@ -273,8 +273,10 @@ fn clear_document(tx: &Transaction<'_>, document_id: i64) -> Result<()> {
     Ok(())
 }
 
-/// Inserts a document's symbols, chunks and full-text rows: a spec's into
-/// the stemmed `spec_fts`, code's into `chunk_fts`.
+/// Inserts a document's symbols, chunks and full-text rows: every chunk's
+/// into `chunk_fts`, and a spec's into the stemmed `spec_fts` as well. Code
+/// ranks against `chunk_fts`, whose BM25 statistics count spec chunks, so
+/// they stay in it.
 fn insert_chunks(
     tx: &Transaction<'_>,
     document_id: i64,
@@ -290,11 +292,12 @@ fn insert_chunks(
            title, parent_id, strength, text, terms)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
     )?;
-    let mut fts = tx.prepare_cached(if is_spec {
-        "INSERT INTO spec_fts (rowid, symbol, path, terms) VALUES (?1, ?2, ?3, ?4)"
-    } else {
-        "INSERT INTO chunk_fts (rowid, symbol, path, terms) VALUES (?1, ?2, ?3, ?4)"
-    })?;
+    let mut fts = tx.prepare_cached(
+        "INSERT INTO chunk_fts (rowid, symbol, path, terms) VALUES (?1, ?2, ?3, ?4)",
+    )?;
+    let mut spec_fts = tx.prepare_cached(
+        "INSERT INTO spec_fts (rowid, symbol, path, terms) VALUES (?1, ?2, ?3, ?4)",
+    )?;
     let path_terms = text_terms(document.path);
     // Chunk IDs as they are assigned, so a later chunk can name its parent.
     let mut ids: Vec<i64> = Vec::with_capacity(document.chunks.len());
@@ -336,6 +339,9 @@ fn insert_chunks(
             .as_ref()
             .map_or_else(String::new, |s| identifier_terms(s.display_name));
         fts.execute(params![chunk_id, symbol_terms, path_terms, terms])?;
+        if is_spec {
+            spec_fts.execute(params![chunk_id, symbol_terms, path_terms, terms])?;
+        }
     }
     Ok(())
 }
@@ -786,10 +792,11 @@ mod tests {
             ]
         );
         // Spec chunks go in the stemmed table, so "checked" finds
-        // "Checking", and not in the code table.
+        // "Checking", and in the unstemmed one, which doesn't.
         assert_eq!(matches_in(&store, "spec_fts", "dpop"), 2);
         assert_eq!(matches_in(&store, "spec_fts", "checked"), 1);
-        assert_eq!(matches(&store, "dpop"), 0);
+        assert_eq!(matches(&store, "dpop"), 2);
+        assert_eq!(matches(&store, "checked"), 0);
 
         // Deleting the source takes the document, both chunks and their
         // full-text rows with it.
@@ -797,6 +804,7 @@ mod tests {
         assert_eq!(count(&store, "SELECT count(*) FROM document"), 0);
         assert_eq!(count(&store, "SELECT count(*) FROM chunk"), 0);
         assert_eq!(matches_in(&store, "spec_fts", "dpop"), 0);
+        assert_eq!(matches(&store, "dpop"), 0);
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }

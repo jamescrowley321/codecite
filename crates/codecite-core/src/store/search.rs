@@ -220,24 +220,27 @@ impl Store {
             names.push(NAME_SEPARATOR);
         }
         let limit = usize::try_from(query.limit).unwrap_or(usize::MAX);
-        let ranked = |table: &str, fts: &str| self.ranked(table, fts, &names, query);
+        let ranked =
+            |table: &str, fts: &str, spec: bool| self.ranked(table, fts, spec, &names, query);
         let code = match query.only {
             Some(Scope::Spec) => Vec::new(),
-            _ => ranked("chunk_fts", &fts)?,
+            _ => ranked("chunk_fts", &fts, false)?,
         };
         let spec = match query.only {
             Some(Scope::Code) => Vec::new(),
-            _ => ranked("spec_fts", &spec_fts_query(query.text).unwrap_or(fts))?,
+            _ => ranked("spec_fts", &spec_fts_query(query.text).unwrap_or(fts), true)?,
         };
         Ok(blend(code, spec, limit, named, |r| r.score))
     }
 
-    /// The best `query.limit` chunks the full-text `table` matches for
-    /// `fts`, best first: `chunk_fts` holds code, `spec_fts` specs.
+    /// The best `query.limit` spec chunks, or code chunks, that the
+    /// full-text `table` matches for `fts`, best first. `chunk_fts` holds
+    /// every chunk, `spec_fts` only specs.
     fn ranked(
         &self,
         table: &str,
         fts: &str,
+        spec: bool,
         names: &str,
         query: &SearchQuery<'_>,
     ) -> Result<Vec<SearchResult>> {
@@ -258,6 +261,7 @@ impl Store {
              WHERE {table} MATCH ?1 AND s.is_current
                AND (?6 IS NULL OR d.language = ?6)
                AND (?7 IS NULL OR d.path GLOB ?7)
+               AND (s.kind = 'document') = ?10
              ORDER BY score DESC, c.id
              LIMIT ?8"
         ))?;
@@ -272,6 +276,7 @@ impl Store {
                 query.path,
                 query.limit,
                 NAME_BOOST,
+                spec,
             ],
             |row| {
                 let kind: String = row.get(0)?;
@@ -1220,6 +1225,94 @@ mod tests {
             f.citations(&code("the")),
             [format!("app@{HEAD}:README.md#L1-L2")]
         );
+    }
+
+    /// Code results as the search ranked them before specs had their own
+    /// table: one query over `chunk_fts`, code and spec chunks together.
+    fn code_as_before(store: &Store, text: &str) -> Vec<(String, f64)> {
+        let mut names = String::from(NAME_SEPARATOR);
+        for name in store.boosted_names(text).unwrap() {
+            names.push_str(&name);
+            names.push(NAME_SEPARATOR);
+        }
+        let (w_symbol, w_path, w_text) = COLUMN_WEIGHTS;
+        let mut stmt = store
+            .conn
+            .prepare(
+                "SELECT s.name, s.revision, d.path, c.start_line, c.end_line,
+                   -bm25(chunk_fts, ?3, ?4, ?5)
+                     * codecite_role_weight(d.path, s.kind)
+                     * CASE WHEN instr(?2, char(31) || codecite_name_key(sym.display_name) || char(31)) > 0
+                            THEN ?6 ELSE 1.0 END AS score
+                 FROM chunk_fts
+                 JOIN chunk c ON c.id = chunk_fts.rowid
+                 JOIN document d ON d.id = c.document_id
+                 JOIN source s ON s.id = d.source_id
+                 LEFT JOIN symbol sym ON sym.id = c.symbol_id
+                 WHERE chunk_fts MATCH ?1 AND s.is_current AND s.kind <> 'document'
+                 ORDER BY score DESC, c.id",
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map(
+                params![
+                    fts_query(text).unwrap(),
+                    names,
+                    w_symbol,
+                    w_path,
+                    w_text,
+                    NAME_BOOST
+                ],
+                |row| {
+                    let citation = code_citation(
+                        &row.get::<_, String>(0)?,
+                        &row.get::<_, String>(1)?,
+                        &row.get::<_, String>(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    );
+                    Ok((citation, row.get(5)?))
+                },
+            )
+            .unwrap();
+        rows.collect::<rusqlite::Result<_>>().unwrap()
+    }
+
+    #[test]
+    fn code_results_are_ranked_as_before_specs_had_their_own_table() {
+        let f = fixture();
+        // Spec chunks, both versions, stay in chunk_fts, so code's BM25
+        // statistics are what they were.
+        let spec_rows: i64 = f
+            .store
+            .conn
+            .query_row(
+                "SELECT count(*) FROM chunk_fts WHERE chunk_fts MATCH 'jti'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(spec_rows, 2);
+        for text in [
+            "validate",
+            "validate token",
+            "is the token validated",
+            "what is this",
+            "jti checking dpop",
+        ] {
+            let code = SearchQuery {
+                only: Some(Scope::Code),
+                ..query(text)
+            };
+            let now: Vec<(String, f64)> = f
+                .store
+                .search(&code)
+                .unwrap()
+                .into_iter()
+                .map(|r| (r.citation, r.score))
+                .collect();
+            assert_eq!(now, code_as_before(&f.store, text), "{text}");
+        }
     }
 
     #[test]
