@@ -1,5 +1,6 @@
 {
   "id": "spec-questions",
+  "frozen_at": "19eef0bf0c607978e55e578d4c514e65cad3511a",
   "project": null,
   "prompt": "prompt.md",
   "questions": "questions.toml",
