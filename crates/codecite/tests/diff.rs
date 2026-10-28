@@ -63,13 +63,13 @@ fn data_home() -> tempfile::TempDir {
         &mut store,
         OLD,
         false,
-        "2.4. Logout Token\n\niat\nREQUIRED. Issued at time, November 2014.",
+        "2.4. Logout Token\n\niat\nREQUIRED. Issued at time, [Core] (S., “Core,” November 2014.).",
     );
     version(
         &mut store,
         NEW,
         true,
-        "2.4. Logout Token\n\niat\nREQUIRED. Issued at time, December 2023.\nexp\nREQUIRED. Expiration time.",
+        "2.4. Logout Token\n\niat\nREQUIRED. Issued at time, [Core] (S., “Core,” December 2023.).\nexp\nREQUIRED. Expiration time.",
     );
     let aliases: SpecAliases = [("Back-Channel Logout", DOC)].into_iter().collect();
     store.set_aliases(&aliases).unwrap();
