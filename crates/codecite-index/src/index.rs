@@ -8,13 +8,15 @@ use std::io;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use codecite_core::{ChunkRecord, DocumentRecord, SourceRecord, SpecAliases, Store, SymbolRecord};
+use codecite_core::{
+    ChunkRecord, DocumentRecord, RuleScope, SourceRecord, SpecAliases, Store, SymbolRecord,
+};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    Checkout, Chunker, Clones, DocumentSource, Error, Fetcher, GitSource, Language, LicenseClass,
-    LocalSource, LocalTree, Manifest, Result, SkipReason, Source, SpecDocument, WalkOptions,
-    split_spec, walk_local,
+    Checkout, Chunker, Clones, DocumentSource, Error, Fetcher, GitSource, GuidanceError,
+    GuidanceSource, Language, LicenseClass, LocalSource, LocalTree, Manifest, Result, SkipReason,
+    Source, SpecSection, WalkOptions, split_guidance, split_spec, walk_local,
 };
 
 /// What an index run did.
@@ -82,6 +84,33 @@ pub fn index_corpus(
             documents.push((doc, fetched.bytes));
         }
     }
+    // Each guidance document with its bytes and the revision it is cited
+    // at: its pin when fetched, the sha256 of the file as read when local.
+    let mut guidance = Vec::new();
+    for source in &manifest.sources {
+        let Source::Guidance(rules) = source else {
+            continue;
+        };
+        if rules.license_class == LicenseClass::Excluded {
+            continue;
+        }
+        if let Some(doc) = rules.as_document() {
+            let fetched = fetcher.fetch_pinned(&doc)?;
+            if fetched.from_cache {
+                summary.cached += 1;
+            } else {
+                summary.downloaded += 1;
+            }
+            guidance.push((rules, fetched.bytes, doc.sha256));
+        } else if let Some(path) = &rules.path {
+            let bytes = std::fs::read(path).map_err(|source| Error::ReadFile {
+                path: path.clone(),
+                source,
+            })?;
+            let revision = crate::fetch::hex(&Sha256::digest(&bytes));
+            guidance.push((rules, bytes, revision));
+        }
+    }
     for source in &manifest.sources {
         if let Source::Git(git) = source
             && git.license_class != LicenseClass::Excluded
@@ -141,6 +170,14 @@ pub fn index_corpus(
                 }
                 continue;
             }
+            Source::Guidance(rules) => {
+                if rules.license_class == LicenseClass::Excluded {
+                    summary
+                        .skipped_sources
+                        .push((rules.name.clone(), "use = \"excluded\""));
+                }
+                continue;
+            }
         };
         if indexed.contains(&walked.name) {
             return Err(Error::DuplicateSource { name: walked.name });
@@ -157,6 +194,17 @@ pub fn index_corpus(
         }
         keep.push(index_document(store, doc, bytes, &mut summary)?);
     }
+    for (rules, bytes, revision) in &guidance {
+        // Guidance is stored as a document, so its name may be no other
+        // source's.
+        if indexed.contains(&rules.name) || documents.iter().any(|(d, _)| d.name == rules.name) {
+            return Err(Error::DuplicateSource {
+                name: rules.name.clone(),
+            });
+        }
+        indexed.push(rules.name.clone());
+        keep.push(index_guidance(store, rules, bytes, revision, &mut summary)?);
+    }
     summary.removed_sources = store.delete_sources_except(&keep)?;
     store.set_aliases(&aliases)?;
     store.set_indexed_at(manifest.max_age_days)?;
@@ -169,22 +217,24 @@ pub fn index_corpus(
 fn document_aliases(manifest: &Manifest) -> Result<SpecAliases> {
     let mut aliases = SpecAliases::new();
     for source in &manifest.sources {
-        let Source::Document(doc) = source else {
-            continue;
+        let (name, names) = match source {
+            Source::Document(doc) => (&doc.name, &doc.aliases),
+            Source::Guidance(rules) => (&rules.name, &rules.aliases),
+            _ => continue,
         };
-        if doc.license_class == LicenseClass::Excluded {
+        if source.license_class() == LicenseClass::Excluded {
             continue;
         }
-        for alias in &doc.aliases {
+        for alias in names {
             match aliases.get(alias) {
-                Some(first) if first != doc.name => {
+                Some(first) if first != name => {
                     return Err(Error::DuplicateAlias {
                         alias: alias.clone(),
                         first: first.into(),
-                        second: doc.name.clone(),
+                        second: name.clone(),
                     });
                 }
-                _ => aliases.insert(alias, &doc.name),
+                _ => aliases.insert(alias, name),
             }
         }
     }
@@ -407,24 +457,126 @@ fn index_document(
         dirty: false,
         // A spec's text is its sections and steps.
         text: None,
-        chunks: spec_chunks(&spec, &step_numbers),
+        chunks: spec_chunks(&spec.sections, &step_numbers),
     };
     summary.chunks += store.write_document(source_id, &document)?;
     summary.written += 1;
     Ok(source_id)
 }
 
+/// Writes one guidance document into the store as a document version of
+/// its own, marks it guidance, and stores each rule's scope. Returns its
+/// source's ID.
+///
+/// The document is split on every run, since its rules' scopes come from
+/// the manifest as well as from the text, but written only when its bytes
+/// changed. A rule's scope is the manifest's `rules."<number>"`, else its
+/// own comment's, else its parent rule's, else the manifest's `scope`.
+fn index_guidance(
+    store: &mut Store,
+    rules: &GuidanceSource,
+    bytes: &[u8],
+    revision: &str,
+    summary: &mut IndexSummary,
+) -> Result<i64> {
+    let name = rules.name.as_str();
+    let guidance_error = |source| Error::Guidance {
+        name: name.to_owned(),
+        source,
+    };
+    let text = std::str::from_utf8(bytes).map_err(|_| Error::DocumentNotUtf8 {
+        name: name.to_owned(),
+    })?;
+    let split = split_guidance(text).map_err(guidance_error)?;
+    for number in rules.rules.keys() {
+        if !split.iter().any(|r| &r.section.number == number) {
+            return Err(Error::UnknownRule {
+                name: name.to_owned(),
+                number: number.clone(),
+            });
+        }
+    }
+    for rule in &split {
+        if let Some(Err((glob, message))) = rule.scope.as_ref().map(RuleScope::check) {
+            return Err(guidance_error(GuidanceError::Scope {
+                number: rule.section.number.clone(),
+                message: format!("invalid glob {glob:?}: {message}"),
+            }));
+        }
+    }
+
+    let url = match (&rules.url, &rules.path) {
+        (Some(url), _) => url.clone(),
+        (None, Some(path)) => path.to_string_lossy().into_owned(),
+        (None, None) => String::new(),
+    };
+    let source_id = store.upsert_source(&SourceRecord {
+        name,
+        kind: "document",
+        url: &url,
+        revision,
+        license_spdx: rules.license.as_deref(),
+        license_class: rules.license_class.as_str(),
+        is_current: true,
+        obsoleted_by: None,
+        updated_by: None,
+    })?;
+    let hash = Sha256::digest(bytes);
+    let sections: Vec<SpecSection> = split.iter().map(|r| r.section.clone()).collect();
+    if store
+        .document_hashes(source_id)?
+        .get(name)
+        .is_some_and(|old| old[..] == hash[..])
+    {
+        summary.unchanged += 1;
+    } else {
+        let no_steps = vec![Vec::new(); sections.len()];
+        let document = DocumentRecord {
+            path: name,
+            language: Some(Language::Markdown.name()),
+            content_hash: hash.as_slice(),
+            size_bytes: bytes.len() as u64,
+            dirty: false,
+            // As for a spec, the rules are its text.
+            text: None,
+            chunks: spec_chunks(&sections, &no_steps),
+        };
+        summary.chunks += store.write_document(source_id, &document)?;
+        summary.written += 1;
+    }
+
+    let mut effective: Vec<RuleScope> = Vec::with_capacity(split.len());
+    for rule in &split {
+        let scope = rules
+            .rules
+            .get(&rule.section.number)
+            .or(rule.scope.as_ref())
+            .or_else(|| rule.section.parent.map(|p| &effective[p]))
+            .unwrap_or(&rules.scope)
+            .clone();
+        effective.push(scope);
+    }
+    let scopes: Vec<(&str, &RuleScope)> = split
+        .iter()
+        .zip(&effective)
+        .filter(|(_, scope)| !scope.is_empty())
+        .map(|(rule, scope)| (rule.section.number.as_str(), scope))
+        .collect();
+    store.set_guidance(source_id, &scopes)?;
+    Ok(source_id)
+}
+
 /// Each section's chunk followed by its steps' chunks. A section names its
 /// enclosing section's chunk as its parent, and a step its section's.
 fn spec_chunks<'a>(
-    spec: &'a SpecDocument,
+    sections: &'a [SpecSection],
     step_numbers: &'a [Vec<String>],
 ) -> Vec<ChunkRecord<'a>> {
     let mut chunks = Vec::new();
     // The chunk index of each section, by section index. A parent comes
     // before its subsections, so its index is always known here.
-    let mut section_chunks = Vec::with_capacity(spec.sections.len());
-    for (section, numbers) in spec.sections.iter().zip(step_numbers) {
+    let mut section_chunks = Vec::with_capacity(sections.len());
+    for (section, numbers) in sections.iter().zip(step_numbers) {
         let index = chunks.len();
         section_chunks.push(index);
         chunks.push(ChunkRecord {
@@ -676,6 +828,220 @@ mod tests {
                 )
                 .unwrap()
         }
+    }
+
+    /// A guidance document: a title, a scoped rule with a subsection, a
+    /// rule for one dependency, and a rule for every file.
+    const RULES: &str = "# House rules\n\n## 1 Settings\n\n<!-- codecite-scope languages = [\"python\"] -->\n\
+        Code MUST read settings through `get_settings`.\n\n### 1.1 No environment\n\n\
+        Handlers MUST NOT read `os.environ`.\n\n## 2 Partner calls\n\n\
+        Calls SHOULD go through `partner_client`.\n\n## 3 Headers\n\nEvery file MUST carry the license header.\n";
+
+    fn guidance(
+        path: Option<PathBuf>,
+        url: Option<String>,
+        sha256: Option<String>,
+    ) -> GuidanceSource {
+        GuidanceSource {
+            name: "house-rules".into(),
+            path,
+            url,
+            sha256,
+            license: None,
+            license_class: LicenseClass::Quote,
+            aliases: vec!["House Rules".into()],
+            scope: RuleScope::default(),
+            rules: BTreeMap::new(),
+        }
+    }
+
+    /// Each stored rule scope as (number, kind, value), sorted.
+    fn scopes(corpus: &Corpus) -> Vec<(String, String, String)> {
+        let conn = corpus.sql();
+        let mut stmt = conn
+            .prepare("SELECT number, kind, value FROM rule_scope ORDER BY number, kind, value")
+            .unwrap();
+        stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    }
+
+    fn scope(number: &str, kind: &str, value: &str) -> (String, String, String) {
+        (number.into(), kind.into(), value.into())
+    }
+
+    #[test]
+    fn a_guidance_file_is_indexed_as_rules_with_scopes() {
+        let corpus = Corpus::new();
+        let file = corpus.dir.path().join("RULES.md");
+        std::fs::write(&file, RULES).unwrap();
+        let mut rules = guidance(Some(file.clone()), None, None);
+        rules.scope.paths = vec!["app/**".into()];
+        rules.rules.insert(
+            "2".into(),
+            RuleScope {
+                imports: vec!["httpx".into()],
+                ..RuleScope::default()
+            },
+        );
+        let summary = corpus.index(&manifest(vec![Source::Guidance(rules.clone())]));
+        assert_eq!((summary.written, summary.chunks), (1, 4));
+
+        // §1's comment, inherited by §1.1, the manifest's rule for §2 and
+        // the default for §3.
+        assert_eq!(
+            scopes(&corpus),
+            [
+                scope("1", "language", "python"),
+                scope("1.1", "language", "python"),
+                scope("2", "import", "httpx"),
+                scope("3", "path", "app/**"),
+            ]
+        );
+        let (kind, guidance, language): (String, bool, Option<String>) = corpus
+            .sql()
+            .query_row(
+                "SELECT s.kind, s.guidance, d.language FROM source s JOIN document d ON d.source_id = s.id",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (kind.as_str(), guidance, language.as_deref()),
+            ("document", true, Some("markdown"))
+        );
+
+        // `read` resolves a rule's citation and the alias, as for a spec.
+        let store = Store::open_read_only(&corpus.path()).unwrap();
+        let read = store
+            .read("House Rules §1.1", &codecite_core::ReadOptions::default())
+            .unwrap();
+        let hash = &sha256(RULES)[..12];
+        assert_eq!(
+            read.citation,
+            format!("house-rules@sha256:{hash}#section-1.1")
+        );
+        assert_eq!(
+            read.text,
+            "### 1.1 No environment\n\nHandlers MUST NOT read `os.environ`."
+        );
+        assert_eq!(read.strength, Some(vec!["MUST NOT".to_owned()]));
+
+        // `context` pushes the rules for a Python handler that imports httpx.
+        let target = codecite_core::ContextTarget::describe(
+            "app/handlers/partner.py".into(),
+            Some("import httpx\n"),
+            None,
+        );
+        let context = store
+            .context(&codecite_core::ContextQuery {
+                target: &target,
+                allow_stale: false,
+            })
+            .unwrap();
+        let cited: Vec<&str> = context
+            .rules
+            .iter()
+            .map(|r| r.citation.rsplit_once('#').unwrap().1)
+            .collect();
+        assert_eq!(
+            cited,
+            ["section-1", "section-1.1", "section-3", "section-2"]
+        );
+        drop(store);
+
+        // A changed scope in the manifest is stored without rewriting the
+        // document.
+        rules.rules.clear();
+        let summary = corpus.index(&manifest(vec![Source::Guidance(rules)]));
+        assert_eq!((summary.written, summary.unchanged), (0, 1));
+        assert_eq!(scopes(&corpus)[2], scope("2", "path", "app/**"));
+    }
+
+    #[test]
+    fn an_edited_guidance_file_is_a_new_version() {
+        let corpus = Corpus::new();
+        let file = corpus.dir.path().join("RULES.md");
+        std::fs::write(&file, RULES).unwrap();
+        let sources = manifest(vec![Source::Guidance(guidance(
+            Some(file.clone()),
+            None,
+            None,
+        ))]);
+        corpus.index(&sources);
+        std::fs::write(&file, RULES.replace("SHOULD", "MUST")).unwrap();
+        let summary = corpus.index(&sources);
+        assert_eq!(summary.written, 1);
+        assert_eq!(
+            summary.removed_sources,
+            [format!("house-rules@sha256:{}", &sha256(RULES)[..12])]
+        );
+    }
+
+    #[test]
+    fn a_fetched_guidance_document_is_pinned_by_its_hash() {
+        let server = Server::start();
+        server.set("/RULES.md", RULES);
+        let corpus = Corpus::new();
+        let rules = guidance(None, Some(server.url("/RULES.md")), Some(sha256(RULES)));
+        let summary = corpus.index(&manifest(vec![Source::Guidance(rules.clone())]));
+        assert_eq!((summary.downloaded, summary.written), (1, 1));
+
+        let wrong = guidance(None, Some(server.url("/RULES.md")), Some(sha256("other")));
+        let err = Corpus::new()
+            .try_index(&manifest(vec![Source::Guidance(wrong)]))
+            .unwrap_err();
+        assert!(matches!(err, Error::Fetch(_)), "{err:?}");
+    }
+
+    #[test]
+    fn guidance_errors_name_the_source_and_the_rule() {
+        let corpus = Corpus::new();
+        let file = corpus.dir.path().join("RULES.md");
+        std::fs::write(&file, RULES).unwrap();
+
+        let mut rules = guidance(Some(file.clone()), None, None);
+        rules.rules.insert("9".into(), RuleScope::default());
+        let err = corpus
+            .try_index(&manifest(vec![Source::Guidance(rules)]))
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "guidance `house-rules`: `rules.\"9\"` names no rule in the document"
+        );
+
+        std::fs::write(
+            &file,
+            "## 1 Rule\n<!-- codecite-scope paths = [\"a/[\"] -->\nMUST.\n",
+        )
+        .unwrap();
+        let err = corpus
+            .try_index(&manifest(vec![Source::Guidance(guidance(
+                Some(file.clone()),
+                None,
+                None,
+            ))]))
+            .unwrap_err();
+        assert!(matches!(err, Error::Guidance { .. }), "{err:?}");
+
+        std::fs::write(&file, RULES).unwrap();
+        let mut named = guidance(Some(file), None, None);
+        named.name = "app".into();
+        let repo = fixture();
+        let err = corpus
+            .try_index(&manifest(vec![
+                local(&repo, Some("app")),
+                Source::Guidance(named),
+            ]))
+            .unwrap_err();
+        assert!(matches!(err, Error::DuplicateSource { .. }), "{err:?}");
+
+        let missing = guidance(Some(corpus.dir.path().join("nope.md")), None, None);
+        let err = corpus
+            .try_index(&manifest(vec![Source::Guidance(missing)]))
+            .unwrap_err();
+        assert!(matches!(err, Error::ReadFile { .. }), "{err:?}");
     }
 
     #[test]

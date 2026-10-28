@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use codecite_core::{RuleScope, SectionNumber};
 use serde::Deserialize;
 
 /// A parsed and validated corpus manifest (`corpora/<name>.toml`).
@@ -27,6 +28,9 @@ pub enum Source {
     Local(LocalSource),
     /// A document fetched by URL and pinned by its hash (`kind = "document"`).
     Document(DocumentSource),
+    /// A Markdown document of rules, read from a file or fetched and pinned
+    /// by its hash (`kind = "guidance"`).
+    Guidance(GuidanceSource),
 }
 
 /// A git repository pinned to one commit.
@@ -100,6 +104,56 @@ pub struct DocumentSource {
     pub updated_by: Option<String>,
 }
 
+/// A team's rules: a Markdown document whose headings are rules, each
+/// governing the files its scope matches. It is read from `path`, a file on
+/// this machine whose hash is taken at each run, or fetched from `url` and
+/// pinned by `sha256` as a document is.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GuidanceSource {
+    /// The name its rules' citations use.
+    pub name: String,
+    /// A Markdown file on this machine, with a leading `~` expanded.
+    pub path: Option<PathBuf>,
+    /// Where the document is fetched from, with `sha256`.
+    pub url: Option<String>,
+    /// The pinned content hash of a fetched document: 64 lowercase hex
+    /// digits.
+    pub sha256: Option<String>,
+    /// The license as written by a person (an SPDX expression or a name).
+    pub license: Option<String>,
+    /// How agents may use this source.
+    #[serde(rename = "use")]
+    pub license_class: LicenseClass,
+    /// Other names citations use for this document.
+    #[serde(default)]
+    pub aliases: Vec<String>,
+    /// The scope of every rule that has none of its own.
+    #[serde(default)]
+    pub scope: RuleScope,
+    /// Scopes by rule number, which win over a rule's own comment.
+    #[serde(default)]
+    pub rules: BTreeMap<String, RuleScope>,
+}
+
+impl GuidanceSource {
+    /// A fetched guidance document as the document source the fetcher
+    /// takes, or `None` when it is read from `path`.
+    pub fn as_document(&self) -> Option<DocumentSource> {
+        Some(DocumentSource {
+            name: self.name.clone(),
+            url: self.url.clone()?,
+            sha256: self.sha256.clone()?,
+            license: self.license.clone(),
+            license_class: self.license_class,
+            current: true,
+            aliases: self.aliases.clone(),
+            obsoleted_by: None,
+            updated_by: None,
+        })
+    }
+}
+
 /// How agents may use a source (`use` in the manifest).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -133,6 +187,7 @@ impl Source {
             Source::Git(git) => git.name.as_deref(),
             Source::Local(local) => local.name.as_deref(),
             Source::Document(doc) => Some(&doc.name),
+            Source::Guidance(rules) => Some(&rules.name),
         }
     }
 
@@ -142,6 +197,7 @@ impl Source {
             Source::Git(git) => git.license_class,
             Source::Local(local) => local.license_class,
             Source::Document(doc) => doc.license_class,
+            Source::Guidance(rules) => rules.license_class,
         }
     }
 }
@@ -182,6 +238,28 @@ pub enum ManifestError {
         expected: &'static str,
         /// The value as written.
         value: String,
+    },
+
+    /// A guidance source names neither a file nor a pinned URL, or both.
+    #[error(
+        "source {source_name}: a guidance source needs `path`, or `url` and `sha256`, not both"
+    )]
+    GuidanceOrigin {
+        /// The source's label: its name, URL or path, else its position.
+        source_name: String,
+    },
+
+    /// A scope glob does not compile.
+    #[error("source {source_name}: invalid glob {glob:?} in `{field}`: {message}")]
+    Glob {
+        /// The source's label: its name, URL or path, else its position.
+        source_name: String,
+        /// `scope`, or `rules."<number>"`.
+        field: String,
+        /// The glob as written.
+        glob: String,
+        /// What `globset` rejected.
+        message: String,
     },
 
     /// Several versions of one document are marked current.
@@ -282,6 +360,59 @@ fn parse_source(
                 local.path = expand_home(path, home).ok_or_else(|| ManifestError::NoHome {
                     source_name: source_name.clone(),
                 })?;
+            }
+        }
+        Source::Guidance(rules) => {
+            match (&rules.path, &rules.url, &rules.sha256) {
+                (Some(_), None, None) | (None, Some(_), Some(_)) => {}
+                _ => {
+                    return Err(ManifestError::GuidanceOrigin {
+                        source_name: source_name.clone(),
+                    });
+                }
+            }
+            if let Some(sha256) = &rules.sha256
+                && !is_lower_hex(sha256, 64)
+            {
+                return Err(bad_field("sha256", "64 lowercase hex digits", sha256));
+            }
+            if let Some(path) = rules.path.as_ref().and_then(|p| p.to_str()) {
+                rules.path =
+                    Some(
+                        expand_home(path, home).ok_or_else(|| ManifestError::NoHome {
+                            source_name: source_name.clone(),
+                        })?,
+                    );
+            }
+            for number in rules.rules.keys() {
+                if number
+                    .parse::<SectionNumber>()
+                    .map(|n| n.to_string())
+                    .as_deref()
+                    != Ok(number.as_str())
+                {
+                    return Err(bad_field(
+                        "rules",
+                        "keyed by rule numbers such as \"3.1\"",
+                        number,
+                    ));
+                }
+            }
+            let scopes = std::iter::once(("scope".to_owned(), &rules.scope)).chain(
+                rules
+                    .rules
+                    .iter()
+                    .map(|(n, scope)| (format!("rules.\"{n}\""), scope)),
+            );
+            for (field, scope) in scopes {
+                scope
+                    .check()
+                    .map_err(|(glob, message)| ManifestError::Glob {
+                        source_name: source_name.clone(),
+                        field,
+                        glob,
+                        message,
+                    })?;
             }
         }
         _ => {}
@@ -479,7 +610,7 @@ updated_by = "openid-connect-core-1_0-errata2"
         assert_eq!(
             err.to_string(),
             "source `https://example.com/r`: unknown variant `svn`, expected one of \
-             `git`, `local`, `document` in `kind`"
+             `git`, `local`, `document`, `guidance` in `kind`"
         );
 
         let err = Manifest::parse(&manifest(
@@ -641,5 +772,90 @@ updated_by = "openid-connect-core-1_0-errata2"
             err.to_string(),
             format!("document `core`: sha256 {SHA256} is pinned twice; remove one")
         );
+    }
+
+    #[test]
+    fn parses_a_guidance_source() {
+        let m = Manifest::parse(&manifest(
+            "[[source]]\nkind = \"guidance\"\nname = \"house-rules\"\npath = \"/srv/app/RULES.md\"\n\
+             use = \"quote\"\naliases = [\"House Rules\"]\nscope = { languages = [\"python\"] }\n\
+             [source.rules.\"3.1\"]\npaths = [\"app/**/handlers/*.py\"]\nimports = [\"requests\"]\n",
+        ))
+        .unwrap();
+        let Source::Guidance(rules) = &m.sources[0] else {
+            panic!("{:?}", m.sources[0])
+        };
+        assert_eq!(rules.path.as_deref(), Some(Path::new("/srv/app/RULES.md")));
+        assert_eq!(rules.scope.languages, ["python"]);
+        let scope = &rules.rules["3.1"];
+        assert_eq!(scope.paths, ["app/**/handlers/*.py"]);
+        assert_eq!(scope.imports, ["requests"]);
+        assert!(rules.as_document().is_none());
+        assert_eq!(m.sources[0].name(), Some("house-rules"));
+
+        let m = Manifest::parse(&manifest(&format!(
+            "[[source]]\nkind = \"guidance\"\nname = \"g\"\nurl = \"https://x/R.md\"\nsha256 = \"{SHA256}\"\nuse = \"adapt\"\n"
+        )))
+        .unwrap();
+        let Source::Guidance(rules) = &m.sources[0] else {
+            panic!()
+        };
+        let doc = rules.as_document().unwrap();
+        assert_eq!(
+            (doc.url.as_str(), doc.sha256.as_str(), doc.current),
+            ("https://x/R.md", SHA256, true)
+        );
+    }
+
+    #[test]
+    fn a_guidance_source_needs_one_origin() {
+        let want = "source `g`: a guidance source needs `path`, or `url` and `sha256`, not both";
+        for origin in [
+            String::new(),
+            "url = \"u\"\n".to_owned(),
+            format!("path = \"/a\"\nurl = \"u\"\nsha256 = \"{SHA256}\"\n"),
+        ] {
+            let err = Manifest::parse(&manifest(&format!(
+                "[[source]]\nkind = \"guidance\"\nname = \"g\"\n{origin}use = \"quote\"\n"
+            )))
+            .unwrap_err();
+            assert_eq!(err.to_string(), want, "{origin:?}");
+        }
+        let err = Manifest::parse(&manifest(
+            "[[source]]\nkind = \"guidance\"\nname = \"g\"\nurl = \"u\"\nsha256 = \"abc\"\nuse = \"quote\"\n",
+        ))
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("`sha256` must be 64 lowercase hex digits"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn guidance_scopes_are_checked() {
+        let base =
+            "[[source]]\nkind = \"guidance\"\nname = \"g\"\npath = \"/a\"\nuse = \"quote\"\n";
+        let err = Manifest::parse(&manifest(&format!(
+            "{base}scope = {{ paths = [\"a/[\"] }}\n"
+        )))
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .starts_with("source `g`: invalid glob \"a/[\" in `scope`"),
+            "{err}"
+        );
+        let err =
+            Manifest::parse(&manifest(&format!("{base}[source.rules.\"03\"]\n"))).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("`rules` must be keyed by rule numbers"),
+            "{err}"
+        );
+        let err = Manifest::parse(&manifest(&format!(
+            "{base}[source.rules.\"1\"]\nglobs = []\n"
+        )))
+        .unwrap_err();
+        assert!(err.to_string().contains("unknown field `globs`"), "{err}");
     }
 }

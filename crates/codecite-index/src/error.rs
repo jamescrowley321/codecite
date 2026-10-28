@@ -71,6 +71,25 @@ pub enum Error {
         name: String,
     },
 
+    /// A guidance document can't be split into rules, or a rule's scope
+    /// comment is invalid.
+    #[error("guidance `{name}` can't be split into rules")]
+    Guidance {
+        /// The guidance source's name.
+        name: String,
+        /// Why splitting failed.
+        source: crate::GuidanceError,
+    },
+
+    /// A guidance source's `rules` names a rule its document doesn't have.
+    #[error("guidance `{name}`: `rules.\"{number}\"` names no rule in the document")]
+    UnknownRule {
+        /// The guidance source's name.
+        name: String,
+        /// The rule number as the manifest writes it.
+        number: String,
+    },
+
     /// A document source is not a spec page in a layout codecite reads.
     #[error("document `{name}` can't be split into sections")]
     Spec {

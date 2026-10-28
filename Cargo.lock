@@ -282,6 +282,7 @@ dependencies = [
 name = "codecite-core"
 version = "0.0.1"
 dependencies = [
+ "globset",
  "proptest",
  "regex",
  "rusqlite",

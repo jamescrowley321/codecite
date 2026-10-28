@@ -123,11 +123,11 @@ impl fmt::Display for ReadResult {
 
 /// A source row, as `read` needs it.
 pub(super) struct SourceRow {
-    id: i64,
-    name: String,
-    revision: String,
-    license_class: String,
-    indexed_at: String,
+    pub(super) id: i64,
+    pub(super) name: String,
+    pub(super) revision: String,
+    pub(super) license_class: String,
+    pub(super) indexed_at: String,
 }
 
 /// A spec section or step row.
@@ -630,7 +630,7 @@ pub(super) fn file_lines(text: &str) -> Vec<&str> {
 
 /// The instruction a result from a source of `license_class` carries, when
 /// its text is `truncated` or whole.
-fn instruction(license_class: &str, truncated: bool) -> Option<String> {
+pub(super) fn instruction(license_class: &str, truncated: bool) -> Option<String> {
     let text = if truncated {
         QUOTE_TRUNCATED_INSTRUCTION
     } else {

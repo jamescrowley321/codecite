@@ -12,6 +12,9 @@ use crate::{Error, Result};
 mod cite;
 pub use cite::{CiteOptions, CiteResult, Finding};
 
+mod context;
+pub use context::{Context, ContextQuery, ContextTarget, MAX_CONTEXT_BYTES, Rule, RuleScope};
+
 mod corpora;
 pub use corpora::{Corpora, CorpusInfo, corpora};
 
@@ -44,6 +47,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0002_incremental_index.sql"),
     include_str!("../migrations/0003_document_versions.sql"),
     include_str!("../migrations/0004_read.sql"),
+    include_str!("../migrations/0005_guidance.sql"),
 ];
 
 /// The schema version this build creates and reads.
