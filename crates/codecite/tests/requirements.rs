@@ -221,6 +221,16 @@ fn a_topic_and_a_document_pick_the_section() {
             .ends_with("#section-2.6"),
         "{result:#}"
     );
+    // A document as citations write it, not only by name or alias.
+    let result = requirements(
+        home.path(),
+        &["--topic", "client password", "--document", "RFC 6749"],
+    );
+    assert!(
+        result["citation"].as_str().unwrap().starts_with("rfc6749@"),
+        "{}",
+        result["citation"]
+    );
     // A citation and a topic together are refused, and so is neither.
     let both = codecite(
         home.path(),

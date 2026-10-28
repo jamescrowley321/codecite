@@ -23,4 +23,7 @@ regexes = ['''^[0-9a-f]{64}$''']
 # against its pinned sha256 and fail on any other bytes.
 [[rules.allowlists]]
 description = "RFC 6749's example credentials in its pinned page"
+condition = "AND"
 paths = ['''^crates/codecite-index/tests/fixtures/spec/rfc6749\.html$''']
+regexTarget = "secret"
+regexes = ['''^(7Fjfp0ZBr1KtDRbnfVdmIw|2YotnFZFEjr1zCsicMWpAA|tGzv3JOkF0XG5Qx2TlKWIA)$''']

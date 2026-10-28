@@ -282,7 +282,7 @@ codecite requirements identity --topic "logout token validation" --document "Bac
 ```
 
 It takes a spec section or step citation in any form `read` does (a step asks
-about its section), or `--topic` and `--document` (a name or alias), where the
+about its section), or `--topic` and `--document` (a name, an alias or `RFC 6749`), where the
 first of the top ten spec search hits in that document's current version that
 has a citation form (an appendix has none) picks the section. It
 reads only what `index` stored. A rule is:

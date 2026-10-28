@@ -159,7 +159,8 @@ enum Command {
         /// search hit in `--document` picks it.
         #[arg(long, requires = "document")]
         topic: Option<String>,
-        /// The document to search for `--topic`, by name or alias.
+        /// The document to search for `--topic`, as a citation names it:
+        /// its name, an alias or `RFC 6749`.
         #[arg(long, requires = "topic")]
         document: Option<String>,
         /// Print the result as JSON, as the MCP `requirements` tool

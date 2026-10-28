@@ -199,7 +199,8 @@ impl Store {
         self.requirements_of(&source, &spec.section().to_string())
     }
 
-    /// The requirements of the section of `document` (a name or alias)
+    /// The requirements of the section of `document` (a name, an alias or
+    /// `RFC 6749`, as a citation names its document)
     /// that a spec search for `topic` ranks first in its current version,
     /// among the first ten hits with a citation form.
     /// No such section is [`Error::NoSectionOnTopic`].
@@ -211,7 +212,8 @@ impl Store {
     ) -> Result<Requirements> {
         self.check_fresh(options.allow_stale)?;
         let aliases = self.aliases()?;
-        let name = aliases.get(document.trim()).unwrap_or(document.trim());
+        let resolved = aliases.document(document);
+        let name = resolved.as_deref().unwrap_or(document.trim());
         let Some(source) = self.current_version(name)? else {
             let versions = self.sources(name, true)?;
             if versions.is_empty() {
