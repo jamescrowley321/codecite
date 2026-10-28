@@ -23,7 +23,9 @@ IGNORED_FILES = {"uv.lock"}
 # would shadow one when pytest imports it.
 HIDDEN_MODULES = {"conftest.py", "test_hidden.py"}
 
-# RFC 6749 §2.3.1 and no other section: not 2.3, not 2.3.10, not 2.3.1.2.
+# RFC 6749 §2.3.1 or §2.3, the sections of the two fixes (credentials not
+# in the URI; one authentication method per request), and no other: not
+# 2.3.10, not 2.3.1.2, not 2.2.
 # The forms are codecite's citation (with or without its @sha256 pin), the
 # spec URL with its anchor, "RFC 6749 §2.3.1" / "RFC 6749, Section 2.3.1",
 # and "Section 2.3.1 of RFC 6749". A section may be one of a list
@@ -31,7 +33,7 @@ HIDDEN_MODULES = {"conftest.py", "test_hidden.py"}
 # and 3.2 of RFC 6749"), but not one that a later "of RFC <n>" gives to
 # another RFC ("RFC 6749 §3.2 and 2.3.1 of RFC 7523").
 RFC = r"rfc[\s-]?6749(?!\d)"
-SECTION = r"2\.3\.1(?!\.?\d)"
+SECTION = r"2\.3(?:\.1)?(?!\.?\d)"
 SECTION_WORD = r"(?:§§?|sec(?:tions?|s?\.)?)"
 JOIN = r"\s*(?:/|,|&|and)\s*"
 ITEM = r"(?:§§?\s*)?\d+(?:\.\d+)*"

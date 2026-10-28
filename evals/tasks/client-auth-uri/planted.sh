@@ -63,7 +63,9 @@ plant unchanged-start "$START_TESTS" cites-section "cp '$HERE/project/app/main.p
 plant drops-form-body test_form_body_gets_token "" "sed -i 's/= form.get(\"client_id\"), form.get(\"client_secret\")$/= None, None/' app/main.py" || status=1
 plant drops-basic test_basic_and_form_secret_rejected,test_basic_gets_token "" "sed -i 's/creds = basic_credentials(request)$/creds = None/' app/main.py" || status=1
 # A correct fix whose comment cites the wrong section, or the right section of the wrong RFC.
-plant wrong-section "" cites-section "sed -i 's/RFC 6749 §2.3.1:/RFC 6749 §2.3:/' app/main.py" || status=1
+plant wrong-section "" cites-section "sed -i 's/RFC 6749 §2.3.1:/RFC 6749 §2.2:/' app/main.py" || status=1
+# §2.3 is the two-methods rule's section, so citing it counts too.
+plant cites-two-methods-section "" "" "sed -i 's/RFC 6749 §2.3.1:/RFC 6749 §2.3:/' app/main.py" || status=1
 plant wrong-subsection "" cites-section "sed -i 's/RFC 6749 §2.3.1:/RFC 6749 §2.3.10:/' app/main.py" || status=1
 plant wrong-subsubsection "" cites-section "sed -i 's/RFC 6749 §2.3.1:/RFC 6749 §2.3.1.2:/' app/main.py" || status=1
 plant wrong-rfc "" cites-section "sed -i 's/RFC 6749 §2.3.1:/RFC 6750 §2.3.1:/' app/main.py" || status=1
@@ -89,7 +91,7 @@ plant uri-invalid-request "" "" "sed -i '/^    if \"client_id\" in request.query
 plant wrong-secret-invalid-request test_unknown_client_rejected,test_wrong_basic_secret_rejected,test_wrong_form_secret_rejected "" "sed -i 's/return error(\"invalid_client\", 401/return error(\"invalid_request\", 400/' app/main.py" || status=1
 # A list of sections that includes 2.3.1 cites it; one that doesn't, doesn't.
 plant section-list "" "" "sed -i 's|RFC 6749 §2.3.1:|RFC 6749 section 2.3 / 2.3.1 / 3.2:|' app/main.py" || status=1
-plant section-list-without "" cites-section "sed -i 's|RFC 6749 §2.3.1:|RFC 6749 sections 2.3, 2.3.10 and 3.2:|' app/main.py" || status=1
+plant section-list-without "" cites-section "sed -i 's|RFC 6749 §2.3.1:|RFC 6749 sections 2.2, 2.3.10 and 3.2:|' app/main.py" || status=1
 plant section-signs-list "" "" "sed -i 's|RFC 6749 §2.3.1:|RFC 6749 §2.3, §2.3.1:|' app/main.py" || status=1
 plant sections-of-rfc "" "" "sed -i 's|RFC 6749 §2.3.1:|Sections 2.3.1 and 3.2 of RFC 6749:|' app/main.py" || status=1
 plant section-of-rfc-then-other "" "" "sed -i 's|RFC 6749 §2.3.1:|Section 2.3.1 of RFC 6749 and §3.2 of RFC 7523:|' app/main.py" || status=1

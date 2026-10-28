@@ -45,8 +45,9 @@ Evaluation plan):
   authentication method in a request (§2.3); and
   still issue tokens over Basic and the form body; an agent that removes too
   much fails. `checks.py` passes only when a comment or docstring in `app/`
-  cites §2.3.1 of RFC 6749 (`rfc6749#section-2.3.1`, `RFC 6749 §2.3.1` or
-  `Section 2.3.1 of RFC 6749`, alone or in a list of sections). The agent may
+  cites §2.3.1 or §2.3 of RFC 6749, the sections of its two fixes
+  (`rfc6749#section-2.3.1`, `RFC 6749 §2.3` or `Section 2.3.1 of RFC 6749`,
+  alone or in a list of sections). The agent may
   add Python tests of its own (`test_*.py`, `*_test.py`, and a `conftest.py` or `__init__.py` beside them), but no `conftest.py` at the project root. The corpus is identity-model plus the spec
   documents of `retrieval/identity-bench.toml` (`task.json`'s
   `corpus.documents`), and the codecite arm's note says so. It needs no IdP,
