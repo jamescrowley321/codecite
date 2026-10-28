@@ -266,6 +266,68 @@ Anything else wrong is an error that exits non-zero, as `read`'s are: text that
 is no citation, a malformed one, an unknown document or version, a stale index,
 and a code citation, which `read` reads instead.
 
+## List a section's requirements
+
+`requirements` lists every rule that governs a spec section, each with its
+pinned citation, grouped by the section that states it. Run it before
+implementing or fixing anything a spec governs, so no rule goes unread.
+
+```sh
+codecite requirements identity "Back-Channel Logout §2.6"
+codecite requirements identity "RFC 6749 §2.3" --json
+codecite requirements identity --topic "logout token validation" --document "Back-Channel Logout"
+```
+
+It takes a spec section or step citation in any form `read` does (a step asks
+about its section), or `--topic` and `--document` (a name or alias), where the
+best spec search hit in that document's current version picks the section. It
+reads only what `index` stored. A rule is:
+
+- a sentence with MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD
+  NOT, RECOMMENDED or NOT RECOMMENDED (MAY and OPTIONAL permit, so they don't
+  count);
+- a row of a claim or parameter list whose value starts REQUIRED or
+  PROHIBITED, or holds one of those keywords, printed as `term: value`;
+- a step: every step of the section and its subsections, and elsewhere a step
+  with one of those keywords.
+
+The sections it spans, each once, are the one asked about (`asked`), its
+subsections (`subsection`), the sections of the same document it or a
+subsection names (`referenced`: `Section 2.4`, but not `Section 2 of [JWT]`,
+or a section whose title of two or more words its title holds, as §2.6
+"Logout Token Validation" holds §2.4 "Logout Token"), the sections that name
+it or a subsection (`referring`), and the enclosing section of each referring
+subsection (`context`: RFC 6749 §3.2.1 names §2.3, so §3.2 Token Endpoint
+comes too). Appendices, whose numbers have no citation form, are left out.
+Each group lists MUST-level rules first, then its steps in order, then
+SHOULD-level rules:
+
+```text
+$ codecite requirements identity "Back-Channel Logout §2.6"
+openid-connect-backchannel-1_0@sha256:3b5c933d5269#section-2.6 · Logout Token Validation · quote · indexed 2026-10-28T04:36:10Z
+
+openid-connect-backchannel-1_0@sha256:3b5c933d5269#section-2.6 · Logout Token Validation (asked)
+  [MUST] Upon receiving a logout request at the back-channel logout URI, the RP MUST validate the Logout Token as follows:
+  [SHOULD] 1. If the Logout Token is encrypted, decrypt it …
+  - 2. Validate the Logout Token signature in the same way that an ID Token signature is validated, with the following refinements.
+  …
+
+openid-connect-backchannel-1_0@sha256:3b5c933d5269#section-2.4 · Logout Token (referenced)
+  [REQUIRED] exp: REQUIRED. Expiration time, as specified in Section 2 of [OpenID.Core] …
+  [MUST, REQUIRED, SHOULD] events: REQUIRED. Claim whose value is a JSON object … The corresponding member value MUST be a JSON object and SHOULD be the empty JSON object {}.
+  [MUST NOT, PROHIBITED] nonce: PROHIBITED. A nonce Claim MUST NOT be present. …
+  …
+```
+
+`--json` prints `{"citation", "title", "license_class", "indexed_at",
+"sections", "truncated", "instruction"}`; each section has `citation`, `title`,
+`relation` and `statements`, and each statement `citation` (its section or
+step), `kind` (`sentence`, `row` or `step`), `keywords` and `text`. The
+statements' text is capped at 64 KiB; past it the rest is left out and
+`truncated` is `true`. A citation `read` refuses is the same error, a code
+citation is an error, and a topic the document has no section on is
+`no_section_on_topic`.
+
 ## Find a definition
 
 `def` prints where a symbol is defined, from the definitions tree-sitter found
@@ -323,11 +385,15 @@ Claude Code:
 claude mcp add codecite -- codecite mcp
 ```
 
-The server's tools, `corpora`, `search`, `grep`, `definition` and `read`,
-return the same JSON as the CLI commands `corpora`, `search`, `grep`, `def`
-and `read` print (with `--json` for all but `corpora`), byte for byte, so
-anything an agent sees can be reproduced from a terminal. `search`, `grep`,
-`definition` and `read` take an optional `corpus`; left
+The server's tools, `corpora`, `search`, `grep`, `definition`, `read` and
+`requirements`, return the same JSON as the CLI commands `corpora`, `search`,
+`grep`, `def`, `read` and `requirements` print (with `--json` for all but
+`corpora`), byte for byte, so anything an agent sees can be reproduced from a
+terminal. `requirements` takes `citation`, or `topic` and `document`; any
+other mix is an `invalid_arguments` tool error. The server's instructions tell
+the agent to call it on the governing section before implementing or fixing
+anything a spec governs. `search`, `grep`, `definition`, `read` and
+`requirements` take an optional `corpus`; left
 out or empty, it is the only corpus in the data directory. `limit` is at most
 50 for `search` and `grep`, and `max_lines` at most 500, for the tools and the
 CLI alike. Text is also

@@ -38,7 +38,7 @@ ARMS = {"both": ("baseline", "codecite"), "baseline": ("baseline",)}
 PROJECT = "/work/project"
 IDENTITY_MODEL = "/opt/identity-model"
 CODECITE = "/opt/codecite/bin/codecite"
-CODECITE_TOOLS = ["mcp__codecite__search", "mcp__codecite__read"]
+CODECITE_TOOLS = ["mcp__codecite__search", "mcp__codecite__read", "mcp__codecite__requirements"]
 PI_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"]
 PI_FLAGS = ["--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve"]
 # pi's user-level MCP config. `direct` exposure declares the tools to the
@@ -67,8 +67,10 @@ def codecite_note(task_dir: Path) -> str:
     return (
         f"codecite indexes {indexes} as its corpus `eval`. Its tools `mcp__codecite__search` (ranked "
         "results with citations) and `mcp__codecite__read` (the text a citation points at) search and "
-        'read it. The `codecite` command on your PATH does the same: `codecite search eval "<query>"` and '
-        '`codecite read eval "<citation>"`.'
+        "read it, and `mcp__codecite__requirements` lists every rule governing a spec section, with its "
+        "citation: use it before implementing or fixing anything a spec governs. The `codecite` command on "
+        'your PATH does the same: `codecite search eval "<query>"`, `codecite read eval "<citation>"` and '
+        '`codecite requirements eval "<citation>"`.'
     )
 
 

@@ -259,7 +259,14 @@ fn mcp_answers_on_stdout_and_logs_on_stderr() {
     names.sort_unstable();
     assert_eq!(
         names,
-        ["corpora", "definition", "grep", "read", "search"],
+        [
+            "corpora",
+            "definition",
+            "grep",
+            "read",
+            "requirements",
+            "search"
+        ],
         "{list}"
     );
     for tool in tools {
