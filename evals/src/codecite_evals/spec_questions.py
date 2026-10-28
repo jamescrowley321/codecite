@@ -39,7 +39,7 @@ STRING_FIELDS = {"id", "text", "source", "adapted_from"}
 
 # `yes`/`no`, or one name or value: a parameter, claim, error, header, scheme,
 # path or number. No spaces, so no free text.
-CLOSED_ANSWER = re.compile(r"^[A-Za-z0-9_.:/+=\-]+$")
+CLOSED_ANSWER = re.compile(r"^[A-Za-z0-9_.:/+=#\-]+$")
 ACCEPTED = re.compile(r"^(?P<doc>[a-z0-9_\-]+)#section-(?P<number>[0-9A-Z.]+?)(?:/step-(?P<step>[0-9]+))?$")
 
 # A word of the question that also appears in its section is distinctive when
