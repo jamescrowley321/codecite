@@ -315,7 +315,7 @@ source = "client: discovering mutual TLS endpoints"
 id = "spec-plain-signed-sign-in-request-typ"
 text = "What JWT type header value is recommended when my app puts all its login request parameters inside one JWT?"
 answer = ["oauth-authz-req+jwt"]
-accepted = ["rfc9101#section-4"]
+accepted = ["rfc9101#section-4", "rfc9101#section-10.8"]
 source = "client: building a signed authorization request"
 
 [[question]]
@@ -357,7 +357,7 @@ source = "client: building authorization_details"
 id = "spec-plain-key-proof-server-nonce-header"
 text = "When my client signs a proof with its own key on each request, which response header does the server use to hand it a fresh one-off value to include?"
 answer = ["DPoP-Nonce"]
-accepted = ["rfc9449#section-8"]
+accepted = ["rfc9449#section-8", "rfc9449#section-8.2"]
 source = "sender-constrained client: server-supplied nonce"
 
 [[question]]
@@ -411,9 +411,9 @@ source = "client: private_key_jwt"
 
 [[question]]
 id = "spec-plain-target-api-error"
-text = "Which error does the provider return when the service address my app names as the token's intended destination is not acceptable?"
+text = "Which error does the provider return when the service address my app names as the token's intended destination gets refused?"
 answer = ["invalid_target"]
-accepted = ["rfc8707#section-2"]
+accepted = ["rfc8707#section-2", "rfc8707#section-2.1"]
 source = "client: resource indicators"
 
 [[question]]
