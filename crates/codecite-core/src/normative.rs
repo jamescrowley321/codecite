@@ -73,7 +73,9 @@ impl NormativeStatement {
 /// [`Level`]), and every claim or parameter row whose value starts
 /// `REQUIRED` or `PROHIBITED` or holds such a keyword.
 ///
-/// The text is split into paragraphs at blank lines. Consecutive indented
+/// The text is split into paragraphs at blank lines, but for a page break
+/// inside a sentence in the older RFC layout (the same indent either side,
+/// no sentence end before and a lowercase word after). Consecutive indented
 /// lines are one wrapped paragraph, as in the older RFC layout; an
 /// unindented line is a paragraph of its own, as in the OpenID and xml2rfc
 /// v3 layouts, which render a paragraph per line. A row is a one-word term
@@ -135,9 +137,15 @@ pub fn normative_statements(text: &str) -> Vec<NormativeStatement> {
         let mut paragraph = vec![lines[i]];
         i += 1;
         if indent(start) > 0 {
-            while i < lines.len() && !blank(i) && indent(i) > 0 && !starts_row(i) {
-                paragraph.push(lines[i]);
-                i += 1;
+            loop {
+                if i < lines.len() && !blank(i) && indent(i) > 0 && !starts_row(i) {
+                    paragraph.push(lines[i]);
+                    i += 1;
+                } else if i + 1 < lines.len() && blank(i) && page_break(&lines, i - 1, i + 1) {
+                    i += 1;
+                } else {
+                    break;
+                }
             }
         }
         for sentence in sentences(&collapse(&paragraph.join(" "))) {
@@ -154,6 +162,19 @@ pub fn normative_statements(text: &str) -> Vec<NormativeStatement> {
         }
     }
     found
+}
+
+/// Whether the blank line between `lines[before]` and `lines[after]` is a
+/// page break inside a sentence, which the older RFC layout leaves where a
+/// page's footer and the next one's header were: the same indent on both
+/// sides, no sentence end before it and a lowercase word after.
+fn page_break(lines: &[&str], before: usize, after: usize) -> bool {
+    let indent = |l: &str| l.len() - l.trim_start().len();
+    let (prev, next) = (lines[before], lines[after]);
+    indent(prev) > 0
+        && indent(prev) == indent(next)
+        && !prev.trim_end().ends_with(['.', ':', '?', '!'])
+        && next.trim_start().starts_with(char::is_lowercase)
 }
 
 /// The words a row's value starts with, longest first.
@@ -182,7 +203,7 @@ fn is_term(line: &str) -> bool {
 }
 
 /// `text` with each run of whitespace one space, and none at the ends.
-fn collapse(text: &str) -> String {
+pub(crate) fn collapse(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
@@ -366,6 +387,20 @@ Logout Tokens MAY contain other Claims.";
         assert_eq!(
             texts(&normative_statements(one)),
             ["A client, i.e. Ed. Smith, MUST send etc. More text."]
+        );
+    }
+
+    #[test]
+    fn a_page_break_inside_a_sentence_does_not_split_it() {
+        // The older RFC layout leaves one blank line where a page ended.
+        let text = "   The token denotes an identifier that MUST be\n\n   sent to the server.\n\n   Next paragraph MUST stand alone.\n\n   lowercase start, but SHOULD too.";
+        assert_eq!(
+            texts(&normative_statements(text)),
+            [
+                "The token denotes an identifier that MUST be sent to the server.",
+                "Next paragraph MUST stand alone.",
+                "lowercase start, but SHOULD too.",
+            ]
         );
     }
 

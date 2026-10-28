@@ -142,9 +142,12 @@ enum Command {
         #[arg(long)]
         allow_stale: bool,
     },
-    /// List every rule governing a spec section, cited and grouped by the
-    /// section that states it: the section's, its subsections' and those
-    /// of the sections linked to it by reference.
+    /// List the normative statements governing a spec section, cited and
+    /// grouped by the section that states it: the section's, its
+    /// subsections' and those of the sections of the same document linked
+    /// to it. Only uppercase BCP 14 keywords, REQUIRED and PROHIBITED rows
+    /// and steps count, and references into other documents aren't
+    /// followed, so `read` a section when you need all of it.
     Requirements {
         /// The corpus to look in.
         corpus: String,

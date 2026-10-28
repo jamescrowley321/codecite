@@ -1,4 +1,4 @@
-//! The requirements governing a spec section: every normative statement of
+//! The requirements governing a spec section: the normative statements of
 //! the section, its subsections and the sections linked to it by
 //! reference, each with its pinned citation.
 
@@ -29,8 +29,8 @@ pub struct RequirementsOptions {
     pub allow_stale: bool,
 }
 
-/// Every rule governing a spec section, grouped by the section that states
-/// it: what `codecite requirements --json` prints and the MCP
+/// The normative statements found governing a spec section, grouped by
+/// the section that states it: what `codecite requirements --json` prints and the MCP
 /// `requirements` tool returns.
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct Requirements {
@@ -47,8 +47,8 @@ pub struct Requirements {
     /// The governing sections: the one asked about, its subsections, then
     /// the sections linked to it by reference, in document order.
     pub sections: Vec<RequirementSection>,
-    /// Whether statements were left out to keep the statements' text
-    /// within 64 KiB (`MAX_READ_BYTES`).
+    /// Whether statements or sections were left out to keep the result
+    /// within 64 KiB (`MAX_READ_BYTES`), counted as serialized JSON.
     pub truncated: bool,
     /// What the license asks: a `quote` source's statements are quoted
     /// exactly, with their citations.
@@ -86,8 +86,7 @@ pub struct Requirement {
     /// a row that says so. A step of the section asked about may have
     /// none: every step of it is listed.
     pub keywords: Vec<String>,
-    /// The statement: a step as stored, a sentence or row with each run of
-    /// whitespace one space.
+    /// The statement, with each run of whitespace one space.
     pub text: String,
 }
 
@@ -156,7 +155,7 @@ impl Relation {
 }
 
 impl Store {
-    /// Every normative statement governing the section `citation` names:
+    /// The normative statements governing the section `citation` names:
     /// a canonical spec citation or one as people write it, as
     /// [`Store::read`] takes it; a step asks about its section.
     ///
@@ -268,7 +267,9 @@ impl Store {
         // document order.
         order.sort_by_key(|i| (relations[i].min(Relation::Referenced), *i));
 
-        let mut budget = MAX_READ_BYTES;
+        // What the sections serialize to, headers and statements, stays
+        // within the budget; the fields around them take the rest.
+        let mut budget = MAX_READ_BYTES - 1024;
         let mut truncated = false;
         let mut groups = Vec::new();
         for i in order {
@@ -276,27 +277,29 @@ impl Store {
             let relation = relations[&i];
             let all_steps = matches!(relation, Relation::Asked | Relation::Subsection);
             let citation = format!("{document}#section-{}", section.number);
-            let mut statements = statements_of(section, &steps, &citation, all_steps);
-            let fits = statements
-                .iter()
-                .take_while(|s| {
-                    let fits = s.text.len() <= budget;
-                    if fits {
-                        budget -= s.text.len();
-                    }
-                    fits
-                })
-                .count();
-            if fits < statements.len() {
-                statements.truncate(fits);
-                truncated = true;
-            }
-            groups.push(RequirementSection {
+            let statements = statements_of(section, &steps, &citation, all_steps);
+            let mut group = RequirementSection {
                 citation,
                 title: section.title.clone(),
                 relation: relation.as_str().into(),
-                statements,
-            });
+                statements: Vec::new(),
+            };
+            let header = serialized_len(&group) + 1;
+            if header > budget {
+                truncated = true;
+                break;
+            }
+            budget -= header;
+            for statement in statements {
+                let cost = serialized_len(&statement) + 1;
+                if cost > budget {
+                    truncated = true;
+                    break;
+                }
+                budget -= cost;
+                group.statements.push(statement);
+            }
+            groups.push(group);
             if truncated {
                 break;
             }
@@ -334,6 +337,11 @@ impl Store {
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
+}
+
+/// How many bytes `value` serializes to as JSON.
+fn serialized_len<T: Serialize>(value: &T) -> usize {
+    serde_json::to_string(value).map_or(usize::MAX, |s| s.len())
 }
 
 /// The governing sections of `sections[asked]`, by index, with why each
@@ -487,7 +495,7 @@ fn statements_of(
                 citation: format!("{citation}/step-{}", step.number),
                 kind: "step".into(),
                 keywords: keywords.iter().map(|k| k.as_str().to_owned()).collect(),
-                text: step.text.trim().to_owned(),
+                text: crate::normative::collapse(&step.text),
             },
         ));
     }
@@ -511,9 +519,12 @@ static DOCUMENT_BEFORE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b(?:RFC|BCP|STD)\s*\d+$").expect("a valid pattern"));
 
 /// A document named just after a reference: `of [JWT]`, `in RFC 7519`,
-/// but not `of this specification`.
+/// `of OpenID Connect Core 1.0 [OpenID.Core]`, `of OAuth 2.0 (Hardt, D.,
+/// …) [RFC6749]`, but not `of this specification`.
 static DOCUMENT_AFTER: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(?:of|in)\s+(?:\[|(?:RFC|BCP|STD)\s*\d|[A-Z][A-Za-z0-9.-]*\s*\[)")
+    Regex::new(
+        r"^(?:of|in)\s+(?:\[|(?:RFC|BCP|STD)\s*\d|(?:[A-Z0-9][\w.\-]*\s+){0,5}[A-Z0-9][\w.\-]*\s*(?:\([^()]{0,300}\)\s*)?\[)",
+    )
         .expect("a valid pattern")
 });
 
@@ -521,7 +532,8 @@ static DOCUMENT_AFTER: LazyLock<Regex> = LazyLock::new(|| {
 /// another document is left out: one with a document right before it
 /// (`[RFC3986] Section 3.4`, `[RFC6749], Section 4.1`, `[RFC2617]
 /// (Section 2)`, `RFC 7519 Section 4`) or right after it (`Section 2 of
-/// [JWT]`, `Section 7.1 in [RFC7519]`, `Section 3 of RFC 7519`).
+/// [JWT]`, `Section 7.1 in [RFC7519]`, `Section 3 of RFC 7519`, a title of
+/// up to six words and an optional parenthesis before its `[tag]`).
 pub(crate) fn section_references(text: &str) -> Vec<String> {
     let mut found = Vec::new();
     for m in SECTION_REFERENCE.find_iter(text) {
@@ -666,7 +678,7 @@ mod tests {
                 "Logout Token Validation",
                 Some(0),
                 30,
-                "2.2. Logout Token Validation\n\nThe RP MUST validate the token as follows:\n1. Decrypt it. The RP SHOULD reject it otherwise.\n2. Validate the signature.\n\nThe RP SHOULD log failures. It MUST NOT accept tokens but per Section 3.",
+                "2.2. Logout Token Validation\n\nThe RP MUST validate the token as follows:\n1. Decrypt it. The RP SHOULD reject it otherwise.\n2. Validate the\n   signature.\n\nThe RP SHOULD log failures. It MUST NOT accept tokens but per Section 3.",
             ),
             step(
                 "1",
@@ -674,7 +686,7 @@ mod tests {
                 33,
                 "1. Decrypt it. The RP SHOULD reject it otherwise.",
             ),
-            step("2", 2, 34, "2. Validate the signature."),
+            step("2", 2, 34, "2. Validate the\n   signature."),
             section(
                 "2.2.1",
                 "Errors",
@@ -858,7 +870,10 @@ mod tests {
         let text = "See Section 2.4 and Sections 3, 4.1 or 5. Not [RFC6749], Section 4.1, \
             RFC 7519 Section 6, Section 7.1 in [RFC7519], [RFC2617] (Section 8), \
             Section 9 of [JWT], [RFC3986] Section 10, Section 11 of RFC 7519 \
-            or BCP 14 Section 12, but Section 13 of this specification.";
+            or BCP 14 Section 12, Section 14 of OAuth 2.0 (Hardt, D., Ed., \
+            “The OAuth 2.0 Authorization Framework,” October 2012.) [RFC6749], \
+            Section 15 of OpenID Connect Core 1.0 [OpenID.Core], \
+            but Section 13 of this specification.";
         assert_eq!(section_references(text), ["2.4", "3", "4.1", "5", "13"]);
     }
 
@@ -960,7 +975,8 @@ mod tests {
             )
             .unwrap();
         assert!(r.truncated);
-        let bytes: usize = r.sections[0].statements.iter().map(|s| s.text.len()).sum();
+        // The budget counts what is serialized, not only the text.
+        let bytes = serde_json::to_string(&r.sections).unwrap().len();
         assert!(bytes <= crate::MAX_READ_BYTES, "{bytes}");
         assert!(r.sections[0].statements.len() > 100);
         assert_eq!(

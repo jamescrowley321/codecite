@@ -7,16 +7,3 @@ a304f6a8e52f48a2991e6640e644f927873c5bce:evals/lib/sandbox.test.mjs:generic-api-
 d6b6d5885f1a1fc7327766629a0b12399c855cd5:crates/codecite-index/src/walk.rs:private-key:520
 # The same fixture quoted in that feature's plan.
 d6b6d5885f1a1fc7327766629a0b12399c855cd5:docs/superpowers/plans/2026-10-19-local-source-walk.md:private-key:699
-# RFC 6749's published example credentials, in the pinned page the requirements
-# tests index (crates/codecite/tests/requirements.rs).
-a675202b9e8b5d810f9a29a78b74c9e9215a18a9:crates/codecite-index/tests/fixtures/spec/rfc6749.html:generic-api-key:912
-a675202b9e8b5d810f9a29a78b74c9e9215a18a9:crates/codecite-index/tests/fixtures/spec/rfc6749.html:generic-api-key:913
-a675202b9e8b5d810f9a29a78b74c9e9215a18a9:crates/codecite-index/tests/fixtures/spec/rfc6749.html:generic-api-key:1689
-a675202b9e8b5d810f9a29a78b74c9e9215a18a9:crates/codecite-index/tests/fixtures/spec/rfc6749.html:generic-api-key:1692
-a675202b9e8b5d810f9a29a78b74c9e9215a18a9:crates/codecite-index/tests/fixtures/spec/rfc6749.html:generic-api-key:1944
-a675202b9e8b5d810f9a29a78b74c9e9215a18a9:crates/codecite-index/tests/fixtures/spec/rfc6749.html:generic-api-key:2217
-a675202b9e8b5d810f9a29a78b74c9e9215a18a9:crates/codecite-index/tests/fixtures/spec/rfc6749.html:generic-api-key:2220
-a675202b9e8b5d810f9a29a78b74c9e9215a18a9:crates/codecite-index/tests/fixtures/spec/rfc6749.html:generic-api-key:2326
-a675202b9e8b5d810f9a29a78b74c9e9215a18a9:crates/codecite-index/tests/fixtures/spec/rfc6749.html:generic-api-key:2441
-a675202b9e8b5d810f9a29a78b74c9e9215a18a9:crates/codecite-index/tests/fixtures/spec/rfc6749.html:generic-api-key:2444
-a675202b9e8b5d810f9a29a78b74c9e9215a18a9:crates/codecite-index/tests/fixtures/spec/rfc6749.html:generic-api-key:2614

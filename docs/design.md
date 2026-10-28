@@ -419,7 +419,7 @@ The CLI and the MCP server expose the same operations and return the same JSON, 
 | `codecite graph <callers\|callees\|impact\|path> ...` | Graph queries with `--min-confidence` |
 | `codecite read <corpus> <citation> [--max-lines <n>] [--json] [--allow-stale]` | The exact text a citation points at, at most `--max-lines` lines (default 80, at most 500), under its pinned citation. `--json` prints the result object, the `read` tool's JSON; otherwise the citation, a line naming its kind, title, strength, license class and `indexed_at`, a blank line and the text |
 | `codecite cite <corpus> <citation> [--json] [--allow-stale]` | Check a spec citation: whether it resolves to exactly one section or step, its text and what supersedes it, or findings saying why it doesn't. `--json` prints the result object; otherwise the resolved form is `read`'s with a `superseded by` line, and an unresolved one is `unresolved`, a line per finding and the candidates. Findings exit 0; errors exit non-zero. Checking the claim beside a citation is #35 |
-| `codecite requirements <corpus> (<citation> \| --topic <words> --document <name>) [--json] [--allow-stale]` | Every rule governing a spec section, cited and grouped by the section that states it. `--json` prints the `requirements` tool's JSON; otherwise the asked section's citation line, then per section `<citation> · <title> (<relation>)` and a line per statement, `[<keywords>] <text>` or `- <text>` for a step with none |
+| `codecite requirements <corpus> (<citation> \| --topic <words> --document <name>) [--json] [--allow-stale]` | The normative statements codecite finds governing a spec section (uppercase BCP 14 keywords, REQUIRED and PROHIBITED rows, steps; same document only, so not exhaustive), cited and grouped by the section that states it. `--json` prints the `requirements` tool's JSON; otherwise the asked section's citation line, then per section `<citation> · <title> (<relation>)` and a line per statement, `[<keywords>] <text>` or `- <text>` for a step with none |
 | `codecite corpora` | List the corpora with each one's age, size, source count and staleness, as the `corpora` tool's JSON |
 | `codecite mcp` | Run the stdio MCP server |
 
@@ -433,7 +433,7 @@ The CLI and the MCP server expose the same operations and return the same JSON, 
 | `impact` | `symbol`, `depth` (default 3), `min_confidence` (default 2) | Affected symbols, grouped by distance |
 | `path` | `from`, `to`, `max_depth` | Shortest connecting chain |
 | `read` | `citation`, `corpus?`, `max_lines` (default 80, at most 500), `allow_stale` (default false) | Exact source text |
-| `requirements` | `citation?`, or `topic?` and `document?`; `corpus?`, `allow_stale` (default false) | Every normative statement governing the section, grouped by section, with `relation` and pinned citations |
+| `requirements` | `citation?`, or `topic?` and `document?`; `corpus?`, `allow_stale` (default false) | The normative statements codecite finds governing the section, grouped by section, with `relation` and pinned citations; the description says what it doesn't cover |
 | `cite` | `citation`, `claim?`, `corpus?` | `resolved`, `candidates`, `text`, `strength`, `superseded_by`, typed `findings` |
 | `corpora` | none | Available corpora and freshness |
 
