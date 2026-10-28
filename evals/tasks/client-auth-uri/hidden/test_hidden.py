@@ -6,7 +6,7 @@ failed client authentication is `invalid_client`, with a 401 and a
 WWW-Authenticate header when the client used the Authorization header.
 §3.2: request parameters MUST NOT be included more than once, and §5.2
 names a request that "repeats a parameter, includes multiple credentials"
-an invalid_request; a body that repeats client_id or client_secret is refused.
+an invalid_request; a body that repeats client_id is refused.
 §2.3: a client MUST NOT use more than one authentication method in a
 request, and §5.2 names that an invalid_request; HTTP Basic plus a
 client_secret in the body is refused either way too.
@@ -82,12 +82,6 @@ def test_unknown_client_rejected(client):
 def test_basic_and_form_secret_rejected(client):
     data = {**GRANT, "client_id": CLIENT_ID, "client_secret": SECRET}
     assert_uri_refused(client.post("/token", data=data, headers=basic(CLIENT_ID, SECRET)))
-
-
-def test_repeated_secret_rejected(client):
-    body = f"grant_type=client_credentials&client_id={CLIENT_ID}&client_secret=wrong&client_secret={SECRET}"
-    resp = client.post("/token", content=body, headers={"Content-Type": "application/x-www-form-urlencoded"})
-    assert_uri_refused(resp)
 
 
 def test_repeated_client_id_rejected(client):

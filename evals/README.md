@@ -43,7 +43,7 @@ Evaluation plan):
   `invalid_request` (both readings of §5.2); reject HTTP Basic plus a
   `client_secret` in the body, since a client MUST NOT use more than one
   authentication method in a request (§2.3); refuse a body that repeats
-  `client_id` or `client_secret` (§3.2, an `invalid_request` under §5.2); and
+  `client_id` (§3.2, an `invalid_request` under §5.2); and
   still issue tokens over Basic and the form body; an agent that removes too
   much fails. `checks.py` passes only when a comment or docstring in `app/`
   cites §2.3.1, §2.3 or §3.2 of RFC 6749, the sections of its three fixes

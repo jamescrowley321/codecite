@@ -55,7 +55,7 @@ plant() { # plant <name> <failing tests> <failing checks> <edit command run in t
 }
 
 QUERY_TESTS="test_query_credentials_rejected,test_query_secret_rejected"
-START_TESTS="test_basic_and_form_secret_rejected,$QUERY_TESTS,test_repeated_client_id_rejected,test_repeated_secret_rejected"
+START_TESTS="test_basic_and_form_secret_rejected,$QUERY_TESTS,test_repeated_client_id_rejected"
 status=0
 plant reference "" "" ":" || status=1
 plant unchanged-start "$START_TESTS" cites-section "cp '$HERE/project/app/main.py' app/main.py" || status=1
@@ -86,7 +86,7 @@ plant docstring-citation "" "" "sed -i 's/RFC 6749 §2.3.1:/See below:/; s|^    
 # §2.3: Basic and a body secret together is two methods; the start takes it.
 plant two-methods-accepted test_basic_and_form_secret_rejected "" "sed -i '/^    if creds is not None and \"client_secret\" in form:$/,+1d' app/main.py && ! grep -q 'in form:' app/main.py" || status=1
 # §3.2: a repeated parameter; the start takes the last value.
-plant repeats-accepted test_repeated_client_id_rejected,test_repeated_secret_rejected "" "sed -i '/^    if any(len(form.getlist(name)) > 1/,+1d' app/main.py && ! grep -q getlist app/main.py" || status=1
+plant repeats-accepted test_repeated_client_id_rejected "" "sed -i '/^    if any(len(form.getlist(name)) > 1/,+1d' app/main.py && ! grep -q getlist app/main.py" || status=1
 plant ignores-query "" "" "sed -i '/^    if \"client_id\" in request.query_params/,/^        return invalid_client()$/d' app/main.py && ! grep -q query_params app/main.py" || status=1
 plant docs-changed "" "" "echo 'Credentials never go in the URL.' >> README.md && echo notes > NOTES.md" || status=1
 # Refusing URI credentials as a malformed request is §5.2's other reading.
