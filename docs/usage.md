@@ -310,7 +310,8 @@ subsection names (`referenced`: `Section 2.4`, but not a reference into
 another document such as `Section 2 of [JWT]`, `Section 7.1 in [RFC7519]`,
 `[RFC6749], Section 4.1` or `RFC 7519 Section 4`,
 or a section whose title of two or more words its title holds, as §2.6
-"Logout Token Validation" holds §2.4 "Logout Token"), the sections that name
+"Logout Token Validation" holds §2.4 "Logout Token"; the same title is no
+reference, since specs reuse headings across flows), the sections that name
 it or a subsection (`referring`), and the enclosing section of each referring
 subsection (`context`: RFC 6749 §3.2.1 names §2.3, so §3.2 Token Endpoint
 comes too). A subsection's enclosing sections, short of the top-level one,

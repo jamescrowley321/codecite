@@ -430,6 +430,9 @@ fn governing(sections: &[Chunk], asked: usize) -> HashMap<usize, Relation> {
                 && !linked_set.contains(&j)
                 && other.split_whitespace().count() >= 2
                 && holds_phrase(title, other)
+                // A shared heading, like RFC 6749's three "Access Token
+                // Request" sections, one per grant, is no reference.
+                && !holds_phrase(other, title)
             {
                 add(&mut relations, j, Relation::Referenced);
             }

@@ -178,10 +178,10 @@ fn rfc_6749_2_3_lays_out_its_rules() {
     assert_eq!(password["relation"], "subsection");
     assert!(holds(password, "MUST NOT be included in the request URI"));
     assert!(holds(password, "client_id: REQUIRED."));
-    // §3.2.1 names §2.3, and has its title, which comes first; its
-    // enclosing §3.2, the token endpoint, holds the rule on repeated
+    // §3.2.1 names §2.3 (and shares its title, which is no reference);
+    // its enclosing §3.2, the token endpoint, holds the rule on repeated
     // parameters.
-    assert_eq!(group(&result, "3.2.1")["relation"], "referenced");
+    assert_eq!(group(&result, "3.2.1")["relation"], "referring");
     let endpoint = group(&result, "3.2");
     assert_eq!(endpoint["relation"], "context");
     assert!(holds(endpoint, "MUST NOT be included more than once"));
@@ -223,6 +223,19 @@ fn a_subsection_takes_in_what_governs_its_enclosing_sections() {
     ));
     // A sibling of the subsection is not taken in, nor the top-level §2.
     for number in ["2.3.2", "2"] {
+        let anchor = format!("#section-{number}");
+        assert!(!order.iter().any(|c| c.ends_with(&anchor)), "{order:?}");
+    }
+}
+
+#[test]
+fn a_shared_title_is_not_a_reference() {
+    // §4.1.3, §4.3.2 and §4.4.2 are each "Access Token Request", for three
+    // grants: the other grants' rules don't govern §4.1.3.
+    let home = indexed();
+    let result = requirements(home.path(), &["RFC 6749 §4.1.3"]);
+    let order = sections(&result);
+    for number in ["4.3.2", "4.4.2"] {
         let anchor = format!("#section-{number}");
         assert!(!order.iter().any(|c| c.ends_with(&anchor)), "{order:?}");
     }
