@@ -489,19 +489,20 @@ fn join_terms(terms: &[String], op: &str) -> String {
 
 /// Common English words, and the question words agents put in front of a
 /// query, that a spec search leaves out: the list the retrieval spike
-/// measured (`experiments/spec-retrieval/lexical.py`). Sorted, for
-/// `binary_search`. "must", "may" and "required" are not in it, since
-/// they mark the requirements a query is often after.
+/// measured (`experiments/spec-retrieval/lexical.py`), without the words
+/// that say which requirement a query is after. Those are RFC 2119's
+/// keywords ("must", "shall", "should", "may", "required") and the
+/// negation in "MUST NOT" and "no". Sorted, for `binary_search`.
 const STOPWORDS: &[&str] = &[
     "a", "about", "all", "also", "an", "and", "any", "are", "as", "at", "be", "been", "being",
     "by", "can", "could", "did", "do", "does", "doing", "done", "down", "each", "every", "for",
     "from", "get", "got", "had", "has", "have", "having", "he", "her", "his", "how", "i", "if",
-    "in", "into", "is", "it", "its", "just", "let", "make", "me", "more", "most", "my", "no",
-    "not", "of", "off", "on", "only", "or", "other", "our", "out", "over", "own", "s", "same",
-    "shall", "she", "should", "so", "some", "someone", "such", "sure", "t", "than", "that", "the",
-    "their", "them", "then", "there", "these", "they", "this", "those", "to", "too", "under", "up",
-    "very", "was", "we", "were", "what", "when", "where", "which", "who", "whom", "whose", "why",
-    "will", "with", "would", "you", "your",
+    "in", "into", "is", "it", "its", "just", "let", "make", "me", "more", "most", "my", "of",
+    "off", "on", "only", "or", "other", "our", "out", "over", "own", "s", "same", "she", "so",
+    "some", "someone", "such", "sure", "t", "than", "that", "the", "their", "them", "then",
+    "there", "these", "they", "this", "those", "to", "too", "under", "up", "very", "was", "we",
+    "were", "what", "when", "where", "which", "who", "whom", "whose", "why", "will", "with",
+    "would", "you", "your",
 ];
 
 /// Separates the names passed to the search, so SQL finds one with
@@ -1131,10 +1132,15 @@ mod tests {
             spec_fts_query("Is client authentication required?").as_deref(),
             Some("\"client\" OR \"authentication\" OR \"required\"")
         );
-        // MUST and MAY stay: they mark the requirement a query is after.
+        // Requirement keywords and their negation stay: they say which
+        // requirement a query is after.
         assert_eq!(
-            spec_fts_query("what MUST the client send").as_deref(),
-            Some("\"must\" OR \"client\" OR \"send\"")
+            spec_fts_query("what MUST NOT the client send").as_deref(),
+            Some("\"must\" OR \"not\" OR \"client\" OR \"send\"")
+        );
+        assert_eq!(
+            spec_fts_query("what SHOULD it do if no SHALL").as_deref(),
+            Some("\"should\" OR \"no\" OR \"shall\"")
         );
         // Only stopwords: all of them, joined with AND.
         assert_eq!(

@@ -12,10 +12,11 @@ query. Code search stays as it is.
 1. **Migration 0005.** Create `spec_fts`, the same columns as `chunk_fts`
    with `tokenize='porter unicode61'`, and a delete trigger for it. Spec
    chunks keep their `chunk_fts` rows, so code's BM25 statistics don't move.
-   Empty the spec documents' content hashes so the next index run rewrites
-   them into `spec_fts` (a contentless table can't give their terms back).
-   Test: a version 4 corpus's spec document has an empty hash after the
-   migration and its code file keeps its hash.
+   `Store::open_read_write` fills `spec_fts` from the stored spec chunks in
+   the same transaction (their path terms are split in Rust), so an upgraded
+   corpus needs no new index run. Test: a version 4 corpus's spec chunk is
+   in `spec_fts`, stemmed and with its path terms, and nothing is marked for
+   rewriting.
 2. **Write path.** `write_document` reads the source's kind and puts a
    spec's full-text rows in `spec_fts`. Test: a spec document matches in
    `spec_fts`, stemmed ("checked" finds "Checking"), and in `chunk_fts`;
@@ -24,7 +25,8 @@ query. Code search stays as it is.
    with every term, specs from `spec_fts` with `spec_fts_query`. Keep
    `blend` as it is. Test: code results and scores equal the query before
    this change, and spec rows are still in `chunk_fts`.
-4. **Stopwords.** `STOPWORDS`, the spike's list, sorted; `spec_fts_query`
+4. **Stopwords.** `STOPWORDS`, the spike's list without RFC 2119's
+   keywords and the negations `not` and `no`, sorted; `spec_fts_query`
    drops them, and a query of only stopwords keeps them joined with `AND`.
    Tests: the query strings, the list's order, a stemmed spec search that
    ignores "is", an all-stopword query that finds one section, and code

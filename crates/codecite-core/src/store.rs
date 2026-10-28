@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use rusqlite::config::DbConfig;
 use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionBehavior};
 
-use crate::{Error, Result};
+use crate::{Error, Result, identifier_terms, text_terms};
 
 mod cite;
 pub use cite::{CiteOptions, CiteResult, Finding};
@@ -46,6 +46,31 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0004_read.sql"),
     include_str!("../migrations/0005_spec_fts.sql"),
 ];
+
+/// Version 5's data step: writes a `spec_fts` row for every stored spec
+/// chunk, with the terms `insert_chunks` would give it, so an upgraded
+/// corpus searches its specs without being indexed again.
+fn fill_spec_fts(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+    let mut chunks = tx.prepare(
+        "SELECT c.id, sym.display_name, d.path, c.terms FROM chunk c
+         JOIN document d ON d.id = c.document_id
+         JOIN source s ON s.id = d.source_id
+         LEFT JOIN symbol sym ON sym.id = c.symbol_id
+         WHERE s.kind = 'document'",
+    )?;
+    let mut insert =
+        tx.prepare("INSERT INTO spec_fts (rowid, symbol, path, terms) VALUES (?1, ?2, ?3, ?4)")?;
+    let mut rows = chunks.query([])?;
+    while let Some(row) = rows.next()? {
+        let id: i64 = row.get(0)?;
+        let symbol: Option<String> = row.get(1)?;
+        let path: String = row.get(2)?;
+        let terms: String = row.get(3)?;
+        let symbol = symbol.map_or_else(String::new, |name| identifier_terms(&name));
+        insert.execute(rusqlite::params![id, symbol, text_terms(&path), terms])?;
+    }
+    Ok(())
+}
 
 /// The schema version this build creates and reads.
 pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
@@ -92,6 +117,9 @@ impl Store {
         }
         for (version, sql) in (1..).zip(MIGRATIONS).skip(found as usize) {
             tx.execute_batch(sql)?;
+            if version == 5 {
+                fill_spec_fts(&tx)?;
+            }
             tx.execute(
                 "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)
                  ON CONFLICT (key) DO UPDATE SET value = excluded.value",
@@ -731,12 +759,11 @@ mod tests {
                 .collect::<rusqlite::Result<_>>()
                 .unwrap()
         };
-        // Version 5 then empties the spec's hash too.
         assert_eq!(
             rows,
             [
                 ("src/lib.rs".to_owned(), vec![], None),
-                ("rfc9449".to_owned(), vec![], None)
+                ("rfc9449".to_owned(), vec![2], None)
             ]
         );
         assert!(table_names(&store.conn).iter().any(|t| t == "alias"));
@@ -745,10 +772,10 @@ mod tests {
     }
 
     #[test]
-    fn version_5_makes_the_next_run_rewrite_specs() {
+    fn version_5_fills_spec_fts_from_the_stored_spec_chunks() {
         let dir = scratch("v4");
         let path = dir.join("corpus.db");
-        // A version 4 corpus with a code file and a spec version.
+        // A version 4 corpus with a code chunk and a spec chunk.
         raw(&path)
             .execute_batch(&format!(
                 "{}
@@ -760,26 +787,41 @@ mod tests {
                    VALUES (1, 'app', 'local', '/src/app', 'abc', 'adapt', 'then'),
                           (2, 'rfc9449', 'document', 'https://x', 'def', 'quote', 'then');
                  INSERT INTO document (id, source_id, path, content_hash)
-                   VALUES (1, 1, 'src/lib.rs', x'01'), (2, 2, 'rfc9449', x'02');",
+                   VALUES (1, 1, 'src/lib.rs', x'01'), (2, 2, 'rfc9449', x'02');
+                 INSERT INTO chunk (id, document_id, start_line, end_line, kind, text, terms)
+                   VALUES (1, 1, 1, 1, 'window', 'validate', 'validate'),
+                          (2, 2, 1, 1, 'section', 'validates', 'validates');
+                 INSERT INTO chunk_fts (rowid, symbol, path, terms)
+                   VALUES (1, '', 'src lib rs', 'validate'), (2, '', 'rfc9449', 'validates');",
                 MIGRATIONS[0], MIGRATIONS[1], MIGRATIONS[2], MIGRATIONS[3]
             ))
             .unwrap();
 
         let store = Store::open_read_write(&path).unwrap();
         assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
-        // spec_fts starts empty, and the spec's empty hash makes the next
-        // run rewrite it into both tables. The code file is left alone.
-        let hashes: Vec<Vec<u8>> = {
-            let mut stmt = store
-                .conn
-                .prepare("SELECT content_hash FROM document ORDER BY id")
-                .unwrap();
+        let ids = |sql: &str| -> Vec<i64> {
+            let mut stmt = store.conn.prepare(sql).unwrap();
             stmt.query_map([], |row| row.get(0))
                 .unwrap()
                 .collect::<rusqlite::Result<_>>()
                 .unwrap()
         };
-        assert_eq!(hashes, [vec![1], vec![]]);
+        // The spec chunk is in spec_fts, stemmed, with its path's terms;
+        // the code chunk isn't. Both stay in chunk_fts.
+        let spec = "SELECT rowid FROM spec_fts WHERE spec_fts MATCH";
+        assert_eq!(ids(&format!("{spec} 'validated'")), [2]);
+        assert_eq!(ids(&format!("{spec} 'path:rfc9449'")), [2]);
+        assert_eq!(
+            ids(
+                "SELECT rowid FROM chunk_fts WHERE chunk_fts MATCH 'validate OR validates' ORDER BY rowid"
+            ),
+            [1, 2]
+        );
+        // Nothing has to be indexed again.
+        assert_eq!(
+            ids("SELECT count(*) FROM document WHERE content_hash = x''"),
+            [0]
+        );
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }
