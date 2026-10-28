@@ -170,8 +170,13 @@ impl Store {
             ],
             |row| row.get(0),
         )?;
+        let is_spec: bool = tx.query_row(
+            "SELECT kind = 'document' FROM source WHERE id = ?1",
+            [source_id],
+            |row| row.get(0),
+        )?;
         clear_document(&tx, document_id)?;
-        insert_chunks(&tx, document_id, document)?;
+        insert_chunks(&tx, document_id, document, is_spec)?;
         tx.commit()?;
         Ok(document.chunks.len())
     }
@@ -255,7 +260,8 @@ impl Store {
 /// Deletes a document's chunks, their full-text rows, its symbols and the
 /// edges it is evidence for, keeping the document row.
 fn clear_document(tx: &Transaction<'_>, document_id: i64) -> Result<()> {
-    // The `chunk_fts_delete` trigger deletes each chunk's full-text row.
+    // The `chunk_fts_delete` and `spec_fts_delete` triggers delete each
+    // chunk's full-text row.
     for table_filter in [
         "chunk WHERE document_id = ?1",
         "symbol WHERE document_id = ?1",
@@ -267,11 +273,13 @@ fn clear_document(tx: &Transaction<'_>, document_id: i64) -> Result<()> {
     Ok(())
 }
 
-/// Inserts a document's symbols, chunks and full-text rows.
+/// Inserts a document's symbols, chunks and full-text rows: a spec's into
+/// the stemmed `spec_fts`, code's into `chunk_fts`.
 fn insert_chunks(
     tx: &Transaction<'_>,
     document_id: i64,
     document: &DocumentRecord<'_>,
+    is_spec: bool,
 ) -> Result<()> {
     let mut symbol = tx.prepare_cached(
         "INSERT INTO symbol (id, display_name, kind, document_id, start_line, end_line)
@@ -282,9 +290,11 @@ fn insert_chunks(
            title, parent_id, strength, text, terms)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
     )?;
-    let mut fts = tx.prepare_cached(
-        "INSERT INTO chunk_fts (rowid, symbol, path, terms) VALUES (?1, ?2, ?3, ?4)",
-    )?;
+    let mut fts = tx.prepare_cached(if is_spec {
+        "INSERT INTO spec_fts (rowid, symbol, path, terms) VALUES (?1, ?2, ?3, ?4)"
+    } else {
+        "INSERT INTO chunk_fts (rowid, symbol, path, terms) VALUES (?1, ?2, ?3, ?4)"
+    })?;
     let path_terms = text_terms(document.path);
     // Chunk IDs as they are assigned, so a later chunk can name its parent.
     let mut ids: Vec<i64> = Vec::with_capacity(document.chunks.len());
@@ -415,10 +425,15 @@ mod tests {
     }
 
     fn matches(store: &Store, query: &str) -> i64 {
+        matches_in(store, "chunk_fts", query)
+    }
+
+    /// How many rows of the full-text `table` match `query`.
+    fn matches_in(store: &Store, table: &str, query: &str) -> i64 {
         store
             .conn
             .query_row(
-                "SELECT count(*) FROM chunk_fts WHERE chunk_fts MATCH ?1",
+                &format!("SELECT count(*) FROM {table} WHERE {table} MATCH ?1"),
                 [query],
                 |row| row.get(0),
             )
@@ -770,14 +785,18 @@ mod tests {
                 ),
             ]
         );
-        assert_eq!(matches(&store, "dpop"), 2);
+        // Spec chunks go in the stemmed table, so "checked" finds
+        // "Checking", and not in the code table.
+        assert_eq!(matches_in(&store, "spec_fts", "dpop"), 2);
+        assert_eq!(matches_in(&store, "spec_fts", "checked"), 1);
+        assert_eq!(matches(&store, "dpop"), 0);
 
         // Deleting the source takes the document, both chunks and their
         // full-text rows with it.
         assert_eq!(store.delete_sources_except(&[]).unwrap().len(), 1);
         assert_eq!(count(&store, "SELECT count(*) FROM document"), 0);
         assert_eq!(count(&store, "SELECT count(*) FROM chunk"), 0);
-        assert_eq!(matches(&store, "dpop"), 0);
+        assert_eq!(matches_in(&store, "spec_fts", "dpop"), 0);
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }

@@ -44,6 +44,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0002_incremental_index.sql"),
     include_str!("../migrations/0003_document_versions.sql"),
     include_str!("../migrations/0004_read.sql"),
+    include_str!("../migrations/0005_spec_fts.sql"),
 ];
 
 /// The schema version this build creates and reads.
@@ -374,6 +375,7 @@ mod tests {
             "document",
             "chunk",
             "chunk_fts",
+            "spec_fts",
             "symbol",
             "edge",
         ] {
@@ -729,14 +731,65 @@ mod tests {
                 .collect::<rusqlite::Result<_>>()
                 .unwrap()
         };
+        // Version 5 then empties the spec's hash too.
         assert_eq!(
             rows,
             [
                 ("src/lib.rs".to_owned(), vec![], None),
-                ("rfc9449".to_owned(), vec![2], None)
+                ("rfc9449".to_owned(), vec![], None)
             ]
         );
         assert!(table_names(&store.conn).iter().any(|t| t == "alias"));
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn version_5_moves_spec_chunks_out_of_the_code_table() {
+        let dir = scratch("v4");
+        let path = dir.join("corpus.db");
+        // A version 4 corpus with a code chunk and a spec chunk, both in
+        // chunk_fts.
+        raw(&path)
+            .execute_batch(&format!(
+                "{}
+                 {}
+                 {}
+                 {}
+                 INSERT INTO meta (key, value) VALUES ('schema_version', '4');
+                 INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
+                   VALUES (1, 'app', 'local', '/src/app', 'abc', 'adapt', 'then'),
+                          (2, 'rfc9449', 'document', 'https://x', 'def', 'quote', 'then');
+                 INSERT INTO document (id, source_id, path, content_hash)
+                   VALUES (1, 1, 'src/lib.rs', x'01'), (2, 2, 'rfc9449', x'02');
+                 INSERT INTO chunk (id, document_id, start_line, end_line, kind, text, terms)
+                   VALUES (1, 1, 1, 1, 'window', 'validate', 'validate'),
+                          (2, 2, 1, 1, 'section', 'validate', 'validate');
+                 INSERT INTO chunk_fts (rowid, symbol, path, terms)
+                   VALUES (1, '', 'lib', 'validate'), (2, '', 'rfc9449', 'validate');",
+                MIGRATIONS[0], MIGRATIONS[1], MIGRATIONS[2], MIGRATIONS[3]
+            ))
+            .unwrap();
+
+        let store = Store::open_read_write(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+        let ids = |sql: &str| -> Vec<i64> {
+            let mut stmt = store.conn.prepare(sql).unwrap();
+            stmt.query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap()
+        };
+        assert_eq!(
+            ids("SELECT rowid FROM chunk_fts WHERE chunk_fts MATCH 'validate'"),
+            [1]
+        );
+        // The spec keeps its chunk until the next run rewrites it, which
+        // its empty hash makes sure of.
+        assert_eq!(
+            ids("SELECT id FROM document WHERE content_hash = x'' ORDER BY id"),
+            [2]
+        );
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }
