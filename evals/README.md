@@ -42,10 +42,11 @@ Evaluation plan):
   query-string credentials, even valid ones, with `invalid_client` or
   `invalid_request` (both readings of §5.2); reject HTTP Basic plus a
   `client_secret` in the body, since a client MUST NOT use more than one
-  authentication method in a request (§2.3); and
+  authentication method in a request (§2.3); refuse a body that repeats
+  `client_id` or `client_secret` (§3.2, an `invalid_request` under §5.2); and
   still issue tokens over Basic and the form body; an agent that removes too
   much fails. `checks.py` passes only when a comment or docstring in `app/`
-  cites §2.3.1 or §2.3 of RFC 6749, the sections of its two fixes
+  cites §2.3.1, §2.3 or §3.2 of RFC 6749, the sections of its three fixes
   (`rfc6749#section-2.3.1`, `RFC 6749 §2.3` or `Section 2.3.1 of RFC 6749`,
   alone or in a list of sections). The agent may
   add Python tests of its own (`test_*.py`, `*_test.py`, and a `conftest.py` or `__init__.py` beside them), but no `conftest.py` at the project root. The corpus is identity-model plus the spec

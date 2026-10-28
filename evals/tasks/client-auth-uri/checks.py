@@ -23,9 +23,9 @@ IGNORED_FILES = {"uv.lock"}
 # would shadow one when pytest imports it.
 HIDDEN_MODULES = {"conftest.py", "test_hidden.py"}
 
-# RFC 6749 §2.3.1 or §2.3, the sections of the two fixes (credentials not
-# in the URI; one authentication method per request), and no other: not
-# 2.3.10, not 2.3.1.2, not 2.2.
+# RFC 6749 §2.3.1, §2.3 or §3.2, the sections of the three fixes
+# (credentials not in the URI; one authentication method per request; no
+# repeated parameter), and no other: not 2.3.10, not 2.3.1.2, not 2.2.
 # The forms are codecite's citation (with or without its @sha256 pin), the
 # spec URL with its anchor, "RFC 6749 §2.3.1" / "RFC 6749, Section 2.3.1",
 # and "Section 2.3.1 of RFC 6749". A section may be one of a list
@@ -33,12 +33,13 @@ HIDDEN_MODULES = {"conftest.py", "test_hidden.py"}
 # and 3.2 of RFC 6749"), but not one that a later "of RFC <n>" gives to
 # another RFC ("RFC 6749 §3.2 and 2.3.1 of RFC 7523").
 RFC = r"rfc[\s-]?6749(?!\d)"
-SECTION = r"2\.3(?:\.1)?(?!\.?\d)"
+SECTION = r"(?:2\.3(?:\.1)?|3\.2)(?!\.?\d)"
 SECTION_WORD = r"(?:§§?|sec(?:tions?|s?\.)?)"
 JOIN = r"\s*(?:/|,|&|and)\s*"
 ITEM = r"(?:§§?\s*)?\d+(?:\.\d+)*"
 # Sections listed before 2.3.1 ("2.3 / ", "§2.3, ") and after it (" and 3.2").
-BEFORE = r"(?:" + ITEM + JOIN + r")*(?:§§?\s*)?"
+# Lazy, so the first accepted section in a list is the one matched.
+BEFORE = r"(?:" + ITEM + JOIN + r")*?(?:§§?\s*)?"
 AFTER = r"(?:" + JOIN + ITEM + r")*"
 # The rest of a list after 2.3.1: bare numbers only, since a "§3.2" starts a
 # citation of its own ("RFC 6749 §2.3.1 and §3.2 of RFC 7523").
@@ -60,14 +61,12 @@ TAIL = re.compile(REST + OF_RFC, re.IGNORECASE)
 
 def cites(block: str):
     """The first citation of RFC 6749 §2.3.1 in a comment block, or None.
-    Only the "RFC 6749 §… 2.3.1" form, with sections listed before 2.3.1,
-    can end in a list that a later "of RFC <n>" hands to another RFC; when
-    2.3.1 comes straight after "RFC 6749 §", or in the other forms, it is
-    6749's."""
+    Only the "RFC 6749 §… 2.3.1" form can head a list of bare numbers that a
+    later "of RFC <n>" hands to another RFC; a "§3.2" after it starts a
+    citation of its own, and the other forms tie the section to 6749."""
     for m in CITATION.finditer(block):
         tail = TAIL.match(block, m.end())
-        listed = m.group("lead") and re.search(r"\d", m.group("before") or "")
-        if listed and tail and tail.group(1) != "6749":
+        if m.group("lead") and tail and tail.group(1) != "6749":
             continue  # the list's 2.3.1 is another RFC's
         return m
     return None

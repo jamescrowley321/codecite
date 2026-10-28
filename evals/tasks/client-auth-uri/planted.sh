@@ -55,7 +55,7 @@ plant() { # plant <name> <failing tests> <failing checks> <edit command run in t
 }
 
 QUERY_TESTS="test_query_credentials_rejected,test_query_secret_rejected"
-START_TESTS="test_basic_and_form_secret_rejected,$QUERY_TESTS"
+START_TESTS="test_basic_and_form_secret_rejected,$QUERY_TESTS,test_repeated_client_id_rejected,test_repeated_secret_rejected"
 status=0
 plant reference "" "" ":" || status=1
 plant unchanged-start "$START_TESTS" cites-section "cp '$HERE/project/app/main.py' app/main.py" || status=1
@@ -65,6 +65,8 @@ plant drops-basic test_basic_and_form_secret_rejected,test_basic_gets_token "" "
 # A correct fix whose comment cites the wrong section, or the right section of the wrong RFC.
 plant wrong-section "" cites-section "sed -i 's/RFC 6749 §2.3.1:/RFC 6749 §2.2:/' app/main.py" || status=1
 # §2.3 is the two-methods rule's section, so citing it counts too.
+plant cites-repeat-section "" "" "sed -i 's/RFC 6749 §2.3.1:/RFC 6749 §3.2:/' app/main.py" || status=1
+plant cites-subsection-of-repeat "" cites-section "sed -i 's/RFC 6749 §2.3.1:/RFC 6749 §3.2.1:/' app/main.py" || status=1
 plant cites-two-methods-section "" "" "sed -i 's/RFC 6749 §2.3.1:/RFC 6749 §2.3:/' app/main.py" || status=1
 plant wrong-subsection "" cites-section "sed -i 's/RFC 6749 §2.3.1:/RFC 6749 §2.3.10:/' app/main.py" || status=1
 plant wrong-subsubsection "" cites-section "sed -i 's/RFC 6749 §2.3.1:/RFC 6749 §2.3.1.2:/' app/main.py" || status=1
@@ -83,6 +85,8 @@ plant docstring-citation "" "" "sed -i 's/RFC 6749 §2.3.1:/See below:/; s|^    
 # Ignoring URI credentials, rather than rejecting the request outright, also fails authentication.
 # §2.3: Basic and a body secret together is two methods; the start takes it.
 plant two-methods-accepted test_basic_and_form_secret_rejected "" "sed -i '/^    if creds is not None and \"client_secret\" in form:$/,+1d' app/main.py && ! grep -q 'in form:' app/main.py" || status=1
+# §3.2: a repeated parameter; the start takes the last value.
+plant repeats-accepted test_repeated_client_id_rejected,test_repeated_secret_rejected "" "sed -i '/^    if any(len(form.getlist(name)) > 1/,+1d' app/main.py && ! grep -q getlist app/main.py" || status=1
 plant ignores-query "" "" "sed -i '/^    if \"client_id\" in request.query_params/,/^        return invalid_client()$/d' app/main.py && ! grep -q query_params app/main.py" || status=1
 plant docs-changed "" "" "echo 'Credentials never go in the URL.' >> README.md && echo notes > NOTES.md" || status=1
 # Refusing URI credentials as a malformed request is §5.2's other reading.
@@ -91,7 +95,7 @@ plant uri-invalid-request "" "" "sed -i '/^    if \"client_id\" in request.query
 plant wrong-secret-invalid-request test_unknown_client_rejected,test_wrong_basic_secret_rejected,test_wrong_form_secret_rejected "" "sed -i 's/return error(\"invalid_client\", 401/return error(\"invalid_request\", 400/' app/main.py" || status=1
 # A list of sections that includes 2.3.1 cites it; one that doesn't, doesn't.
 plant section-list "" "" "sed -i 's|RFC 6749 §2.3.1:|RFC 6749 section 2.3 / 2.3.1 / 3.2:|' app/main.py" || status=1
-plant section-list-without "" cites-section "sed -i 's|RFC 6749 §2.3.1:|RFC 6749 sections 2.2, 2.3.10 and 3.2:|' app/main.py" || status=1
+plant section-list-without "" cites-section "sed -i 's|RFC 6749 §2.3.1:|RFC 6749 sections 2.2, 2.3.10 and 4.4:|' app/main.py" || status=1
 plant section-signs-list "" "" "sed -i 's|RFC 6749 §2.3.1:|RFC 6749 §2.3, §2.3.1:|' app/main.py" || status=1
 plant sections-of-rfc "" "" "sed -i 's|RFC 6749 §2.3.1:|Sections 2.3.1 and 3.2 of RFC 6749:|' app/main.py" || status=1
 plant section-of-rfc-then-other "" "" "sed -i 's|RFC 6749 §2.3.1:|Section 2.3.1 of RFC 6749 and §3.2 of RFC 7523:|' app/main.py" || status=1
