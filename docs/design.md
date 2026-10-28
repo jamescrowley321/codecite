@@ -170,8 +170,11 @@ CREATE TABLE chunk (
   terms TEXT NOT NULL                                               -- identifiers split for search
 );
 
-CREATE VIRTUAL TABLE chunk_fts USING fts5(
+CREATE VIRTUAL TABLE chunk_fts USING fts5(                          -- every chunk
   symbol, path, terms, content='', contentless_delete=1, tokenize='unicode61'
+);
+CREATE VIRTUAL TABLE spec_fts USING fts5(                           -- spec chunks again, stemmed
+  symbol, path, terms, content='', contentless_delete=1, tokenize='porter unicode61'
 );
 
 -- optional, created only when embeddings are enabled
@@ -201,6 +204,9 @@ CREATE INDEX edge_evidence ON edge(evidence_doc);
 CREATE TRIGGER chunk_fts_delete AFTER DELETE ON chunk BEGIN
   DELETE FROM chunk_fts WHERE rowid = old.id;                       -- a contentless FTS table can't be a foreign key's child
 END;
+CREATE TRIGGER spec_fts_delete AFTER DELETE ON chunk BEGIN
+  DELETE FROM spec_fts WHERE rowid = old.id;
+END;
 ```
 
 How the tables relate, with the columns that carry each relation:
@@ -213,6 +219,7 @@ erDiagram
   chunk |o--o{ chunk : "parent_id (section → step)"
   symbol |o--o{ chunk : "symbol_id"
   chunk ||--|| chunk_fts : "rowid"
+  chunk ||--o| spec_fts : "rowid (spec)"
   symbol ||--o{ edge : "src / dst"
   document |o--o{ edge : "evidence_doc"
   alias }o--|| source : "name (document)"
@@ -257,6 +264,11 @@ erDiagram
     text name
   }
   chunk_fts {
+    text symbol
+    text path
+    text terms
+  }
+  spec_fts {
     text symbol
     text path
     text terms
@@ -321,6 +333,7 @@ BM25 over code-aware terms does most of the work; vectors and graph signals refi
 
 - The query is split into terms as indexed text is (step 4), and each term is quoted, so FTS5 never reads the user's text as query syntax. A chunk matches when it holds any term (`OR`), and BM25 ranks the chunks that hold more of them, and rarer ones, higher.
 - FTS5 `bm25()` with column weights: symbol name 10, path 5, body 1.
+- Specs are searched in their own full-text table, `spec_fts`, stemmed with Porter (`tokenize='porter unicode61'`), so "authentication" finds "authenticates". A spec query also drops common English words and question words (`is`, `the`, `what`, `how`; the list is `STOPWORDS` in `store/search.rs`, the retrieval spike's) before its terms are ORed, so "is client authentication required" no longer matches every section that says "is". The words that say which requirement a query is after stay: RFC 2119's keywords (`must`, `shall`, `should`, `may`, `required`), and `not` and `no`, so "MUST NOT" keeps its negation; the spike's list dropped `shall`, `should`, `not` and `no`. A query of only stopwords keeps them and needs all of them (`AND`), so it finds the sections that say them all rather than every section. Code is searched in `chunk_fts`, unstemmed and with every query term, until stemming code is measured. Spec chunks keep their `chunk_fts` rows, because BM25's statistics count every row of the table and taking them out moved code results (code-symbol Recall@10 fell from 1.00 to 0.93). On the retrieval benchmark this lifts spec-requirement Recall@10 from 0.53 to 0.60 and leaves code's own ranking as it was, but spec MRR falls from 0.17 to 0.16 (spec-keyword 0.50 to 0.45, spec-requirement 0.22 to 0.18): stemming moves some exact-term sections from first to a few places down. The A/B eval decides whether it stays.
 - With embeddings on, nearest neighbors from `chunk_vec`, merged with BM25 by reciprocal rank fusion (k = 60).
 - The BM25 score is weighted by what the chunk's document is for, read from its path: source, docs and specs 1, examples 0.6 (`examples/`, `samples/`, `demo/`), tests 0.4 (`tests/`, `__tests__/`, `testdata/`, `conformance/`, and test file names such as `test_x.py`, `x_test.go`, `x.spec.ts`, `XTests.cs`). A test directory wins over an example one, and both over a prose extension. Results carry this as `role`.
 - A chunk whose symbol is named by a word of the query, or by all its words run together, scores 3 times higher, comparing names without case, `_` or `-`; so `TokenValidationMiddleware FastAPI` puts the class first and `validate token` lifts `validateToken`. Only a name that at most 3 symbols share is boosted, so a common word that many helpers are named after (`app`, `get`) lifts nothing.
