@@ -58,7 +58,7 @@ phase: setup
 
 ## Review
 
-The blind peer review runs in CI (`.github/workflows/blind-peer-review.yml`) on every push to a PR that targets `main`; its Merge Gate job gives the verdict. The loop waits for that verdict on the head commit, answers every round in a PR comment, and falls back to running the `blind-peer-review:check` skill locally when CI does not review, which is always the case for a stacked PR. The plugin decides which lenses run: never name, add or drop lenses.
+The blind peer review runs in CI (`.github/workflows/claude.yml`) when a PR opens and on each `@claude review this PR` comment, and posts one `## Blind peer review` comment with the verdict. The loop waits for that comment on the head commit, answers every round in a PR comment, asks `@claude review this PR` after its fixes, and falls back to running the `blind-peer-review:check` skill locally when CI does not review. The plugin decides which lenses run: never name, add or drop lenses.
 
 ## Gates (mirror CI's Rust checks; run before every push)
 
