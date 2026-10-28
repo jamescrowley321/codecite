@@ -674,6 +674,7 @@ mod tests {
         let description = search.description.as_deref().unwrap();
         for text in [instructions, description] {
             assert!(text.contains("the terms the spec would use"), "{text}");
+            assert!(text.contains("not the asker's words"), "{text}");
             assert!(
                 text.contains("protocol, parameter, claim, endpoint and error names"),
                 "{text}"
