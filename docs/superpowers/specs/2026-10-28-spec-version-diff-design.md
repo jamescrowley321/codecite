@@ -23,8 +23,9 @@ ranges. No schema change and no re-index.
   so "latest older" means the one pinned last; with one older version, the
   usual case, there is no choice. Either can be named by its hash, with or
   without `sha256:`, as in a citation.
-- **Sections** pair by number, then by anchor for a section renumbered
-  between versions. A section only one version has contributes its
+- **Sections** pair by the author's anchor first, which stays with a
+  section that an insertion renumbers, then by number; an anchor made from
+  the number (`section-2.5`, `rfc.section.2.5`) is not trusted to pair. A section only one version has contributes its
   statements as all added or all removed.
 - **Statements.** A section's text, its heading line dropped, splits into
   units: each step is one unit, cited by its step citation; every other line
@@ -54,9 +55,9 @@ sections, in two passes:
 
 1. **Same content.** Units pair, in order, when their content keys are
    equal. A content key is the unit's words, lower-cased, without
-   punctuation or a month followed by a year (other numbers are content),
-   and without the reference tooltips an OpenID page renders inline, a
-   parenthesis with a quoted title that ends in a year (`[RFC6749] (Hardt,
+   punctuation, and without the reference tooltips an OpenID page renders
+   inline, a parenthesis with a quoted title that ends in a month and a
+   year (any other date or number is content) (`[RFC6749] (Hardt,
    D., Ed., “…,” October 2012.)`, the label kept) or a cross-reference's number when its
    title follows (`Section 7.1 (TLS Requirements)`), so a renumbering is no
    change. Reference strings carry a
@@ -75,11 +76,12 @@ Unpaired units are added (in `to` only) or removed (in `from` only).
 - Keyword sets differ: `strength_changed`, with both keyword lists
   (OPTIONAL → REQUIRED, SHOULD → MUST, none → MUST).
 - Same content key, or the same words in the same order but for spelling
-  fixes, each a word of letters only, at least five long, one edit from the
-  other and not the other with a letter added at an end ("occured" →
-  "occurred"): `reworded`. Two edits reach opposites (`signed`,
-  `unsigned`), a word with digits is a value (`RS256`, `PS256`), and the
-  same words in another order are a change. A step's key leaves out its
+  fixes, each a word of letters only, at least five long, with a letter
+  doubled or undoubled ("occured" → "occurred") or two neighbouring letters
+  swapped ("recieve" → "receive"): `reworded`. Any other edit makes another
+  word as often as it fixes one (`signed`, `unsigned`; `issuer`, `issued`),
+  a word with digits is a value (`RS256`, `PS256`), and the same words in
+  another order are a change. A step's key leaves out its
   own number, so renumbering is no change.
   Listed apart, in `reworded`, not in `changes`.
 - Otherwise: `changed`. "Validate the iss, aud, and iat Claims" becoming

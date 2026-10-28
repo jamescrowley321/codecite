@@ -345,42 +345,25 @@ const MONTHS: [&str; 12] = [
 /// reads `[RFC6749] (Hardt, D., Ed., “The OAuth 2.0 …,” October 2012.)`:
 /// the parenthesis with a quoted title is dropped and the label kept. A
 /// cross-reference reads `Section 7.1 (TLS Requirements)`: its number is
-/// dropped and its title kept, so a renumbering is no change. Month names
-/// and four-digit years go too, which a date is made of; `MAY` lower-cases
-/// to the month `may`, so only a word that is not all uppercase is dropped
-/// as a month.
+/// dropped and its title kept, so a renumbering is no change. A tooltip is
+/// only a parenthesis with a quoted title that ends in a month and a year;
+/// any other date or number, in a rule or in a parenthesis, is content.
 fn content_key(text: &str) -> Vec<String> {
     static ANNOTATION: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"\([^()“]*“[^”]*”[^()]*\d{4}\.?\)|Section\s+[0-9A-Z][0-9.]*\s*(?:\()")
-            .expect("a valid regex")
+        let months = MONTHS.join("|");
+        Regex::new(&format!(
+            r"(?i:\([^()“]*“[^”]*”[^()]*\b(?:{months})\s+(?:19|20)\d{{2}}\.?\))|Section\s+[0-9A-Z][0-9.]*\s*(?:\()"
+        ))
+        .expect("a valid regex")
     });
     let text = ANNOTATION.replace_all(text, |c: &regex::Captures<'_>| {
         // A cross-reference keeps its parenthesis, whose title follows.
         if c[0].starts_with('(') { " " } else { " (" }
     });
-    let words: Vec<&str> = text
-        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+    text.split(|c: char| !(c.is_alphanumeric() || c == '_'))
         .filter(|w| !w.is_empty())
-        .collect();
-    let month = |w: &str| MONTHS.contains(&w.to_lowercase().as_str()) && w != w.to_uppercase();
-    let year = |w: &str| {
-        w.len() == 4
-            && w.chars().all(|c| c.is_ascii_digit())
-            && (w.starts_with("19") || w.starts_with("20"))
-    };
-    let mut key = Vec::with_capacity(words.len());
-    let mut i = 0;
-    while i < words.len() {
-        // Only a month followed by a year is a date; a number alone, like
-        // 2048 bits, is content.
-        if month(words[i]) && words.get(i + 1).is_some_and(|w| year(w)) {
-            i += 2;
-            continue;
-        }
-        key.push(words[i].to_lowercase());
-        i += 1;
-    }
-    key
+        .map(str::to_lowercase)
+        .collect()
 }
 
 /// How a pair of units, one per version, differs, if it is reported: the
@@ -413,21 +396,33 @@ fn spelling_only(old: &[String], new: &[String]) -> bool {
             .all(|(a, b)| a == b || is_spelling_fix(a, b))
 }
 
-/// The longest word [`is_spelling_fix`] measures: edit distance is
-/// quadratic in length, and no real word is this long.
-const MAX_SPELLED_WORD: usize = 64;
-
-/// Whether `b` is `a` with one letter's spelling fixed.
+/// Whether `b` is `a` with its spelling fixed: a letter doubled or
+/// undoubled (`occured`, `occurred`) or two neighbouring letters swapped
+/// (`recieve`, `receive`), in words of letters only at least five long.
+/// Any other one-letter edit makes another word as often as it fixes one
+/// (`issuer`, `issued`; `inline`, `online`; `server`, `sever`).
 fn is_spelling_fix(a: &str, b: &str) -> bool {
-    let (la, lb) = (a.chars().count(), b.chars().count());
-    la >= 5
-        && lb >= 5
-        && la.max(lb) <= MAX_SPELLED_WORD
-        && la.abs_diff(lb) <= 1
-        && a.chars().all(char::is_alphabetic)
-        && b.chars().all(char::is_alphabetic)
-        && !(a.ends_with(b) || b.ends_with(a) || a.starts_with(b) || b.starts_with(a))
-        && edit_distance(a, b) == 1
+    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    if a.len().min(b.len()) < 5 || !a.iter().chain(&b).all(|c| c.is_alphabetic()) || a == b {
+        return false;
+    }
+    let (short, long) = if a.len() < b.len() {
+        (&a, &b)
+    } else {
+        (&b, &a)
+    };
+    match long.len() - short.len() {
+        // Doubled: dropping one of two equal neighbours gives the other.
+        1 => (1..long.len()).any(|k| {
+            long[k] == long[k - 1] && long[..k] == short[..k] && long[k + 1..] == short[k..]
+        }),
+        // Swapped: they differ at exactly two neighbouring places, crosswise.
+        0 => {
+            let differ: Vec<usize> = (0..a.len()).filter(|&k| a[k] != b[k]).collect();
+            matches!(differ[..], [k, l] if l == k + 1 && a[k] == b[l] && a[l] == b[k])
+        }
+        _ => false,
+    }
 }
 
 fn counts(words: &[String]) -> HashMap<&str, usize> {
@@ -438,42 +433,26 @@ fn counts(words: &[String]) -> HashMap<&str, usize> {
     c
 }
 
-/// The Levenshtein distance between two words, by character.
-fn edit_distance(a: &str, b: &str) -> usize {
-    let b: Vec<char> = b.chars().collect();
-    let mut row: Vec<usize> = (0..=b.len()).collect();
-    for (i, ca) in a.chars().enumerate() {
-        let mut prev = row[0];
-        row[0] = i + 1;
-        for (j, &cb) in b.iter().enumerate() {
-            let cur = row[j + 1];
-            row[j + 1] = (prev + usize::from(ca != cb)).min(row[j] + 1).min(cur + 1);
-            prev = cur;
-        }
-    }
-    row[b.len()]
-}
-
-/// The Dice coefficient of two keys' word multisets: from 0, nothing in
-/// common, to 1, the same words.
-fn dice(a: &[String], b: &[String]) -> f64 {
-    if a.is_empty() && b.is_empty() {
+/// The Dice coefficient of two keys' word multisets, from their word
+/// counts and lengths: from 0, nothing in common, to 1, the same words.
+fn dice(a: &HashMap<&str, usize>, a_len: usize, b: &HashMap<&str, usize>, b_len: usize) -> f64 {
+    if a_len + b_len == 0 {
         return 1.0;
     }
-    let mut ca = counts(a);
-    let mut common = 0usize;
-    for w in b {
-        if let Some(n) = ca.get_mut(w.as_str())
-            && *n > 0
-        {
-            *n -= 1;
-            common += 1;
-        }
-    }
+    let (small, large) = if a.len() <= b.len() { (a, b) } else { (b, a) };
+    let common: usize = small
+        .iter()
+        .map(|(w, n)| (*n).min(large.get(w).copied().unwrap_or(0)))
+        .sum();
     #[expect(clippy::cast_precision_loss, reason = "word counts are small")]
-    let score = 2.0 * common as f64 / (a.len() + b.len()) as f64;
+    let score = 2.0 * common as f64 / (a_len + b_len) as f64;
     score
 }
+
+/// How many word lookups one whole diff spends scoring units by
+/// similarity. A section that would take more, or a diff past it, reports
+/// what is left unpaired as added and removed.
+const MAX_SIMILARITY_WORK: usize = 20_000_000;
 
 /// The most unpaired (old, new) unit pairs one section scores by
 /// similarity: a section of 500 statements in each version.
@@ -503,7 +482,18 @@ fn bucket(u: &Unit) -> Bucket<'_> {
 /// Pairs the units of two versions: the same content first, in order, then
 /// the most similar. Returns the pairs, by new index, then the unpaired old
 /// and new indexes.
+#[cfg(test)]
 fn pair(old: &[Unit], new: &[Unit]) -> (Vec<(usize, usize)>, Vec<usize>, Vec<usize>) {
+    pair_within(old, new, &mut MAX_SIMILARITY_WORK.clone())
+}
+
+/// [`pair`], spending at most `work` word lookups on similarity, and
+/// taking what it spends from it.
+fn pair_within(
+    old: &[Unit],
+    new: &[Unit],
+    work: &mut usize,
+) -> (Vec<(usize, usize)>, Vec<usize>, Vec<usize>) {
     let mut old_used = vec![false; old.len()];
     let mut new_used = vec![false; new.len()];
     let mut pairs = Vec::new();
@@ -524,16 +514,39 @@ fn pair(old: &[Unit], new: &[Unit]) -> (Vec<(usize, usize)>, Vec<usize>, Vec<usi
     let left = |used: &[bool]| used.iter().filter(|u| !**u).count();
     // Scoring every pair is quadratic; past a bound, what is left unpaired
     // is reported as added and removed rather than paired by similarity.
-    let bounded = left(&old_used).saturating_mul(left(&new_used)) <= MAX_SIMILARITY_PAIRS;
-    for (i, o) in old
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| bounded && !old_used[*i])
-    {
-        for (j, n) in new.iter().enumerate().filter(|(j, _)| !new_used[*j]) {
-            let score = dice(&o.key, &n.key);
-            if may_pair(o, n) && score >= MIN_SIMILARITY {
-                candidates.push((score, i, j));
+    let mut bounded = left(&old_used).saturating_mul(left(&new_used)) <= MAX_SIMILARITY_PAIRS;
+    let open_old: Vec<usize> = (0..old.len()).filter(|&i| !old_used[i]).collect();
+    let open_new: Vec<usize> = (0..new.len()).filter(|&j| !new_used[j]).collect();
+    if bounded {
+        // A pair costs a lookup per distinct word of its shorter key.
+        let cost: usize = open_old
+            .iter()
+            .flat_map(|&i| open_new.iter().map(move |&j| (i, j)))
+            .filter(|&(i, j)| may_pair(&old[i], &new[j]))
+            .map(|(i, j)| old[i].key.len().min(new[j].key.len()))
+            .sum();
+        bounded = cost <= *work;
+        if bounded {
+            *work -= cost;
+        }
+    }
+    if bounded {
+        let old_counts: Vec<_> = open_old.iter().map(|&i| counts(&old[i].key)).collect();
+        let new_counts: Vec<_> = open_new.iter().map(|&j| counts(&new[j].key)).collect();
+        for (oi, &i) in open_old.iter().enumerate() {
+            for (nj, &j) in open_new.iter().enumerate() {
+                if !may_pair(&old[i], &new[j]) {
+                    continue;
+                }
+                let score = dice(
+                    &old_counts[oi],
+                    old[i].key.len(),
+                    &new_counts[nj],
+                    new[j].key.len(),
+                );
+                if score >= MIN_SIMILARITY {
+                    candidates.push((score, i, j));
+                }
             }
         }
     }
@@ -692,18 +705,38 @@ impl Store {
         let new_sections = self.diff_sections(to.id)?;
         let mut old_used = vec![false; old_sections.len()];
         let mut pairs: Vec<(Option<&Section>, Option<&Section>)> = Vec::new();
-        for n in &new_sections {
-            let i = (0..old_sections.len())
-                .find(|&i| !old_used[i] && old_sections[i].number == n.number)
-                .or_else(|| {
-                    (0..old_sections.len()).find(|&i| {
-                        !old_used[i] && n.anchor.is_some() && old_sections[i].anchor == n.anchor
-                    })
-                });
-            if let Some(i) = i {
+        // An author's anchor (`LogoutToken`) follows a section when a
+        // section inserted before it renumbers it; an anchor made from the
+        // number (`section-2.5`, `rfc.section.2.5`) does not. So sections
+        // pair by authored anchor first, then by number.
+        let authored = |s: &Section| {
+            s.anchor
+                .clone()
+                .filter(|a| !a.contains(s.number.as_str()) && !a.is_empty())
+        };
+        let mut matched: Vec<Option<usize>> = vec![None; new_sections.len()];
+        for (k, n) in new_sections.iter().enumerate() {
+            let Some(anchor) = authored(n) else { continue };
+            if let Some(i) = (0..old_sections.len())
+                .find(|&i| !old_used[i] && authored(&old_sections[i]).as_ref() == Some(&anchor))
+            {
                 old_used[i] = true;
+                matched[k] = Some(i);
             }
-            pairs.push((i.map(|i| &old_sections[i]), Some(n)));
+        }
+        for (k, n) in new_sections.iter().enumerate() {
+            if matched[k].is_some() {
+                continue;
+            }
+            if let Some(i) = (0..old_sections.len())
+                .find(|&i| !old_used[i] && old_sections[i].number == n.number)
+            {
+                old_used[i] = true;
+                matched[k] = Some(i);
+            }
+        }
+        for (k, n) in new_sections.iter().enumerate() {
+            pairs.push((matched[k].map(|i| &old_sections[i]), Some(n)));
         }
         for (i, o) in old_sections.iter().enumerate() {
             if !old_used[i] {
@@ -731,6 +764,7 @@ impl Store {
         let (from_pin, to_pin) = (pinned(from), pinned(to));
         let mut changes = Vec::new();
         let mut reworded = Vec::new();
+        let mut work = MAX_SIMILARITY_WORK;
         for (o, n) in pairs {
             let units = |s: Option<&Section>| {
                 s.map(|s| version_units(&s.text, s.start_line, &s.steps))
@@ -744,7 +778,7 @@ impl Store {
                 None => format!("{pin}#section-{}", s.number),
             };
             let number = n.or(o).map(|s| s.number.clone()).unwrap_or_default();
-            let (paired, removed, added) = pair(&old_units, &new_units);
+            let (paired, removed, added) = pair_within(&old_units, &new_units, &mut work);
             let mut by_new: Vec<(usize, VersionChange)> = Vec::new();
             for (i, j) in paired {
                 let (ou, nu) = (&old_units[i], &new_units[j]);
@@ -978,18 +1012,79 @@ mod tests {
     }
 
     #[test]
-    fn content_keys_drop_punctuation_case_months_and_years() {
+    fn content_keys_drop_punctuation_case_and_reference_tooltips() {
         assert_eq!(
-            unit("REQUIRED. As in [OpenID.Core] (Core 1.0, November 2014.).").key,
-            ["required", "as", "in", "openid", "core", "core", "1", "0"]
+            unit("REQUIRED. As in [OpenID.Core] (Sakimura, N., “Core 1.0,” November 2014.).").key,
+            ["required", "as", "in", "openid", "core"]
+        );
+        // A date outside a tooltip is content.
+        assert_eq!(
+            unit("REQUIRED. As in Core 1.0, November 2014.").key,
+            ["required", "as", "in", "core", "1", "0", "november", "2014"]
         );
     }
 
     #[test]
     fn a_reference_date_is_rewording() {
-        let old = unit("iat\nREQUIRED. Issued at time, per [Core] (Core, November 2014.).");
-        let new = unit("iat\nREQUIRED. Issued at time, per [Core] (Core, December 2023.).");
+        let old = unit(
+            "iat\nREQUIRED. Issued at time, per [Core] (Sakimura, “Core 1.0,” November 2014.).",
+        );
+        let new = unit(
+            "iat\nREQUIRED. Issued at time, per [Core] (Sakimura, “Core 1.0,” December 2023.).",
+        );
         assert_eq!(classify(&old, &new), Some("reworded"));
+    }
+
+    #[test]
+    fn a_date_or_number_in_a_rule_is_a_change() {
+        let old = unit("Clients MUST NOT use it after January 2025.");
+        let new = unit("Clients MUST NOT use it after January 2026.");
+        assert_eq!(classify(&old, &new), Some("changed"));
+        let old = unit("It MUST hold (the “expires_in” value MUST NOT exceed 3600.)");
+        let new = unit("It MUST hold (the “expires_in” value MUST NOT exceed 7200.)");
+        assert_eq!(classify(&old, &new), Some("changed"));
+    }
+
+    #[test]
+    fn only_a_doubled_letter_or_a_transposition_is_a_spelling_fix() {
+        for (old, new, change) in [
+            (
+                "The error that occured MUST be named.",
+                "The error that occurred MUST be named.",
+                "reworded",
+            ),
+            (
+                "The RP MUST recieve it.",
+                "The RP MUST receive it.",
+                "reworded",
+            ),
+            (
+                "The issuer MUST be named.",
+                "The issued MUST be named.",
+                "changed",
+            ),
+            (
+                "It MUST be passed inline.",
+                "It MUST be passed online.",
+                "changed",
+            ),
+            (
+                "The client MUST enable it.",
+                "The client MUST unable it.",
+                "changed",
+            ),
+            (
+                "The server MUST sign it.",
+                "The sever MUST sign it.",
+                "changed",
+            ),
+        ] {
+            assert_eq!(
+                classify(&unit(old), &unit(new)),
+                Some(change),
+                "{old} → {new}"
+            );
+        }
     }
 
     #[test]
@@ -1227,8 +1322,8 @@ mod tests {
         _dir: tempfile::TempDir,
     }
 
-    const OLD_2_4: &str = "2.4. Logout Token\n\nsub\nOPTIONAL. Subject, November 2014.\niat\nREQUIRED. Issued at, November 2014.\n\nLogout Tokens MAY contain other Claims.";
-    const NEW_2_4: &str = "2.4. Logout Token\n\nsub\nREQUIRED. Subject, December 2023.\niat\nREQUIRED. Issued at, December 2023.\nexp\nREQUIRED. Expiration time, December 2023.";
+    const OLD_2_4: &str = "2.4. Logout Token\n\nsub\nOPTIONAL. Subject, [Core] (S., “Core,” November 2014.).\niat\nREQUIRED. Issued at, [Core] (S., “Core,” November 2014.).\n\nLogout Tokens MAY contain other Claims.";
+    const NEW_2_4: &str = "2.4. Logout Token\n\nsub\nREQUIRED. Subject, [Core] (S., “Core,” December 2023.).\niat\nREQUIRED. Issued at, [Core] (S., “Core,” December 2023.).\nexp\nREQUIRED. Expiration time, [Core] (S., “Core,” December 2023.).";
 
     /// Back-Channel Logout at two versions: §2.4 changed, §2.5 the same,
     /// §2.9 only in the new one and §2.10 only in the old.
@@ -1298,13 +1393,13 @@ mod tests {
             [
                 (
                     "strength_changed",
-                    Some("sub\nOPTIONAL. Subject, November 2014."),
-                    Some("sub\nREQUIRED. Subject, December 2023.")
+                    Some("sub\nOPTIONAL. Subject, [Core] (S., “Core,” November 2014.)."),
+                    Some("sub\nREQUIRED. Subject, [Core] (S., “Core,” December 2023.).")
                 ),
                 (
                     "added",
                     None,
-                    Some("exp\nREQUIRED. Expiration time, December 2023.")
+                    Some("exp\nREQUIRED. Expiration time, [Core] (S., “Core,” December 2023.).")
                 ),
                 (
                     "removed",
@@ -1569,6 +1664,77 @@ mod tests {
         let (pairs, old_left, new_left) = pair(&old, &new);
         assert_eq!(pairs.len() + old_left.len(), 3000);
         assert_eq!(pairs.len() + new_left.len(), 3000);
+        assert!(started.elapsed().as_secs() < 5, "{:?}", started.elapsed());
+    }
+
+    #[test]
+    fn sections_pair_by_their_authors_anchor_before_their_number() {
+        let chunk = |number: &'static str, anchor: &'static str, start: u32, text: &'static str| {
+            ChunkRecord {
+                anchor: Some(anchor),
+                ..section(number, start, text)
+            }
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open_read_write(&dir.path().join("moved.db")).unwrap();
+        write(
+            &mut store,
+            OLD,
+            false,
+            vec![
+                chunk("2.4", "LogoutToken", 1, "2.4. Token\n\nIt MUST be signed."),
+                chunk(
+                    "2.5",
+                    "BCRequest",
+                    10,
+                    "2.5. Request\n\nThe OP MUST POST it.",
+                ),
+            ],
+        );
+        write(
+            &mut store,
+            NEW,
+            true,
+            vec![
+                chunk("2.4", "LogoutToken", 1, "2.4. Token\n\nIt MUST be signed."),
+                chunk("2.5", "Inserted", 10, "2.5. New\n\nThe RP SHOULD log it."),
+                chunk(
+                    "2.6",
+                    "BCRequest",
+                    20,
+                    "2.6. Request\n\nThe OP MUST POST it.",
+                ),
+                chunk("2.7", "rfc.section.2.7", 30, "2.7. Plain\n\nX MAY."),
+            ],
+        );
+        store.set_indexed_at(30).unwrap();
+        let d = store.diff(DOC, &DiffOptions::default()).unwrap();
+        let changes: Vec<(&str, &str)> = d
+            .changes
+            .iter()
+            .map(|c| (c.change.as_str(), c.section.as_str()))
+            .collect();
+        assert_eq!(
+            changes,
+            [("added", "2.5"), ("added", "2.7")],
+            "{:#?}",
+            d.changes
+        );
+    }
+
+    #[test]
+    fn long_similar_units_pair_in_bounded_work() {
+        let words: String = (0..2000).map(|i| format!("w{i} ")).collect();
+        let old: Vec<Unit> = (0..400)
+            .map(|i| unit(&format!("The client MUST {words} old{i}.")))
+            .collect();
+        let new: Vec<Unit> = (0..400)
+            .map(|i| unit(&format!("The client MUST {words} new{i}.")))
+            .collect();
+        let started = std::time::Instant::now();
+        let (pairs, old_left, new_left) = pair(&old, &new);
+        assert_eq!(pairs.len() + old_left.len(), 400);
+        assert_eq!(pairs.len() + new_left.len(), 400);
         assert!(started.elapsed().as_secs() < 5, "{:?}", started.elapsed());
     }
 
