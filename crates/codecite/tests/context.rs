@@ -35,7 +35,7 @@ impl Demo {
         fs::write(
             work.join("corpora/demo.toml"),
             "name = \"demo\"\n\n[[source]]\nkind = \"guidance\"\nname = \"house-rules\"\n\
-             path = \"RULES.md\"\nuse = \"quote\"\naliases = [\"House Rules\"]\n",
+             path = \"../RULES.md\"\nuse = \"quote\"\naliases = [\"House Rules\"]\n",
         )
         .unwrap();
         // A repository is any directory holding `.git`.

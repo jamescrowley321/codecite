@@ -65,6 +65,10 @@ pub fn imports(language: Language, text: &str) -> Vec<String> {
                         block = false;
                     } else if let Some(c) = GO_SPEC.captures(line) {
                         push(&c[1]);
+                        // `"os")` ends the block on its last spec's line.
+                        block = !line[c.get(0).map_or(0, |m| m.end())..]
+                            .trim_start()
+                            .starts_with(')');
                     }
                 } else if let Some(rest) = line.strip_prefix("import") {
                     let rest = rest.trim_start();
@@ -215,6 +219,8 @@ mod tests {
         let text = "import (\"fmt\"; h \"net/http\")\nfunc f() string {\n\treturn \"ok\"\n}\n";
         assert_eq!(imports(Language::Go, text), ["fmt", "net/http"]);
         assert!(imports(Language::Go, "import ()\nx \"y\"\n").is_empty());
+        let last = "import (\n\t\"fmt\"\n\t\"os\")\nfunc f() string {\n\treturn \"ok\"\n}\n";
+        assert_eq!(imports(Language::Go, last), ["fmt", "os"]);
     }
 
     #[test]

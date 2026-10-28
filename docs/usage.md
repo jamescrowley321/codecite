@@ -76,7 +76,7 @@ imports = ["requests", "httpx"]
 | `use` | all, required | `adapt`, `approach_only`, `quote` or `excluded` |
 | `license` | all | The license, as people write it |
 | `name` | all; required for documents and guidance | Defaults to the checkout's directory or the URL's last segment |
-| `path` | `local`, `guidance` | The top of a git work tree, or a guidance Markdown file; `~` expands |
+| `path` | `local`, `guidance` | The top of a git work tree, or a guidance Markdown file (a relative one starts at the manifest's directory); `~` expands |
 | `url`, `commit` | `git` | The repository and a 40-character lowercase commit |
 | `include`, `exclude` | `local`, `git` | Globs over paths |
 | `url`, `sha256` | `document`, `guidance` | The page and the 64-character lowercase hash of its bytes; a guidance source has `url` and `sha256`, or `path` with an optional `sha256` |
@@ -123,14 +123,16 @@ Handlers MUST NOT call a partner with a raw HTTP client; use `partner_client`.
   the title, not a rule. When more than half of the other headings start
   with a number (`## 3 Settings`, `## 3.1. Reads`), only numbered headings
   are rules, numbered as written, and an unnumbered heading holding a
-  requirement keyword stops the run, so no rule is dropped unseen.
+  requirement keyword stops the run, so no rule is dropped unseen, and so
+  does a number two rules with keywords both write.
   Otherwise every heading is a rule, numbered by the outline (1, 1.1, 2, …). A rule cites like a spec section:
   `house-rules@sha256:1a2b3c4d5e6f#section-4`, or `House Rules §4`.
 - **Scope.** A rule applies to a file when the file matches every field its
   scope sets: `paths`, globs from the repository's root where `*` stays in
   one directory and `**` crosses them; `languages`, as codecite names them
   (`python`, `typescript`, `tsx`, `javascript`, `rust`, `go`, `csharp`,
-  `markdown`); and `imports`, modules the file imports, each covering the
+  `markdown`; `.tsx` files are `tsx`, and any other name stops the run);
+  and `imports`, modules the file imports, each covering the
   modules inside it (`requests` covers `requests.adapters`, not
   `requests_oauthlib`). A field matches when any of its values does.
 - **Where a scope comes from:** the manifest's `rules."<n>"`, else the
@@ -141,9 +143,13 @@ Handlers MUST NOT call a partner with a raw HTTP client; use `partner_client`.
   agent on every edit, so treat a guidance file like code that runs: keep it
   where only its maintainers can change it, and pin it (`sha256`, with
   `path` or `url`) when others can, so a changed rule stops the index run
-  until someone reviews it and moves the pin. codecite presents rules as
-  coding conventions, never as permission to run commands, fetch URLs or
-  handle secrets.
+  until someone reviews it and moves the pin. `codecite index` names every
+  unpinned `path` guidance in its summary. A guidance document may not hide
+  text: a character that renders as nothing (zero-width, bidi or tag
+  characters) or an HTML comment other than a rule's scope comment, outside
+  fenced or inline code, stops the run. codecite presents rules as coding
+  conventions, never as permission to run commands, fetch URLs or handle
+  secrets.
 
 Rules are indexed as spec sections, so `search`, `grep`, `read` and `cite`
 work on them unchanged. A guidance file read from `path` is hashed at every

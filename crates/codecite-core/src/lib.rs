@@ -17,6 +17,9 @@ pub use error::{Error, Result};
 mod imports;
 pub use imports::{imports, imports_dependency};
 
+mod invisible;
+pub use invisible::is_invisible_format;
+
 mod language;
 pub use language::Language;
 

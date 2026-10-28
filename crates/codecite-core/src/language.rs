@@ -23,6 +23,24 @@ pub enum Language {
 }
 
 impl Language {
+    /// Every language, in the order [`Language::name`] lists them.
+    pub const ALL: [Language; 8] = [
+        Self::Rust,
+        Self::Python,
+        Self::TypeScript,
+        Self::Tsx,
+        Self::JavaScript,
+        Self::Go,
+        Self::CSharp,
+        Self::Markdown,
+    ];
+
+    /// The language stored as `name` (`python`, `tsx`), or `None` for any
+    /// other name.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|l| l.name() == name)
+    }
+
     /// Detects the language of `path` from its extension, or, for a file
     /// with no known extension, from the shebang on the first line of `text`.
     pub fn detect(path: &str, text: &str) -> Option<Self> {

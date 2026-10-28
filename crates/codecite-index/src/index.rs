@@ -40,6 +40,9 @@ pub struct IndexSummary {
     pub skipped_sources: Vec<(String, &'static str)>,
     /// Sources deleted from the store because the run did not index them.
     pub removed_sources: Vec<String>,
+    /// Guidance read from a `path` with no `sha256` pin, whose rules reach
+    /// agents whatever the file says now.
+    pub unpinned_guidance: Vec<String>,
     /// How long the run took.
     pub elapsed: Duration,
 }
@@ -108,6 +111,9 @@ pub fn index_corpus(
                 source,
             })?;
             let revision = crate::fetch::hex(&Sha256::digest(&bytes));
+            if rules.sha256.is_none() {
+                summary.unpinned_guidance.push(rules.name.clone());
+            }
             if let Some(pinned) = rules.sha256.as_ref().filter(|p| **p != revision) {
                 return Err(Error::GuidanceChanged {
                     name: rules.name.clone(),
@@ -505,10 +511,10 @@ fn index_guidance(
         }
     }
     for rule in &split {
-        if let Some(Err((glob, message))) = rule.scope.as_ref().map(RuleScope::check) {
+        if let Some(Err(message)) = rule.scope.as_ref().map(RuleScope::check) {
             return Err(guidance_error(GuidanceError::Scope {
                 number: rule.section.number.clone(),
-                message: format!("invalid glob {glob:?}: {message}"),
+                message,
             }));
         }
     }
@@ -658,6 +664,12 @@ impl fmt::Display for IndexSummary {
         }
         for name in &self.removed_sources {
             writeln!(f, "source {name} removed: the run no longer indexes it")?;
+        }
+        for name in &self.unpinned_guidance {
+            writeln!(
+                f,
+                "guidance {name} is not pinned: give it a sha256 so a changed rule stops the run until it is reviewed"
+            )?;
         }
         write!(f, "elapsed: {:.2}s", self.elapsed.as_secs_f64())
     }
@@ -895,6 +907,13 @@ mod tests {
         );
         let summary = corpus.index(&manifest(vec![Source::Guidance(rules.clone())]));
         assert_eq!((summary.written, summary.chunks), (1, 4));
+        assert_eq!(summary.unpinned_guidance, ["house-rules"]);
+        assert!(
+            summary
+                .to_string()
+                .contains("guidance house-rules is not pinned"),
+            "{summary}"
+        );
 
         // §1's comment, inherited by §1.1, the manifest's rule for §2 and
         // the default for §3.
@@ -993,7 +1012,8 @@ mod tests {
         let file = corpus.dir.path().join("RULES.md");
         std::fs::write(&file, RULES).unwrap();
         let mut rules = guidance(Some(file.clone()), None, Some(sha256(RULES)));
-        corpus.index(&manifest(vec![Source::Guidance(rules.clone())]));
+        let summary = corpus.index(&manifest(vec![Source::Guidance(rules.clone())]));
+        assert!(summary.unpinned_guidance.is_empty());
         std::fs::write(&file, RULES.replace("SHOULD", "MUST")).unwrap();
         let err = corpus
             .try_index(&manifest(vec![Source::Guidance(rules.clone())]))
@@ -1651,6 +1671,7 @@ mod tests {
             skipped: BTreeMap::from([(SkipReason::Ignored, 3), (SkipReason::Binary, 1)]),
             skipped_sources: vec![("client".into(), "use = \"excluded\"")],
             removed_sources: vec!["old".into()],
+            unpinned_guidance: vec!["rules".into()],
             elapsed: Duration::from_millis(1250),
         };
         assert_eq!(
@@ -1661,6 +1682,7 @@ mod tests {
              skipped: 3 ignored, 1 binary\n\
              source client not indexed: use = \"excluded\"\n\
              source old removed: the run no longer indexes it\n\
+             guidance rules is not pinned: give it a sha256 so a changed rule stops the run until it is reviewed\n\
              elapsed: 1.25s"
         );
     }

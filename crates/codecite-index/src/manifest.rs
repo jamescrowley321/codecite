@@ -250,16 +250,15 @@ pub enum ManifestError {
         source_name: String,
     },
 
-    /// A scope glob does not compile.
-    #[error("source {source_name}: invalid glob {glob:?} in `{field}`: {message}")]
-    Glob {
+    /// A scope glob does not compile, or a scope names a language codecite
+    /// doesn't detect.
+    #[error("source {source_name}: in `{field}`, {message}")]
+    Scope {
         /// The source's label: its name, URL or path, else its position.
         source_name: String,
         /// `scope`, or `rules."<number>"`.
         field: String,
-        /// The glob as written.
-        glob: String,
-        /// What `globset` rejected.
+        /// What is wrong, naming the glob or language.
         message: String,
     },
 
@@ -323,9 +322,21 @@ impl Manifest {
         })
     }
 
-    /// Reads and parses the manifest at `path`.
+    /// Reads and parses the manifest at `path`. A guidance source's
+    /// relative `path` is resolved against the manifest's directory, so the
+    /// rules it names don't depend on where `codecite index` runs.
     pub fn load(path: &Path) -> crate::Result<Self> {
-        Ok(Self::parse(&std::fs::read_to_string(path)?)?)
+        let mut manifest = Self::parse(&std::fs::read_to_string(path)?)?;
+        let dir = path.parent().unwrap_or(Path::new(""));
+        for source in &mut manifest.sources {
+            if let Source::Guidance(rules) = source
+                && let Some(file) = &mut rules.path
+                && file.is_relative()
+            {
+                *file = dir.join(&*file);
+            }
+        }
+        Ok(manifest)
     }
 }
 
@@ -406,14 +417,11 @@ fn parse_source(
                     .map(|(n, scope)| (format!("rules.\"{n}\""), scope)),
             );
             for (field, scope) in scopes {
-                scope
-                    .check()
-                    .map_err(|(glob, message)| ManifestError::Glob {
-                        source_name: source_name.clone(),
-                        field,
-                        glob,
-                        message,
-                    })?;
+                scope.check().map_err(|message| ManifestError::Scope {
+                    source_name: source_name.clone(),
+                    field,
+                    message,
+                })?;
             }
         }
         _ => {}
@@ -663,6 +671,33 @@ updated_by = "openid-connect-core-1_0-errata2"
         std::fs::remove_file(&path).unwrap();
         assert_eq!(m.name, "from-file");
 
+        // A relative guidance path starts at the manifest's directory.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("corpora/g.toml");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            "name = \"g\"\n[[source]]\nkind = \"guidance\"\nname = \"r\"\npath = \"../RULES.md\"\nuse = \"quote\"\n\
+             [[source]]\nkind = \"guidance\"\nname = \"a\"\npath = \"/abs/RULES.md\"\nuse = \"quote\"\n",
+        )
+        .unwrap();
+        let m = Manifest::load(&path).unwrap();
+        let paths: Vec<PathBuf> = m
+            .sources
+            .iter()
+            .map(|s| match s {
+                Source::Guidance(g) => g.path.clone().unwrap(),
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                dir.path().join("corpora/../RULES.md"),
+                PathBuf::from("/abs/RULES.md")
+            ]
+        );
+
         let err = Manifest::load(Path::new("/nonexistent/codecite.toml")).unwrap_err();
         assert!(matches!(err, crate::Error::Io(_)), "{err:?}");
     }
@@ -852,7 +887,16 @@ updated_by = "openid-connect-core-1_0-errata2"
         .unwrap_err();
         assert!(
             err.to_string()
-                .starts_with("source `g`: invalid glob \"a/[\" in `scope`"),
+                .starts_with("source `g`: in `scope`, invalid glob \"a/[\""),
+            "{err}"
+        );
+        let err = Manifest::parse(&manifest(&format!(
+            "{base}[source.rules.\"2\"]\nlanguages = [\"c#\"]\n"
+        )))
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .starts_with("source `g`: in `rules.\"2\"`, unknown language \"c#\""),
             "{err}"
         );
         let err =

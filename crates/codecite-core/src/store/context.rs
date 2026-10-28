@@ -37,7 +37,8 @@ pub struct RuleScope {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub paths: Vec<String>,
     /// Language names, as codecite detects them: `python`, `typescript`,
-    /// `tsx`, `javascript`, `rust`, `go`, `csharp`, `markdown`.
+    /// `tsx`, `javascript`, `rust`, `go`, `csharp`, `markdown`. `.tsx` files
+    /// are `tsx`, not `typescript`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub languages: Vec<String>,
     /// Modules the file imports, each covering the modules inside it:
@@ -52,11 +53,21 @@ impl RuleScope {
         self.paths.is_empty() && self.languages.is_empty() && self.imports.is_empty()
     }
 
-    /// Checks every glob, so a bad one stops an index run instead of
-    /// matching nothing later. Returns the first that doesn't compile.
-    pub fn check(&self) -> std::result::Result<(), (String, String)> {
+    /// Checks every glob and language, so a bad one stops an index run
+    /// instead of matching nothing later. Returns what is wrong with the
+    /// first that doesn't compile or names no language codecite detects.
+    pub fn check(&self) -> std::result::Result<(), String> {
         for glob in &self.paths {
-            matcher(glob).map_err(|e| (glob.clone(), e.to_string()))?;
+            matcher(glob).map_err(|e| format!("invalid glob {glob:?}: {e}"))?;
+        }
+        for language in &self.languages {
+            if Language::from_name(language).is_none() {
+                let names: Vec<&str> = Language::ALL.iter().map(|l| l.name()).collect();
+                return Err(format!(
+                    "unknown language {language:?}; use one of {}",
+                    names.join(", ")
+                ));
+            }
         }
         Ok(())
     }
@@ -73,7 +84,7 @@ impl RuleScope {
             || target
                 .language
                 .as_ref()
-                .is_some_and(|l| self.languages.iter().any(|s| s.eq_ignore_ascii_case(l)));
+                .is_some_and(|l| self.languages.iter().any(|s| s == l));
         let import = self.imports.is_empty()
             || self
                 .imports
@@ -141,11 +152,7 @@ impl ContextTarget {
         } else {
             shown.join("/")
         };
-        let on_disk = std::fs::metadata(&absolute)
-            .ok()
-            .filter(|m| m.is_file() && m.len() <= MAX_INSPECTED_BYTES)
-            .and_then(|_| std::fs::read(&absolute).ok())
-            .and_then(|bytes| String::from_utf8(bytes).ok());
+        let on_disk = read_capped(&absolute);
         Ok(Self::describe(path, on_disk.as_deref(), content))
     }
 
@@ -171,6 +178,27 @@ impl ContextTarget {
             imports: found,
         }
     }
+}
+
+/// The text of the regular file at `path` when it is UTF-8 and at most
+/// [`MAX_INSPECTED_BYTES`]. The read itself stops past the cap, so a file
+/// that grows after its size is checked, or a pseudo-file that reports no
+/// size, can't make it read more.
+fn read_capped(path: &Path) -> Option<String> {
+    use std::io::Read as _;
+
+    let file = std::fs::File::open(path).ok()?;
+    if !file.metadata().ok()?.is_file() {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_INSPECTED_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() as u64 > MAX_INSPECTED_BYTES {
+        return None;
+    }
+    String::from_utf8(bytes).ok()
 }
 
 /// `path` with `.` and `..` resolved by name, without touching the disk.
@@ -813,13 +841,40 @@ mod tests {
     }
 
     #[test]
-    fn a_bad_glob_fails_the_check() {
+    fn a_bad_glob_or_language_fails_the_check() {
         let scope = RuleScope {
             paths: vec!["app/[".into()],
             ..RuleScope::default()
         };
-        assert_eq!(scope.check().unwrap_err().0, "app/[");
+        assert!(
+            scope
+                .check()
+                .unwrap_err()
+                .starts_with("invalid glob \"app/[\"")
+        );
+        let scope = RuleScope {
+            languages: vec!["python".into(), "pyhton".into()],
+            ..RuleScope::default()
+        };
+        assert_eq!(
+            scope.check().unwrap_err(),
+            "unknown language \"pyhton\"; use one of rust, python, typescript, tsx, javascript, go, csharp, markdown"
+        );
         assert!(RuleScope::default().check().is_ok());
+    }
+
+    #[test]
+    fn a_file_over_the_cap_is_not_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let big = dir.path().join("big.py");
+        let mut text = "import requests\n".to_owned();
+        text.push_str(&"#".repeat(MAX_INSPECTED_BYTES as usize));
+        std::fs::write(&big, text).unwrap();
+        assert_eq!(read_capped(&big), None);
+        let small = dir.path().join("small.py");
+        std::fs::write(&small, "import requests\n").unwrap();
+        assert_eq!(read_capped(&small).as_deref(), Some("import requests\n"));
+        assert_eq!(read_capped(dir.path()), None);
     }
 
     #[test]

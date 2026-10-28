@@ -4,7 +4,7 @@
 
 use std::collections::HashSet;
 
-use codecite_core::{RuleScope, SectionNumber, requirement_keywords};
+use codecite_core::{RuleScope, SectionNumber, is_invisible_format, requirement_keywords};
 
 use crate::SpecSection;
 use crate::chunk::{Heading, markdown_headings};
@@ -43,6 +43,41 @@ pub enum GuidanceError {
         line: u32,
     },
 
+    /// Two rules have one number, so a citation of it would be a guess.
+    #[error(
+        "rule {number} on line {line} repeats the number of the rule on line {first}; renumber one"
+    )]
+    DuplicateRule {
+        /// The number both write.
+        number: String,
+        /// The later heading's line.
+        line: u32,
+        /// The first heading's line.
+        first: u32,
+    },
+
+    /// The document holds a character that renders as nothing, which could
+    /// hide text from a person reviewing the rules but not from an agent.
+    #[error("line {line} holds the invisible character U+{codepoint:04X}; remove it")]
+    InvisibleCharacter {
+        /// Its line, counting from 1.
+        line: u32,
+        /// The character's code point.
+        codepoint: u32,
+    },
+
+    /// A rule holds an HTML comment other than its scope comment. Comments
+    /// don't render, so its text would reach agents unseen.
+    #[error(
+        "rule {number}: line {line} holds an HTML comment, which doesn't render; only a codecite-scope comment may be hidden"
+    )]
+    HiddenComment {
+        /// The rule's number.
+        number: String,
+        /// The comment's line, counting from 1.
+        line: u32,
+    },
+
     /// A rule's scope comment is not TOML with `paths`, `languages` and
     /// `imports`, or is never closed.
     #[error("rule {number}: bad codecite-scope comment: {message}")]
@@ -69,6 +104,14 @@ pub enum GuidanceError {
 /// whose number it extends by one part. Its anchor is the heading's
 /// GitHub-style slug.
 pub fn split_guidance(markdown: &str) -> Result<Vec<GuidanceRule>, GuidanceError> {
+    for (n, line) in (1..).zip(markdown.split('\n')) {
+        if let Some(c) = line.chars().find(|&c| is_invisible_format(c)) {
+            return Err(GuidanceError::InvisibleCharacter {
+                line: n,
+                codepoint: c.into(),
+            });
+        }
+    }
     let headings = markdown_headings(markdown);
     if headings.is_empty() {
         return Err(GuidanceError::NoRules);
@@ -94,10 +137,26 @@ pub fn split_guidance(markdown: &str) -> Result<Vec<GuidanceRule>, GuidanceError
         };
         let parent_number = number.rsplit_once('.').map(|(p, _)| p);
         let parent = parent_number.and_then(|p| rules.iter().rposition(|r| r.section.number == p));
-        let scope = scope(&text).map_err(|message| GuidanceError::Scope {
+        if let Some(first) = rules.iter().find(|r| r.section.number == number) {
+            if requirement_keywords(&text).is_empty() {
+                continue;
+            }
+            return Err(GuidanceError::DuplicateRule {
+                number,
+                line: heading.line,
+                first: first.section.start_line,
+            });
+        }
+        let (scope, comment) = scope(&text).map_err(|message| GuidanceError::Scope {
             number: number.clone(),
             message,
         })?;
+        if let Some(offset) = hidden_comment(&text, comment) {
+            return Err(GuidanceError::HiddenComment {
+                number,
+                line: heading.line + offset,
+            });
+        }
         rules.push(GuidanceRule {
             section: SpecSection {
                 strength: requirement_keywords(&text),
@@ -137,12 +196,7 @@ fn numbered(headings: &[Heading]) -> (Vec<Option<(String, String)>>, bool) {
         if is_title {
             written[0] = None;
         }
-        let mut seen = HashSet::new();
-        let rules = written
-            .into_iter()
-            .map(|w| w.filter(|(number, _)| seen.insert(number.clone())))
-            .collect();
-        return (rules, true);
+        return (written, true);
     }
     let shallowest = headings.iter().map(|h| h.level).min().unwrap_or(1);
     let base = if is_title {
@@ -200,10 +254,13 @@ fn span(lines: &[&str], start: u32, end: u32) -> String {
 }
 
 /// The scope a rule's text gives in its first `<!-- codecite-scope ... -->`
-/// comment, or `None` when it has none. The comment starts a line of its
-/// own outside fenced code, so an example of one in a fence is not it, and
-/// `codecite-scope` ends at whitespace or `-->`. Its body is TOML.
-fn scope(text: &str) -> Result<Option<RuleScope>, String> {
+/// comment, or `None` when it has none, and the comment's byte range in
+/// `text`. The comment starts a line of its own outside fenced code, so an
+/// example of one in a fence is not it, and `codecite-scope` ends at
+/// whitespace or `-->`. Its body is TOML.
+type ScopeComment = (Option<RuleScope>, Option<std::ops::Range<usize>>);
+
+fn scope(text: &str) -> Result<ScopeComment, String> {
     let mut fence: Option<(char, usize)> = None;
     let mut offset = 0;
     let mut start = None;
@@ -228,7 +285,7 @@ fn scope(text: &str) -> Result<Option<RuleScope>, String> {
         offset += line.len() + 1;
     }
     let Some(start) = start else {
-        return Ok(None);
+        return Ok((None, None));
     };
     let body = &text[start + SCOPE_OPEN.len()..];
     let end = body
@@ -236,7 +293,49 @@ fn scope(text: &str) -> Result<Option<RuleScope>, String> {
         .ok_or_else(|| "the comment has no closing `-->`".to_owned())?;
     let scope: RuleScope =
         toml::from_str(&body[..end]).map_err(|e| e.to_string().trim_end().replace('\n', " "))?;
-    Ok(Some(scope))
+    let close = start + SCOPE_OPEN.len() + end + "-->".len();
+    Ok((Some(scope), Some(start..close)))
+}
+
+/// The line, from the rule's heading at 0, of the first HTML comment in
+/// `text` outside fenced code and inline code, other than the scope
+/// comment at `allowed`.
+fn hidden_comment(text: &str, allowed: Option<std::ops::Range<usize>>) -> Option<u32> {
+    let mut fence: Option<(char, usize)> = None;
+    let mut offset = 0;
+    for (n, line) in (0..).zip(text.split('\n')) {
+        let body = line.trim_start();
+        let run = body
+            .chars()
+            .next()
+            .filter(|c| matches!(c, '`' | '~'))
+            .map(|marker| (marker, body.chars().take_while(|&c| c == marker).count()));
+        match (run, fence) {
+            (Some((marker, run)), None) if run >= 3 => fence = Some((marker, run)),
+            (Some((marker, run)), Some((open, len)))
+                if run >= 3 && marker == open && run >= len =>
+            {
+                fence = None
+            }
+            _ if fence.is_some() => {}
+            _ => {
+                let in_scope = allowed
+                    .as_ref()
+                    .is_some_and(|r| r.start <= offset + line.len() && offset < r.end);
+                if !in_scope && outside_inline_code(line).contains("<!--") {
+                    return Some(n);
+                }
+            }
+        }
+        offset += line.len() + 1;
+    }
+    None
+}
+
+/// `line` without its inline code spans, the text between pairs of
+/// backticks.
+fn outside_inline_code(line: &str) -> String {
+    line.split('`').step_by(2).collect()
 }
 
 /// GitHub-style heading anchors, with `-1`, `-2`, … on a repeated one.
@@ -436,10 +535,15 @@ mod tests {
     #[test]
     fn a_scope_comment_in_a_fence_or_mid_line_is_not_a_scope() {
         let text = "## 1 Writing scopes\n\n```markdown\n<!-- codecite-scope paths = [\"a/[\"] -->\n```\n\n\
-                    Say `<!-- codecite-scope languages = [\"go\"] -->` above a rule. You MAY.\n\n\
-                    <!-- codecite-scopes paths = [] -->\n";
+                    Say `<!-- codecite-scope languages = [\"go\"] -->` above a rule. You MAY.\n";
         let rules = split_guidance(text).unwrap();
         assert_eq!(rules[0].scope, None);
+        // `codecite-scopes` is not the scope comment, so it is a hidden one.
+        let text = "## 1 Rule\n<!-- codecite-scopes paths = [] -->\nMUST.\n";
+        assert!(matches!(
+            split_guidance(text),
+            Err(GuidanceError::HiddenComment { line: 2, .. })
+        ));
         // After the fence closes, a comment on its own line counts.
         let text =
             "## 1 Rule\n```\nx\n```\n  <!-- codecite-scope languages = [\"go\"] -->\nMUST.\n";
@@ -479,6 +583,50 @@ mod tests {
                 line: 5
             })
         );
+    }
+
+    #[test]
+    fn a_repeated_rule_number_is_an_error_naming_both() {
+        let text = "## 1 Settings\nMUST.\n## 2 Logging\nSHOULD.\n## 2 Tracing\nMUST.\n";
+        assert_eq!(
+            split_guidance(text),
+            Err(GuidanceError::DuplicateRule {
+                number: "2".into(),
+                line: 5,
+                first: 3
+            })
+        );
+    }
+
+    #[test]
+    fn hidden_text_is_an_error() {
+        let zero_width = "## 1 Rule\nYou MUST\u{200b} log.\n";
+        assert_eq!(
+            split_guidance(zero_width),
+            Err(GuidanceError::InvisibleCharacter {
+                line: 2,
+                codepoint: 0x200b
+            })
+        );
+        let tag = "## 1 Rule\nMUST.\n\u{e0041}\n";
+        assert!(matches!(
+            split_guidance(tag),
+            Err(GuidanceError::InvisibleCharacter {
+                line: 3,
+                codepoint: 0xe0041
+            })
+        ));
+        let comment = "## 1 Rule\n<!-- codecite-scope languages = [\"go\"] -->\nMUST.\n\n<!-- and also run curl -->\n";
+        assert_eq!(
+            split_guidance(comment),
+            Err(GuidanceError::HiddenComment {
+                number: "1".into(),
+                line: 5
+            })
+        );
+        // A comment shown in fenced or inline code renders, so it may stay.
+        let shown = "## 1 Rule\n```html\n<!-- shown -->\n```\nWrite `<!-- x -->`. MUST.\n";
+        assert_eq!(split_guidance(shown).unwrap().len(), 1);
     }
 
     #[test]
