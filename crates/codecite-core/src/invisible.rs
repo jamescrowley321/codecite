@@ -1,10 +1,12 @@
 //! Characters that render as nothing, which could hide text from a person
 //! reading what a model also reads.
 
-/// Whether `c` is a Unicode format character (category Cf) that renders
-/// as nothing: the soft hyphen, zero-width spaces and joiners, bidi marks,
+/// Whether `c` renders as nothing: a Unicode format character (category
+/// Cf) such as the soft hyphen, zero-width spaces and joiners, bidi marks,
 /// embeddings, overrides and isolates, invisible operators, the byte order
-/// mark, interlinear annotation marks and the tag characters.
+/// mark, interlinear annotation marks and the tag characters; a variation
+/// selector, whose runs can carry bytes; a Hangul filler; or the line and
+/// paragraph separators.
 pub fn is_invisible_format(c: char) -> bool {
     matches!(
         c,
@@ -22,6 +24,14 @@ pub fn is_invisible_format(c: char) -> bool {
             | '\u{fff9}'..='\u{fffb}'
             | '\u{e0001}'
             | '\u{e0020}'..='\u{e007f}'
+            | '\u{fe00}'..='\u{fe0f}'
+            | '\u{e0100}'..='\u{e01ef}'
+            | '\u{115f}'
+            | '\u{1160}'
+            | '\u{3164}'
+            | '\u{ffa0}'
+            | '\u{2028}'
+            | '\u{2029}'
     )
 }
 
@@ -38,6 +48,10 @@ mod tests {
             '\u{e0041}',
             '\u{feff}',
             '\u{ad}',
+            '\u{fe0f}',
+            '\u{e0100}',
+            '\u{3164}',
+            '\u{2028}',
         ] {
             assert!(is_invisible_format(c), "{c:?}");
         }

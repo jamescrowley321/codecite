@@ -132,12 +132,14 @@ Handlers MUST NOT call a partner with a raw HTTP client; use `partner_client`.
   one directory and `**` crosses them; `languages`, as codecite names them
   (`python`, `typescript`, `tsx`, `javascript`, `rust`, `go`, `csharp`,
   `markdown`; `.tsx` files are `tsx`, and any other name stops the run);
-  and `imports`, modules the file imports, each covering the
-  modules inside it (`requests` covers `requests.adapters`, not
-  `requests_oauthlib`). A field matches when any of its values does.
+  and `imports`, modules the file imports, each covering the modules
+  inside it by the language's separator: `.` in Python and C# (`requests`
+  covers `requests.adapters`, not `requests_oauthlib`), `/` in JavaScript,
+  TypeScript and Go (`lodash` covers `lodash/fp`, not `lodash.debounce`),
+  `::` in Rust. A field matches when any of its values does.
 - **Where a scope comes from:** the manifest's `rules."<n>"`, else the
-  rule's own `<!-- codecite-scope ... -->` comment (TOML, on a line of its
-  own outside fenced code), else the rule it sits under, else the
+  rule's own `<!-- codecite-scope ... -->` comment (TOML, an HTML block of
+  its own outside code), else the rule it sits under, else the
   manifest's `scope`. A rule with none applies to every file.
 - **Trust.** `context` and the hooks below put rule text in front of an
   agent on every edit, so treat a guidance file like code that runs: keep it
@@ -145,13 +147,14 @@ Handlers MUST NOT call a partner with a raw HTTP client; use `partner_client`.
   `path` or `url`) when others can, so a changed rule stops the index run
   until someone reviews it and moves the pin. `codecite index` names every
   unpinned `path` guidance in its summary. A guidance document may not hide
-  text, so the run stops on a character that renders as nothing
-  (zero-width, bidi or tag characters) and, outside fenced code and code
-  spans, on an HTML comment, raw HTML, or a link reference definition whose
-  target is `#` or empty or that has a title. The one comment allowed is a
-  scope comment that starts its line, holds only `paths`, `languages` and
-  `imports` with no `#` comment, and ends its line with `-->`; `imports`
-  must name modules. codecite presents rules as coding
+  text. codecite reads it with a CommonMark parser, and the run stops on a
+  character that renders as nothing (zero-width, bidi, tag or
+  variation-selector characters), on any raw HTML outside code (comments,
+  tags, processing instructions, declarations, CDATA), and on any link
+  reference definition: write links inline. The one HTML allowed is a block
+  that is only a scope comment, `<!-- codecite-scope`, TOML with no `#`
+  comment, then `-->`, at most one under each heading. Its `paths` take
+  path and glob characters only, and its `imports` module names. codecite presents rules as coding
   conventions, never as permission to run commands, fetch URLs or handle
   secrets.
 

@@ -102,14 +102,23 @@ pub fn imports(language: Language, text: &str) -> Vec<String> {
     found
 }
 
-/// Whether `module`, an import a file writes, is `dependency` or inside it:
-/// `requests` covers `requests` and `requests.adapters`, `std` covers
-/// `std::collections`, and `node:fs` only itself. Modules are compared
-/// whole, part by part, so `request` does not cover `requests`.
-pub fn imports_dependency(module: &str, dependency: &str) -> bool {
-    module.strip_prefix(dependency).is_some_and(|rest| {
-        rest.is_empty() || rest.starts_with(['.', '/']) || rest.starts_with("::")
-    })
+/// Whether `module`, an import a file in `language` writes, is
+/// `dependency` or inside it, by the language's own separator: `.` in
+/// Python and C# (`requests` covers `requests.adapters`), `/` in
+/// JavaScript, TypeScript and Go (`lodash` covers `lodash/fp`, not the
+/// separate package `lodash.debounce`), and `::` in Rust (`std` covers
+/// `std::collections`). Modules are compared whole, part by part, so
+/// `request` does not cover `requests`, and `node` not `node:fs`.
+pub fn imports_dependency(language: Language, module: &str, dependency: &str) -> bool {
+    let separator = match language {
+        Language::Python | Language::CSharp => ".",
+        Language::TypeScript | Language::Tsx | Language::JavaScript | Language::Go => "/",
+        Language::Rust => "::",
+        Language::Markdown => return module == dependency,
+    };
+    module
+        .strip_prefix(dependency)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with(separator))
 }
 
 /// An import of the file's own package rather than a dependency: one that
@@ -119,7 +128,7 @@ fn is_relative(language: Language, module: &str) -> bool {
         || (language == Language::Rust
             && ["crate", "self", "super"]
                 .iter()
-                .any(|word| imports_dependency(module, word)))
+                .any(|word| imports_dependency(language, module, word)))
 }
 
 /// `from x.y import z`: the module is `x.y`. A relative `from .x` starts
@@ -252,14 +261,19 @@ mod tests {
 
     #[test]
     fn a_dependency_covers_its_submodules_only() {
-        assert!(imports_dependency("requests", "requests"));
-        assert!(imports_dependency("requests.adapters", "requests"));
-        assert!(imports_dependency("github.com/a/b/c", "github.com/a/b"));
-        assert!(imports_dependency("std::collections", "std"));
-        assert!(!imports_dependency("node:fs", "node"));
-        assert!(imports_dependency("node:fs", "node:fs"));
-        assert!(!imports_dependency("requests_oauthlib", "requests"));
-        assert!(!imports_dependency("request", "requests"));
-        assert!(!imports_dependency("requests", "request"));
+        use Language::*;
+        assert!(imports_dependency(Python, "requests", "requests"));
+        assert!(imports_dependency(Python, "requests.adapters", "requests"));
+        assert!(imports_dependency(Go, "github.com/a/b/c", "github.com/a/b"));
+        assert!(!imports_dependency(Go, "github.com/a/b", "github"));
+        assert!(imports_dependency(Rust, "std::collections", "std"));
+        assert!(imports_dependency(JavaScript, "lodash/fp", "lodash"));
+        assert!(!imports_dependency(JavaScript, "lodash.debounce", "lodash"));
+        assert!(!imports_dependency(TypeScript, "socket.io", "socket"));
+        assert!(!imports_dependency(TypeScript, "node:fs", "node"));
+        assert!(imports_dependency(TypeScript, "node:fs", "node:fs"));
+        assert!(!imports_dependency(Python, "requests_oauthlib", "requests"));
+        assert!(!imports_dependency(Python, "request", "requests"));
+        assert!(!imports_dependency(Python, "requests", "request"));
     }
 }
