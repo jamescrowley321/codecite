@@ -686,7 +686,10 @@ mod tests {
         let tools = session.client.list_all_tools().await.unwrap();
         let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
         names.sort_unstable();
-        assert_eq!(names, ["corpora", "definition", "grep", "read", "search"]);
+        assert_eq!(
+            names,
+            ["corpora", "definition", "diff", "grep", "read", "search"]
+        );
         let corpora = tools.iter().find(|t| t.name == "corpora").unwrap();
         assert_eq!(corpora.input_schema.get("type").unwrap(), "object");
         // The output schema comes from `Corpora`'s Rust type, or a tool
