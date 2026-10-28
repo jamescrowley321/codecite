@@ -7,8 +7,9 @@ use anyhow::{Context as _, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use codecite_core::{
     CiteOptions, CiteResult, DEFAULT_MAX_LINES, DEFAULT_SEARCH_LIMIT, Definitions, GrepMatch,
-    GrepQuery, GrepResults, MAX_READ_LINES, MAX_SEARCH_LIMIT, ReadOptions, ReadResult, Scope,
-    SearchQuery, SearchResult, SearchResults, Store, is_corpus_name,
+    GrepQuery, GrepResults, MAX_READ_LINES, MAX_SEARCH_LIMIT, ReadOptions, ReadResult,
+    Requirements, RequirementsOptions, Scope, SearchQuery, SearchResult, SearchResults, Store,
+    is_corpus_name,
 };
 use codecite_index::{Clones, Fetcher, LicenseClass, Manifest, Source, WalkOptions, index_corpus};
 
@@ -141,6 +142,31 @@ enum Command {
         #[arg(long)]
         allow_stale: bool,
     },
+    /// List every rule governing a spec section, cited and grouped by the
+    /// section that states it: the section's, its subsections' and those
+    /// of the sections linked to it by reference.
+    Requirements {
+        /// The corpus to look in.
+        corpus: String,
+        /// A spec section or step citation, as `read` takes it: `RFC 6749
+        /// §2.3`, `Back-Channel Logout §2.6`.
+        #[arg(required_unless_present = "topic", conflicts_with = "topic")]
+        citation: Option<String>,
+        /// Instead of a citation, what the section is about; the best spec
+        /// search hit in `--document` picks it.
+        #[arg(long, requires = "document")]
+        topic: Option<String>,
+        /// The document to search for `--topic`, by name or alias.
+        #[arg(long, requires = "topic")]
+        document: Option<String>,
+        /// Print the result as JSON, as the MCP `requirements` tool
+        /// returns it.
+        #[arg(long)]
+        json: bool,
+        /// Look in an index older than its manifest's `max_age_days`.
+        #[arg(long)]
+        allow_stale: bool,
+    },
     /// List the corpora with their age, size, source count and staleness,
     /// as JSON.
     Corpora,
@@ -242,6 +268,22 @@ fn main() -> anyhow::Result<()> {
             json,
             allow_stale,
         } => cite(&corpus, &citation, &CiteOptions { allow_stale }, json),
+        Command::Requirements {
+            corpus,
+            citation,
+            topic,
+            document,
+            json,
+            allow_stale,
+        } => {
+            let options = RequirementsOptions { allow_stale };
+            let target = match (citation, topic, document) {
+                (Some(citation), _, _) => Target::Citation(citation),
+                (None, Some(topic), Some(document)) => Target::Topic { topic, document },
+                _ => bail!("give a citation, or --topic and --document"),
+            };
+            requirements(&corpus, &target, &options, json)
+        }
         Command::Corpora => corpora(),
         Command::Mcp => mcp(),
     }
@@ -346,6 +388,48 @@ fn cite(corpus: &str, citation: &str, options: &CiteOptions, json: bool) -> anyh
     let store = Store::open_corpus(dirs.data_dir(), corpus)?;
     let result = store.cite(citation, options)?;
     to_stdout(|out| write_cite(out, &result, json))
+}
+
+/// What `codecite requirements` asks about.
+enum Target {
+    /// A section citation.
+    Citation(String),
+    /// The section of `document` a search for `topic` finds.
+    Topic { topic: String, document: String },
+}
+
+/// `codecite requirements`: opens the corpus read-only and prints the
+/// rules governing the section, as JSON or in their human form.
+fn requirements(
+    corpus: &str,
+    target: &Target,
+    options: &RequirementsOptions,
+    json: bool,
+) -> anyhow::Result<()> {
+    let dirs = project_dirs()?;
+    let store = Store::open_corpus(dirs.data_dir(), corpus)?;
+    let result = match target {
+        Target::Citation(citation) => store.requirements(citation, options)?,
+        Target::Topic { topic, document } => store.requirements_on(topic, document, options)?,
+    };
+    to_stdout(|out| write_requirements(out, &result, json))
+}
+
+/// Writes requirements to `out`: as JSON, or their `Display` form with
+/// control characters escaped line by line.
+fn write_requirements(
+    out: &mut impl std::io::Write,
+    result: &Requirements,
+    json: bool,
+) -> std::io::Result<()> {
+    if json {
+        write_json(out, serde_json::to_value(result)?)?;
+    } else {
+        for line in result.to_string().lines() {
+            writeln!(out, "{}", escape_controls(line))?;
+        }
+    }
+    out.flush()
 }
 
 /// `codecite corpora`: prints the corpora as the MCP `corpora` tool returns
@@ -904,6 +988,49 @@ mod tests {
         assert!(json && allow_stale);
         let lines = ["codecite", "cite", "identity", "§4.3", "--max-lines", "5"];
         assert!(Cli::try_parse_from(lines).is_err());
+    }
+
+    #[test]
+    fn requirements_take_a_citation_or_a_topic_and_a_document() {
+        let parse = |args: &[&str]| {
+            let mut all = vec!["codecite", "requirements", "identity"];
+            all.extend_from_slice(args);
+            Cli::try_parse_from(all)
+        };
+        let Command::Requirements {
+            corpus,
+            citation,
+            topic,
+            document,
+            json,
+            allow_stale,
+        } = parse(&["RFC 6749 §2.3"]).unwrap().command
+        else {
+            panic!("not requirements");
+        };
+        assert_eq!(corpus, "identity");
+        assert_eq!(citation.as_deref(), Some("RFC 6749 §2.3"));
+        assert!(topic.is_none() && document.is_none() && !json && !allow_stale);
+        let topical = ["--topic", "logout", "--document", "rfc6749", "--json"];
+        let Command::Requirements {
+            citation,
+            topic,
+            document,
+            json,
+            ..
+        } = parse(&topical).unwrap().command
+        else {
+            panic!("not requirements");
+        };
+        assert!(citation.is_none() && json);
+        assert_eq!(
+            (topic.as_deref(), document.as_deref()),
+            (Some("logout"), Some("rfc6749"))
+        );
+        assert!(parse(&[]).is_err());
+        assert!(parse(&["--topic", "logout"]).is_err());
+        assert!(parse(&["--document", "rfc6749"]).is_err());
+        assert!(parse(&["§2.3", "--topic", "a", "--document", "b"]).is_err());
     }
 
     #[test]
