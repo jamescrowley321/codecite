@@ -129,15 +129,6 @@ symbol, code keeps the top slots and the best spec sections take the last few;
 otherwise the results alternate, spec first. `--only spec` or `--only code`
 searches one kind.
 
-Search a spec in its own terms. Search matches words, not meaning, so a
-question asked in plain words finds nothing in a spec that says it
-differently. Search with the terms the spec would use (protocol, parameter,
-claim, endpoint and error names) instead: `token endpoint client
-authentication public client`, not `must a public client log in to get a
-token`. Search the original wording too only when it already holds spec
-terms; on the retrieval benchmark, the rewrite alone found more than the
-rewrite and the original together.
-
 ```text
 1. rfc9449@sha256:2d8657f07291#section-11.1
    section · score 38.85 · quote · indexed 2026-10-20T22:56:30Z
@@ -147,6 +138,15 @@ rewrite and the original together.
 Each result shows its rank and citation, then its kind (`function`, `class`,
 `section`, `step` or `window`), symbol, score, license class and when it was
 indexed, then the first lines of its text.
+
+Search a spec in its own terms. Search matches words, not meaning, so a
+question asked in plain words finds nothing in a spec that says it
+differently. Search with the terms the spec would use (protocol, parameter,
+claim, endpoint and error names) instead: `token endpoint client
+authentication public client`, not `must a public client log in to get a
+token`. Search the original wording too only when it already holds spec
+terms; on the retrieval benchmark, the rewrite alone found more than the
+rewrite and the original together.
 
 ## Grep
 
