@@ -5,7 +5,7 @@
 //! statement extraction is [`version_units`], kept in one function so that
 //! it can be unified with other normative-statement extraction later.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::sync::LazyLock;
 
@@ -292,8 +292,14 @@ pub(crate) fn version_units(text: &str, start_line: u32, steps: &[StepText]) -> 
     units
 }
 
+/// A step's unit. Its key leaves out the number the step starts with, so a
+/// step renumbered by an insertion above it is no change.
 fn step_unit(step: &StepText) -> Unit {
-    new_unit(step.text.clone(), Some(step.number.clone()), None)
+    let mut unit = new_unit(step.text.clone(), Some(step.number.clone()), None);
+    if unit.key.first() == Some(&step.number) {
+        unit.key.remove(0);
+    }
+    unit
 }
 
 fn new_unit(text: String, step: Option<String>, term: Option<&str>) -> Unit {
@@ -391,44 +397,37 @@ fn classify(old: &Unit, new: &Unit) -> Option<&'static str> {
     }
 }
 
-/// Whether the words that differ between two keys pair off one to one as
-/// spelling fixes: both at least five letters long, one edit apart, and
-/// neither the other with a letter added in front or behind. Short words
-/// are identifiers (`sub`, `sid`) and never count, and two edits already
-/// reach opposites (`signed`, `unsigned`; `include`, `exclude`). Keys that
-/// differ only in order are not spelling fixes: moving a word moves a rule.
+/// Whether two keys say the same words in the same order but for spelling
+/// fixes: each word that differs, at its place, is one edit from the other,
+/// both are letters only and at least five long, and neither is the other
+/// with a letter added at an end. Short words are identifiers (`sub`,
+/// `sid`); words with digits are values (`RS256`, `PS256`; `86400`); two
+/// edits already reach opposites (`signed`, `unsigned`); and words in
+/// another order are a change, since moving a word moves a rule.
 fn spelling_only(old: &[String], new: &[String]) -> bool {
-    let (mut removed, mut added) = (counts(old), counts(new));
-    for (word, n) in counts(new) {
-        if let Some(m) = removed.get_mut(word) {
-            let common = (*m).min(n);
-            *m -= common;
-            *added.get_mut(word).expect("counted") -= common;
-        }
-    }
-    let (removed, mut added) = (flatten(removed), flatten(added));
-    if removed.is_empty() || removed.len() != added.len() {
-        return false;
-    }
-    removed.iter().all(|r| {
-        let found = added.iter().position(|a| {
-            r.chars().count() >= 5
-                && a.chars().count() >= 5
-                && edit_distance(r, a) == 1
-                && !(a.ends_with(r) || r.ends_with(a) || a.starts_with(r) || r.starts_with(a))
-        });
-        found.map(|i| added.swap_remove(i)).is_some()
-    })
+    old.len() == new.len()
+        && old != new
+        && old
+            .iter()
+            .zip(new)
+            .all(|(a, b)| a == b || is_spelling_fix(a, b))
 }
 
-/// The words counted in `c`, each as many times as counted, sorted.
-fn flatten(c: HashMap<&str, usize>) -> Vec<&str> {
-    let mut words: Vec<&str> = c
-        .into_iter()
-        .flat_map(|(w, n)| std::iter::repeat_n(w, n))
-        .collect();
-    words.sort_unstable();
-    words
+/// The longest word [`is_spelling_fix`] measures: edit distance is
+/// quadratic in length, and no real word is this long.
+const MAX_SPELLED_WORD: usize = 64;
+
+/// Whether `b` is `a` with one letter's spelling fixed.
+fn is_spelling_fix(a: &str, b: &str) -> bool {
+    let (la, lb) = (a.chars().count(), b.chars().count());
+    la >= 5
+        && lb >= 5
+        && la.max(lb) <= MAX_SPELLED_WORD
+        && la.abs_diff(lb) <= 1
+        && a.chars().all(char::is_alphabetic)
+        && b.chars().all(char::is_alphabetic)
+        && !(a.ends_with(b) || b.ends_with(a) || a.starts_with(b) || b.starts_with(a))
+        && edit_distance(a, b) == 1
 }
 
 fn counts(words: &[String]) -> HashMap<&str, usize> {
@@ -493,6 +492,14 @@ fn may_pair(a: &Unit, b: &Unit) -> bool {
         }
 }
 
+/// A unit's key, whether it is a step, and its term: units pair by exact
+/// key only within one bucket.
+type Bucket<'a> = (&'a [String], bool, Option<&'a str>);
+
+fn bucket(u: &Unit) -> Bucket<'_> {
+    (u.key.as_slice(), u.step.is_some(), u.term.as_deref())
+}
+
 /// Pairs the units of two versions: the same content first, in order, then
 /// the most similar. Returns the pairs, by new index, then the unpaired old
 /// and new indexes.
@@ -500,13 +507,14 @@ fn pair(old: &[Unit], new: &[Unit]) -> (Vec<(usize, usize)>, Vec<usize>, Vec<usi
     let mut old_used = vec![false; old.len()];
     let mut new_used = vec![false; new.len()];
     let mut pairs = Vec::new();
-    let mut by_key: HashMap<&[String], Vec<usize>> = HashMap::new();
+    // Units that may pair with the same key share a queue, so each new one
+    // takes the first unused old one in constant time.
+    let mut by_key: HashMap<Bucket<'_>, VecDeque<usize>> = HashMap::new();
     for (i, o) in old.iter().enumerate() {
-        by_key.entry(o.key.as_slice()).or_default().push(i);
+        by_key.entry(bucket(o)).or_default().push_back(i);
     }
     for (j, n) in new.iter().enumerate() {
-        let same = by_key.get(n.key.as_slice()).map_or(&[][..], Vec::as_slice);
-        if let Some(&i) = same.iter().find(|&&i| !old_used[i] && may_pair(&old[i], n)) {
+        if let Some(i) = by_key.get_mut(&bucket(n)).and_then(VecDeque::pop_front) {
             old_used[i] = true;
             new_used[j] = true;
             pairs.push((i, j));
@@ -667,14 +675,15 @@ impl Store {
                 .find(|s| Some(s.id) == current)
                 .ok_or_else(|| unknown("the current version"))?,
         };
-        // With `to` asked for, the default `from` is pinned before it, so
-        // the diff never runs backwards.
+        // With `to` an older version, the default `from` is pinned before
+        // it, so the diff never runs backwards. The current version is the
+        // newest wherever the manifest lists it.
         let from = match options.from {
             Some(v) => pick(v)?,
             None => versions
                 .iter()
                 .rev()
-                .filter(|s| options.to.is_none() || s.id < to.id)
+                .filter(|s| Some(to.id) == current || s.id < to.id)
                 .find(|s| s.id != to.id && Some(s.id) != current)
                 .ok_or_else(|| unknown("an older version"))?,
         };
@@ -1022,6 +1031,53 @@ mod tests {
         ] {
             assert_eq!(classify(&unit(old), &unit(new)), Some("changed"), "{new}");
         }
+    }
+
+    #[test]
+    fn an_algorithm_or_number_one_character_apart_is_a_change() {
+        let old = unit("The ID Token MUST be signed with RS256.");
+        let new = unit("The ID Token MUST be signed with PS256.");
+        assert_eq!(classify(&old, &new), Some("changed"));
+        let old = unit("A token MUST NOT live past 86400 seconds.");
+        let new = unit("A token MUST NOT live past 86401 seconds.");
+        assert_eq!(classify(&old, &new), Some("changed"));
+    }
+
+    #[test]
+    fn a_reordering_with_a_spelling_fix_is_a_change() {
+        let old = unit("The client MUST NOT send it to the server, as occured.");
+        let new = unit("The server MUST NOT send it to the client, as occurred.");
+        assert_eq!(classify(&old, &new), Some("changed"));
+    }
+
+    #[test]
+    fn a_renumbered_step_is_no_change() {
+        let step = |number: &str, text: &str| {
+            let s = StepText {
+                number: number.into(),
+                start_line: 3,
+                end_line: 3,
+                text: text.into(),
+            };
+            version_units(&format!("2.6. V\n\n{text}"), 1, &[s]).remove(0)
+        };
+        let old = step("4", "4. Validate the iss Claim.");
+        let new = step("5", "5. Validate the iss Claim.");
+        assert_eq!(old.key, new.key);
+        assert_eq!(classify(&old, &new), Some("reworded"));
+    }
+
+    #[test]
+    fn long_or_identical_units_pair_in_bounded_work() {
+        let same: Vec<Unit> = (0..20_000).map(|_| unit("x MUST hold.")).collect();
+        let started = std::time::Instant::now();
+        let (pairs, ..) = pair(&same, &same);
+        assert_eq!(pairs.len(), 20_000);
+        let long = "a".repeat(200_000);
+        let old = unit(&format!("It MUST be {long}b."));
+        let new = unit(&format!("It MUST be {long}c."));
+        assert_eq!(classify(&old, &new), Some("changed"));
+        assert!(started.elapsed().as_secs() < 5, "{:?}", started.elapsed());
     }
 
     #[test]
@@ -1428,6 +1484,33 @@ mod tests {
         };
         let err = store.diff(DOC, &to_v1).unwrap_err();
         assert!(matches!(err, Error::UnknownVersion { .. }), "{err}");
+    }
+
+    #[test]
+    fn naming_the_current_version_as_to_works_whatever_the_pinning_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open_read_write(&dir.path().join("order.db")).unwrap();
+        // The current version is pinned first.
+        write(
+            &mut store,
+            NEW,
+            true,
+            vec![section("2.5", 1, "2.5. R\n\nX MUST.")],
+        );
+        write(
+            &mut store,
+            OLD,
+            false,
+            vec![section("2.5", 1, "2.5. R\n\nX SHOULD.")],
+        );
+        store.set_indexed_at(30).unwrap();
+        let options = DiffOptions {
+            to: Some(NEW_PIN),
+            ..DiffOptions::default()
+        };
+        let d = store.diff(DOC, &options).unwrap();
+        assert_eq!(d.from, OLD_PIN);
+        assert_eq!(d.changes[0].change, "strength_changed");
     }
 
     #[test]

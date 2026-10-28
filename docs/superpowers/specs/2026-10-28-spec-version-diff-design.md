@@ -74,11 +74,13 @@ Unpaired units are added (in `to` only) or removed (in `from` only).
 
 - Keyword sets differ: `strength_changed`, with both keyword lists
   (OPTIONAL → REQUIRED, SHOULD → MUST, none → MUST).
-- Same content key, or the differing words pair off one to one as spelling
-  fixes, at least five letters long, one edit apart and neither the other
-  with a letter added at an end ("occured" → "occurred"): `reworded`. Two
-  edits reach opposites (`signed`, `unsigned`), and the same words in
-  another order are a change.
+- Same content key, or the same words in the same order but for spelling
+  fixes, each a word of letters only, at least five long, one edit from the
+  other and not the other with a letter added at an end ("occured" →
+  "occurred"): `reworded`. Two edits reach opposites (`signed`,
+  `unsigned`), a word with digits is a value (`RS256`, `PS256`), and the
+  same words in another order are a change. A step's key leaves out its
+  own number, so renumbering is no change.
   Listed apart, in `reworded`, not in `changes`.
 - Otherwise: `changed`. "Validate the iss, aud, and iat Claims" becoming
   "… iss, aud, iat, and exp Claims" adds a word, so it is a change, though
