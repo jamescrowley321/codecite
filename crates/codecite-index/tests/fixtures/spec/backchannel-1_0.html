@@ -1,0 +1,397 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<!-- Cut from https://openid.net/specs/openid-connect-backchannel-1_0.html (sha256 3b5c933d5269047b39a65166d5c4d8ff6852b06451f54ed2531b8f97299fdc50): its head and sections 2.3 to 2.8, otherwise as published. -->
+<html lang="en"><head><title>Final: OpenID Connect
+    Back-Channel Logout 1.0 incorporating errata set 1</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name="description" content="OpenID Connect
+    Back-Channel Logout 1.0 incorporating errata set 1">
+<meta name="generator" content="xml2rfc v1.37pre1 (http://xml.resource.org/)">
+</head>
+<body>
+<a name="Tracking"></a><br /><hr />
+<table summary="layout" cellpadding="0" cellspacing="2" class="TOCbug" align="right"><tr><td class="TOCbug"><a href="#toc">&nbsp;TOC&nbsp;</a></td></tr></table>
+<a name="rfc.section.2.3"></a><h3>2.3.&nbsp;
+Remembering Logged-In RPs</h3>
+
+<p>
+	  OPs supporting back-channel logout need to keep track of
+	  the set of logged-in RPs so that they know what RPs to contact
+	  at their back-channel logout URIs to cause them to log out.
+	  Some OPs track this state using a "visited sites" cookie.
+	  OPs are encouraged to send logout requests to them in parallel.
+	
+</p>
+<a name="LogoutToken"></a><br /><hr />
+<table summary="layout" cellpadding="0" cellspacing="2" class="TOCbug" align="right"><tr><td class="TOCbug"><a href="#toc">&nbsp;TOC&nbsp;</a></td></tr></table>
+<a name="rfc.section.2.4"></a><h3>2.4.&nbsp;
+Logout Token</h3>
+
+<p>
+	  OPs send a JWT similar to an ID Token to RPs called a Logout Token
+	  to request that they log out.
+	  ID Tokens are defined in Section 2 of <a class='info' href='#OpenID.Core'>[OpenID.Core]<span> (</span><span class='info'>Sakimura, N., Bradley, J., Jones, M., de Medeiros, B., and C. Mortimore, &ldquo;OpenID Connect Core 1.0,&rdquo; December&nbsp;2023.</span><span>)</span></a>.
+	
+</p>
+<p>
+	  The following Claims are used within the Logout Token:
+	
+</p>
+<p>
+	  </p>
+<blockquote class="text"><dl>
+<dt>iss</dt>
+<dd>
+	      
+	      REQUIRED.
+	      Issuer Identifier, as specified in Section 2 of <a class='info' href='#OpenID.Core'>[OpenID.Core]<span> (</span><span class='info'>Sakimura, N., Bradley, J., Jones, M., de Medeiros, B., and C. Mortimore, &ldquo;OpenID Connect Core 1.0,&rdquo; December&nbsp;2023.</span><span>)</span></a>.
+	    
+</dd>
+<dt>sub</dt>
+<dd>
+	      
+	      OPTIONAL.
+	      Subject Identifier, as specified in Section 2 of <a class='info' href='#OpenID.Core'>[OpenID.Core]<span> (</span><span class='info'>Sakimura, N., Bradley, J., Jones, M., de Medeiros, B., and C. Mortimore, &ldquo;OpenID Connect Core 1.0,&rdquo; December&nbsp;2023.</span><span>)</span></a>.
+	    
+</dd>
+<dt>aud</dt>
+<dd>
+	      
+	      REQUIRED.
+	      Audience(s), as specified in Section 2 of <a class='info' href='#OpenID.Core'>[OpenID.Core]<span> (</span><span class='info'>Sakimura, N., Bradley, J., Jones, M., de Medeiros, B., and C. Mortimore, &ldquo;OpenID Connect Core 1.0,&rdquo; December&nbsp;2023.</span><span>)</span></a>.
+	    
+</dd>
+<dt>iat</dt>
+<dd>
+	      
+	      REQUIRED.
+	      Issued at time, as specified in Section 2 of <a class='info' href='#OpenID.Core'>[OpenID.Core]<span> (</span><span class='info'>Sakimura, N., Bradley, J., Jones, M., de Medeiros, B., and C. Mortimore, &ldquo;OpenID Connect Core 1.0,&rdquo; December&nbsp;2023.</span><span>)</span></a>.
+	    
+</dd>
+<dt>exp</dt>
+<dd>
+	      
+	      REQUIRED.
+	      Expiration time, as specified in Section 2 of <a class='info' href='#OpenID.Core'>[OpenID.Core]<span> (</span><span class='info'>Sakimura, N., Bradley, J., Jones, M., de Medeiros, B., and C. Mortimore, &ldquo;OpenID Connect Core 1.0,&rdquo; December&nbsp;2023.</span><span>)</span></a>.
+	    
+</dd>
+<dt>jti</dt>
+<dd>
+	      
+	      REQUIRED.
+	      Unique identifier for the token, as specified in Section 9 of <a class='info' href='#OpenID.Core'>[OpenID.Core]<span> (</span><span class='info'>Sakimura, N., Bradley, J., Jones, M., de Medeiros, B., and C. Mortimore, &ldquo;OpenID Connect Core 1.0,&rdquo; December&nbsp;2023.</span><span>)</span></a>.
+	    
+</dd>
+<dt>events</dt>
+<dd>
+	      
+	      REQUIRED.
+	      Claim whose value is a JSON object
+	      containing the member name
+	      <tt>http://schemas.openid.net/event/backchannel-logout</tt>.
+	      This declares that the JWT is a Logout Token.
+	      The corresponding member value MUST be a JSON object and
+	      SHOULD be the empty JSON object <tt>{}</tt>.
+	    
+</dd>
+<dt>sid</dt>
+<dd>
+	      
+	      OPTIONAL.
+	      Session ID - String identifier for a Session.
+	      This represents a Session of a User Agent or device
+	      for a logged-in End-User at an RP.
+	      Different <tt>sid</tt> values are used to identify
+	      distinct sessions at an OP.
+	      The <tt>sid</tt> value need only be unique
+	      in the context of a particular issuer.
+	      Its contents are opaque to the RP.
+	      Its syntax is the same as an OAuth 2.0 Client Identifier.
+	    
+</dd>
+</dl></blockquote><p>
+	
+</p>
+<p>
+	  A Logout Token MUST contain either a <tt>sub</tt>
+	  or a <tt>sid</tt> Claim, and MAY contain both.
+	  If a <tt>sid</tt> Claim is not present,
+	  the intent is that all sessions at the RP
+	  for the End-User identified by the <tt>iss</tt>
+	  and <tt>sub</tt> Claims be logged out.
+	
+</p>
+<p>
+	  The following Claim MUST NOT be used within the Logout Token:
+	
+</p>
+<p>
+	  </p>
+<blockquote class="text"><dl>
+<dt>nonce</dt>
+<dd>
+	      
+	      PROHIBITED.
+	      A <tt>nonce</tt> Claim MUST NOT be present.
+	      Its use is prohibited to make a Logout Token syntactically invalid
+	      if used in a forged Authentication Response in place of an ID Token.
+	    
+</dd>
+</dl></blockquote><p>
+	
+</p>
+<p>
+	  Logout Tokens MAY contain other Claims.
+	  Any Claims used that are not understood MUST be ignored.
+	
+</p>
+<p>
+	  A Logout Token MUST be signed and MAY also be encrypted.
+	  The same keys are used to sign and encrypt Logout Tokens
+	  as are used for ID Tokens.
+	  If the Logout Token is encrypted, it SHOULD replicate the
+	  <tt>iss</tt> (issuer) claim
+	  in the JWT Header Parameters,
+	  as specified in Section 5.3 of <a class='info' href='#JWT'>[JWT]<span> (</span><span class='info'>Jones, M., Bradley, J., and N. Sakimura, &ldquo;JSON Web Token (JWT),&rdquo; May&nbsp;2015.</span><span>)</span></a>.
+	
+</p>
+<p>
+	  It is RECOMMENDED that Logout Tokens be explicitly typed.
+	  This is accomplished by including a <tt>typ</tt> (type) Header Parameter
+	  with a value of <tt>logout+jwt</tt> in the Logout Token.
+	  See <a class='info' href='#CrossJWT'>Section&nbsp;4.1<span> (</span><span class='info'>Cross-JWT Confusion</span><span>)</span></a> for a discussion of the security and interoperability considerations
+	  of using explicit typing.
+	
+</p>
+<p>
+	  NOTE: The Logout Token is compatible with
+	  the Security Event Token (SET) <a class='info' href='#RFC8417'>[RFC8417]<span> (</span><span class='info'>Hunt, P., Ed., Jones, M., Denniss, W., and M. Ansari, &ldquo;Security Event Token (SET),&rdquo; July&nbsp;2018.</span><span>)</span></a> specification,
+	  but uses a more specific <tt>typ</tt> (type) value.
+	
+</p>
+<p>
+	    A non-normative example JWT Claims Set for a Logout Token follows:
+	  
+</p><div style='display: table; width: 0; margin-left: 3em; margin-right: auto'><pre>
+  {
+   "iss": "https://server.example.com",
+   "sub": "248289761001",
+   "aud": "s6BhdRkqt3",
+   "iat": 1471566154,
+   "exp": 1471569754,
+   "jti": "bWJq",
+   "sid": "08a5019c-17e1-4977-8f42-65a12843ea02",
+   "events": {
+     "http://schemas.openid.net/event/backchannel-logout": {}
+     }
+  }
+</pre></div>
+<a name="BCRequest"></a><br /><hr />
+<table summary="layout" cellpadding="0" cellspacing="2" class="TOCbug" align="right"><tr><td class="TOCbug"><a href="#toc">&nbsp;TOC&nbsp;</a></td></tr></table>
+<a name="rfc.section.2.5"></a><h3>2.5.&nbsp;
+Back-Channel Logout Request</h3>
+
+<p>
+	  The OP uses an HTTP POST to the registered back-channel logout URI
+	  to trigger the logout actions by the RP.  The POST body uses the
+	  <tt>application/x-www-form-urlencoded</tt> encoding
+	  and must include a <tt>logout_token</tt> parameter
+	  containing a Logout Token from the OP for the RP identifying the
+	  End-User to be logged out.
+	
+</p>
+<p>
+	  The POST body MAY contain other values in addition to
+	  <tt>logout_token</tt>.
+	  Values that are not understood by the implementation MUST be ignored.
+	
+</p>
+<p>
+	    The following is a non-normative example of such a logout request
+	    (with most of the Logout Token contents omitted for brevity):
+	  
+</p><div style='display: table; width: 0; margin-left: 3em; margin-right: auto'><pre>
+  POST /backchannel_logout HTTP/1.1
+  Host: rp.example.org
+  Content-Type: application/x-www-form-urlencoded
+
+  logout_token=eyJhbGci ... .eyJpc3Mi ... .T3BlbklE ...
+</pre></div>
+<p>
+	  The OP should not retransmit a Back-Channel Logout Request unless the OP suspects that
+	  previous transmissions may have failed due to potentially recoverable errors
+	  (such as network outage or temporary service interruption at either the OP or RP).
+	  In this case, the OP SHOULD delay retransmission for an appropriate amount of time
+	  to avoid overwhelming the RP.
+	  In all other cases, the OP SHOULD NOT retransmit a Back-Channel Logout Request.
+	  (Note that this is the same retransmission logic as specified in
+	  <a class='info' href='#RFC8935'>Push-Based Security Event Token (SET) Delivery Using HTTP<span> (</span><span class='info'>Backman, A., Ed., Jones, M., Ed., Scurtescu, M., Ansari, M., and A. Nadalin, &ldquo;Push-Based Security Event Token (SET) Delivery Using HTTP,&rdquo; November&nbsp;2020.</span><span>)</span></a> [RFC8935].)
+	
+</p>
+<a name="Validation"></a><br /><hr />
+<table summary="layout" cellpadding="0" cellspacing="2" class="TOCbug" align="right"><tr><td class="TOCbug"><a href="#toc">&nbsp;TOC&nbsp;</a></td></tr></table>
+<a name="rfc.section.2.6"></a><h3>2.6.&nbsp;
+Logout Token Validation</h3>
+
+<p>
+	   Upon receiving a logout request at the back-channel logout URI,
+	   the RP MUST validate the Logout Token as follows:
+	
+</p>
+<p>
+	  </p>
+<ol class="text">
+<li>
+	      If the Logout Token is encrypted, decrypt it using the
+	      keys and algorithms that the Client specified during Registration
+	      that the OP was to use to encrypt ID Tokens.
+	      If ID Token encryption was negotiated with the OP at Registration time
+	      and the Logout Token is not encrypted, the RP SHOULD reject it.
+	    
+</li>
+<li>
+	      Validate the Logout Token signature in the same way that
+	      an ID Token signature is validated, with the following refinements.
+	    
+</li>
+<li>
+	      Validate the <tt>alg</tt> (algorithm)
+	      Header Parameter in the same way it is validated for ID Tokens.
+	      Like ID Tokens, selection of the algorithm used is governed by
+	      the <tt>id_token_signing_alg_values_supported</tt> Discovery parameter
+	      and the <tt>id_token_signed_response_alg</tt> Registration parameter
+	      when they are used;
+	      otherwise, the value SHOULD be the default of <tt>RS256</tt>.
+	      Additionally, an <tt>alg</tt> with the value
+	      <tt>none</tt> MUST NOT be used for Logout Tokens.
+	    
+</li>
+<li>
+	      Validate the <tt>iss</tt>,
+	      <tt>aud</tt>,
+	      <tt>iat</tt>,
+	      and <tt>exp</tt>
+	      Claims in the same way they are validated in ID Tokens.
+	    
+</li>
+<li>
+	      Verify that the Logout Token contains a <tt>sub</tt> Claim,
+	      a <tt>sid</tt> Claim, or both.
+	    
+</li>
+<li>
+	      Verify that the Logout Token contains an
+	      <tt>events</tt> Claim
+	      whose value is JSON object containing the member name
+	      <tt>http://schemas.openid.net/event/backchannel-logout</tt>.
+	    
+</li>
+<li>
+	      Verify that the Logout Token does not contain a
+	      <tt>nonce</tt> Claim.
+	    
+</li>
+<li>
+	      Optionally verify that another Logout Token with the same
+	      <tt>jti</tt> value has not been recently received.
+	    
+</li>
+<li>
+	      Optionally verify that the <tt>iss</tt> Logout Token Claim
+	      matches the <tt>iss</tt> Claim in an ID Token issued
+	      for the current session or a recent session of this RP with the OP.
+	    
+</li>
+<li>
+	      Optionally verify that any <tt>sub</tt> Logout Token Claim
+	      matches the <tt>sub</tt> Claim in an ID Token issued
+	      for the current session or a recent session of this RP with the OP.
+	    
+</li>
+<li>
+	      Optionally verify that any <tt>sid</tt> Logout Token Claim
+	      matches the <tt>sid</tt> Claim in an ID Token issued
+	      for the current session or a recent session of this RP with the OP.
+	    
+</li>
+</ol><p>
+	
+</p>
+<p>
+	  If any of the validation steps fails, reject the Logout Token
+	  and return an HTTP 400 Bad Request error.
+	  Otherwise, proceed to perform the logout actions.
+	
+</p>
+<a name="BCActions"></a><br /><hr />
+<table summary="layout" cellpadding="0" cellspacing="2" class="TOCbug" align="right"><tr><td class="TOCbug"><a href="#toc">&nbsp;TOC&nbsp;</a></td></tr></table>
+<a name="rfc.section.2.7"></a><h3>2.7.&nbsp;
+Back-Channel Logout Actions</h3>
+
+<p>
+	  After receiving a valid Logout Token from the OpenID Provider,
+	  the RP locates the session(s) identified by the
+	  <tt>iss</tt> and
+	  <tt>sub</tt> Claims
+	  and/or the <tt>sid</tt> Claim.
+	  The RP then clears any state associated with the identified session(s).
+	  The mechanism by which the RP achieves this is implementation specific.
+	  If the identified End-User is already logged out at the RP when the logout request
+	  is received, the logout is considered to have succeeded.
+	
+</p>
+<p>
+	  In the case that the RP is also an OP serving as an identity provider
+	  to downstream logged-in sessions, it is desirable for the logout request
+	  to the RP to likewise trigger downstream logout requests.
+	  This is achieved by having the RP/OP send logout requests to its downstream RPs
+	  as part of its logout actions.
+	
+</p>
+<p>
+	  Refresh tokens issued without the <tt>offline_access</tt> property
+	  to a session being logged out SHOULD be revoked.
+	  Refresh tokens issued with the <tt>offline_access</tt> property
+	  normally SHOULD NOT be revoked.
+	
+</p>
+<a name="BCResponse"></a><br /><hr />
+<table summary="layout" cellpadding="0" cellspacing="2" class="TOCbug" align="right"><tr><td class="TOCbug"><a href="#toc">&nbsp;TOC&nbsp;</a></td></tr></table>
+<a name="rfc.section.2.8"></a><h3>2.8.&nbsp;
+Back-Channel Logout Response</h3>
+
+<p>
+	  If the logout succeeded, the RP MUST respond with HTTP 200 OK.
+	  However, note that some Web frameworks will substitute an HTTP 204 No Content response
+	  for an HTTP 200 OK when the HTTP body is empty.
+	  Therefore, OPs should be prepared to also process an HTTP 204 No Content response as a successful response.
+	
+</p>
+<p>
+	  If the logout request was invalid or the logout failed,
+	  the RP MUST respond with HTTP 400 Bad Request.
+	  The response MAY include an HTTP body consisting of a JSON object with
+	  <tt>error</tt> and <tt>error_description</tt> parameters
+	  conveying the nature of the error that occurred, which can assist with debugging.
+	  These error response parameters are used as specified in Section 5.2 of <a class='info' href='#RFC6749'>OAuth 2.0<span> (</span><span class='info'>Hardt, D., Ed., &ldquo;The OAuth 2.0 Authorization Framework,&rdquo; October&nbsp;2012.</span><span>)</span></a> [RFC6749].
+	  Like in OAuth 2.0, the parameters are included in the entity-body of the HTTP response
+	  using the <tt>application/json</tt> media type.
+	  Also like in OAuth 2.0, the <tt>error</tt> parameter is REQUIRED when a response body is present
+	  and the <tt>error_description</tt> parameter is OPTIONAL.
+	  An <tt>error</tt> value of <tt>invalid_request</tt>
+	  MAY be used to indicate that there was a problem with the syntax of the logout request.
+	  Note that the information conveyed in the response body is intended to help debug deployments;
+	  it is not intended that implementations use different <tt>error</tt> values
+	  to trigger different runtime behaviors.
+	
+</p>
+<p>
+	  The RP's response SHOULD include the <tt>Cache-Control</tt>
+	  HTTP response header field with a <tt>no-store</tt> value,
+	  keeping the response from being cached to prevent cached responses
+	  from interfering with future logout requests.
+	  An example of this is:
+	
+</p><div style='display: table; width: 0; margin-left: 3em; margin-right: auto'><pre>
+  Cache-Control: no-store
+</pre></div>
+</body></html>

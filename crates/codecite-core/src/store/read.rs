@@ -123,11 +123,11 @@ impl fmt::Display for ReadResult {
 
 /// A source row, as `read` needs it.
 pub(super) struct SourceRow {
-    id: i64,
-    name: String,
-    revision: String,
-    license_class: String,
-    indexed_at: String,
+    pub(super) id: i64,
+    pub(super) name: String,
+    pub(super) revision: String,
+    pub(super) license_class: String,
+    pub(super) indexed_at: String,
 }
 
 /// A spec section or step row.
@@ -459,7 +459,7 @@ impl Store {
     }
 
     /// Every version of the source or document `name`, oldest row first.
-    fn sources(&self, name: &str, document: bool) -> Result<Vec<SourceRow>> {
+    pub(super) fn sources(&self, name: &str, document: bool) -> Result<Vec<SourceRow>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT id, name, revision, license_class, indexed_at FROM source
              WHERE name = ?1 AND (kind = 'document') = ?2 ORDER BY id",
@@ -525,7 +525,11 @@ impl Store {
     /// The sections of a document version nearest to `wanted`: those that
     /// share the most leading numbers with it, then the closest in the
     /// first number that differs.
-    fn nearest_sections(&self, source: &SourceRow, wanted: &SectionNumber) -> Result<Vec<String>> {
+    pub(super) fn nearest_sections(
+        &self,
+        source: &SourceRow,
+        wanted: &SectionNumber,
+    ) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT c.number FROM chunk c JOIN document d ON d.id = c.document_id
              WHERE d.source_id = ?1 AND c.kind = 'section' ORDER BY c.id",

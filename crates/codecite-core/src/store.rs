@@ -18,6 +18,9 @@ pub use corpora::{Corpora, CorpusInfo, corpora};
 mod definition;
 pub use definition::{Definition, Definitions};
 
+mod diff;
+pub use diff::{DiffOptions, DiffResult, VersionChange};
+
 mod grep;
 pub use grep::{GrepMatch, GrepQuery, GrepResults};
 
