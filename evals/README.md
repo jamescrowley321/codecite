@@ -122,7 +122,7 @@ report; only the panel and the number of epochs differ.
 
 A code task has one sample per arm, so its runs per arm are its epochs. The
 spec-question task has one sample per question per arm, so its runs per arm
-are questions × epochs: 34 on the quick tier, 102 on the full. A task's
+are questions × epochs: 59 on the quick tier, 177 on the full. A task's
 `task.json` sets its own epochs (`"epochs": {"quick": 1, "full": 3}`), and
 `EPOCHS` overrides both.
 
