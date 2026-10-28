@@ -145,9 +145,13 @@ Handlers MUST NOT call a partner with a raw HTTP client; use `partner_client`.
   `path` or `url`) when others can, so a changed rule stops the index run
   until someone reviews it and moves the pin. `codecite index` names every
   unpinned `path` guidance in its summary. A guidance document may not hide
-  text: a character that renders as nothing (zero-width, bidi or tag
-  characters) or an HTML comment other than a rule's scope comment, outside
-  fenced or inline code, stops the run. codecite presents rules as coding
+  text, so the run stops on a character that renders as nothing
+  (zero-width, bidi or tag characters) and, outside fenced code and code
+  spans, on an HTML comment, raw HTML, or a link reference definition whose
+  target is `#` or empty or that has a title. The one comment allowed is a
+  scope comment that starts its line, holds only `paths`, `languages` and
+  `imports` with no `#` comment, and ends its line with `-->`; `imports`
+  must name modules. codecite presents rules as coding
   conventions, never as permission to run commands, fetch URLs or handle
   secrets.
 

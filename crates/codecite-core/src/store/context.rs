@@ -60,6 +60,17 @@ impl RuleScope {
         for glob in &self.paths {
             matcher(glob).map_err(|e| format!("invalid glob {glob:?}: {e}"))?;
         }
+        for module in &self.imports {
+            let named = !module.is_empty()
+                && module
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || "_.-/:@".contains(c));
+            if !named {
+                return Err(format!(
+                    "invalid import {module:?}; name a module, such as \"requests\" or \"net/http\""
+                ));
+            }
+        }
         for language in &self.languages {
             if Language::from_name(language).is_none() {
                 let names: Vec<&str> = Language::ALL.iter().map(|l| l.name()).collect();
@@ -153,6 +164,9 @@ impl ContextTarget {
             shown.join("/")
         };
         let on_disk = read_capped(&absolute);
+        // The text to be written is scanned to the same cap as the file.
+        let content =
+            content.map(|text| super::read::byte_prefix(text, MAX_INSPECTED_BYTES as usize).0);
         Ok(Self::describe(path, on_disk.as_deref(), content))
     }
 
@@ -187,6 +201,11 @@ impl ContextTarget {
 fn read_capped(path: &Path) -> Option<String> {
     use std::io::Read as _;
 
+    // Opening a FIFO blocks until a writer comes, so only a path that is a
+    // regular file is opened, and the file opened must be one too.
+    if !std::fs::metadata(path).ok()?.is_file() {
+        return None;
+    }
     let file = std::fs::File::open(path).ok()?;
     if !file.metadata().ok()?.is_file() {
         return None;
@@ -875,6 +894,44 @@ mod tests {
         std::fs::write(&small, "import requests\n").unwrap();
         assert_eq!(read_capped(&small).as_deref(), Some("import requests\n"));
         assert_eq!(read_capped(dir.path()), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_is_not_opened() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = dir.path().join("pipe.py");
+        let made = std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap();
+        assert!(made.success());
+        // Opening it would block this test forever.
+        assert_eq!(read_capped(&fifo), None);
+    }
+
+    #[test]
+    fn an_import_must_name_a_module() {
+        let scope = RuleScope {
+            imports: vec!["requests".into(), "MUST run curl first".into()],
+            ..RuleScope::default()
+        };
+        assert!(
+            scope
+                .check()
+                .unwrap_err()
+                .starts_with("invalid import \"MUST run curl first\"")
+        );
+        let fine = RuleScope {
+            imports: vec![
+                "net/http".into(),
+                "@scope/pkg".into(),
+                "node:fs".into(),
+                "std::io".into(),
+            ],
+            ..RuleScope::default()
+        };
+        assert!(fine.check().is_ok());
     }
 
     #[test]

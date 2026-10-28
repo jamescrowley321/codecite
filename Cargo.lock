@@ -300,6 +300,7 @@ dependencies = [
  "codecite-core",
  "ego-tree",
  "globset",
+ "regex",
  "rusqlite",
  "scraper",
  "serde",

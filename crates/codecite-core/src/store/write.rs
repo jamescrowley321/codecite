@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use rusqlite::{Transaction, params};
+use rusqlite::{OptionalExtension, Transaction, params};
 
 use super::Store;
 use crate::{Keyword, Result, SpecAliases, identifier_terms, text_terms};
@@ -146,6 +146,20 @@ impl Store {
             .prepare("SELECT path, content_hash FROM document WHERE source_id = ?1")?;
         let rows = stmt.query_map([source_id], |row| Ok((row.get(0)?, row.get(1)?)))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// The language stored for the document at `path` in the source:
+    /// `None` when there is no such document, `Some(None)` when it has no
+    /// language.
+    pub fn document_language(&self, source_id: i64, path: &str) -> Result<Option<Option<String>>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT language FROM document WHERE source_id = ?1 AND path = ?2",
+                params![source_id, path],
+                |row| row.get(0),
+            )
+            .optional()?)
     }
 
     /// Replaces the document at `document.path` in the source, with its

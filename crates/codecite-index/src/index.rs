@@ -442,10 +442,13 @@ fn index_document(
     // A document source holds one document, stored under its name.
     let path = doc.name.as_str();
     let hash = Sha256::digest(bytes);
+    // A spec has no language; a version stored as guidance with the same
+    // bytes was split as Markdown, so it is split again.
     if store
         .document_hashes(source_id)?
         .get(path)
         .is_some_and(|old| old[..] == hash[..])
+        && store.document_language(source_id, path)? == Some(None)
     {
         summary.unchanged += 1;
         return Ok(source_id);
@@ -537,10 +540,18 @@ fn index_guidance(
     })?;
     let hash = Sha256::digest(bytes);
     let sections: Vec<SpecSection> = split.iter().map(|r| r.section.clone()).collect();
+    // A version stored as a spec with the same bytes was split as HTML,
+    // so it is split again.
+    let markdown = Language::Markdown.name();
     if store
         .document_hashes(source_id)?
         .get(name)
         .is_some_and(|old| old[..] == hash[..])
+        && store
+            .document_language(source_id, name)?
+            .flatten()
+            .as_deref()
+            == Some(markdown)
     {
         summary.unchanged += 1;
     } else {
@@ -1004,6 +1015,23 @@ mod tests {
             summary.removed_sources,
             [format!("house-rules@sha256:{}", &sha256(RULES)[..12])]
         );
+    }
+
+    #[test]
+    fn switching_a_source_between_document_and_guidance_splits_it_again() {
+        let server = Server::start();
+        server.set("/RULES.md", RULES);
+        let corpus = Corpus::new();
+        let rules = guidance(None, Some(server.url("/RULES.md")), Some(sha256(RULES)));
+        corpus.index(&manifest(vec![Source::Guidance(rules)]));
+        // The same bytes as a plain document: not a spec page, so the run
+        // tries to split it as one instead of keeping the guidance chunks.
+        let mut doc = document(server.url("/RULES.md"), &sha256(RULES));
+        if let Source::Document(d) = &mut doc {
+            d.name = "house-rules".into();
+        }
+        let err = corpus.try_index(&manifest(vec![doc])).unwrap_err();
+        assert!(matches!(err, Error::Spec { .. }), "{err:?}");
     }
 
     #[test]
