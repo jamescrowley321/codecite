@@ -2,6 +2,7 @@
 //! reports Recall@1, Recall@10 and MRR for each query class, with every miss.
 
 mod answer;
+mod grep;
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -33,6 +34,13 @@ struct Cli {
     /// Print the report as JSON.
     #[arg(long)]
     json: bool,
+    /// Rank with `git grep` over this repository instead of running
+    /// `codecite search`: the baseline the history benchmark compares with.
+    #[arg(long, requires = "commit")]
+    grep: Option<PathBuf>,
+    /// The commit `--grep` searches.
+    #[arg(long, requires = "grep")]
+    commit: Option<String>,
 }
 
 /// The queries file.
@@ -126,8 +134,11 @@ fn main() -> anyhow::Result<()> {
             .iter()
             .map(|a| Answer::parse(a))
             .collect::<anyhow::Result<Vec<_>>>()?;
-        let citations = search(&codecite, &file.corpus, &query.text)
-            .with_context(|| format!("query `{}`", query.id))?;
+        let citations = match (&cli.grep, &cli.commit) {
+            (Some(repo), Some(commit)) => grep::grep_rank(repo, commit, &query.text, DEPTH),
+            _ => search(&codecite, &file.corpus, &query.text),
+        }
+        .with_context(|| format!("query `{}`", query.id))?;
         let rank = citations
             .iter()
             .position(|c| {
@@ -152,7 +163,7 @@ fn main() -> anyhow::Result<()> {
         .iter()
         .map(|(class, os)| (*class, Scores::of(os.iter().copied())))
         .collect();
-    let groups: BTreeMap<&str, Scores> = ["spec", "code"]
+    let groups: BTreeMap<&str, Scores> = ["spec", "code", "history"]
         .into_iter()
         .map(|g| {
             (
@@ -164,13 +175,19 @@ fn main() -> anyhow::Result<()> {
         .collect();
     let all = Scores::of(outcomes.iter());
 
+    let engine = if cli.grep.is_some() {
+        "grep"
+    } else {
+        "codecite"
+    };
     if cli.json {
         let report = serde_json::json!({
-            "classes": classes, "groups": groups, "all": all, "outcomes": outcomes,
+            "engine": engine, "classes": classes, "groups": groups, "all": all, "outcomes": outcomes,
         });
         println!("{}", serde_json::to_string_pretty(&report)?);
         return Ok(());
     }
+    println!("Engine: {engine}\n");
     println!("| Class | Queries | Recall@1 | Recall@10 | MRR |");
     println!("| --- | ---: | ---: | ---: | ---: |");
     let row = |name: &str, s: &Scores| {

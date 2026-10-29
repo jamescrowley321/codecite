@@ -246,7 +246,10 @@ mod tests {
         assert!(hit("src/app.py", "repo@0123abcd:src/app.py#L1"));
         assert!(!hit("src/app.py", "repo@0123abcd:src/app.pyc#L5"));
         assert!(!hit("src/app.py", "repo@0123abcd:lib/src/app.py#L5"));
-        assert!(!hit("src/app.py", "rfc9449@sha256:2d8657f07291#section-4.3"));
+        assert!(!hit(
+            "src/app.py",
+            "rfc9449@sha256:2d8657f07291#section-4.3"
+        ));
     }
 
     #[test]
