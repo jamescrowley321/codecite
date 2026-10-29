@@ -504,3 +504,23 @@ def test_normalised_time_drops_a_decode_speed_gap():
     row = spans[("m", "codecite vs baseline")]
     assert row["time"].endswith(" *") and row["model time"].endswith(" *")
     assert not row["normalised time"].endswith(" *")
+
+
+def claude_run(arm, epoch, calls):
+    """A Claude Code sample: no model events, its measures in the store."""
+    s = sample(arm, epoch, passed=True, calls=[])
+    s.model_usage, s.events = {}, []
+    s.store = {"agent_turns": 6, "agent_tokens": 9000, "agent_output_tokens": 800, "agent_model_seconds": 20.0, "codecite_calls": calls}
+    return s
+
+
+def test_a_claude_code_log_reads_its_measures_from_the_store(tmp_path):
+    runs = [claude_run("baseline", e, 0) for e in range(1, EPOCHS + 1)] + [claude_run("codecite", e, 2) for e in range(1, EPOCHS + 1)]
+    write_eval_log(log("claude-code/claude-sonnet-5-5", runs), str(tmp_path / "ab.eval"))
+    (found,) = logs([tmp_path / "ab.eval"])
+    out = scorecard([found])
+    key = ("claude-code/claude-sonnet-5-5", "codecite")
+    (_, runs), (_, transcript) = table(out, 0), table(out, 1)
+    assert (runs[key]["median tokens"], runs[key]["used codecite"]) == ("9,000", f"{EPOCHS}/{EPOCHS}")
+    r = transcript[key]
+    assert (r["turns"], r["output tokens"], r["model time"], r["decode rate"], r["providers"]) == ("6", "800", "20s", "40 tok/s", "-")

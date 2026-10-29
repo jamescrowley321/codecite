@@ -28,11 +28,12 @@ from pathlib import Path
 from inspect_ai import Task, task
 from inspect_ai.agent import Agent, AgentState, agent, sandbox_agent_bridge
 from inspect_ai.dataset import Sample
+from inspect_ai.model import ChatMessageAssistant, get_model
 from inspect_ai.scorer import Score, Target, accuracy, scorer, stderr
 from inspect_ai.solver import Generate, TaskState, solver
 from inspect_ai.util import OutputLimitExceededError, sandbox, store
 
-from codecite_evals import config
+from codecite_evals import claude_code, config
 
 ARMS = {"both": ("baseline", "codecite"), "baseline": ("baseline",)}
 PROJECT = "/work/project"
@@ -91,7 +92,7 @@ def ab_task(task_id: str, arms: str = "ab") -> Task:
             Sample(id=label, input=prompt(task_dir, condition), metadata={"arm": label, "condition": condition})
             for label, condition in config.ARMS[arms]
         ],
-        solver=[condition_to_store(), pi()],
+        solver=[condition_to_store(), coding_agent()],
         scorer=hidden_tests_and_checks(task_id),
         sandbox=("docker", str(config.COMPOSE)),
     )
@@ -141,40 +142,62 @@ def condition_to_store():
 
 
 @agent
+def coding_agent() -> Agent:
+    """The sample's agent: Claude Code for a claude-code/ model
+    (claude_code.py), else pi through Inspect's agent bridge."""
+
+    async def execute(state: AgentState) -> AgentState:
+        model = get_model()
+        if claude_code.runs(model):
+            return await claude(model.name)(state)
+        return await pi()(state)
+
+    return execute
+
+
+async def prepare_arm(sb, condition: str, mcp_path: str, mcp_config: dict) -> dict[str, str]:
+    """Take codecite out of the baseline arm's sandbox, or give the codecite
+    arm the agent's MCP config, and return the arm's base env."""
+    if condition == "baseline":
+        await sb.exec(["rm", "-rf", "/opt/codecite"])
+    else:
+        await sb.write_file(mcp_path, json.dumps(mcp_config, indent=2))
+    path = ("/opt/codecite/bin:" if condition == "codecite" else "") + "/usr/local/bin:/usr/bin:/bin"
+    return {"PATH": path, "HOME": "/root"}
+
+
+async def run_agent(sb, cmd: list[str], env: dict[str, str], timeout: int):
+    """Run the agent's command; None when it stopped early, with the reason
+    in the store."""
+    try:
+        return await sb.exec(cmd, cwd=PROJECT, env=env, timeout=timeout)
+    except TimeoutError:
+        # Running out of time is the agent's failure, not infra: score
+        # whatever it left behind. Erroring would retry the sample and keep
+        # only the runs fast enough to finish.
+        store().set("stopped", "agent_timeout")
+    except (OutputLimitExceededError, UnicodeDecodeError):
+        # The agent's output overflowing the stream limit or failing to
+        # decode is the agent's doing too, not the sandbox's.
+        store().set("stopped", "agent_output")
+    except Exception as e:
+        # A sandbox failure (connection loss, process kill) is scored the
+        # same way, so retrying doesn't keep only the runs that survive it,
+        # but labelled apart so the scorecard shows it.
+        store().set("stopped", "sandbox_error")
+        store().set("sandbox_error", f"{type(e).__name__}: {e}"[:2000])
+    return None
+
+
+@agent
 def pi() -> Agent:
     async def execute(state: AgentState) -> AgentState:
         sb = sandbox()
         condition = store().get("condition")
-        if condition == "baseline":
-            await sb.exec(["rm", "-rf", "/opt/codecite"])
-        else:
-            await sb.write_file(PI_MCP, json.dumps(MCP_CONFIG, indent=2))
-        path = ("/opt/codecite/bin:" if condition == "codecite" else "") + "/usr/local/bin:/usr/bin:/bin"
+        env = await prepare_arm(sb, condition, PI_MCP, MCP_CONFIG)
         async with sandbox_agent_bridge(state) as bridge:
-            try:
-                result = await sb.exec(
-                    pi_command(condition, state.messages[0].text),
-                    cwd=PROJECT,
-                    env={"PATH": path, "HOME": "/root"},
-                    timeout=AGENT_TIMEOUT,
-                )
-            except TimeoutError:
-                # Running out of time is the agent's failure, not infra: score
-                # whatever it left behind. Erroring would retry the sample and
-                # keep only the runs fast enough to finish.
-                store().set("stopped", "agent_timeout")
-                return bridge.state
-            except (OutputLimitExceededError, UnicodeDecodeError):
-                # pi's output overflowing the stream limit or failing to
-                # decode is the agent's doing too, not the sandbox's.
-                store().set("stopped", "agent_output")
-                return bridge.state
-            except Exception as e:
-                # A sandbox failure (connection loss, process kill) is scored
-                # the same way, so retrying doesn't keep only the runs that
-                # survive it, but labelled apart so the scorecard shows it.
-                store().set("stopped", "sandbox_error")
-                store().set("sandbox_error", f"{type(e).__name__}: {e}"[:2000])
+            result = await run_agent(sb, pi_command(condition, state.messages[0].text), env, AGENT_TIMEOUT)
+            if result is None:
                 return bridge.state
             if not result.success:
                 raise RuntimeError(f"pi exited {result.returncode}: {result.stderr[-2000:]}")
@@ -183,6 +206,36 @@ def pi() -> Agent:
                 # sample (Inspect can retry it) rather than score it.
                 raise RuntimeError(f"pi's last turn failed: {error[:2000]}")
         return bridge.state
+
+    return execute
+
+
+@agent
+def claude(model: str) -> Agent:
+    """Claude Code on `model`. Its measures reach the store even when it
+    timed out, from the output it left."""
+
+    async def execute(state: AgentState) -> AgentState:
+        sb = sandbox()
+        condition = store().get("condition")
+        env = {**await prepare_arm(sb, condition, claude_code.MCP, claude_code.MCP_CONFIG), **claude_code.ENV}
+        cmd = claude_code.command(condition, state.messages[0].text, model, AGENT_TIMEOUT)
+        result = await run_agent(sb, cmd, env, AGENT_TIMEOUT + 30)
+        if result is None:
+            return state
+        for key, value in claude_code.measures(result.stdout).items():
+            store().set(key, value)
+        if result.returncode in (124, 137):
+            # `timeout` stopped it (SIGTERM, then SIGKILL).
+            store().set("stopped", "agent_timeout")
+            return state
+        if error := claude_code.failure(result.stdout):
+            # An API error or a usage limit is infra, as pi's provider errors are.
+            raise RuntimeError(f"Claude Code failed: {error[:2000]}")
+        if not result.success:
+            raise RuntimeError(f"claude exited {result.returncode}: {result.stderr[-2000:]}")
+        state.messages.append(ChatMessageAssistant(content=claude_code.answer(result.stdout)))
+        return state
 
     return execute
 

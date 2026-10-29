@@ -1,18 +1,24 @@
 name: Evals
 
-# The A/B agent eval (evals/README.md). The quick tier runs on PRs labelled
-# `eval`, one job per task in the eval job's matrix, and posts their
-# scorecards as one PR comment, updated in place; the full tier runs on
-# dispatch, for the one task it names. A dispatch with `arms: baseline`
+# The A/B agent eval (evals/README.md). The quick tier runs when a PR gets
+# the `eval` label, once: pushes don't rerun it, so take the label off and
+# put it back, or dispatch, to run it again. It runs one job per task in the
+# eval job's matrix and posts their scorecards as one PR comment, updated in
+# place; the full tier runs on dispatch, for the one task it names.
+#
+# Every run has Claude Code on the Claude panel, on the subscription behind
+# CLAUDE_CODE_OAUTH_TOKEN. pi on the OpenRouter panel, billed per token, runs
+# beside it only when switched on: the dispatch's `openrouter` input, or the
+# repository variable EVALS_OPENROUTER set to `true` (for PR runs too). A dispatch with `arms: baseline`
 # calibrates its task: the quick panel on the baseline arm alone, reported with
 # no verdict (evals/README.md). Advisory, like `bench`: never a required check.
 on:
   pull_request:
-    types: [labeled, synchronize]
+    types: [labeled]
   workflow_dispatch:
     inputs:
       tier:
-        description: quick (3 models, 5 epochs) or full (9 models, 10 epochs)
+        description: quick (2 Claude models, 5 epochs) or full (2 Claude models, 10 epochs); OpenRouter adds 3 or 9 models
         type: choice
         options: [quick, full]
         default: quick
@@ -29,6 +35,10 @@ on:
         description: Epochs per arm, if not the tier's own (quick 5, full 10)
         type: string
         default: ""
+      openrouter:
+        description: Also run pi on the tier's OpenRouter panel, billed per token
+        type: boolean
+        default: false
       resume:
         description: Run id of an earlier run of this tier, task and arms whose unfinished logs to finish with inspect eval-retry
         type: string
@@ -37,18 +47,15 @@ on:
 permissions:
   contents: read
 
-# A push to a labelled PR cancels its stale eval. Events that run nothing (any
-# other label, a push to an unlabelled PR) get a group of their own, so they
-# cancel nothing. Dispatches queue rather than cancel, one group per set of
-# inputs (task, tier, arms, epochs, resume): GitHub keeps one pending run per
+# Labelling a PR again cancels its stale eval. Events that run nothing (any
+# other label) get a group of their own, so they cancel nothing. Dispatches queue rather than cancel, one group per set of
+# inputs (task, tier, arms, epochs, openrouter, resume): GitHub keeps one pending run per
 # group and cancels the one before, so without the task, calibrating two tasks
 # at once dropped the first. Only an identical dispatch replaces a pending one.
 concurrency:
   group: >-
-    evals-${{ github.event.pull_request.number || github.ref }}-${{ inputs.task || 'pr' }}-${{ inputs.tier || 'quick' }}-${{ inputs.arms || 'ab' }}-${{ inputs.epochs || 'default' }}-${{ inputs.resume || 'fresh' }}-${{
-    (github.event_name == 'workflow_dispatch'
-    || (github.event.action == 'labeled' && github.event.label.name == 'eval')
-    || (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'eval')))
+    evals-${{ github.event.pull_request.number || github.ref }}-${{ inputs.task || 'pr' }}-${{ inputs.tier || 'quick' }}-${{ inputs.arms || 'ab' }}-${{ inputs.epochs || 'default' }}-${{ inputs.openrouter && 'or' || 'claude' }}-${{ inputs.resume || 'fresh' }}-${{
+    (github.event_name == 'workflow_dispatch' || github.event.label.name == 'eval')
     && 'run' || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
@@ -62,8 +69,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch'
       || (github.event.pull_request.head.repo.full_name == github.repository
-      && ((github.event.action == 'labeled' && github.event.label.name == 'eval')
-      || (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'eval'))))
+      && github.event.label.name == 'eval')
     runs-on: ubuntu-latest
     # More epochs than the quick tier's own take the full tier's limits.
     timeout-minutes: ${{ (inputs.tier == 'full' || inputs.epochs) && 360 || 75 }}
@@ -80,6 +86,7 @@ jobs:
       TASK_ID: ${{ matrix.task }}
       ARMS: ${{ inputs.arms || 'ab' }}
       EPOCHS: ${{ inputs.epochs }}
+      OPENROUTER: ${{ (inputs.openrouter || vars.EVALS_OPENROUTER == 'true') && '1' || '0' }}
       # Where panel.sh logs, under inspect/logs/: the tier, the tier's A/A
       # round, or calibration.
       RUN_NAME: ${{ inputs.arms == 'baseline' && 'calibration' || format('{0}{1}', inputs.tier || 'quick', inputs.arms == 'aa' && '-aa' || '') }}
@@ -116,7 +123,7 @@ jobs:
       - name: Hash the image build contexts
         id: context
         run: |
-          hash="$(find evals/inspect/build evals/inspect/compose.yaml evals/fixtures/node-oidc -type f -print0 \
+          hash="$(find evals/inspect/build evals/inspect/compose.yaml evals/inspect/proxy evals/fixtures/node-oidc -type f -print0 \
             | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-32)"
           echo "key=evals-images-$hash" >> "$GITHUB_OUTPUT"
       - name: Restore the sandbox images
@@ -142,7 +149,7 @@ jobs:
         run: |
           docker compose -f evals/inspect/compose.yaml build
           mkdir -p "$RUNNER_TEMP/images"
-          docker save -o "$RUNNER_TEMP/images/images.tar" codecite-eval-sandbox codecite-eval-idp
+          docker save -o "$RUNNER_TEMP/images/images.tar" codecite-eval-sandbox codecite-eval-idp codecite-eval-proxy
       - name: Install uv
         run: pipx install uv==0.12.5
       - run: uv sync --locked
@@ -160,8 +167,38 @@ jobs:
         timeout-minutes: ${{ (inputs.tier == 'full' || inputs.epochs) && 345 || 60 }}
         working-directory: evals
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_EVAL_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          OPENROUTER_API_KEY: ${{ env.OPENROUTER == '1' && secrets.OPENROUTER_EVAL_API_KEY || '' }}
         run: inspect/panel.sh "$TIER" --sandbox-prebuilt
+      # The agents' shells can read CLAUDE_CODE_OAUTH_TOKEN, and the logs
+      # keep their output, so a log holding the token is never uploaded.
+      - name: Keep the token out of the logs
+        if: always()
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          dir="evals/inspect/logs/$RUN_NAME/$TASK_ID"
+          [[ -d "$dir" && -n "$CLAUDE_CODE_OAUTH_TOKEN" ]] || exit 0
+          python3 -I - "$dir" <<'PY'
+          import os, sys, zipfile
+          from pathlib import Path
+          token = os.environ["CLAUDE_CODE_OAUTH_TOKEN"].encode()
+          leaked = []
+          for path in Path(sys.argv[1]).rglob("*"):
+              if not path.is_file():
+                  continue
+              if zipfile.is_zipfile(path):
+                  with zipfile.ZipFile(path) as z:
+                      hit = any(token in z.read(n) for n in z.namelist())
+              else:
+                  hit = token in path.read_bytes()
+              if hit:
+                  leaked.append(path)
+                  path.unlink()
+          for path in leaked:
+              print(f"::error::removed {path}: it held CLAUDE_CODE_OAUTH_TOKEN")
+          sys.exit(1 if leaked else 0)
+          PY
       - name: Publish the scorecard
         if: always()
         run: |
