@@ -87,8 +87,10 @@ def events(stdout: str):
 def measures(stdout: str) -> dict:
     """Turns, tokens, model time and codecite calls from Claude Code's
     stream-json output, which may stop short when it timed out. A turn is
-    one API message; its usage repeats on each content block it streams, so
-    each message counts once."""
+    one API message, counted once though it streams a block at a time. Each
+    message's usage is only what was known when it started streaming, so the
+    tokens are the result's totals; a run cut off before its result has only
+    those partial counts, a lower bound."""
     usage, calls, result = {}, 0, None
     for event in events(stdout):
         if event.get("type") == "result":
@@ -105,7 +107,8 @@ def measures(stdout: str) -> dict:
                 calls += 1
             elif name == "Bash" and isinstance(args.get("command"), str):
                 calls += bool(CLI.search(args["command"]))
-    count = lambda *keys: sum(int(u.get(k) or 0) for u in usage.values() for k in keys)
+    totals = [result["usage"]] if result and isinstance(result.get("usage"), dict) else list(usage.values())
+    count = lambda *keys: sum(int(u.get(k) or 0) for u in totals for k in keys)
     api_ms = result.get("duration_api_ms") if result else None
     return {
         "agent_turns": len(usage),

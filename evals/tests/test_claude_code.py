@@ -56,12 +56,13 @@ def test_measures_count_each_message_once():
         # The same message again, streaming its next block.
         assistant("m1", USAGE, tool("Bash", command="codecite read eval 'rfc6749#section-2.3'")),
         assistant("m2", USAGE, tool("Bash", command="grep -r codecite ."), tool("Read", file_path="/x")),
-        DONE,
+        {**DONE, "usage": {**USAGE, "output_tokens": 600}},
     )
     assert claude_code.measures(out) == {
         "agent_turns": 2,
-        "agent_tokens": 2 * 1115,
-        "agent_output_tokens": 10,
+        # The result's totals, not the messages' partial counts.
+        "agent_tokens": 1710,
+        "agent_output_tokens": 600,
         "agent_model_seconds": 4.5,
         "codecite_calls": 2,
     }
@@ -70,7 +71,7 @@ def test_measures_count_each_message_once():
 def test_a_cut_off_stream_still_has_measures_but_no_model_time():
     out = stream(assistant("m1", USAGE)) + '{"type": "assist'
     m = claude_code.measures(out)
-    assert (m["agent_turns"], m["agent_model_seconds"]) == (1, None)
+    assert (m["agent_turns"], m["agent_tokens"], m["agent_model_seconds"]) == (1, 1115, None)
     assert claude_code.failure(out) is None
 
 
