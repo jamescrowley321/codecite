@@ -183,7 +183,12 @@ fn rfc_6749_2_3_lays_out_its_rules() {
     // parameters.
     assert_eq!(group(&result, "3.2.1")["relation"], "referring");
     let endpoint = group(&result, "3.2");
-    assert_eq!(endpoint["relation"], "context");
+    assert_eq!(endpoint["relation"], "using");
+    assert_eq!(
+        endpoint["note"],
+        "Its rules apply to the same requests as the section asked about."
+    );
+    assert!(group(&result, "2.3").get("note").is_none());
     assert!(holds(endpoint, "MUST NOT be included more than once"));
     // Statements cite their own section, MUSTs first.
     let first = &group(&result, "2.3")["statements"][0];
@@ -216,11 +221,22 @@ fn a_subsection_takes_in_what_governs_its_enclosing_sections() {
         group(&result, "2.3"),
         "MUST NOT use more than one authentication method"
     ));
-    assert_eq!(group(&result, "3.2")["relation"], "context");
+    assert_eq!(group(&result, "3.2")["relation"], "using");
     assert!(holds(
         group(&result, "3.2"),
         "MUST NOT be included more than once"
     ));
+    // The token endpoint's rules govern the same requests, so they come
+    // straight after the sections that hold §2.3.1, before mere references.
+    let at = |number: &str| {
+        let anchor = format!("#section-{number}");
+        order.iter().position(|c| c.ends_with(&anchor)).unwrap()
+    };
+    assert_eq!(at("3.2"), 2, "{order:?}");
+    assert!(
+        at("3.2") < at("1.6") && at("3.2") < at("3.2.1"),
+        "{order:?}"
+    );
     // A sibling of the subsection is not taken in, nor the top-level §2.
     for number in ["2.3.2", "2"] {
         let anchor = format!("#section-{number}");

@@ -65,15 +65,23 @@ pub struct RequirementSection {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     /// Why it governs: `asked`; `subsection` of it; `enclosing` it, short
-    /// of the top-level section; `referenced` by it, a subsection or an
-    /// enclosing section (`Section 2.4`, or a section whose title one of
-    /// their titles holds); `referring` to one of those; or `context`, the
-    /// enclosing section of a referring subsection.
+    /// of the top-level section; `using` it, the enclosing section of a
+    /// referring subsection, such as the endpoint that applies it, whose
+    /// rules govern the same requests; `referenced` by it, a subsection or
+    /// an enclosing section (`Section 2.4`, or a section whose title one of
+    /// their titles holds); or `referring` to one of those.
     pub relation: String,
+    /// For a `using` section, [`USING_NOTE`]: agents otherwise read a
+    /// later group as background (#170).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
     /// Its statements: `MUST`-level first, then its steps in order, then
     /// `SHOULD`-level. Empty when it states no rule.
     pub statements: Vec<Requirement>,
 }
+
+/// What a `using` section's group says, in JSON and in the human form.
+const USING_NOTE: &str = "Its rules apply to the same requests as the section asked about.";
 
 /// One normative statement.
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
@@ -106,6 +114,9 @@ impl fmt::Display for Requirements {
                 write!(f, " · {title}")?;
             }
             writeln!(f, " ({})", section.relation)?;
+            if let Some(note) = &section.note {
+                writeln!(f, "  {note}")?;
+            }
             for statement in &section.statements {
                 if statement.keywords.is_empty() {
                     writeln!(f, "  - {}", statement.text)?;
@@ -139,9 +150,13 @@ enum Relation {
     Asked,
     Subsection,
     Enclosing,
+    /// The enclosing section of a referring subsection: the endpoint or
+    /// flow that applies the section asked about, so its rules govern the
+    /// same requests. RFC 6749 §3.2.1 applies §2.3, and §3.2's rule on
+    /// repeated parameters binds a client authenticating per §2.3.
+    Using,
     Referenced,
     Referring,
-    Context,
 }
 
 impl Relation {
@@ -152,7 +167,7 @@ impl Relation {
             Self::Enclosing => "enclosing",
             Self::Referenced => "referenced",
             Self::Referring => "referring",
-            Self::Context => "context",
+            Self::Using => "using",
         }
     }
 }
@@ -270,8 +285,8 @@ impl Store {
         let mut order: Vec<usize> = (0..sections.len())
             .filter(|i| relations.contains_key(i))
             .collect();
-        // The asked section, its subsections, then the rest, each in
-        // document order.
+        // The asked section, its subsections, the sections enclosing it and
+        // those using it, then the rest, each in document order.
         order.sort_by_key(|i| (relations[i].min(Relation::Referenced), *i));
 
         // What the sections serialize to, headers and statements, stays
@@ -289,6 +304,7 @@ impl Store {
                 citation,
                 title: section.title.clone(),
                 relation: relation.as_str().into(),
+                note: (relation == Relation::Using).then(|| USING_NOTE.into()),
                 statements: Vec::new(),
             };
             let header = serialized_len(&group) + 1;
@@ -453,7 +469,7 @@ fn governing(sections: &[Chunk], asked: usize) -> HashMap<usize, Relation> {
             if let Some(&parent) = s.parent.as_ref().and_then(|p| index.get(p))
                 && !linked_set.contains(&parent)
             {
-                add(&mut relations, parent, Relation::Context);
+                add(&mut relations, parent, Relation::Using);
             }
         }
     }
@@ -826,6 +842,7 @@ mod tests {
                     "subsection".into(),
                     owned(&["The RP MUST return 400."])
                 ),
+                ("#section-4".into(), "using".into(), Vec::new()),
                 (
                     "#section-2.1".into(),
                     "referenced".into(),
@@ -839,7 +856,6 @@ mod tests {
                         "2. You MUST check the certificate."
                     ])
                 ),
-                ("#section-4".into(), "context".into(), Vec::new()),
                 (
                     "#section-4.1".into(),
                     "referring".into(),
@@ -855,7 +871,7 @@ mod tests {
         assert_eq!(asked[2].citation, format!("{PINNED}#section-2.2/step-1"));
         assert_eq!(asked[2].keywords, ["SHOULD"]);
         assert_eq!(asked[3].keywords, Vec::<String>::new());
-        assert_eq!(r.sections[2].statements[0].kind, "row");
+        assert_eq!(r.sections[3].statements[0].kind, "row");
 
         // The canonical citation and a URL-free written one agree.
         let canonical = store
@@ -869,6 +885,11 @@ mod tests {
         );
         assert!(
             human.contains("#section-2.1 · Logout Token (referenced)"),
+            "{human}"
+        );
+        // A section that applies the one asked about says its rules count.
+        assert!(
+            human.contains(&format!("#section-4 · Other (using)\n  {USING_NOTE}\n")),
             "{human}"
         );
         assert!(
@@ -890,9 +911,9 @@ mod tests {
         let want = [
             ("#section-2.2.1", "asked"),
             ("#section-2.2", "enclosing"),
+            ("#section-4", "using"),
             ("#section-2.1", "referenced"),
             ("#section-3", "referenced"),
-            ("#section-4", "context"),
             ("#section-4.1", "referring"),
         ];
         let want: Vec<(String, String)> = want

@@ -313,12 +313,16 @@ or a section whose title of two or more words its title holds, as §2.6
 "Logout Token Validation" holds §2.4 "Logout Token"; the same title is no
 reference, since specs reuse headings across flows), the sections that name
 it or a subsection (`referring`), and the enclosing section of each referring
-subsection (`context`: RFC 6749 §3.2.1 names §2.3, so §3.2 Token Endpoint
-comes too). A subsection's enclosing sections, short of the top-level one,
+subsection (`using`: RFC 6749 §3.2.1 names §2.3, so §3.2 Token Endpoint
+applies it, and its rules govern the same requests). A subsection's enclosing sections, short of the top-level one,
 come too (`enclosing`), and their links count as its own: asking for RFC 6749
 §2.3.1 brings §2.3 and, through §3.2.1's reference to §2.3, §3.2. A top-level
 section's links are a whole chapter's, so they don't count. Appendices, whose
 numbers have no citation form, are left out.
+The groups run asked, subsections, enclosing and using sections first, then
+the rest in document order. A `using` group carries a `note` saying its rules
+apply to the same requests as the section asked about, since agents read a
+later group as background.
 Each group lists MUST-level rules first, then its steps in order, then
 SHOULD-level rules:
 
