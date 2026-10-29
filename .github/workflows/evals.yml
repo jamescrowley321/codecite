@@ -172,8 +172,9 @@ jobs:
         run: inspect/panel.sh "$TIER" --sandbox-prebuilt
       # The agents' shells can read CLAUDE_CODE_OAUTH_TOKEN, and the logs
       # keep their output, so a log holding the token is never uploaded. The
-      # logs are zstd zips, which only the evals venv's Python reads; if the
-      # scan itself fails, every log goes.
+      # logs are zstd zips, which Python reads natively from 3.14 and through
+      # the evals venv's zipfile_zstd before it; if the scan itself fails,
+      # every log goes.
       - name: Keep the token out of the logs
         if: always()
         working-directory: evals
@@ -185,6 +186,8 @@ jobs:
           uv run --locked python -I - "$dir" <<'PY' || { echo "::error::the token scan failed, so no logs upload"; rm -rf "$dir"; exit 1; }
           import os, sys, zipfile
           from pathlib import Path
+          if sys.version_info < (3, 14):
+              import zipfile_zstd  # noqa: F401  (zstd in zipfile, as Inspect does)
           token = os.environ["CLAUDE_CODE_OAUTH_TOKEN"].encode()
           leaked = []
           for path in Path(sys.argv[1]).rglob("*"):
