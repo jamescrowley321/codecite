@@ -1,0 +1,2 @@
+# The pinned spec pages are tests fixtures checked by their sha256: keep their bytes.
+crates/codecite-index/tests/fixtures/spec/*.html -text

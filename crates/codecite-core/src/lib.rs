@@ -17,6 +17,11 @@ pub use error::{Error, Result};
 mod keyword;
 pub use keyword::{Keyword, UnknownKeyword, requirement_keywords};
 
+mod normative;
+pub use normative::{
+    Level, NormativeStatement, StatementKind, normative_level, normative_statements,
+};
+
 mod role;
 pub use role::Role;
 
@@ -26,9 +31,9 @@ pub use store::{
     DEFAULT_MAX_LINES, DEFAULT_SEARCH_LIMIT, Definition, Definitions, DiffOptions, DiffResult,
     DocumentRecord, Finding, Freshness, GrepMatch, GrepQuery, GrepResults, MAX_READ_BYTES,
     MAX_READ_LINES, MAX_SEARCH_LIMIT, MAX_SNIPPET_BYTES, MAX_SNIPPET_LINES, QUOTE_INSTRUCTION,
-    QUOTE_TRUNCATED_INSTRUCTION, ReadOptions, ReadResult, SCHEMA_VERSION, Scope, SearchQuery,
-    SearchResult, SearchResults, SourceRecord, Store, SymbolRecord, VersionChange, corpora,
-    is_corpus_name,
+    QUOTE_TRUNCATED_INSTRUCTION, ReadOptions, ReadResult, Requirement, RequirementSection,
+    Requirements, RequirementsOptions, SCHEMA_VERSION, Scope, SearchQuery, SearchResult,
+    SearchResults, SourceRecord, Store, SymbolRecord, VersionChange, corpora, is_corpus_name,
 };
 
 mod terms;

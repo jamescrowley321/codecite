@@ -669,7 +669,7 @@ pub(super) fn file_lines(text: &str) -> Vec<&str> {
 
 /// The instruction a result from a source of `license_class` carries, when
 /// its text is `truncated` or whole.
-fn instruction(license_class: &str, truncated: bool) -> Option<String> {
+pub(super) fn instruction(license_class: &str, truncated: bool) -> Option<String> {
     let text = if truncated {
         QUOTE_TRUNCATED_INSTRUCTION
     } else {

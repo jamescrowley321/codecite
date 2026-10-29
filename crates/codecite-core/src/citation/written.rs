@@ -31,6 +31,12 @@ impl SpecAliases {
         self.0.get(&normalize(alias)).map(String::as_str)
     }
 
+    /// The document `text` names as a citation's document does: an alias,
+    /// or `RFC 6749` / `rfc6749` as `rfc6749`. `None` for anything else.
+    pub fn document(&self, text: &str) -> Option<String> {
+        resolve_doc(text, self).ok().flatten()
+    }
+
     /// Each alias, as lookups normalize it, with the document it names, in
     /// no particular order.
     pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> {

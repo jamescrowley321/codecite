@@ -295,10 +295,10 @@ benchmark).
   The baseline arm deletes codecite
   before the agent starts and runs pi with `--no-mcp`. The codecite arm runs
   `codecite mcp` through pi's built-in MCP support (`-e builtin:mcp`, with the
-  server's exposure `direct`), so `mcp__codecite__search` and
-  `mcp__codecite__read` sit in pi's tool list next to `grep` and `find`, with
+  server's exposure `direct`), so `mcp__codecite__search`,
+  `mcp__codecite__read` and `mcp__codecite__requirements` sit in pi's tool list next to `grep` and `find`, with
   codecite's descriptions; it keeps codecite on `PATH` too, and its prompt
-  gets a note naming both. Otherwise the arms are identical.
+  gets a note naming the tools and the command. Otherwise the arms are identical.
 - The scorecard's `used codecite` column counts, per arm, the runs with at
   least one call to codecite, read from the model calls in the Inspect log: a
   native tool call, or a `bash` call that runs `codecite`. Text that only
