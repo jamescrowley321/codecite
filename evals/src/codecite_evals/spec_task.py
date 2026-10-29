@@ -23,7 +23,7 @@ from inspect_ai.solver import TaskState
 from inspect_ai.util import sandbox, store
 
 from codecite_evals import config
-from codecite_evals.task import condition_to_store, pi, why_stopped
+from codecite_evals.task import coding_agent, condition_to_store, why_stopped
 
 TASK_ID = "spec-questions"
 
@@ -81,7 +81,7 @@ def spec_questions(arms: str = "ab") -> Task:
             for q in questions(task_dir)
             for label, condition in config.ARMS[arms]
         ],
-        solver=[condition_to_store(), pi()],
+        solver=[condition_to_store(), coding_agent()],
         scorer=answer_and_section(TASK_ID),
         sandbox=("docker", str(config.COMPOSE_OFFLINE)),
     )

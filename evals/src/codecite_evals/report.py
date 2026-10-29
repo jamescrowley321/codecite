@@ -28,6 +28,10 @@ model's decode rate over both arms, so a slower host for one arm drops out.
 The scorecard shows their medians per arm, the providers with counts, and a
 95% interval for every measure.
 
+A Claude Code run (a claude-code/ model) makes its calls outside Inspect, so
+its turns, tokens, model time and codecite calls come from the sample's
+store instead (claude_code.py), and it names no provider.
+
 Timeouts and sandbox errors both count as failures. They get columns of
 their own, each sandbox error is listed under the task's tables, and a model
 with any has them named in its verdict, so a loss or pass they helped make
@@ -356,16 +360,21 @@ def scorecard(logs, tier=None):
             metadata = score.metadata or {}
             why = stopped(metadata)
             turns, model_seconds, providers = transcript(s)
+            # Claude Code's calls bypass Inspect: its agent keeps their
+            # measures in the store (claude_code.py).
+            agent = s.store or {}
+            if "agent_turns" in agent:
+                turns, model_seconds = agent["agent_turns"] or None, agent.get("agent_model_seconds")
             runs[(name, model, arm)].append(Run(
                 passed=score.value == 1,
-                tokens=sum(u.total_tokens or 0 for u in usage),
+                tokens=agent.get("agent_tokens", sum(u.total_tokens or 0 for u in usage)),
                 seconds=s.total_time or 0.0,
                 stopped=why,
                 turns=turns,
-                output_tokens=sum(u.output_tokens or 0 for u in usage),
+                output_tokens=agent.get("agent_output_tokens", sum(u.output_tokens or 0 for u in usage)),
                 model_seconds=model_seconds,
                 providers=providers,
-                used=codecite_calls(s) > 0,
+                used=agent.get("codecite_calls", codecite_calls(s)) > 0,
                 replies=sum(isinstance(m, ChatMessageAssistant) for m in s.messages or []),
             ))
             if why == "sandbox_error":

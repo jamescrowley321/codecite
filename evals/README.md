@@ -15,11 +15,12 @@ Evaluation plan):
 
 | Path | What |
 | --- | --- |
-| `src/codecite_evals/` | The `codecite-evals` package that `uv sync` installs: `task.py` (the code tasks: one sample per arm, pi in a Docker sandbox, the scorer), `spec_task.py` (the spec-question task: one sample per question per arm, on the same pi), `report.py` (the scorecard, or the calibration table), `frozen.py` (the frozen-task check) and `config.py` (where every file below is found) |
+| `src/codecite_evals/` | The `codecite-evals` package that `uv sync` installs: `task.py` (the code tasks: one sample per arm, the agent in a Docker sandbox, the scorer), `claude_code.py` (Claude Code as the agent, for `claude-code/` models; any other model runs pi), `scrub.py` (deletes logs holding the Claude token before CI uploads them), `spec_task.py` (the spec-question task: one sample per question per arm, on the same agents), `report.py` (the scorecard, or the calibration table), `frozen.py` (the frozen-task check) and `config.py` (where every file below is found) |
 | `tests/` | Unit tests for the task's agent, the scorecard, the frozen-task check and the config; no model key or Docker needed |
 | `inspect/prepare.sh` | Stage the sandbox image's build context in `inspect/build/` for one task (`prepare.sh <task-id>`, default `fastapi-middleware`) |
-| `inspect/Dockerfile`, `inspect/compose.yaml` | The sandbox image and the IdP beside it, on a network with no route out |
-| `inspect/compose-offline.yaml` | The sandbox alone with no network, for a task that needs no IdP (spec-questions) |
+| `inspect/Dockerfile`, `inspect/compose.yaml` | The sandbox image and the IdP beside it, on a network with no route out but the proxy |
+| `inspect/compose-offline.yaml` | The sandbox without the IdP, for a task that needs none (spec-questions) |
+| `inspect/proxy/` | The sandbox's one way out: an HTTPS proxy that lets through api.anthropic.com alone, for Claude Code |
 | `inspect/pi-models.json` | Points pi at Inspect's agent bridge |
 | `inspect/panel.sh` | Run one tier (`quick` or `full`): every model in one Inspect process, then the report |
 | `tasks/<id>/` | A task: `task.json` (with `frozen_at` once frozen), `prompt.md`, starting `project/`, `hidden/` tests, `checks.py`, `reference/`, and `check.sh`/`planted.sh` to prove the task and checks are sound |
@@ -119,9 +120,18 @@ calibration (see below).
 The A/B eval runs at one of two tiers. They share the task, the scorer and the
 report; only the panel and the number of epochs differ.
 
-| Tier | Panel | Epochs per sample | Takes | Use it |
+Each tier has two panels on two agents. The **Claude panel** always runs:
+Claude Code (`src/codecite_evals/claude_code.py`) on claude-haiku-5-5 and
+claude-sonnet-5-5, billed to the Claude subscription behind
+`CLAUDE_CODE_OAUTH_TOKEN`. The **OpenRouter panel** is pi on the models below,
+billed per token to `OPENROUTER_API_KEY`, and runs beside it only when
+`OPENROUTER=1` (in CI, the `openrouter` dispatch input or the `EVALS_OPENROUTER`
+repository variable). The two agents' results are reported apart, a row per
+model each: `claude-code/<model>` and `openrouter/<model>`.
+
+| Tier | OpenRouter panel | Epochs per sample | Takes | Use it |
 | --- | --- | --- | --- | --- |
-| `quick` | claude-haiku-5.5, claude-sonnet-5.5, gpt-6.1-sol | 5; spec-questions 1 | under 20 minutes in CI for a code task | on every PR that touches indexing, search, ranking or the CLI's output |
+| `quick` | claude-haiku-5.5, claude-sonnet-5.5, gpt-6.1-sol | 5; spec-questions 1 | under 20 minutes in CI for a code task | on a PR that touches indexing, search, ranking or the CLI's output |
 | `full` | all 9 models | 10; spec-questions 3 | within CI's 6-hour job limit | before a milestone closes, after a quick loss, or when the task set changes |
 
 A code task has one sample per arm, so its runs per arm are its epochs. The
@@ -141,11 +151,11 @@ third model is the fastest pi model by round one's medians; change it in
 `.github/workflows/evals.yml` runs both tiers. It is advisory, like `bench`,
 and never a required check.
 
-- **Quick:** add the `eval` label to a PR. The tier runs then and again on
-  every push while the label is on, one job per task (`fastapi-middleware`
-  and `spec-questions`, the eval job's matrix), and their scorecards go to
-  one PR comment, updated in place, a table per task. A new push cancels a
-  stale run. Fork PRs never run: they get no secrets.
+- **Quick:** add the `eval` label to a PR. The tier runs once, one job per
+  task (`fastapi-middleware` and `spec-questions`, the eval job's matrix),
+  and their scorecards go to one PR comment, updated in place, a table per
+  task. Pushes don't rerun it: to run it again on a new head, take the label
+  off and put it back, or dispatch. Fork PRs never run: they get no secrets.
 - **Full:** run the workflow by hand (Actions → Evals → Run workflow) with
   `tier: full`, the `task` to run and `arms` (`ab`, the default; `aa`; or
   `baseline` to calibrate; see below). Its scorecard goes to the job summary.
@@ -155,11 +165,24 @@ and never a required check.
 - **A/A:** dispatch with `arms: aa` to run an A/A round at either tier, and
   `epochs` to run more epochs than the tier's own (a quick tier at more than
   its 5 epochs gets the full tier's time limits).
+- **OpenRouter:** off unless switched on. Dispatch with `openrouter: true`
+  for one run, or set the repository variable `EVALS_OPENROUTER` to `true`
+  (in oss-admin, with the other settings) for every run, labelled PRs too.
 
 The job builds codecite, fetches identity-model at the task's pinned commit
-and caches the two sandbox images, keyed on a hash of their build contexts
-(which hold the codecite binary and the identity-model commit), so an
-unchanged binary doesn't rebuild. It reads only the `OPENROUTER_EVAL_API_KEY`
+and caches the three sandbox images (the sandbox, the IdP and the proxy),
+keyed on a hash of their build contexts (which hold the codecite binary and
+the identity-model commit), so an unchanged binary doesn't rebuild. It reads
+the `CLAUDE_CODE_OAUTH_TOKEN` secret, and `OPENROUTER_EVAL_API_KEY` only when
+OpenRouter is on. The two panels run in separate Inspect processes, so pi's
+never holds the Claude token. Claude Code's shell can read it, so before
+uploading, `python -m codecite_evals.scrub` deletes any log holding a run of
+it, as it is, reversed, hex, base64 (line-wrapped or not) or URL-encoded, and
+any log it can't read through, and fails the job; nothing uploads unless it
+passes. Error text that holds it is withheld from the job's console. A copy
+the agent deliberately disguised (compressed, encrypted) would get past the
+scrub, as would one the agent sent out through api.anthropic.com itself (the
+proxy checks only the host), so a token kept for evals alone is the safer
 secret. The Inspect logs, with the scorecard, upload as the
 `eval-logs-<tier>-<task>` artifact (`eval-logs-<tier>-aa-<task>` for an A/A
 round, `eval-logs-calibration-<task>` for a calibration).
@@ -209,10 +232,14 @@ cargo build --release
 evals/inspect/prepare.sh             # or: evals/inspect/prepare.sh spec-questions
 cd evals
 uv sync --locked
+export CLAUDE_CODE_OAUTH_TOKEN=...  # from `claude setup-token`
+uv run --locked inspect eval codecite_evals/fastapi_middleware --model claude-code/claude-haiku-5-5 --epochs 2
+inspect/panel.sh quick               # or: TASK_ID=spec-questions inspect/panel.sh full
+# pi on OpenRouter as well, billed per token:
 set -a; . ~/.config/codecite/evals.env; set +a
 export OPENROUTER_API_KEY="$OPENROUTER_EVAL_API_KEY"
 uv run --locked inspect eval codecite_evals/fastapi_middleware --model openrouter/anthropic/claude-haiku-5.5 -M strict_tools=false --epochs 2
-inspect/panel.sh quick               # or: TASK_ID=spec-questions inspect/panel.sh full
+OPENROUTER=1 inspect/panel.sh quick
 uv run --locked codecite-eval-report --tier quick
 ```
 
