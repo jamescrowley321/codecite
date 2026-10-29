@@ -17,8 +17,9 @@ const LIB: &str = "pub fn validate(token: &str) -> bool {\n    !token.is_empty()
 const SPEC: &str = "4.3.  Checking DPoP Proofs\n\nThe server MUST validate the proof.";
 
 /// A data home holding one corpus, `demo`, with a code source `app`, a
-/// spec, `rfc9449`, and guidance, `house-rules`, whose one rule is for
-/// Python.
+/// spec, `rfc9449`, at two versions (the older one says SHOULD where the
+/// current one says MUST), and guidance, `house-rules`, whose one rule is
+/// for Python.
 fn data_home() -> tempfile::TempDir {
     let home = tempfile::tempdir().unwrap();
     let dir = home.path().join("codecite");
@@ -127,9 +128,35 @@ fn data_home() -> tempfile::TempDir {
         ..RuleScope::default()
     };
     store.set_guidance(rules, &[("1", &python)]).unwrap();
+    let older = store
+        .upsert_source(&SourceRecord {
+            name: "rfc9449",
+            kind: "document",
+            url: "https://www.rfc-editor.org/rfc/rfc9449-draft.html",
+            revision: OLD_RFC9449,
+            license_spdx: None,
+            license_class: "quote",
+            is_current: false,
+            ..source
+        })
+        .unwrap();
+    let old_section = ChunkRecord {
+        text: OLD_SPEC,
+        strength: &[Keyword::Should],
+        ..spec.chunks[0].clone()
+    };
+    let old_spec = DocumentRecord {
+        content_hash: b"rfc9449-old",
+        chunks: vec![old_section],
+        ..spec
+    };
+    store.write_document(older, &old_spec).unwrap();
     store.set_indexed_at(30).unwrap();
     home
 }
+
+const OLD_RFC9449: &str = "01d0000000000000000000000000000000000000000000000000000000009449";
+const OLD_SPEC: &str = "4.3.  Checking DPoP Proofs\n\nThe server SHOULD validate the proof.";
 
 fn codecite() -> Command {
     Command::new(env!("CARGO_BIN_EXE_codecite"))
@@ -146,7 +173,8 @@ fn corpora_prints_the_corpora_as_json() {
     assert!(out.status.success(), "{out:?}");
     let listed: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(listed["corpora"][0]["corpus"], "demo");
-    assert_eq!(listed["corpora"][0]["sources"], 3);
+    // `app`, `rfc9449` at two versions, and `house-rules`.
+    assert_eq!(listed["corpora"][0]["sources"], 4);
     assert_eq!(listed["corpora"][0]["stale"], false);
     assert_eq!(listed["corpora"].as_array().unwrap().len(), 1);
 
@@ -305,7 +333,16 @@ fn mcp_answers_on_stdout_and_logs_on_stderr() {
     names.sort_unstable();
     assert_eq!(
         names,
-        ["context", "corpora", "definition", "grep", "read", "search"],
+        [
+            "context",
+            "corpora",
+            "definition",
+            "diff",
+            "grep",
+            "read",
+            "requirements",
+            "search"
+        ],
         "{list}"
     );
     for tool in tools {
@@ -381,6 +418,11 @@ fn mcp_answers_on_stdout_and_logs_on_stderr() {
             "context",
             json!({"path": "/nonexistent/README.md"}),
             vec!["context", "demo", "/nonexistent/README.md", "--json"],
+        ),
+        (
+            "diff",
+            json!({"document": "rfc9449", "section": "4.3"}),
+            vec!["diff", "demo", "rfc9449", "--section", "4.3", "--json"],
         ),
     ];
     for (id, (tool, arguments, args)) in (3..).zip(cases) {

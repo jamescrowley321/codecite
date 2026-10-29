@@ -1810,4 +1810,99 @@ mod tests {
              elapsed: 1.25s"
         );
     }
+
+    /// Back-Channel Logout 1.0 with errata set 1, current, and as
+    /// published before it, each cut to §2.3–§2.8 of the pinned page.
+    const BACKCHANNEL: &str = include_str!("../tests/fixtures/spec/backchannel-1_0.html");
+    const BACKCHANNEL_FINAL: &str =
+        include_str!("../tests/fixtures/spec/backchannel-1_0-final.html");
+
+    /// Indexes both Back-Channel Logout versions and diffs `section`.
+    fn backchannel_diff(section: &str) -> codecite_core::DiffResult {
+        let server = Server::start();
+        server.set("/current.html", BACKCHANNEL);
+        server.set("/final.html", BACKCHANNEL_FINAL);
+        let version = |path: &str, text: &str, current: bool| {
+            let mut source = document(server.url(path), &sha256(text));
+            if let Source::Document(d) = &mut source {
+                d.name = "openid-connect-backchannel-1_0".into();
+                d.current = current;
+            }
+            source
+        };
+        let corpus = Corpus::new();
+        corpus.index(&manifest(vec![
+            version("/current.html", BACKCHANNEL, true),
+            version("/final.html", BACKCHANNEL_FINAL, false),
+        ]));
+        let store = Store::open_read_only(&corpus.path()).unwrap();
+        store
+            .diff(
+                "openid-connect-backchannel-1_0",
+                &codecite_core::DiffOptions {
+                    section: Some(section),
+                    allow_stale: true,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn backchannel_logout_errata_makes_exp_required() {
+        let d = backchannel_diff("2.4");
+        let (old, new) = (
+            format!(
+                "openid-connect-backchannel-1_0@sha256:{}",
+                &sha256(BACKCHANNEL_FINAL)[..12]
+            ),
+            format!(
+                "openid-connect-backchannel-1_0@sha256:{}",
+                &sha256(BACKCHANNEL)[..12]
+            ),
+        );
+        assert_eq!((&d.from, &d.to), (&old, &new));
+        assert_eq!(d.changes.len(), 1, "{:#?}", d.changes);
+        let exp = &d.changes[0];
+        assert_eq!(exp.change, "added");
+        assert!(
+            exp.to_text
+                .as_deref()
+                .unwrap()
+                .starts_with("exp\nREQUIRED. Expiration time"),
+            "{exp:?}"
+        );
+        assert_eq!(
+            exp.to_strength.as_deref(),
+            Some(&["REQUIRED".to_owned()][..])
+        );
+        assert_eq!(exp.from.as_deref(), Some(&*format!("{old}#section-2.4")));
+        assert_eq!(exp.to.as_deref(), Some(&*format!("{new}#section-2.4")));
+        // Every other claim changed only the date of its Core reference.
+        assert!(d.reworded.len() >= 5, "{:#?}", d.reworded);
+    }
+
+    #[test]
+    fn backchannel_logout_response_has_no_normative_change() {
+        // §2.8's one change between the versions is "occured" → "occurred".
+        let d = backchannel_diff("2.8");
+        assert!(d.changes.is_empty(), "{:#?}", d.changes);
+        assert_eq!(d.total, 0);
+        assert_eq!(d.reworded.len(), 1, "{:#?}", d.reworded);
+    }
+
+    #[test]
+    fn backchannel_logout_validation_adds_exp_to_a_step() {
+        let d = backchannel_diff("2.6");
+        assert_eq!(d.changes.len(), 1, "{:#?}", d.changes);
+        let step = &d.changes[0];
+        assert_eq!(step.change, "changed");
+        assert!(step.to.as_deref().unwrap().ends_with("#section-2.6/step-4"));
+        assert!(
+            step.to_text
+                .as_deref()
+                .unwrap()
+                .contains("iat, and exp Claims")
+        );
+    }
 }

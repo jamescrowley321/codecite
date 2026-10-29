@@ -21,6 +21,9 @@ pub use corpora::{Corpora, CorpusInfo, corpora};
 mod definition;
 pub use definition::{Definition, Definitions};
 
+mod diff;
+pub use diff::{DiffOptions, DiffResult, VersionChange};
+
 mod grep;
 pub use grep::{GrepMatch, GrepQuery, GrepResults};
 
@@ -29,6 +32,9 @@ pub use read::{
     DEFAULT_MAX_LINES, MAX_READ_BYTES, MAX_READ_LINES, QUOTE_INSTRUCTION,
     QUOTE_TRUNCATED_INSTRUCTION, ReadOptions, ReadResult,
 };
+
+mod requirements;
+pub use requirements::{Requirement, RequirementSection, Requirements, RequirementsOptions};
 
 mod search;
 pub use search::{

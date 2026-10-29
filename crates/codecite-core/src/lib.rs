@@ -26,6 +26,11 @@ pub use language::Language;
 mod keyword;
 pub use keyword::{Keyword, UnknownKeyword, requirement_keywords};
 
+mod normative;
+pub use normative::{
+    Level, NormativeStatement, StatementKind, normative_level, normative_statements,
+};
+
 mod role;
 pub use role::Role;
 
@@ -33,11 +38,12 @@ mod store;
 pub use store::{
     ChunkRecord, CiteOptions, CiteResult, Context, ContextQuery, ContextTarget, Corpora,
     CorpusInfo, DEFAULT_MAX_AGE_DAYS, DEFAULT_MAX_LINES, DEFAULT_SEARCH_LIMIT, Definition,
-    Definitions, DocumentRecord, Finding, Freshness, GrepMatch, GrepQuery, GrepResults,
-    MAX_CONTEXT_BYTES, MAX_READ_BYTES, MAX_READ_LINES, MAX_SEARCH_LIMIT, MAX_SNIPPET_BYTES,
-    MAX_SNIPPET_LINES, QUOTE_INSTRUCTION, QUOTE_TRUNCATED_INSTRUCTION, ReadOptions, ReadResult,
+    Definitions, DiffOptions, DiffResult, DocumentRecord, Finding, Freshness, GrepMatch, GrepQuery,
+    GrepResults, MAX_CONTEXT_BYTES, MAX_READ_BYTES, MAX_READ_LINES, MAX_SEARCH_LIMIT,
+    MAX_SNIPPET_BYTES, MAX_SNIPPET_LINES, QUOTE_INSTRUCTION, QUOTE_TRUNCATED_INSTRUCTION,
+    ReadOptions, ReadResult, Requirement, RequirementSection, Requirements, RequirementsOptions,
     Rule, RuleScope, SCHEMA_VERSION, Scope, SearchQuery, SearchResult, SearchResults, SourceRecord,
-    Store, SymbolRecord, corpora, is_corpus_name,
+    Store, SymbolRecord, VersionChange, corpora, is_corpus_name,
 };
 
 mod terms;

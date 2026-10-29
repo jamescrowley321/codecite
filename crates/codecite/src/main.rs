@@ -7,9 +7,9 @@ use anyhow::{Context as _, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use codecite_core::{
     CiteOptions, CiteResult, Context, ContextQuery, ContextTarget, DEFAULT_MAX_LINES,
-    DEFAULT_SEARCH_LIMIT, Definitions, GrepMatch, GrepQuery, GrepResults, MAX_READ_LINES,
-    MAX_SEARCH_LIMIT, ReadOptions, ReadResult, Scope, SearchQuery, SearchResult, SearchResults,
-    Store, is_corpus_name,
+    DEFAULT_SEARCH_LIMIT, Definitions, DiffOptions, DiffResult, GrepMatch, GrepQuery, GrepResults,
+    MAX_READ_LINES, MAX_SEARCH_LIMIT, ReadOptions, ReadResult, Requirements, RequirementsOptions,
+    Scope, SearchQuery, SearchResult, SearchResults, Store, is_corpus_name,
 };
 use codecite_index::{Clones, Fetcher, LicenseClass, Manifest, Source, WalkOptions, index_corpus};
 
@@ -166,6 +166,60 @@ enum Command {
         #[arg(long)]
         allow_stale: bool,
     },
+    /// List the normative statements that differ between two pinned
+    /// versions of a spec document: added, removed, changed, or changed in
+    /// strength, with both versions' citations.
+    Diff {
+        /// The corpus to look in.
+        corpus: String,
+        /// The document, by name or alias: `openid-connect-backchannel-1_0`,
+        /// `Back-Channel Logout`.
+        document: String,
+        /// Only this section, by number: `2.4`.
+        #[arg(long)]
+        section: Option<String>,
+        /// The older version's hash [default: the older version pinned last].
+        #[arg(long)]
+        from: Option<String>,
+        /// The newer version's hash [default: the current version].
+        #[arg(long)]
+        to: Option<String>,
+        /// Print the result as JSON, as the MCP `diff` tool returns it.
+        #[arg(long)]
+        json: bool,
+        /// Diff an index older than its manifest's `max_age_days`.
+        #[arg(long)]
+        allow_stale: bool,
+    },
+    /// List the normative statements governing a spec section, cited and
+    /// grouped by the section that states it: the section's, its
+    /// subsections' and those of the sections of the same document linked
+    /// to it. Only uppercase BCP 14 keywords, REQUIRED and PROHIBITED rows
+    /// and steps count, and references into other documents aren't
+    /// followed, so `read` a section when you need all of it.
+    Requirements {
+        /// The corpus to look in.
+        corpus: String,
+        /// A spec section or step citation, as `read` takes it: `RFC 6749
+        /// §2.3`, `Back-Channel Logout §2.6`.
+        #[arg(required_unless_present = "topic", conflicts_with = "topic")]
+        citation: Option<String>,
+        /// Instead of a citation, what the section is about; the best spec
+        /// search hit in `--document` picks it.
+        #[arg(long, requires = "document")]
+        topic: Option<String>,
+        /// The document to search for `--topic`, as a citation names it:
+        /// its name, an alias or `RFC 6749`.
+        #[arg(long, requires = "topic")]
+        document: Option<String>,
+        /// Print the result as JSON, as the MCP `requirements` tool
+        /// returns it.
+        #[arg(long)]
+        json: bool,
+        /// Look in an index older than its manifest's `max_age_days`.
+        #[arg(long)]
+        allow_stale: bool,
+    },
     /// List the corpora with their age, size, source count and staleness,
     /// as JSON.
     Corpora,
@@ -275,6 +329,39 @@ fn main() -> anyhow::Result<()> {
             json,
             allow_stale,
         } => context(&corpus, &path, root.as_deref(), stdin, allow_stale, json),
+        Command::Diff {
+            corpus,
+            document,
+            section,
+            from,
+            to,
+            json,
+            allow_stale,
+        } => {
+            let options = DiffOptions {
+                section: section.as_deref(),
+                from: from.as_deref(),
+                to: to.as_deref(),
+                allow_stale,
+            };
+            diff(&corpus, &document, &options, json)
+        }
+        Command::Requirements {
+            corpus,
+            citation,
+            topic,
+            document,
+            json,
+            allow_stale,
+        } => {
+            let options = RequirementsOptions { allow_stale };
+            let target = match (citation, topic, document) {
+                (Some(citation), _, _) => Target::Citation(citation),
+                (None, Some(topic), Some(document)) => Target::Topic { topic, document },
+                _ => bail!("give a citation, or --topic and --document"),
+            };
+            requirements(&corpus, &target, &options, json)
+        }
         Command::Corpora => corpora(),
         Command::Mcp => mcp(),
     }
@@ -409,6 +496,57 @@ fn context(
     to_stdout(|out| write_context(out, &found, json))
 }
 
+/// `codecite diff`: opens the corpus read-only and prints how two pinned
+/// versions of a document differ, as JSON or in its human form.
+fn diff(corpus: &str, document: &str, options: &DiffOptions, json: bool) -> anyhow::Result<()> {
+    let dirs = project_dirs()?;
+    let store = Store::open_corpus(dirs.data_dir(), corpus)?;
+    let result = store.diff(document, options)?;
+    to_stdout(|out| write_diff(out, &result, json))
+}
+
+/// What `codecite requirements` asks about.
+enum Target {
+    /// A section citation.
+    Citation(String),
+    /// The section of `document` a search for `topic` finds.
+    Topic { topic: String, document: String },
+}
+
+/// `codecite requirements`: opens the corpus read-only and prints the
+/// rules governing the section, as JSON or in their human form.
+fn requirements(
+    corpus: &str,
+    target: &Target,
+    options: &RequirementsOptions,
+    json: bool,
+) -> anyhow::Result<()> {
+    let dirs = project_dirs()?;
+    let store = Store::open_corpus(dirs.data_dir(), corpus)?;
+    let result = match target {
+        Target::Citation(citation) => store.requirements(citation, options)?,
+        Target::Topic { topic, document } => store.requirements_on(topic, document, options)?,
+    };
+    to_stdout(|out| write_requirements(out, &result, json))
+}
+
+/// Writes requirements to `out`: as JSON, or their `Display` form with
+/// control characters escaped line by line.
+fn write_requirements(
+    out: &mut impl std::io::Write,
+    result: &Requirements,
+    json: bool,
+) -> std::io::Result<()> {
+    if json {
+        write_json(out, serde_json::to_value(result)?)?;
+    } else {
+        for line in result.to_string().lines() {
+            writeln!(out, "{}", escape_controls(line))?;
+        }
+    }
+    out.flush()
+}
+
 /// `codecite corpora`: prints the corpora as the MCP `corpora` tool returns
 /// them, byte for byte.
 fn corpora() -> anyhow::Result<()> {
@@ -472,6 +610,23 @@ fn write_read(
 fn write_cite(
     out: &mut impl std::io::Write,
     result: &CiteResult,
+    json: bool,
+) -> std::io::Result<()> {
+    if json {
+        write_json(out, serde_json::to_value(result)?)?;
+    } else {
+        for line in result.to_string().lines() {
+            writeln!(out, "{}", escape_controls(line))?;
+        }
+    }
+    out.flush()
+}
+
+/// Writes a diff result to `out`: as JSON, or its `Display` form with
+/// control characters escaped line by line.
+fn write_diff(
+    out: &mut impl std::io::Write,
+    result: &DiffResult,
     json: bool,
 ) -> std::io::Result<()> {
     if json {
@@ -739,6 +894,9 @@ fn human(results: &[SearchResult]) -> String {
         let _ = write!(out, " · {:.1}", r.score);
         if r.dirty == Some(true) {
             out.push_str(" · dirty");
+        }
+        if r.older_versions.is_some() {
+            out.push_str(" · older version pinned");
         }
         if !shared {
             let _ = write!(
@@ -1051,6 +1209,49 @@ mod tests {
     }
 
     #[test]
+    fn requirements_take_a_citation_or_a_topic_and_a_document() {
+        let parse = |args: &[&str]| {
+            let mut all = vec!["codecite", "requirements", "identity"];
+            all.extend_from_slice(args);
+            Cli::try_parse_from(all)
+        };
+        let Command::Requirements {
+            corpus,
+            citation,
+            topic,
+            document,
+            json,
+            allow_stale,
+        } = parse(&["RFC 6749 §2.3"]).unwrap().command
+        else {
+            panic!("not requirements");
+        };
+        assert_eq!(corpus, "identity");
+        assert_eq!(citation.as_deref(), Some("RFC 6749 §2.3"));
+        assert!(topic.is_none() && document.is_none() && !json && !allow_stale);
+        let topical = ["--topic", "logout", "--document", "rfc6749", "--json"];
+        let Command::Requirements {
+            citation,
+            topic,
+            document,
+            json,
+            ..
+        } = parse(&topical).unwrap().command
+        else {
+            panic!("not requirements");
+        };
+        assert!(citation.is_none() && json);
+        assert_eq!(
+            (topic.as_deref(), document.as_deref()),
+            (Some("logout"), Some("rfc6749"))
+        );
+        assert!(parse(&[]).is_err());
+        assert!(parse(&["--topic", "logout"]).is_err());
+        assert!(parse(&["--document", "rfc6749"]).is_err());
+        assert!(parse(&["§2.3", "--topic", "a", "--document", "b"]).is_err());
+    }
+
+    #[test]
     fn the_cite_form_escapes_control_characters() {
         let result = CiteResult {
             resolved: true,
@@ -1196,6 +1397,7 @@ section · Checking\\u{1b}[2J · MUST · quote · indexed 2026-10-20T06:00:00Z
             text: "# Title\u{1b}]52;c;ZWNobyBoaQ==\u{7}\n\tend".into(),
             truncated: false,
             instruction: None,
+            older_versions: None,
         };
         let mut out = Vec::new();
         write_read(&mut out, &result, false).unwrap();
@@ -1226,6 +1428,7 @@ code · adapt · indexed 2026-10-20T06:00:00Z
             dirty: Some(false),
             snippet: snippet.into(),
             snippet_truncated: false,
+            older_versions: None,
         }
     }
 
@@ -1287,6 +1490,7 @@ code · adapt · indexed 2026-10-20T06:00:00Z
             dirty: None,
             snippet: "Check the jti.".into(),
             snippet_truncated: false,
+            older_versions: None,
         };
         let mut short = code("a.rs", None, "x");
         short.citation = "app@0123456:a.rs#L1-L5".into();
@@ -1480,6 +1684,7 @@ code · adapt · indexed 2026-10-20T06:00:00Z
             dirty: None,
             snippet: "# Title\u{1b}]52;c;ZWNobyBoaQ==\u{7}\tend".into(),
             snippet_truncated: false,
+            older_versions: None,
         };
         let out = human(&[result]);
         assert!(
