@@ -91,6 +91,9 @@ def candidate_paths(changes: list[Change]) -> list[str]:
         # label missing its section, not as a file.
         if "/" not in path and "." not in path:
             continue
+        # It splits a label at `#`, so such a path can't be labelled.
+        if "#" in path:
+            continue
         if path not in paths:
             paths.append(path)
     return paths
@@ -143,7 +146,10 @@ def issue_text(title: str, body: str) -> str:
     full = f"{title}\n\n{text}"
     if len(full) <= ISSUE_TEXT_LIMIT:
         return full
-    return full[: ISSUE_TEXT_LIMIT + 1].rsplit(" ", 1)[0].rstrip()
+    window = full[: ISSUE_TEXT_LIMIT + 1]
+    if " " not in window:
+        return full[:ISSUE_TEXT_LIMIT]
+    return window.rsplit(" ", 1)[0].rstrip()
 
 
 def basic(value: str) -> str:

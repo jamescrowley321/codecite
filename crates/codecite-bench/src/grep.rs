@@ -43,6 +43,11 @@ pub fn grep_rank(
     text: &str,
     depth: u32,
 ) -> anyhow::Result<Vec<String>> {
+    // The commit is git's last argument, so anything but a hash could be
+    // read as an option.
+    if !(7..=64).contains(&commit.len()) || !commit.bytes().all(|b| b.is_ascii_hexdigit()) {
+        bail!("`{commit}` is not a commit hash");
+    }
     // path -> (distinct terms, matching lines)
     let mut scores: BTreeMap<String, (usize, u64)> = BTreeMap::new();
     let prefix = format!("{commit}:");
@@ -206,5 +211,12 @@ mod tests {
     fn depth_caps_the_results() {
         let (dir, head) = repo();
         assert_eq!(grep_rank(dir.path(), &head, "token", 1).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_commit_that_is_not_a_hash_is_refused_before_git_runs() {
+        let (dir, _) = repo();
+        let err = grep_rank(dir.path(), "--open-files-in-pager=touch", "token", 10).unwrap_err();
+        assert!(err.to_string().contains("not a commit hash"), "{err}");
     }
 }

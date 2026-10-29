@@ -538,7 +538,7 @@ codecite earns its place only if agents using it do no worse than agents without
 **History benchmark**
 
 - Queries mined from merged PRs in five of the owner's repositories (identity-model, identity-stack, blind-peer-review, terraform-provider-descope and codecite), in `evals/history/` (see `evals/README.md`). A PR's title, and the issue it closes, are the questions. The files it modified, at the parent of the oldest sampled PR, are the answer. No label is written by hand, so none can be tuned to one corpus.
-- Scored at file level for codecite and for a plain `git grep` ranking of the same queries over the same commit: Recall@1, Recall@10 and MRR per repository and class. CI runs it on every PR beside the retrieval benchmark.
+- Scored at file level for codecite, for a plain `git grep` ranking of the same queries over the same commit, and for a query-blind floor that ranks the files the other mined PRs changed most: Recall@1, Recall@10 and MRR per repository and class. CI runs it on every PR beside the retrieval benchmark.
 - A ranking or indexing change that loses on any repository doesn't merge.
 
 **Retrieval benchmark**

@@ -88,13 +88,27 @@ def history_problems(root, evals_dir, base):
     remining writes (codecite_evals.history)."""
     found = []
     history = evals_dir / "history"
-    for mined in sorted(p for p in history.glob("*") if p.is_dir()):
-        rel = mined.resolve().relative_to(root.resolve()).as_posix()
+    rel_history = history.resolve().relative_to(root.resolve()).as_posix()
+    # Every repository mined at the base, including any deleted since.
+    listed = git(root, "ls-tree", "--name-only", f"{base}:{rel_history}", check=False)
+    at_base = set(listed.stdout.split()) if listed.returncode == 0 else set()
+    here = {p.name for p in history.glob("*") if p.is_dir()}
+    for name in sorted(at_base | here):
+        mined = history / name
+        rel = f"{rel_history}/{name}"
         was = show(root, base, f"{rel}/queries.toml")
         if was is None:
             continue
+        if not mined.is_dir():
+            found.append(f"history {name}: {rel} was mined at the base and is gone")
+            continue
         now = (mined / "queries.toml").read_text() if (mined / "queries.toml").exists() else None
-        if history_version(now) > history_version(was):
+        try:
+            remined = history_version(now) > history_version(was)
+        except ValueError:
+            found.append(f"history {name}: {rel}/queries.toml has a `# version:` line that isn't a number")
+            continue
+        if remined:
             continue
         for name in ("manifest.toml", "queries.toml"):
             path = mined / name

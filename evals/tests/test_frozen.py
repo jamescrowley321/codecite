@@ -128,3 +128,17 @@ def test_newly_mined_history_passes(tmp_path):
     (repo / "evals/history/s").mkdir()
     (repo / "evals/history/s/queries.toml").write_text("# version: 1\n")
     assert problems(repo / "evals", base) == []
+
+
+def test_deleting_a_mined_repository_fails(tmp_path):
+    import shutil
+
+    repo, base = history_repo(tmp_path)
+    shutil.rmtree(repo / "evals/history/r")
+    assert problems(repo / "evals", base) == ["history r: evals/history/r was mined at the base and is gone"]
+
+
+def test_a_malformed_version_line_is_a_problem_not_a_crash(tmp_path):
+    repo, base = history_repo(tmp_path)
+    (repo / "evals/history/r/queries.toml").write_text("# version: two\ncorpus = \"history-r\"\n")
+    assert problems(repo / "evals", base) == ["history r: evals/history/r/queries.toml has a `# version:` line that isn't a number"]

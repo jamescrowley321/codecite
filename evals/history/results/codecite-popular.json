@@ -19,7 +19,7 @@
       "recall_at_10": 0.8518518518518519
     }
   },
-  "engine": "codecite",
+  "engine": "popular",
   "groups": {
     "history": {
       "mrr": 0.44019933554817264,

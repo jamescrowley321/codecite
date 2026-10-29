@@ -48,8 +48,8 @@
 | terraform-provider-descope | all | grep | 31 | 0.16 | 0.58 | 0.30 |
 | terraform-provider-descope | all | popular | 31 | 0.32 | 0.74 | 0.43 |
 
-- blind-peer-review: chunks: 1389 written · elapsed: 0.25s
-- codecite: chunks: 2244 written · elapsed: 0.43s
-- identity-model: chunks: 10001 written · elapsed: 1.26s
-- identity-stack: chunks: 4101 written · elapsed: 0.60s
-- terraform-provider-descope: chunks: 3834 written · elapsed: 0.53s
+- blind-peer-review: chunks: 1389 written · elapsed: 0.27s
+- codecite: chunks: 2244 written · elapsed: 0.57s
+- identity-model: chunks: 10001 written · elapsed: 1.55s
+- identity-stack: chunks: 4101 written · elapsed: 0.80s
+- terraform-provider-descope: chunks: 3834 written · elapsed: 0.62s

@@ -91,6 +91,8 @@ def test_issue_text_is_title_and_first_paragraph_capped_at_400():
     assert not long.endswith(" ")
     assert long.split()[-1] == "word"
     assert issue_text("Only a title", "") == "Only a title"
+    # A window with no space to cut at is cut at the limit.
+    assert len(issue_text("T", "x" * 1000)) == 400
 
 
 def test_written_toml_round_trips_special_characters():
@@ -214,3 +216,10 @@ def test_a_missing_or_unreadable_report_does_not_hide_the_others(tmp_path):
     text = (tmp_path / "scorecard.md").read_text()
     assert "| a | history-title | codecite | 4 |" in text
     assert "| b | failed: codecite-bench failed |" in text
+
+
+def test_a_path_holding_a_hash_is_no_answer():
+    # codecite-bench splits a label at `#`, so such a path can't be labelled.
+    prs = [pr(1, Change("M", "docs/c#/notes.md"), Change("M", "src/a.py"))]
+    _, mined = select_prs(prs, everything_exists, 40)
+    assert mined[0].answers == ["src/a.py"]

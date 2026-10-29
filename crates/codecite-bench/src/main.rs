@@ -118,7 +118,7 @@ fn main() -> anyhow::Result<()> {
     )
     .with_context(|| format!("parsing {}", cli.queries.display()))?;
     check(&file)?;
-    let codecite = match cli.codecite {
+    let codecite = match cli.codecite.clone() {
         Some(path) => path,
         None => std::env::current_exe()?
             .with_file_name(format!("codecite{}", std::env::consts::EXE_SUFFIX)),
@@ -186,11 +186,7 @@ fn main() -> anyhow::Result<()> {
         .collect();
     let all = Scores::of(outcomes.iter());
 
-    let engine = if cli.grep.is_some() {
-        "grep"
-    } else {
-        "codecite"
-    };
+    let engine = engine(&cli);
     if cli.json {
         let report = serde_json::json!({
             "engine": engine, "classes": classes, "groups": groups, "all": all, "outcomes": outcomes,
@@ -229,6 +225,18 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The engine that ranked a run: `codecite`, the `git grep` baseline or the
+/// query-blind popular-files floor.
+fn engine(cli: &Cli) -> &'static str {
+    if cli.popular {
+        "popular"
+    } else if cli.grep.is_some() {
+        "grep"
+    } else {
+        "codecite"
+    }
+}
+
 /// Rejects a queries file with a duplicate id, an empty field or a bad
 /// label, before any search runs.
 fn check(file: &QueryFile) -> anyhow::Result<()> {
@@ -241,7 +249,16 @@ fn check(file: &QueryFile) -> anyhow::Result<()> {
             bail!("query `{}` needs a class, text and answers", query.id);
         }
         for answer in &query.answers {
-            Answer::parse(answer).with_context(|| format!("query `{}`", query.id))?;
+            let parsed = Answer::parse(answer).with_context(|| format!("query `{}`", query.id))?;
+            // Only mined history queries label whole files, so elsewhere a
+            // bare path is a spec or code label that lost its fragment.
+            if matches!(parsed, Answer::File { .. }) && !query.class.starts_with("history") {
+                bail!(
+                    "query `{}`: answer `{answer}` is a bare file path, which only \
+                     history queries take; add `#L<line>` or `#section-<number>`",
+                    query.id
+                );
+            }
         }
     }
     Ok(())
@@ -366,6 +383,34 @@ mod tests {
                 "rfc9449@sha256:1a2b3c4d5e6f#section-4.3",
             ])
         );
+    }
+
+    #[test]
+    fn each_engine_names_itself_in_the_report() {
+        let engine_of = |args: &[&str]| {
+            let cli =
+                Cli::parse_from(std::iter::once("codecite-bench").chain(args.iter().copied()));
+            engine(&cli)
+        };
+        assert_eq!(engine_of(&[]), "codecite");
+        assert_eq!(engine_of(&["--grep", "r", "--commit", "abc1234"]), "grep");
+        assert_eq!(engine_of(&["--popular"]), "popular");
+    }
+
+    #[test]
+    fn only_history_queries_take_a_bare_file_answer() {
+        let file = |class: &str, answer: &str| QueryFile {
+            corpus: "c".into(),
+            query: vec![Query {
+                class: class.into(),
+                ..query("q", "s", &[answer])
+            }],
+        };
+        assert!(check(&file("history-title", "src/a.py")).is_ok());
+        // A spec label that lost its `#section-<n>` is still an error.
+        let err = check(&file("spec-keyword", "rfc9449.txt")).unwrap_err();
+        assert!(format!("{err:#}").contains("history"), "{err:#}");
+        assert!(check(&file("code-symbol", "src/a.py#L3")).is_ok());
     }
 
     fn query(id: &str, source: &str, answers: &[&str]) -> Query {

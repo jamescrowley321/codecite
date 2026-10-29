@@ -69,5 +69,11 @@ for repo in "$@"; do
   report popular --popular || continue
 done
 
-(cd "$root/evals" && uv run --locked -q codecite-history-scorecard "$results")
+# A scorecard that can't be rebuilt is removed, not left standing as this
+# run's result.
+rm -f "$results/scorecard.md"
+if ! (cd "$root/evals" && uv run --locked -q codecite-history-scorecard "$results"); then
+  echo "scorecard: failed" >&2
+  failed=1
+fi
 exit "$failed"

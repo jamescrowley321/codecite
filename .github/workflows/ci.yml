@@ -141,13 +141,15 @@ jobs:
       - name: Check the spec questions
         run: uv run --locked python -m codecite_evals.spec_questions
         working-directory: evals
-      # The history benchmark: codecite against git grep on each mined
-      # repository (evals/README.md). A loss on any repository is a finding.
+      # The history benchmark: codecite against git grep and the popular-files
+      # floor on each mined repository (evals/README.md). A loss on any
+      # repository is a finding.
       - name: Run the history benchmark
         run: |
           status=0
           evals/history/run.sh || status=$?
-          cat evals/history/results/scorecard.md >>"$GITHUB_STEP_SUMMARY"
+          cat evals/history/results/scorecard.md >>"$GITHUB_STEP_SUMMARY" ||
+            echo "The history scorecard failed to build; see the log." >>"$GITHUB_STEP_SUMMARY"
           exit "$status"
 
   # Not a required check: it proves an eval task's hidden tests and checks
