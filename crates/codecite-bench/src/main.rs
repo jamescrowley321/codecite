@@ -41,6 +41,10 @@ struct Cli {
     /// The commit `--grep` searches.
     #[arg(long, requires = "grep")]
     commit: Option<String>,
+    /// Rank with no search at all: the files the other queries' PRs changed
+    /// most often. A query-blind floor that both engines must beat.
+    #[arg(long, conflicts_with = "grep")]
+    popular: bool,
 }
 
 /// The queries file.
@@ -134,9 +138,16 @@ fn main() -> anyhow::Result<()> {
             .iter()
             .map(|a| Answer::parse(a))
             .collect::<anyhow::Result<Vec<_>>>()?;
+        // Several chunks of one file would fill a file-level top 10 with
+        // fewer files than grep's, so a file-labelled query ranks distinct
+        // files: each file's first result, from a deeper search.
+        let by_file = answers.iter().all(|a| matches!(a, Answer::File { .. }));
         let citations = match (&cli.grep, &cli.commit) {
+            _ if cli.popular => Ok(popular_rank(&file.query, query, DEPTH)),
             (Some(repo), Some(commit)) => grep::grep_rank(repo, commit, &query.text, DEPTH),
-            _ => search(&codecite, &file.corpus, &query.text),
+            _ if by_file => search(&codecite, &file.corpus, &query.text, FILE_SEARCH_DEPTH)
+                .map(|c| first_per_file(c, DEPTH)),
+            _ => search(&codecite, &file.corpus, &query.text, DEPTH),
         }
         .with_context(|| format!("query `{}`", query.id))?;
         let rank = citations
@@ -236,13 +247,63 @@ fn check(file: &QueryFile) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The citations `codecite search` returns for `text`, best first.
-fn search(codecite: &Path, corpus: &str, text: &str) -> anyhow::Result<Vec<String>> {
+/// How many results a file-labelled query asks for, so that
+/// [`first_per_file`] still has [`DEPTH`] distinct files to keep.
+const FILE_SEARCH_DEPTH: u32 = 50;
+
+/// Each code file's first citation, and every other citation, in order,
+/// at most `depth`.
+fn first_per_file(citations: Vec<String>, depth: u32) -> Vec<String> {
+    let mut seen = HashSet::new();
+    citations
+        .into_iter()
+        .filter(|c| match Citation::parse(c) {
+            Citation::Code { path, .. } => seen.insert(path),
+            _ => true,
+        })
+        .take(depth as usize)
+        .collect()
+}
+
+/// The files the other PRs' queries name as answers, most PRs first, then by
+/// path, at most `depth`, cited `popular@0:<path>#L1`. A PR is a query's
+/// `source`, so its title and issue queries count once, and never for each
+/// other.
+fn popular_rank(queries: &[Query], query: &Query, depth: u32) -> Vec<String> {
+    let mut prs: BTreeMap<&str, HashSet<&str>> = BTreeMap::new();
+    for other in queries {
+        let pr = other.source.as_deref().unwrap_or(&other.id);
+        if pr == query.source.as_deref().unwrap_or(&query.id) {
+            continue;
+        }
+        for answer in &other.answers {
+            prs.entry(answer.as_str()).or_default().insert(pr);
+        }
+    }
+    let mut ranked: Vec<(&str, usize)> = prs.into_iter().map(|(p, s)| (p, s.len())).collect();
+    // The map is in path order, and the sort is stable.
+    ranked.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+    ranked
+        .into_iter()
+        .take(depth as usize)
+        .map(|(path, _)| format!("popular@0:{path}#L1"))
+        .collect()
+}
+
+/// The citations `codecite search` returns for `text`, best first, at most
+/// `limit`. A query with no words to search for has no results, as grep's
+/// would, rather than failing the run.
+fn search(codecite: &Path, corpus: &str, text: &str, limit: u32) -> anyhow::Result<Vec<String>> {
     let output = Command::new(codecite)
         .args(["search", corpus, text, "--json", "--allow-stale", "--limit"])
-        .arg(DEPTH.to_string())
+        .arg(limit.to_string())
         .output()
         .with_context(|| format!("running {}", codecite.display()))?;
+    if !output.status.success()
+        && String::from_utf8_lossy(&output.stderr).contains("no words to search for")
+    {
+        return Ok(Vec::new());
+    }
     if !output.status.success() {
         bail!(
             "codecite search failed: {}",
@@ -285,5 +346,55 @@ mod tests {
         // The bare array `search --json` printed before is refused, not
         // read as no results.
         assert!(citations(br#"[{"citation":"a@0123456:x.rs#L1"}]"#).is_err());
+    }
+
+    #[test]
+    fn file_level_ranking_keeps_each_files_first_result() {
+        let cited = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let ranked = cited(&[
+            "r@0123abcd:a.py#L1-L9",
+            "r@0123abcd:a.py#L20-L30",
+            "r@0123abcd:b.py#L1",
+            "rfc9449@sha256:1a2b3c4d5e6f#section-4.3",
+            "r@0123abcd:c.py#L3",
+        ]);
+        assert_eq!(
+            first_per_file(ranked, 3),
+            cited(&[
+                "r@0123abcd:a.py#L1-L9",
+                "r@0123abcd:b.py#L1",
+                "rfc9449@sha256:1a2b3c4d5e6f#section-4.3",
+            ])
+        );
+    }
+
+    fn query(id: &str, source: &str, answers: &[&str]) -> Query {
+        Query {
+            id: id.into(),
+            class: "history-title".into(),
+            text: "t".into(),
+            answers: answers.iter().map(|a| a.to_string()).collect(),
+            source: Some(source.into()),
+        }
+    }
+
+    #[test]
+    fn the_popular_baseline_ranks_files_by_how_many_other_prs_changed_them() {
+        let queries = vec![
+            query("q1-title", "pr1", &["docs/design.md", "src/a.rs"]),
+            query("q1-issue", "pr1", &["docs/design.md", "src/a.rs"]),
+            query("q2-title", "pr2", &["docs/design.md", "src/b.rs"]),
+            query("q3-title", "pr3", &["docs/design.md", "src/b.rs"]),
+        ];
+        // For pr1: design.md is in pr2 and pr3, b.rs in both; a.rs only in
+        // pr1 itself, so it is left out.
+        assert_eq!(
+            popular_rank(&queries, &queries[0], 10),
+            ["popular@0:docs/design.md#L1", "popular@0:src/b.rs#L1"]
+        );
+        assert_eq!(
+            popular_rank(&queries, &queries[2], 1),
+            ["popular@0:docs/design.md#L1"]
+        );
     }
 }
