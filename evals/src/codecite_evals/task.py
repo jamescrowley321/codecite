@@ -187,7 +187,7 @@ async def run_agent(sb, cmd: list[str], env: dict[str, str], timeout: int):
         # same way, so retrying doesn't keep only the runs that survive it,
         # but labelled apart so the scorecard shows it.
         store().set("stopped", "sandbox_error")
-        store().set("sandbox_error", f"{type(e).__name__}: {e}"[:2000])
+        store().set("sandbox_error", withheld(f"{type(e).__name__}: {e}"[:2000]))
     return None
 
 

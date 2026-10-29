@@ -87,6 +87,8 @@ def main() -> None:
     token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
     if len(sys.argv) != 2 or not token:
         sys.exit("usage: CLAUDE_CODE_OAUTH_TOKEN=... python -m codecite_evals.scrub <log dir>")
+    if not needles(token):
+        sys.exit(f"{len(token)} characters is too short to be a Claude token")
     removed = scrub(Path(sys.argv[1]), token)
     for path, why in removed:
         print(f"::error::removed {path}: {why}")

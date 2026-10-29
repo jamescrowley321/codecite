@@ -198,6 +198,13 @@ def test_an_error_holding_the_token_is_withheld(monkeypatch):
     assert "withheld" in str(e.value) and token[20:60] not in str(e.value)
 
 
+def test_a_sandbox_error_holding_the_token_is_withheld(monkeypatch):
+    token = "sk-ant-oat01-" + "Zq8_Lm3-Xv7Np2Rt5Ws9Yb4Kd6Hf1Gj0" * 2
+    monkeypatch.setenv(claude_code.TOKEN, token)
+    _, store, _ = run_claude(monkeypatch, ConnectionResetError(f"lost {token[20:60]}"))
+    assert store["stopped"] == "sandbox_error" and token[20:60] not in store["sandbox_error"]
+
+
 def test_the_agent_picks_claude_code_for_a_claude_code_model(monkeypatch):
     monkeypatch.setenv(claude_code.TOKEN, "t")
     seen = []

@@ -11,7 +11,8 @@
 # OPENROUTER_API_KEY; OpenRouter picks the host within the account's privacy
 # settings (ZDR, allowed providers). It is off unless set.
 #
-# Every model runs in one Inspect process. Each sandbox creates two Docker
+# Each agent's panel runs in its own Inspect process, the two sharing
+# MAX_SANDBOXES. Each sandbox creates two Docker
 # networks (its own and the proxy's way out), so twice MAX_SANDBOXES must stay
 # under the daemon's free address pools (about 31 by default; 12 is safe). CI gives the daemon /24 pools and raises
 # it. Inspect also caps its own subprocesses and docker CLI calls at the CPU
@@ -148,11 +149,11 @@ EXTRA=("$@")
 if [[ "${RETRY:-0}" == 1 ]]; then
   # A retry covers only the agents' folders: unfinished logs elsewhere (from
   # a run before the folders, or an agent now switched off) stay unfinished.
-  covered=(-e "^$PWD/$LOG_DIR/claude-code/")
-  ((${#OPENROUTER_MODELS[@]})) && covered+=(-e "^$PWD/$LOG_DIR/openrouter/")
+  covered=(-e "$PWD/$LOG_DIR/claude-code/")
+  ((${#OPENROUTER_MODELS[@]})) && covered+=(-e "$PWD/$LOG_DIR/openrouter/")
   stray=$(for s in started error cancelled; do
     uv run --locked inspect log list --log-dir "$LOG_DIR" --status "$s" --absolute
-  done | grep -v "${covered[@]}" || true)
+  done | grep -v -F "${covered[@]}" || true)
   if [[ -n "$stray" ]]; then
     printf 'unfinished logs this retry will not cover:\n%s\n' "$stray" >&2
     exit 2

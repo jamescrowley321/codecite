@@ -8,7 +8,7 @@ import zipfile
 
 import pytest
 
-from codecite_evals.scrub import scrub
+from codecite_evals.scrub import main, scrub
 
 TOKEN = "sk-ant-oat01-" + "Ab3_x9-QrT7zLm2Kp8Vn4Ws6Yc1Hd5Fg0Je" * 2
 
@@ -78,3 +78,10 @@ def test_a_corrupt_member_goes_and_the_rest_are_still_checked(tmp_path):
     eval_log(tmp_path / "c.eval", "clean")
     assert sorted(p.name for p, _ in scrub(tmp_path, TOKEN)) == ["a.eval", "b.eval"]
     assert (tmp_path / "c.eval").exists()
+
+
+def test_a_token_too_short_to_search_for_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-short")
+    monkeypatch.setattr("sys.argv", ["scrub", str(tmp_path)])
+    with pytest.raises(SystemExit, match="too short"):
+        main()
