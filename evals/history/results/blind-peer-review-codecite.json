@@ -1,31 +1,31 @@
 {
   "all": {
-    "mrr": 0.4477843915343916,
+    "mrr": 0.4731040564373898,
     "queries": 36,
-    "recall_at_1": 0.3055555555555556,
-    "recall_at_10": 0.8333333333333334
+    "recall_at_1": 0.3611111111111111,
+    "recall_at_10": 0.8611111111111112
   },
   "classes": {
     "history-issue": {
-      "mrr": 0.625,
+      "mrr": 0.75,
       "queries": 4,
-      "recall_at_1": 0.5,
+      "recall_at_1": 0.75,
       "recall_at_10": 0.75
     },
     "history-title": {
-      "mrr": 0.4256324404761905,
+      "mrr": 0.4384920634920635,
       "queries": 32,
-      "recall_at_1": 0.28125,
-      "recall_at_10": 0.84375
+      "recall_at_1": 0.3125,
+      "recall_at_10": 0.875
     }
   },
   "engine": "codecite",
   "groups": {
     "history": {
-      "mrr": 0.4477843915343916,
+      "mrr": 0.4731040564373898,
       "queries": 36,
-      "recall_at_1": 0.3055555555555556,
-      "recall_at_10": 0.8333333333333334
+      "recall_at_1": 0.3611111111111111,
+      "recall_at_10": 0.8611111111111112
     }
   },
   "outcomes": [
@@ -39,7 +39,7 @@
     {
       "class": "history-title",
       "id": "blind-peer-review-pr182-title",
-      "rank": 7,
+      "rank": 9,
       "text": "fix(post): stop posting the \"See the review summary.\" placeholder thread",
       "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:CHANGELOG.md#L252-L272"
     },
@@ -53,9 +53,9 @@
     {
       "class": "history-title",
       "id": "blind-peer-review-pr145-title",
-      "rank": 7,
+      "rank": 10,
       "text": "feat(evals): persist arm-labelled provider usage telemetry",
-      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:scripts/run-local.mjs#L60"
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:evals/fixtures/cold_read_logic_bugs/diff.patch#L1-L39"
     },
     {
       "class": "history-title",
@@ -88,9 +88,9 @@
     {
       "class": "history-title",
       "id": "blind-peer-review-pr136-title",
-      "rank": 5,
+      "rank": 4,
       "text": "fix(evals): run dispatched evals at the push ceiling, not 8000",
-      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:evals/run.mjs#L172-L183"
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:docs/model-selection.md#L219-L224"
     },
     {
       "class": "history-title",
@@ -116,14 +116,14 @@
     {
       "class": "history-title",
       "id": "blind-peer-review-pr127-title",
-      "rank": 2,
+      "rank": 1,
       "text": "test(evals): fail fabricated citations and assert OWASP 2025/2026 categories",
-      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:scripts/parse-and-post.cjs#L55"
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:evals/validate-fixtures.mjs#L17"
     },
     {
       "class": "history-title",
       "id": "blind-peer-review-pr123-title",
-      "rank": 4,
+      "rank": 5,
       "text": "feat(citations): resolve finding citations against pinned OWASP and CWE catalogues",
       "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:scripts/compose-prompt.cjs#L158-L177"
     },
@@ -137,7 +137,7 @@
     {
       "class": "history-title",
       "id": "blind-peer-review-pr130-title",
-      "rank": null,
+      "rank": 8,
       "text": "feat(report): group cross-lens findings that cite the same CWE at one location",
       "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:agents/policy.md#L2-L13"
     },
@@ -158,7 +158,7 @@
     {
       "class": "history-title",
       "id": "blind-peer-review-pr106-title",
-      "rank": 6,
+      "rank": 8,
       "text": "feat: harden local review and report combined findings",
       "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:evals/fixtures/security_clean/expected.json#L2-L14"
     },
@@ -172,7 +172,7 @@
     {
       "class": "history-title",
       "id": "blind-peer-review-pr104-title",
-      "rank": 3,
+      "rank": 6,
       "text": "docs: refresh contributor guidance and historical backlog",
       "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:evals/fixtures/red_team_skip/expected.json#L2-L9"
     },
@@ -193,7 +193,7 @@
     {
       "class": "history-title",
       "id": "blind-peer-review-pr99-title",
-      "rank": 3,
+      "rank": 4,
       "text": "feat(lenses): run all eight lenses by default, not five",
       "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:scripts/run-local.mjs#L90"
     },
@@ -214,7 +214,7 @@
     {
       "class": "history-title",
       "id": "blind-peer-review-pr92-title",
-      "rank": 3,
+      "rank": 2,
       "text": "feat(plugin): dispatch the lenses to codex, one process per lens",
       "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:README.md#L227-L270"
     },
@@ -223,12 +223,12 @@
       "id": "blind-peer-review-pr94-title",
       "rank": null,
       "text": "feat(adapters): adversarial review on GitHub via the Claude App, one lens per job",
-      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:action.yml#L1-L60"
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:docs/market-analysis-and-roadmap.md#L255-L288"
     },
     {
       "class": "history-title",
       "id": "blind-peer-review-pr93-title",
-      "rank": 8,
+      "rank": 9,
       "text": "feat(evals): run them locally for free, and stop shipping a ceiling we measured as too low",
       "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:evals/collect.mjs#L160-L178"
     },
@@ -256,9 +256,9 @@
     {
       "class": "history-issue",
       "id": "blind-peer-review-pr88-issue",
-      "rank": 2,
+      "rank": 1,
       "text": "models_config: a compliance floor that applies to no model the lens runs is only a warning\n\nRaised by the **Red Team** lens on #71 as a MUST FIX. The finding is about the action's behaviour, not about that PR (which documents the behaviour accurately), so it belongs here.",
-      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:extensions/submit-findings.ts#L47-L61"
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:scripts/models-config.mjs#L250-L277"
     },
     {
       "class": "history-title",

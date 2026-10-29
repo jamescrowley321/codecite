@@ -18,6 +18,11 @@ bin="${CODECITE_BIN:-$root/target/release}"
 clones="${HISTORY_CLONES:-$HOME/.cache/codecite/history}"
 results="$here/results"
 mkdir -p "$results"
+# A fresh index every run, so each repository's chunk count and time in the
+# scorecard describe a full build, not what changed since the last one.
+XDG_DATA_HOME="$(mktemp -d)"
+export XDG_DATA_HOME
+trap 'rm -rf "$XDG_DATA_HOME"' EXIT
 
 if [ "$#" -eq 0 ]; then
   set -- $(cd "$here" && ls -d */ | tr -d / | grep -v '^results$')

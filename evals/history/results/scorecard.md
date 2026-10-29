@@ -2,13 +2,13 @@
 
 | Repository | Class | Engine | Queries | Recall@1 | Recall@10 | MRR |
 | --- | --- | --- | ---: | ---: | ---: | ---: |
-| blind-peer-review | history-title | codecite | 32 | 0.28 | 0.84 | 0.43 |
+| blind-peer-review | history-title | codecite | 32 | 0.31 | 0.88 | 0.44 |
 | blind-peer-review | history-title | grep | 32 | 0.12 | 0.59 | 0.28 |
 | blind-peer-review | history-title | popular | 32 | 0.22 | 0.44 | 0.28 |
-| blind-peer-review | history-issue | codecite | 4 | 0.50 | 0.75 | 0.62 |
+| blind-peer-review | history-issue | codecite | 4 | 0.75 | 0.75 | 0.75 |
 | blind-peer-review | history-issue | grep | 4 | 0.00 | 0.50 | 0.09 |
 | blind-peer-review | history-issue | popular | 4 | 0.50 | 0.50 | 0.50 |
-| blind-peer-review | all | codecite | 36 | 0.31 | 0.83 | 0.45 |
+| blind-peer-review | all | codecite | 36 | 0.36 | 0.86 | 0.47 |
 | blind-peer-review | all | grep | 36 | 0.11 | 0.58 | 0.25 |
 | blind-peer-review | all | popular | 36 | 0.25 | 0.44 | 0.30 |
 | codecite | history-title | codecite | 27 | 0.22 | 0.67 | 0.33 |
@@ -48,8 +48,8 @@
 | terraform-provider-descope | all | grep | 31 | 0.16 | 0.58 | 0.30 |
 | terraform-provider-descope | all | popular | 31 | 0.32 | 0.74 | 0.43 |
 
-- blind-peer-review: chunks: 455 written · elapsed: 0.73s
-- codecite: chunks: 0 written · elapsed: 0.09s
-- identity-model: chunks: 0 written · elapsed: 0.11s
-- identity-stack: chunks: 0 written · elapsed: 0.08s
-- terraform-provider-descope: chunks: 0 written · elapsed: 0.10s
+- blind-peer-review: chunks: 1389 written · elapsed: 0.25s
+- codecite: chunks: 2244 written · elapsed: 0.43s
+- identity-model: chunks: 10001 written · elapsed: 1.26s
+- identity-stack: chunks: 4101 written · elapsed: 0.60s
+- terraform-provider-descope: chunks: 3834 written · elapsed: 0.53s
