@@ -1,16 +1,23 @@
-# The sandbox and the IdP the hidden tests take tokens from. The sandbox
-# shares the IdP's network namespace, so the IdP is on its loopback
-# (identity-model allows plain-HTTP discovery only there), and that network
-# has no route out.
+# The sandbox, the IdP the hidden tests take tokens from, and the proxy. The
+# sandbox shares the IdP's network namespace, so the IdP is on its loopback
+# (identity-model allows plain-HTTP discovery only there). That network has
+# no route out; its one way out is the proxy (proxy/), which lets through
+# api.anthropic.com alone, for Claude Code. pi needs none: its calls leave
+# through Inspect's agent bridge. CLAUDE_CODE_OAUTH_TOKEN passes through from
+# the environment Inspect runs in, unset when it is.
 services:
   default:
     build: build
     image: codecite-eval-sandbox
     init: true
     network_mode: "service:idp"
+    environment:
+      - CLAUDE_CODE_OAUTH_TOKEN
     depends_on:
       idp:
         condition: service_healthy
+      proxy:
+        condition: service_started
   idp:
     build: ../fixtures/node-oidc
     image: codecite-eval-idp
@@ -22,6 +29,11 @@ services:
       interval: 2s
       timeout: 5s
       retries: 15
+  proxy:
+    build: proxy
+    image: codecite-eval-proxy
+    networks: [eval, egress]
 networks:
   eval:
     internal: true
+  egress: {}
