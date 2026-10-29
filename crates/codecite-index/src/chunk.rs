@@ -3,11 +3,11 @@
 //! headings, and everything else into 60-line windows.
 
 mod code;
-mod language;
 mod text;
 
 pub use code::ChunkerError;
-pub use language::Language;
+pub use codecite_core::Language;
+pub(crate) use text::{Heading, markdown_headings};
 
 /// The longest window, in lines.
 pub const WINDOW_LINES: u32 = 60;

@@ -94,6 +94,10 @@ pub struct ReadResult {
     /// partial when `truncated` is set.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instruction: Option<String>,
+    /// For the current version of a document that has older pinned
+    /// versions, their pinned citations: `diff` shows how they differ.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub older_versions: Option<Vec<String>>,
 }
 
 impl fmt::Display for ReadResult {
@@ -116,6 +120,13 @@ impl fmt::Display for ReadResult {
         writeln!(f, "{}", self.text)?;
         if self.truncated {
             writeln!(f, "… (truncated)")?;
+        }
+        if let Some(older) = &self.older_versions {
+            writeln!(
+                f,
+                "\nolder version pinned: {} (codecite diff shows what changed)",
+                older.join(", ")
+            )?;
         }
         Ok(())
     }
@@ -258,6 +269,7 @@ impl Store {
             text,
             truncated,
             instruction: instruction(&source.license_class, truncated),
+            older_versions: None,
         })
     }
 
@@ -389,7 +401,30 @@ impl Store {
             text,
             truncated,
             instruction: instruction(&source.license_class, truncated),
+            older_versions: self.older_versions(&source.name, source.id)?,
         })
+    }
+
+    /// The pinned citations of the document `name`'s versions that are not
+    /// current, oldest row first, when `source_id` is its current version;
+    /// `None` when it isn't or there are none.
+    pub(super) fn older_versions(&self, name: &str, source_id: i64) -> Result<Option<Vec<String>>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT id, name, revision, license_class, indexed_at, is_current FROM source
+             WHERE name = ?1 AND kind = 'document' ORDER BY id",
+        )?;
+        let rows = stmt.query_map([name], |row| Ok((source_row(row)?, row.get::<_, bool>(5)?)))?;
+        let mut is_current = false;
+        let mut older = Vec::new();
+        for row in rows {
+            let (source, current) = row?;
+            if current {
+                is_current |= source.id == source_id;
+            } else {
+                older.push(pinned(&source));
+            }
+        }
+        Ok((is_current && !older.is_empty()).then_some(older))
     }
 
     /// The one current document that has `section`, and `step` in it when
@@ -525,7 +560,11 @@ impl Store {
     /// The sections of a document version nearest to `wanted`: those that
     /// share the most leading numbers with it, then the closest in the
     /// first number that differs.
-    fn nearest_sections(&self, source: &SourceRow, wanted: &SectionNumber) -> Result<Vec<String>> {
+    pub(super) fn nearest_sections(
+        &self,
+        source: &SourceRow,
+        wanted: &SectionNumber,
+    ) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT c.number FROM chunk c JOIN document d ON d.id = c.document_id
              WHERE d.source_id = ?1 AND c.kind = 'section' ORDER BY c.id",
@@ -1273,5 +1312,27 @@ pub fn validate() {{
         assert_eq!(file_lines("a\n\n"), ["a", ""]);
         assert_eq!(file_lines("a"), ["a"]);
         assert!(file_lines("").is_empty());
+    }
+
+    #[test]
+    fn a_current_spec_version_names_its_older_ones() {
+        let f = fixture();
+        let current = f.ok("RFC 9449 §4.3");
+        assert_eq!(
+            current.older_versions.as_deref(),
+            Some(&["rfc9449@sha256:aaaaaaaaaaaa".to_owned()][..])
+        );
+        // The older version itself, a document with one version, and code
+        // name none.
+        assert_eq!(
+            f.ok("rfc9449@sha256:aaaaaaaaaaaa#section-4.3")
+                .older_versions,
+            None
+        );
+        assert_eq!(f.ok("OIDC Core §3.1.3.7").older_versions, None);
+        assert_eq!(
+            f.ok(&format!("app@{HEAD}:src/lib.rs#L1")).older_versions,
+            None
+        );
     }
 }
