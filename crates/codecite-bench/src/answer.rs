@@ -21,13 +21,26 @@ pub enum Answer {
         /// The line, counted from 1.
         line: u32,
     },
+    /// A whole file, as a merged PR's changed files label a history query:
+    /// `src/app.py`. Any result in the file matches.
+    File {
+        /// The file's path in its source.
+        path: String,
+    },
 }
 
 impl Answer {
     /// Parses an answer label.
     pub fn parse(label: &str) -> anyhow::Result<Answer> {
         let Some((target, fragment)) = label.split_once('#') else {
-            bail!("answer `{label}` has no `#`");
+            // A path names a directory or an extension; a bare word is more
+            // likely a spec label missing its `#section-<n>`.
+            if label.contains(['/', '.']) {
+                return Ok(Answer::File {
+                    path: label.to_owned(),
+                });
+            }
+            bail!("answer `{label}` has no `#` and is not a file path");
         };
         if target.is_empty() || fragment.is_empty() {
             bail!("answer `{label}` is missing its target or fragment");
@@ -63,7 +76,8 @@ impl Answer {
     ///
     /// A spec result matches its section and every step in it, from any
     /// version of the document. A code result matches when it is in the
-    /// file and its lines hold the answer's line.
+    /// file and its lines hold the answer's line; a file answer matches
+    /// any result in its file.
     pub fn matches(&self, citation: &Citation) -> bool {
         match (self, citation) {
             (
@@ -81,6 +95,7 @@ impl Answer {
             (Answer::Code { path, line }, Citation::Code { path: cited, lines }) => {
                 path == cited && lines.0 <= *line && *line <= lines.1
             }
+            (Answer::File { path }, Citation::Code { path: cited, .. }) => path == cited,
             _ => false,
         }
     }
@@ -206,6 +221,32 @@ mod tests {
         assert!(Answer::parse("a.py#Lx").is_err());
         assert!(Answer::parse("openid-connect-core-1_0#IDTokenValidation").is_err());
         assert!(Answer::parse("openid-connect-rpinitiated-1_0#Logout").is_err());
+    }
+
+    #[test]
+    fn a_bare_path_is_a_file_answer() {
+        assert_eq!(
+            Answer::parse("src/app.py").unwrap(),
+            Answer::File {
+                path: "src/app.py".into()
+            }
+        );
+        assert_eq!(
+            Answer::parse("README.md").unwrap(),
+            Answer::File {
+                path: "README.md".into()
+            }
+        );
+        assert!(Answer::parse("").is_err());
+    }
+
+    #[test]
+    fn a_file_answer_matches_any_lines_of_its_file() {
+        assert!(hit("src/app.py", "repo@0123abcd:src/app.py#L5-L9"));
+        assert!(hit("src/app.py", "repo@0123abcd:src/app.py#L1"));
+        assert!(!hit("src/app.py", "repo@0123abcd:src/app.pyc#L5"));
+        assert!(!hit("src/app.py", "repo@0123abcd:lib/src/app.py#L5"));
+        assert!(!hit("src/app.py", "rfc9449@sha256:2d8657f07291#section-4.3"));
     }
 
     #[test]
