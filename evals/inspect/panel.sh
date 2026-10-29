@@ -109,6 +109,7 @@ esac
 MAX_SANDBOXES="${MAX_SANDBOXES:-12}"
 mkdir -p "$LOG_DIR"
 AGENTS=$((1 + (${#OPENROUTER_MODELS[@]} > 0)))
+((MAX_SANDBOXES >= AGENTS)) || { echo "MAX_SANDBOXES must be at least $AGENTS, one per agent" >&2; exit 2; }
 SANDBOXES=$((MAX_SANDBOXES / AGENTS))
 export INSPECT_DOCKER_CLI_CONCURRENCY="${INSPECT_DOCKER_CLI_CONCURRENCY:-$((2 * SANDBOXES))}"
 
@@ -144,6 +145,19 @@ panel() {
 }
 
 EXTRA=("$@")
+if [[ "${RETRY:-0}" == 1 ]]; then
+  # A retry covers only the agents' folders: unfinished logs elsewhere (from
+  # a run before the folders, or an agent now switched off) stay unfinished.
+  covered=(-e "^$PWD/$LOG_DIR/claude-code/")
+  ((${#OPENROUTER_MODELS[@]})) && covered+=(-e "^$PWD/$LOG_DIR/openrouter/")
+  stray=$(for s in started error cancelled; do
+    uv run --locked inspect log list --log-dir "$LOG_DIR" --status "$s" --absolute
+  done | grep -v "${covered[@]}" || true)
+  if [[ -n "$stray" ]]; then
+    printf 'unfinished logs this retry will not cover:\n%s\n' "$stray" >&2
+    exit 2
+  fi
+fi
 start=$SECONDS
 (unset OPENROUTER_API_KEY; panel claude-code "${CLAUDE_MODELS[@]}") &
 pids=($!)

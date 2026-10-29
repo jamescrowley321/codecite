@@ -164,10 +164,12 @@ def test_the_baseline_arm_loses_codecite(monkeypatch):
     assert not sb.envs[0]["PATH"].startswith("/opt/codecite")
 
 
-@pytest.mark.parametrize("returncode", [124, 137])
-def test_timeout_stopping_it_is_an_agent_timeout_with_measures(monkeypatch, returncode):
+@pytest.mark.parametrize("returncode, ran, stopped", [(124, 600, "agent_timeout"), (137, 610, "agent_timeout"), (137, 30, "sandbox_error")])
+def test_timeout_stopping_it_is_an_agent_timeout_and_an_early_kill_is_not(monkeypatch, returncode, ran, stopped):
+    clock = iter([0, ran])
+    monkeypatch.setattr(task, "monotonic", lambda: next(clock))
     _, store, _ = run_claude(monkeypatch, finished(stream(assistant("m1", USAGE)), returncode))
-    assert store["stopped"] == "agent_timeout" and store["agent_turns"] == 1
+    assert store["stopped"] == stopped and store["agent_turns"] == 1
 
 
 def test_an_inspect_timeout_is_an_agent_timeout(monkeypatch):
@@ -181,11 +183,19 @@ def test_a_run_that_lost_its_exec_keeps_the_measures_in_its_file(monkeypatch, er
     assert (store["agent_turns"], store["codecite_calls"]) == (1, 1)
 
 
-
 def test_an_api_error_errors_the_sample(monkeypatch):
     out = stream({**DONE, "is_error": True, "result": "API Error: 429"})
     with pytest.raises(RuntimeError, match="API Error: 429"):
         run_claude(monkeypatch, finished(out, 1))
+
+
+def test_an_error_holding_the_token_is_withheld(monkeypatch):
+    token = "sk-ant-oat01-" + "Zq8_Lm3-Xv7Np2Rt5Ws9Yb4Kd6Hf1Gj0" * 2
+    monkeypatch.setenv(claude_code.TOKEN, token)
+    out = stream({**DONE, "is_error": True, "result": f"bad header {token[20:60]}"})
+    with pytest.raises(RuntimeError) as e:
+        run_claude(monkeypatch, finished(out, 1))
+    assert "withheld" in str(e.value) and token[20:60] not in str(e.value)
 
 
 def test_the_agent_picks_claude_code_for_a_claude_code_model(monkeypatch):

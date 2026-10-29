@@ -176,9 +176,14 @@ the identity-model commit), so an unchanged binary doesn't rebuild. It reads
 the `CLAUDE_CODE_OAUTH_TOKEN` secret, and `OPENROUTER_EVAL_API_KEY` only when
 OpenRouter is on. The two panels run in separate Inspect processes, so pi's
 never holds the Claude token. Claude Code's shell can read it, so before
-uploading, `python -m codecite_evals.scrub` deletes any log holding it in any
-form (or one it can't read through) and fails the job; nothing uploads unless
-it passes. The Inspect logs, with the scorecard, upload as the
+uploading, `python -m codecite_evals.scrub` deletes any log holding a run of
+it, as it is, reversed, hex, base64 (line-wrapped or not) or URL-encoded, and
+any log it can't read through, and fails the job; nothing uploads unless it
+passes. Error text that holds it is withheld from the job's console. A copy
+the agent deliberately disguised (compressed, encrypted) would get past the
+scrub, as would one the agent sent out through api.anthropic.com itself (the
+proxy checks only the host), so a token kept for evals alone is the safer
+secret. The Inspect logs, with the scorecard, upload as the
 `eval-logs-<tier>-<task>` artifact (`eval-logs-<tier>-aa-<task>` for an A/A
 round, `eval-logs-calibration-<task>` for a calibration).
 

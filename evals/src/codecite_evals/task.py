@@ -23,7 +23,9 @@ difficulty without watching codecite's (evals/README.md).
 """
 
 import json
+import os
 from pathlib import Path
+from time import monotonic
 
 from inspect_ai import Task, task
 from inspect_ai.agent import Agent, AgentState, agent, sandbox_agent_bridge
@@ -33,7 +35,7 @@ from inspect_ai.scorer import Score, Target, accuracy, scorer, stderr
 from inspect_ai.solver import Generate, TaskState, solver
 from inspect_ai.util import OutputLimitExceededError, sandbox, store
 
-from codecite_evals import claude_code, config
+from codecite_evals import claude_code, config, scrub
 
 ARMS = {"both": ("baseline", "codecite"), "baseline": ("baseline",)}
 PROJECT = "/work/project"
@@ -220,7 +222,9 @@ def claude(model: str) -> Agent:
         condition = store().get("condition")
         env = {**await prepare_arm(sb, condition, claude_code.MCP, claude_code.MCP_CONFIG), **claude_code.ENV}
         cmd = claude_code.command(condition, state.messages[0].text, model, AGENT_TIMEOUT)
+        started = monotonic()
         result = await run_agent(sb, cmd, env, AGENT_TIMEOUT + 30)
+        ran = monotonic() - started
         try:
             stdout = await sb.read_file(claude_code.OUTPUT)
         except Exception:
@@ -229,19 +233,33 @@ def claude(model: str) -> Agent:
             store().set(key, value)
         if result is None:
             return state
-        if result.returncode in (124, 137):
-            # `timeout` stopped it (SIGTERM, then SIGKILL).
+        if result.returncode == 124 or (result.returncode == 137 and ran >= AGENT_TIMEOUT):
+            # `timeout` stopped it (SIGTERM, then SIGKILL if that didn't).
             store().set("stopped", "agent_timeout")
+            return state
+        if result.returncode == 137:
+            # Killed before its time: the sandbox's doing (an OOM kill), as in run_agent.
+            store().set("stopped", "sandbox_error")
+            store().set("sandbox_error", f"claude was killed after {ran:.0f}s")
             return state
         if error := claude_code.failure(stdout):
             # An API error or a usage limit is infra, as pi's provider errors are.
-            raise RuntimeError(f"Claude Code failed: {error[:2000]}")
+            raise RuntimeError(f"Claude Code failed: {withheld(error[:2000])}")
         if not result.success:
-            raise RuntimeError(f"claude exited {result.returncode}: {result.stderr[-2000:]}")
+            raise RuntimeError(f"claude exited {result.returncode}: {withheld(result.stderr[-2000:])}")
         state.messages.append(ChatMessageAssistant(content=claude_code.answer(stdout)))
         return state
 
     return execute
+
+
+def withheld(text: str) -> str:
+    """The text, unless it holds the Claude token: an error's text reaches
+    the job's public console, which CI's masking covers only verbatim."""
+    token = os.environ.get(claude_code.TOKEN)
+    if token and scrub.found(text.encode(), scrub.needles(token)):
+        return "(withheld: it held the Claude token)"
+    return text
 
 
 def last_turn_error(stdout: str) -> str | None:

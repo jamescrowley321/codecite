@@ -2,17 +2,22 @@
 
     CLAUDE_CODE_OAUTH_TOKEN=... python -m codecite_evals.scrub <log dir>
 
-Claude Code strips the token from its commands' environment, but the agent
-runs as root in the sandbox and its output reaches the logs, so this is the
-backstop before the logs become a public artifact. It fails closed: a file it
-can't read through, an `.eval` that isn't a whole zip, or any error deletes
-the file. It looks for the token itself, a distinctive run of its characters
-(to catch a cut or partly echoed copy), and its base64 and URL-encoded forms.
+The agent runs as root in the sandbox with the token in its environment, and
+its output reaches the logs, so this is the backstop before the logs become a
+public artifact. It fails closed: a file it can't read through, an `.eval`
+that isn't a whole zip, or any error deletes the file. It looks for any run
+of 31 or more characters of the token past its shared prefix, or of the same
+reversed, in hex, in base64 at any alignment or URL-encoded, both in the text
+and in the text with its whitespace and `\\n`-style escapes taken out (so a
+line-wrapped `base64` passes no better). It can't catch a deliberately
+transformed copy (compressed, encrypted, split up), which is why the agent's
+only way out is the proxy.
 Exit 1 when it deleted anything, so the run is flagged.
 """
 
 import base64
 import os
+import re
 import sys
 import urllib.parse
 import zipfile
@@ -21,25 +26,33 @@ from pathlib import Path
 if sys.version_info < (3, 14):
     import zipfile_zstd  # noqa: F401  (zstd in zipfile, as Inspect does)
 
-# The length of the runs of the token looked for, past any shared prefix.
+# The token's shared prefix, which says nothing about the token.
+PREFIX = b"sk-ant-oat01-"
+# The length of the needles: any copy of 2 * RUN - 1 or more characters of a
+# form holds one of them, as they start every RUN characters.
 RUN = 16
+# What a log may break an encoded token with: whitespace, and the escapes a
+# JSON string writes for it.
+BREAKS = re.compile(rb"\s+|\\[nrt]")
 
 
 def needles(token: str) -> set[bytes]:
-    """The forms of the token a log must not hold."""
-    raw = token.encode()
-    found = {raw, urllib.parse.quote(token, safe="").encode()}
-    # A run from the token's middle: its prefix (sk-ant-oat01-) is shared.
-    middle = len(raw) // 2
-    if len(raw) >= 2 * RUN:
-        found.add(raw[middle - RUN // 2 : middle + RUN // 2])
-    # Base64 of the token at each of the three alignments it can start at,
-    # without the characters its neighbours change.
-    for shift in range(3):
-        encoded = base64.b64encode(b"\0" * shift + raw)[4:-4]
-        if len(encoded) >= RUN:
-            found.add(encoded)
+    """The runs of the token's forms a log must not hold."""
+    body = token.encode().removeprefix(PREFIX)
+    forms = [body, body[::-1], body.hex().encode(), body.hex().upper().encode()]
+    forms.append(urllib.parse.quote(body.decode(), safe="").encode())
+    # Base64 at each of the three alignments the body can start at, without
+    # the characters its neighbours change.
+    forms += [base64.b64encode(b"\0" * shift + body)[4:-4] for shift in range(3)]
+    found = set()
+    for form in forms:
+        found.update(form[i : i + RUN] for i in range(0, len(form) - RUN + 1, RUN))
     return found
+
+
+def found(data: bytes, forms: set[bytes]) -> bool:
+    """Whether the data holds any form, as it is or with its breaks taken out."""
+    return any(form in chunk for chunk in (data, BREAKS.sub(b"", data)) for form in forms)
 
 
 def holds(path: Path, forms: set[bytes]) -> bool:
@@ -52,7 +65,7 @@ def holds(path: Path, forms: set[bytes]) -> bool:
         with zipfile.ZipFile(path) as z:
             chunks = [z.read(name) for name in z.namelist()]
     chunks.append(path.read_bytes())
-    return any(form in chunk for chunk in chunks for form in forms)
+    return any(found(chunk, forms) for chunk in chunks)
 
 
 def scrub(root: Path, token: str) -> list[tuple[Path, str]]:

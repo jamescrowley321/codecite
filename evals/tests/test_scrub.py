@@ -1,6 +1,8 @@
 """The log scrub deletes what holds the token, in any form, and anything it can't read."""
 
 import base64
+import json
+import textwrap
 import urllib.parse
 import zipfile
 
@@ -30,7 +32,13 @@ def test_a_clean_log_stays(tmp_path):
     [
         TOKEN,
         TOKEN[20:60],  # cut, as a partial echo would be
+        TOKEN[:44],  # its prefix and the next 31
+        TOKEN[-31:],
+        TOKEN[::-1],
+        TOKEN.encode().hex(),
         base64.b64encode(f"CLAUDE_CODE_OAUTH_TOKEN={TOKEN}\n".encode()).decode(),
+        # `env | base64`: wrapped at 76, and the breaks escaped in the log's JSON.
+        json.dumps(textwrap.fill(base64.b64encode(f"PATH=/bin\nT={TOKEN}".encode()).decode(), 76)),
         base64.b64encode(f"x{TOKEN}".encode()).decode(),
         urllib.parse.quote(f"t={TOKEN}"),
     ],
@@ -40,6 +48,11 @@ def test_a_log_holding_the_token_in_any_form_goes(tmp_path, form):
     (removed, why), = scrub(tmp_path, TOKEN)
     assert removed.name == "a.eval" and why == "it held the token"
     assert not removed.exists()
+
+
+def test_its_prefix_alone_is_not_the_token(tmp_path):
+    eval_log(tmp_path / "a.eval", "a token looks like sk-ant-oat01-...")
+    assert scrub(tmp_path, TOKEN) == []
 
 
 def test_a_plain_file_holding_it_goes(tmp_path):
