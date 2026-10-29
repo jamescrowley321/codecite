@@ -535,6 +535,12 @@ codecite earns its place only if agents using it do no worse than agents without
 - **Isolation:** every sample runs in a fresh Docker sandbox built from one image: the task's project with its dependencies installed, identity-model's source at the task's pinned commit, and codecite with the corpus already indexed. The baseline arm deletes codecite before the agent starts, and runs pi without MCP, so the arms differ only by the codecite note, the codecite tools and the binary on `PATH`. The sandbox shares the IdP's network namespace and has no route out. No agent can read the owner's files, the hidden tests (copied in only after the agent exits) or another sample.
 - **Credentials:** none in the sandbox. pi's model calls leave through Inspect's agent bridge, which holds the OpenRouter key on the host and records every call and its tokens.
 
+**History benchmark**
+
+- Queries mined from merged PRs in five of the owner's repositories (identity-model, identity-stack, blind-peer-review, terraform-provider-descope and codecite), in `evals/history/` (see `evals/README.md`). A PR's title, and the issue it closes, are the questions. The files it modified, at the parent of the oldest sampled PR, are the answer. No label is written by hand, so none can be tuned to one corpus.
+- Scored at file level for codecite and for a plain `git grep` ranking of the same queries over the same commit: Recall@1, Recall@10 and MRR per repository and class. CI runs it on every PR beside the retrieval benchmark.
+- A ranking or indexing change that loses on any repository doesn't merge.
+
 **Retrieval benchmark**
 
 - 100 labelled queries over the identity corpora, each with its known correct span, in `evals/retrieval/queries.toml`. About half are spec queries: by keyword, in plain language that shares no distinctive term with the answer, and asking which requirements apply. The rest are code queries by symbol, by behaviour and by usage, including queries agents typed in eval runs.
