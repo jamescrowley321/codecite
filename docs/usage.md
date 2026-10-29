@@ -412,7 +412,7 @@ come too (`enclosing`), and their links count as its own: asking for RFC 6749
 §2.3.1 brings §2.3 and, through §3.2.1's reference to §2.3, §3.2. A top-level
 section's links are a whole chapter's, so they don't count. Appendices, whose
 numbers have no citation form, are left out.
-The groups run asked, subsections, enclosing and using sections first, then
+The groups run asked, then using, subsections and enclosing sections, then
 the rest in document order. A `using` group carries a `note` saying its rules
 apply to the same requests as the section asked about, since agents read a
 later group as background.

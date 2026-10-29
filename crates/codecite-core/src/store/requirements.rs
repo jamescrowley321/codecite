@@ -144,17 +144,18 @@ struct Chunk {
     text: String,
 }
 
-/// Why a section governs, in the order a section's first reason wins.
+/// Why a section governs, in the order the groups are listed. A section's
+/// first reason found wins.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Relation {
     Asked,
-    Subsection,
-    Enclosing,
     /// The enclosing section of a referring subsection: the endpoint or
     /// flow that applies the section asked about, so its rules govern the
     /// same requests. RFC 6749 §3.2.1 applies §2.3, and §3.2's rule on
     /// repeated parameters binds a client authenticating per §2.3.
     Using,
+    Subsection,
+    Enclosing,
     Referenced,
     Referring,
 }
@@ -285,8 +286,9 @@ impl Store {
         let mut order: Vec<usize> = (0..sections.len())
             .filter(|i| relations.contains_key(i))
             .collect();
-        // The asked section, its subsections, the sections enclosing it and
-        // those using it, then the rest, each in document order.
+        // The asked section, the sections using it (whose rules agents
+        // otherwise skip, #170), its subsections, the sections enclosing
+        // it, then the rest, each in document order.
         order.sort_by_key(|i| (relations[i].min(Relation::Referenced), *i));
 
         // What the sections serialize to, headers and statements, stays
@@ -837,12 +839,12 @@ mod tests {
                         "The RP SHOULD log failures.",
                     ])
                 ),
+                ("#section-4".into(), "using".into(), Vec::new()),
                 (
                     "#section-2.2.1".into(),
                     "subsection".into(),
                     owned(&["The RP MUST return 400."])
                 ),
-                ("#section-4".into(), "using".into(), Vec::new()),
                 (
                     "#section-2.1".into(),
                     "referenced".into(),
@@ -910,8 +912,8 @@ mod tests {
             .collect();
         let want = [
             ("#section-2.2.1", "asked"),
-            ("#section-2.2", "enclosing"),
             ("#section-4", "using"),
+            ("#section-2.2", "enclosing"),
             ("#section-2.1", "referenced"),
             ("#section-3", "referenced"),
             ("#section-4.1", "referring"),
@@ -922,7 +924,12 @@ mod tests {
             .collect();
         assert_eq!(relations, want);
         // An enclosing section lists only its steps with a keyword.
-        let enclosing = &r.sections[1].statements;
+        let enclosing = &r
+            .sections
+            .iter()
+            .find(|s| s.relation == "enclosing")
+            .unwrap()
+            .statements;
         assert!(enclosing.iter().any(|s| s.citation.ends_with("/step-1")));
         assert!(!enclosing.iter().any(|s| s.citation.ends_with("/step-2")));
     }

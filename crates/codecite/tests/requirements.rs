@@ -184,6 +184,11 @@ fn rfc_6749_2_3_lays_out_its_rules() {
     assert_eq!(group(&result, "3.2.1")["relation"], "referring");
     let endpoint = group(&result, "3.2");
     assert_eq!(endpoint["relation"], "using");
+    assert!(
+        sections(&result)[1].ends_with("#section-3.2"),
+        "{:?}",
+        sections(&result)
+    );
     assert_eq!(
         endpoint["note"],
         "Its rules apply to the same requests as the section asked about."
@@ -227,12 +232,12 @@ fn a_subsection_takes_in_what_governs_its_enclosing_sections() {
         "MUST NOT be included more than once"
     ));
     // The token endpoint's rules govern the same requests, so they come
-    // straight after the sections that hold §2.3.1, before mere references.
+    // straight after the section asked about.
     let at = |number: &str| {
         let anchor = format!("#section-{number}");
         order.iter().position(|c| c.ends_with(&anchor)).unwrap()
     };
-    assert_eq!(at("3.2"), 2, "{order:?}");
+    assert_eq!(at("3.2"), 1, "{order:?}");
     assert!(
         at("3.2") < at("1.6") && at("3.2") < at("3.2.1"),
         "{order:?}"
