@@ -27,6 +27,9 @@ pub use read::{
     QUOTE_TRUNCATED_INSTRUCTION, ReadOptions, ReadResult,
 };
 
+mod requirements;
+pub use requirements::{Requirement, RequirementSection, Requirements, RequirementsOptions};
+
 mod search;
 pub use search::{
     DEFAULT_MAX_AGE_DAYS, DEFAULT_SEARCH_LIMIT, Freshness, MAX_SEARCH_LIMIT, MAX_SNIPPET_BYTES,

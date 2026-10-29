@@ -61,7 +61,11 @@ def test_only_the_codecite_arm_has_codecite_tools(monkeypatch):
     assert base.files == {} and ["rm", "-rf", "/opt/codecite"] in base.commands
     (code_pi,), (base_pi,) = ([c for c in sb.commands if c[0] == "pi"] for sb in (code, base))
     tools = lambda cmd: cmd[cmd.index("--tools") + 1].split(",")
-    assert tools(code_pi) == task.PI_TOOLS + ["mcp__codecite__search", "mcp__codecite__read"]
+    assert tools(code_pi) == task.PI_TOOLS + [
+        "mcp__codecite__search",
+        "mcp__codecite__read",
+        "mcp__codecite__requirements",
+    ]
     assert tools(base_pi) == task.PI_TOOLS
     assert "--no-mcp" in base_pi and "builtin:mcp" not in base_pi
     assert "--no-mcp" not in code_pi and code_pi[code_pi.index("-e") + 1] == "builtin:mcp"
@@ -75,7 +79,8 @@ def test_prompts_differ_only_by_the_note(task_id):
     d = config.task_dir(task_id)
     note = task.codecite_note(d)
     assert task.prompt(d, "codecite") == f"{task.prompt(d, 'baseline')}\n\n{note}\n"
-    assert "mcp__codecite__search" in note and "mcp__codecite__read" in note
+    for tool in task.CODECITE_TOOLS:
+        assert tool in note
 
 
 def test_timeout_is_an_agent_timeout(monkeypatch):

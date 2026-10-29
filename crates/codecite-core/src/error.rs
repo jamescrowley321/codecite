@@ -102,9 +102,10 @@ pub enum Error {
         text: String,
     },
 
-    /// `cite` checks spec citations, and the text is a code citation.
+    /// `cite` and `requirements` take spec citations, and the text is a
+    /// code citation.
     #[error(
-        "{text:?} is a code citation; cite checks spec citations, and read reads code citations"
+        "{text:?} is a code citation; cite and requirements take spec citations, and read reads code citations"
     )]
     NotASpecCitation {
         /// The text as given.
@@ -218,6 +219,18 @@ pub enum Error {
         candidates: Vec<String>,
     },
 
+    /// A search of the document for the topic found no section.
+    #[error(
+        "{document} has no section on {:?}; try other words, or pass a section citation",
+        escape_controls(topic)
+    )]
+    NoSectionOnTopic {
+        /// The pinned document: `rfc6749@sha256:535362fa3b4c`.
+        document: String,
+        /// The topic as given.
+        topic: String,
+    },
+
     /// A code citation runs past the end of its file.
     #[error("{citation} runs past the end of the file, which has {lines} lines")]
     LinesPastEnd {
@@ -254,6 +267,7 @@ impl Error {
             Error::NoSuchStep { .. } => "no_such_step",
             Error::NoSuchFile { .. } => "no_such_file",
             Error::NoSuchSymbol { .. } => "no_such_symbol",
+            Error::NoSectionOnTopic { .. } => "no_section_on_topic",
             Error::LinesPastEnd { .. } => "lines_past_end",
         }
     }
