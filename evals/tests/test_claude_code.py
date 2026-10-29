@@ -46,7 +46,8 @@ def test_both_arms_get_pis_tools_and_no_web():
 def test_the_prompt_comes_last_and_timeout_stops_it_first():
     cmd = claude_code.command("baseline", "--not-a-flag", "claude-haiku-5-5", 600)
     assert cmd[-2:] == ["--", "--not-a-flag"]
-    assert cmd[:4] == ["timeout", "--kill-after=10", "600", "claude"]
+    assert cmd[:4] == ["sh", "-c", f'"$@" >{claude_code.OUTPUT}', "sh"]
+    assert cmd[4:8] == ["timeout", "--kill-after=10", "600", "claude"]
     assert cmd[cmd.index("--model") + 1] == "claude-haiku-5-5"
 
 
@@ -101,33 +102,46 @@ class Store(dict):
 
 
 class Sandbox:
-    def __init__(self, result):
-        self.result = result
+    """Claude Code's exec returns `result` (or raises it) after writing
+    `output` to its output file; None leaves no file."""
+
+    def __init__(self, result, output=None):
+        self.result, self.output = result, output
         self.files, self.commands, self.envs = {}, [], []
 
     async def write_file(self, path, contents):
         self.files[path] = contents
 
+    async def read_file(self, path, text=True):
+        if path not in self.files:
+            raise FileNotFoundError(path)
+        return self.files[path]
+
     async def exec(self, cmd, **kwargs):
         self.commands.append(cmd)
-        if cmd[0] == "timeout":
+        if cmd[0] == "sh":
             self.envs.append(kwargs["env"])
+            if self.output is not None:
+                self.files[claude_code.OUTPUT] = self.output
             if isinstance(self.result, Exception):
                 raise self.result
             return self.result
         return ExecResult(success=True, returncode=0, stdout="", stderr="")
 
 
-def run_claude(monkeypatch, result, arm="codecite"):
+def run_claude(monkeypatch, result, arm="codecite", output=None):
+    if isinstance(result, tuple):
+        result, output = result
     state = AgentState(messages=[ChatMessageUser(content="do the task")])
-    store, sb = Store(condition=arm), Sandbox(result)
+    store, sb = Store(condition=arm), Sandbox(result, output)
     monkeypatch.setattr(task, "sandbox", lambda: sb)
     monkeypatch.setattr(task, "store", lambda: store)
     return asyncio.run(task.claude("claude-sonnet-5-5")(state)), store, sb
 
 
-def finished(stdout, returncode=0):
-    return ExecResult(success=returncode == 0, returncode=returncode, stdout=stdout, stderr="")
+def finished(output, returncode=0):
+    """Claude Code's exec, its output in the file and none on stdout."""
+    return ExecResult(success=returncode == 0, returncode=returncode, stdout="", stderr=""), output
 
 
 def test_a_finished_run_keeps_its_answer_and_measures(monkeypatch):
@@ -146,7 +160,7 @@ def test_the_token_never_goes_in_an_execs_env(monkeypatch):
 
 def test_the_baseline_arm_loses_codecite(monkeypatch):
     _, _, sb = run_claude(monkeypatch, finished(stream(DONE)), arm="baseline")
-    assert ["rm", "-rf", "/opt/codecite"] in sb.commands and sb.files == {}
+    assert ["rm", "-rf", "/opt/codecite"] in sb.commands and claude_code.MCP not in sb.files
     assert not sb.envs[0]["PATH"].startswith("/opt/codecite")
 
 
@@ -159,6 +173,13 @@ def test_timeout_stopping_it_is_an_agent_timeout_with_measures(monkeypatch, retu
 def test_an_inspect_timeout_is_an_agent_timeout(monkeypatch):
     _, store, _ = run_claude(monkeypatch, TimeoutError())
     assert store["stopped"] == "agent_timeout"
+
+
+@pytest.mark.parametrize("error", [TimeoutError(), ConnectionResetError("lost")])
+def test_a_run_that_lost_its_exec_keeps_the_measures_in_its_file(monkeypatch, error):
+    _, store, _ = run_claude(monkeypatch, error, output=stream(assistant("m1", USAGE, tool("mcp__codecite__search"))))
+    assert (store["agent_turns"], store["codecite_calls"]) == (1, 1)
+
 
 
 def test_an_api_error_errors_the_sample(monkeypatch):

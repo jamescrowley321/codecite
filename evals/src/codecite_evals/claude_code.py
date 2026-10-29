@@ -8,8 +8,14 @@ sandbox with it instead of pi. Claude Code calls the Anthropic API itself,
 authenticated by CLAUDE_CODE_OAUTH_TOKEN (`claude setup-token`, a Pro or Max
 subscription), so a run is billed to the subscription, not per token. The
 token reaches the sandbox through compose's environment, never through an
-exec's env, which Inspect writes to the log. The sandbox's only way out is
-the compose file's proxy, which lets through api.anthropic.com alone.
+exec's env or a written file, both of which Inspect writes to the log; and
+only Claude Code samples' sandboxes get it, since panel.sh runs pi's panel in
+a process without it. The agent's own commands can still read it: Claude
+Code's subprocess scrubbing (CLAUDE_CODE_SUBPROCESS_ENV_SCRUB) brings its
+sandbox and permission prompts with it, which would change the agent under
+test. So the sandbox's only way out is the compose file's proxy, which lets
+through api.anthropic.com alone, and CI scrubs the logs (scrub.py) before
+uploading them.
 
 Inspect sees none of Claude Code's model calls, so the agent reads the turns,
 tokens, model time and codecite calls from its stream-json output and keeps
@@ -31,6 +37,9 @@ TOOLS = ["Bash", "Read", "Edit", "Write", "Glob", "Grep"]
 MCP = "/root/.claude/codecite-mcp.json"
 MCP_CONFIG = {"mcpServers": {"codecite": {"command": "/opt/codecite/bin/codecite", "args": ["mcp"]}}}
 PROXY = "http://proxy:8888"
+# Claude Code's stream-json goes to a file, not the exec's stdout, so a run
+# that outgrows Inspect's output limit or loses its exec still leaves it.
+OUTPUT = "/tmp/claude-code.jsonl"
 ENV = {
     "HTTPS_PROXY": PROXY,
     # Claude Code refuses to skip permissions as root unless told it is in a sandbox.
@@ -62,11 +71,13 @@ def runs(model) -> bool:
 
 
 def command(condition: str, prompt: str, model: str, timeout: int) -> list[str]:
-    """Claude Code's command line for an arm. Only the codecite arm gets an
-    MCP config; --strict-mcp-config keeps any other out of both. `timeout`
-    stops it a little before Inspect would, so its output so far is kept."""
+    """Claude Code's command line for an arm, its stream-json written to
+    OUTPUT. Only the codecite arm gets an MCP config; --strict-mcp-config
+    keeps any other out of both. `timeout` stops it a little before Inspect
+    would."""
     mcp = ["--mcp-config", MCP] if condition == "codecite" else []
     return [
+        "sh", "-c", f'"$@" >{OUTPUT}', "sh",
         "timeout", "--kill-after=10", str(timeout),
         "claude", "-p", "--output-format", "stream-json", "--verbose", "--model", model,
         "--tools", ",".join(TOOLS), "--strict-mcp-config", *mcp,

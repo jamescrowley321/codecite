@@ -170,49 +170,31 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           OPENROUTER_API_KEY: ${{ env.OPENROUTER == '1' && secrets.OPENROUTER_EVAL_API_KEY || '' }}
         run: inspect/panel.sh "$TIER" --sandbox-prebuilt
-      # The agents' shells can read CLAUDE_CODE_OAUTH_TOKEN, and the logs
-      # keep their output, so a log holding the token is never uploaded. The
-      # logs are zstd zips, which Python reads natively from 3.14 and through
-      # the evals venv's zipfile_zstd before it; if the scan itself fails,
-      # every log goes.
+      # The logs keep the agents' output and the agent runs as root beside
+      # the Claude token, so no log leaves the runner until the scrub
+      # (evals/src/codecite_evals/scrub.py) has read it through. It deletes
+      # a log holding the token in any form, or one it can't read; if the
+      # scrub itself fails, every log goes, and the steps below upload only
+      # after it passes.
       - name: Keep the token out of the logs
+        id: scrub
         if: always()
         working-directory: evals
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
           dir="inspect/logs/$RUN_NAME/$TASK_ID"
-          [[ -d "$dir" && -n "$CLAUDE_CODE_OAUTH_TOKEN" ]] || exit 0
-          uv run --locked python -I - "$dir" <<'PY' || { echo "::error::the token scan failed, so no logs upload"; rm -rf "$dir"; exit 1; }
-          import os, sys, zipfile
-          from pathlib import Path
-          if sys.version_info < (3, 14):
-              import zipfile_zstd  # noqa: F401  (zstd in zipfile, as Inspect does)
-          token = os.environ["CLAUDE_CODE_OAUTH_TOKEN"].encode()
-          leaked = []
-          for path in Path(sys.argv[1]).rglob("*"):
-              if not path.is_file():
-                  continue
-              if zipfile.is_zipfile(path):
-                  with zipfile.ZipFile(path) as z:
-                      hit = any(token in z.read(n) for n in z.namelist())
-              else:
-                  hit = token in path.read_bytes()
-              if hit:
-                  leaked.append(path)
-                  path.unlink()
-          for path in leaked:
-              print(f"::error::removed {path}: it held CLAUDE_CODE_OAUTH_TOKEN")
-          sys.exit(1 if leaked else 0)
-          PY
+          [[ -d "$dir" ]] || exit 0
+          uv run --locked python -I -m codecite_evals.scrub "$dir" \
+            || { echo "::error::the scrub removed a log or failed, so no logs upload"; rm -rf "$dir"; exit 1; }
       - name: Publish the scorecard
-        if: always()
+        if: always() && steps.scrub.outcome == 'success'
         run: |
           card="evals/inspect/logs/$RUN_NAME/$TASK_ID/scorecard.md"
           [[ -s "$card" ]] || exit 0
           cat "$card" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        if: always()
+        if: always() && steps.scrub.outcome == 'success'
         with:
           name: eval-logs-${{ env.RUN_NAME }}-${{ env.TASK_ID }}
           path: evals/inspect/logs/${{ env.RUN_NAME }}/${{ env.TASK_ID }}
@@ -220,7 +202,7 @@ jobs:
           overwrite: true
       # The comment job joins every task's scorecard into one comment.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        if: always() && github.event_name == 'pull_request'
+        if: always() && steps.scrub.outcome == 'success' && github.event_name == 'pull_request'
         with:
           name: scorecard-${{ env.TASK_ID }}
           path: evals/inspect/logs/${{ env.RUN_NAME }}/${{ env.TASK_ID }}/scorecard.md

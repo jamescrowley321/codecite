@@ -15,7 +15,7 @@ Evaluation plan):
 
 | Path | What |
 | --- | --- |
-| `src/codecite_evals/` | The `codecite-evals` package that `uv sync` installs: `task.py` (the code tasks: one sample per arm, the agent in a Docker sandbox, the scorer), `claude_code.py` (Claude Code as the agent, for `claude-code/` models; any other model runs pi), `spec_task.py` (the spec-question task: one sample per question per arm, on the same agents), `report.py` (the scorecard, or the calibration table), `frozen.py` (the frozen-task check) and `config.py` (where every file below is found) |
+| `src/codecite_evals/` | The `codecite-evals` package that `uv sync` installs: `task.py` (the code tasks: one sample per arm, the agent in a Docker sandbox, the scorer), `claude_code.py` (Claude Code as the agent, for `claude-code/` models; any other model runs pi), `scrub.py` (deletes logs holding the Claude token before CI uploads them), `spec_task.py` (the spec-question task: one sample per question per arm, on the same agents), `report.py` (the scorecard, or the calibration table), `frozen.py` (the frozen-task check) and `config.py` (where every file below is found) |
 | `tests/` | Unit tests for the task's agent, the scorecard, the frozen-task check and the config; no model key or Docker needed |
 | `inspect/prepare.sh` | Stage the sandbox image's build context in `inspect/build/` for one task (`prepare.sh <task-id>`, default `fastapi-middleware`) |
 | `inspect/Dockerfile`, `inspect/compose.yaml` | The sandbox image and the IdP beside it, on a network with no route out but the proxy |
@@ -174,8 +174,11 @@ and caches the three sandbox images (the sandbox, the IdP and the proxy),
 keyed on a hash of their build contexts (which hold the codecite binary and
 the identity-model commit), so an unchanged binary doesn't rebuild. It reads
 the `CLAUDE_CODE_OAUTH_TOKEN` secret, and `OPENROUTER_EVAL_API_KEY` only when
-OpenRouter is on. The agents' shells can read the Claude token, so before
-uploading, the job deletes any log that holds it and fails. The Inspect logs, with the scorecard, upload as the
+OpenRouter is on. The two panels run in separate Inspect processes, so pi's
+never holds the Claude token. Claude Code's shell can read it, so before
+uploading, `python -m codecite_evals.scrub` deletes any log holding it in any
+form (or one it can't read through) and fails the job; nothing uploads unless
+it passes. The Inspect logs, with the scorecard, upload as the
 `eval-logs-<tier>-<task>` artifact (`eval-logs-<tier>-aa-<task>` for an A/A
 round, `eval-logs-calibration-<task>` for a calibration).
 

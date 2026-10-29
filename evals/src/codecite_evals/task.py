@@ -213,7 +213,7 @@ def pi() -> Agent:
 @agent
 def claude(model: str) -> Agent:
     """Claude Code on `model`. Its measures reach the store even when it
-    timed out, from the output it left."""
+    stopped early, from the output file it left."""
 
     async def execute(state: AgentState) -> AgentState:
         sb = sandbox()
@@ -221,20 +221,24 @@ def claude(model: str) -> Agent:
         env = {**await prepare_arm(sb, condition, claude_code.MCP, claude_code.MCP_CONFIG), **claude_code.ENV}
         cmd = claude_code.command(condition, state.messages[0].text, model, AGENT_TIMEOUT)
         result = await run_agent(sb, cmd, env, AGENT_TIMEOUT + 30)
+        try:
+            stdout = await sb.read_file(claude_code.OUTPUT)
+        except Exception:
+            stdout = ""
+        for key, value in claude_code.measures(stdout).items():
+            store().set(key, value)
         if result is None:
             return state
-        for key, value in claude_code.measures(result.stdout).items():
-            store().set(key, value)
         if result.returncode in (124, 137):
             # `timeout` stopped it (SIGTERM, then SIGKILL).
             store().set("stopped", "agent_timeout")
             return state
-        if error := claude_code.failure(result.stdout):
+        if error := claude_code.failure(stdout):
             # An API error or a usage limit is infra, as pi's provider errors are.
             raise RuntimeError(f"Claude Code failed: {error[:2000]}")
         if not result.success:
             raise RuntimeError(f"claude exited {result.returncode}: {result.stderr[-2000:]}")
-        state.messages.append(ChatMessageAssistant(content=claude_code.answer(result.stdout)))
+        state.messages.append(ChatMessageAssistant(content=claude_code.answer(stdout)))
         return state
 
     return execute
