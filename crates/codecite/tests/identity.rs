@@ -50,6 +50,22 @@ fn the_manifest_lists_identity_model_and_the_specs() {
         assert!(doc.license.is_some(), "{}", doc.name);
     }
 
+    // The final FAPI, CIBA, JARM and eKYC & IDA specs, one version each.
+    for name in [
+        "fapi-attacker-model-2_0",
+        "openid-financial-api-part-1-1_0",
+        "openid-financial-api-part-2-1_0",
+        "openid-client-initiated-backchannel-authentication-core-1_0",
+        "oauth-v2-jarm",
+        "openid-connect-4-identity-assurance-1_0",
+        "openid-ida-verified-claims-1_0",
+        "openid-connect-4-ida-claims-1_0",
+    ] {
+        let versions: Vec<_> = documents.iter().filter(|doc| doc.name == name).collect();
+        assert_eq!(versions.len(), 1, "{name}");
+        assert!(versions[0].current, "{name}");
+    }
+
     // The older versions identity-model has cited, kept beside the current ones.
     let older: Vec<&str> = documents
         .iter()
