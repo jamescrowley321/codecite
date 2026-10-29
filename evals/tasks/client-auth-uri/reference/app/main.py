@@ -58,7 +58,18 @@ async def token(request: Request):
     if "client_id" in request.query_params or "client_secret" in request.query_params:
         return invalid_client()
 
+    # Parameters MUST NOT be included more than once; a request that repeats
+    # one is an invalid_request (§5.2). (Not cited by section here, so
+    # planted.sh's citation cases test only the §2.3.1 comment.)
+    if any(len(form.getlist(name)) > 1 for name in ("client_id", "client_secret", "grant_type")):
+        return error("invalid_request")
+
     creds = basic_credentials(request)
+    # A client MUST NOT use more than one authentication method in a request;
+    # one that does is an invalid_request (§5.2). (Not cited by section here,
+    # so planted.sh's citation cases test only the comment above.)
+    if creds is not None and "client_secret" in form:
+        return error("invalid_request")
     if creds is not None:
         client_id, client_secret = creds
     else:

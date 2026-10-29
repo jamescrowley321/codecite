@@ -178,8 +178,11 @@ CREATE TABLE chunk (
   terms TEXT NOT NULL                                               -- identifiers split for search
 );
 
-CREATE VIRTUAL TABLE chunk_fts USING fts5(
+CREATE VIRTUAL TABLE chunk_fts USING fts5(                          -- every chunk
   symbol, path, terms, content='', contentless_delete=1, tokenize='unicode61'
+);
+CREATE VIRTUAL TABLE spec_fts USING fts5(                           -- spec chunks again, stemmed
+  symbol, path, terms, content='', contentless_delete=1, tokenize='porter unicode61'
 );
 
 -- optional, created only when embeddings are enabled
@@ -209,6 +212,9 @@ CREATE INDEX edge_evidence ON edge(evidence_doc);
 CREATE TRIGGER chunk_fts_delete AFTER DELETE ON chunk BEGIN
   DELETE FROM chunk_fts WHERE rowid = old.id;                       -- a contentless FTS table can't be a foreign key's child
 END;
+CREATE TRIGGER spec_fts_delete AFTER DELETE ON chunk BEGIN
+  DELETE FROM spec_fts WHERE rowid = old.id;
+END;
 ```
 
 How the tables relate, with the columns that carry each relation:
@@ -221,6 +227,7 @@ erDiagram
   chunk |o--o{ chunk : "parent_id (section → step)"
   symbol |o--o{ chunk : "symbol_id"
   chunk ||--|| chunk_fts : "rowid"
+  chunk ||--o| spec_fts : "rowid (spec)"
   symbol ||--o{ edge : "src / dst"
   document |o--o{ edge : "evidence_doc"
   alias }o--|| source : "name (document)"
@@ -266,6 +273,11 @@ erDiagram
     text name
   }
   chunk_fts {
+    text symbol
+    text path
+    text terms
+  }
+  spec_fts {
     text symbol
     text path
     text terms
@@ -332,11 +344,13 @@ BM25 over code-aware terms does most of the work; vectors and graph signals refi
 
 - The query is split into terms as indexed text is (step 4), and each term is quoted, so FTS5 never reads the user's text as query syntax. A chunk matches when it holds any term (`OR`), and BM25 ranks the chunks that hold more of them, and rarer ones, higher.
 - FTS5 `bm25()` with column weights: symbol name 10, path 5, body 1.
+- Specs are searched in their own full-text table, `spec_fts`, stemmed with Porter (`tokenize='porter unicode61'`), so "authentication" finds "authenticates". A spec query also drops common English words and question words (`is`, `the`, `what`, `how`; the list is `STOPWORDS` in `store/search.rs`, the retrieval spike's) before its terms are ORed, so "is client authentication required" no longer matches every section that says "is". The words that say which requirement a query is after stay: RFC 2119's keywords (`must`, `shall`, `should`, `may`, `required`), and `not` and `no`, so "MUST NOT" keeps its negation; the spike's list dropped `shall`, `should`, `not` and `no`. A query of only stopwords keeps them and needs all of them (`AND`), so it finds the sections that say them all rather than every section. Code is searched in `chunk_fts`, unstemmed and with every query term, until stemming code is measured. Spec chunks keep their `chunk_fts` rows, because BM25's statistics count every row of the table and taking them out moved code results (code-symbol Recall@10 fell from 1.00 to 0.93). On the retrieval benchmark this lifts spec-requirement Recall@10 from 0.53 to 0.60 and leaves code's own ranking as it was, but spec MRR falls from 0.17 to 0.16 (spec-keyword 0.50 to 0.45, spec-requirement 0.22 to 0.18): stemming moves some exact-term sections from first to a few places down. The A/B eval decides whether it stays.
 - With embeddings on, nearest neighbors from `chunk_vec`, merged with BM25 by reciprocal rank fusion (k = 60).
 - The BM25 score is weighted by what the chunk's document is for, read from its path: source, docs and specs 1, examples 0.6 (`examples/`, `samples/`, `demo/`), tests 0.4 (`tests/`, `__tests__/`, `testdata/`, `conformance/`, and test file names such as `test_x.py`, `x_test.go`, `x.spec.ts`, `XTests.cs`). A test directory wins over an example one, and both over a prose extension. Results carry this as `role`.
 - A chunk whose symbol is named by a word of the query, or by all its words run together, scores 3 times higher, comparing names without case, `_` or `-`; so `TokenValidationMiddleware FastAPI` puts the class first and `validate token` lifts `validateToken`. Only a name that at most 3 symbols share is boosted, so a common word that many helpers are named after (`app`, `get`) lifts nothing.
 - Spec and code results are ranked apart, since their BM25 scores are not on one scale: a short constants file that repeats `token_type_hint` outscores the long section that defines it once. When the query names a symbol, results keep score order, except that the best spec results, up to 3 and a third of the limit, move into the last slots if they would fall below them. Otherwise the two alternate, spec first. So within each kind results come in the order of the score they print, but a spec result may sit above a higher-scoring code one. On the retrieval benchmark this lifts spec-keyword Recall@10 from 0.56 to 0.89 and leaves code-symbol at 1.00; scoring specs alone reaches 0.94.
 - `--only spec` or `--only code` searches one kind, ranked by score.
+- Spec questions asked in plain words share no terms with the section that answers them, so BM25 finds none of them (0 of 22 on the retrieval benchmark). The caller is an LLM that knows the field's vocabulary, so codecite asks it to close the gap: the MCP `search` tool's description and the server's instructions tell agents to search a spec with the terms it would use (protocol, parameter, claim, endpoint and error names), and the original wording too only when it already holds spec terms. A rewrite into spec terms found 19 of 22, more than any embedding (9), and searching it alone beat fusing it with the original (0.86 against 0.64). The approach and its numbers are in `docs/superpowers/specs/2026-10-23-hybrid-retrieval-design.md`; the A/B eval of this guidance (arm B there, issue #155) has its scorecards on #163.
 - Only the current version of each document is searched; an older pinned version is reached by its citation.
 - Filters by corpus, repo, language and path glob are plain SQL `WHERE` clauses. The path glob is SQLite's `GLOB`: `*` matches any run of characters, `/` included, and case matters.
 
@@ -489,8 +503,11 @@ codecite earns its place only if agents using it do no worse than agents without
 
 **Agent benchmark**
 
-- **Tasks:** start with one small task (protect a FastAPI app with identity-model's `TokenValidationMiddleware`, scored by hidden tests against node-oidc-provider). Then tasks where the answer sits in a spec section the agent has to find and cite: `client-auth-uri` fixes a token endpoint that accepts client credentials in the query string, which RFC 6749 §2.3.1 forbids, without dropping HTTP Basic or the form body, which it allows. Its corpus is identity-model plus the identity spec documents, and its checks pass only when the agent's comment cites §2.3.1. `backchannel-logout` is a task where finding the right code is the expensive part (#92): it states only the behaviour ("our logout endpoint accepts logout tokens it should reject; make it conform to the spec it implements"), names no identity-model symbol and no spec section, and runs over the same corpus, so `grep` returns more than an agent can read. Calling identity-model's logout validation or hand-writing Back-Channel Logout 1.0 §2.6 both pass; its hidden tests mint logout tokens with a test key against a stub provider, so it needs no IdP. `spec-questions` is codecite's own case, spec retrieval without the spec's words: each sample is one question about the identity specs asked in an agent's words ("must the token endpoint authenticate a public client?"), drawn from the retrieval benchmark's `spec-plain` and `spec-requirement` classes or labelled the same way, with a closed-form answer (yes/no, or a parameter, claim, error or value name) and the sections that support it. Both arms have the spec documents as files at a path the prompt names, the very bytes codecite indexed, so the baseline can grep them. The agent writes the answer and one `<document>#section-<number>` citation to a file, and a deterministic scorer run after it exits passes the sample only when the answer matches and the section is an accepted one (a step of it counts). It has a sample per question per arm, so a model's planned runs are questions × epochs, and the scorecard gives each task its own table. Then real tasks replayed from the identity-model ports (TypeScript, Go, Rust) and from the startup (FHIR resources, audit logging). Each has a checkable outcome: tests or shared conformance vectors pass.
+- **Tasks:** start with one small task (protect a FastAPI app with identity-model's `TokenValidationMiddleware`, scored by hidden tests against node-oidc-provider). Then tasks where the answer sits in a spec section the agent has to find and cite: `client-auth-uri` fixes a token endpoint that accepts client credentials in the query string, which RFC 6749 §2.3.1 forbids, and takes HTTP Basic and a body secret together, two authentication methods in one request, which §2.3 forbids, and takes a body that repeats `client_id`, which §3.2 forbids, without dropping HTTP Basic or the form body, which §2.3.1 allows. Its corpus is identity-model plus the identity spec documents, and its checks pass only when the agent's comment cites §2.3.1, §2.3 or §3.2. `backchannel-logout` is a task where finding the right code is the expensive part (#92): it states only the behaviour ("our logout endpoint accepts logout tokens it should reject; make it conform to the spec it implements"), names no identity-model symbol and no spec section, and runs over the same corpus, so `grep` returns more than an agent can read. It holds the agent to the spec as pinned, errata set 1, which makes `exp` REQUIRED and the logout event's value a JSON object (§2.4) and fixes the 400 body (§2.8): identity-model's logout validation checks neither §2.4 rule, so calling it passes only with those two checks added, and hand-writing §2.6 passes too. Its hidden tests mint logout tokens with a test key against a stub provider, so it needs no IdP. `spec-questions` is codecite's own case, spec retrieval without the spec's words: each sample is one question about the identity specs asked in an agent's words ("must the token endpoint authenticate a public client?"), drawn from the retrieval benchmark's `spec-plain` and `spec-requirement` classes or labelled the same way, with a closed-form answer (yes/no, or a parameter, claim, error or value name) and the sections that support it. Both arms have the spec documents as files at a path the prompt names, the very bytes codecite indexed, so the baseline can grep them. The agent writes the answer and one `<document>#section-<number>` citation to a file, and a deterministic scorer run after it exits passes the sample only when the answer matches and the section is an accepted one (a step of it counts). It has a sample per question per arm, so a model's planned runs are questions × epochs, and the scorecard gives each task its own table. Then real tasks replayed from the identity-model ports (TypeScript, Go, Rust) and from the startup (FHIR resources, audit logging). Each has a checkable outcome: tests or shared conformance vectors pass.
 - **Calibration and freezing:** a task must be hard enough that the arms can differ on correctness, and tuning it while watching codecite's arm could tune it until codecite wins. So a new task is calibrated on the baseline arm alone (`arms: baseline` on the eval workflow's dispatch, or `ARMS=baseline evals/inspect/panel.sh quick`): the quick panel, a calibration table of pass rate, median turns, tokens and time per model, and no verdict; a calibration is never a pass. A task is in band when baseline passes 40–80% of runs on the quick panel, pooled over models, and no model passes every run. A task's prompt, project, hidden tests and checks are frozen once its first A/B run starts: its `task.json` records that run's commit as `frozen_at`, and CI (`codecite-eval-frozen` in `evals-test`) fails a PR that changes any file under a frozen task's directory or moves its `frozen_at`. A change after that makes it a new task with a new id.
+- **`backchannel-logout`:** frozen below the band, as hard by design: its quick calibration passed 7% of baseline runs, every miss a §2.4 rule the agent never looked up, which is the gap codecite's spec tools are for. It is judged on its A/B result, not on the band.
+- **`client-auth-uri`:** frozen below the band, as hard by design: its quick calibration passed 20% of baseline runs (Haiku 0/5, Sonnet 3/5, gpt-6.1-sol 0/5), every miss the §3.2 rule against a repeated `client_id`, a rule the agent never looked up. Without that rule gpt-6.1-sol passed every run. It is judged on its A/B result, not on the band.
+- **`spec-questions`:** frozen as an easy control, outside the band rule: it checks that codecite doesn't hurt when the spec text is one grep away.
 - **`fastapi-middleware`:** frozen as it stands, at its first A/B run (#101). In the second quick round every model but one passed it in every run of both arms (#92), so it can't show that codecite helps; it stays in the panel as a regression check, catching codecite hurting on an easy task.
 - **Arms:** the same agent, model and prompt, once with the agent's normal tools and once with codecite added: its MCP server's `search` and `read` as native tools in the agent's tool list, with their descriptions, and the `codecite` CLI on `PATH`. A note in the codecite arm's prompt names both. An A/A round (`-T arms=aa`) runs two baseline arms instead, to measure what noise alone does to each interval. Baseline with web tools comes as a further arm. Many runs per task per arm (10 epochs by default).
 - **Agents:** pi, over a panel of models on OpenRouter (`evals/inspect/panel.sh`). OpenRouter picks each model's host within the account's privacy settings (zero data retention, an allowed-provider list); the panel pins none.
@@ -542,7 +559,7 @@ Eleven decisions are made for v1; five questions remain open. Each open question
 | --- | --- | --- | --- |
 | Language | Rust | Single static binary, fits the identity-model Rust port, learning goal | Never for the core |
 | Storage | SQLite with FTS5 | Embedded, portable, debuggable with any SQLite client | Ranking or indexing speed falls short at 1M+ chunks; then tantivy |
-| Vectors | sqlite-vec, off by default | BM25 carries code search; vectors are an add-on | Benchmarks show hybrid wins by a wide margin |
+| Vectors | sqlite-vec, off by default | BM25 carries code search; vectors are an add-on, and for specs the agent rewriting its query into spec terms found more than any embedding | Benchmarks show hybrid wins by a wide margin, or the A/B eval of the spec-vocabulary guidance (issue #155, scorecards on #163) shows agents still search specs in plain words; then arctic-embed-m fills the spec slots |
 | Symbol IDs | SCIP symbol strings | An open standard shared by precise indexers | SCIP stops being maintained |
 | Integrations | Read provider outputs, never link their code | No dependency or license entanglement | A provider offers a stable library API |
 | Corpus layout | One SQLite file per corpus | Portable, independently rebuildable | Cross-corpus queries become the common case |

@@ -1,7 +1,15 @@
-"""Hidden tests for the backchannel-logout task. The agent never sees these."""
+"""Hidden tests for the backchannel-logout task. The agent never sees these.
+
+Back-Channel Logout 1.0 as pinned (errata set 1): §2.4 makes `exp` REQUIRED
+and the `events` member's value a JSON object, and a token without `sid`
+logs out every session of its `sub`; §2.6 lists the checks; §2.8 says a 400
+body, when there is one, is JSON with an `error` member."""
+
+import time
+import uuid
 
 import pytest
-from conftest import _DROP, EVENT, OTHER_KEY, logout_token
+from conftest import _DROP, CLIENT_ID, EVENT, OTHER_KEY, logout_token
 
 from app import sessions
 
@@ -31,6 +39,29 @@ def test_valid_token_with_sub_only(client, session):
     assert not sessions.is_active(sid)
 
 
+def test_aud_as_a_list(client, session):
+    sub, sid = session
+    assert post(client, logout_token(aud=[CLIENT_ID], sub=sub, sid=sid)).status_code in OK
+    assert not sessions.is_active(sid)
+
+
+def test_sub_only_ends_every_session_of_the_sub(client, session):
+    sub, sid = session
+    other = f"sid-{uuid.uuid4().hex[:8]}"
+    sessions.start(sub, other)
+    assert post(client, logout_token(sub=sub, sid=_DROP)).status_code in OK
+    assert not sessions.is_active(sid) and not sessions.is_active(other)
+
+
+def test_sid_ends_only_that_session(client, session):
+    sub, sid = session
+    other = f"sid-{uuid.uuid4().hex[:8]}"
+    sessions.start(sub, other)
+    assert post(client, logout_token(sub=sub, sid=sid)).status_code in OK
+    assert not sessions.is_active(sid)
+    assert sessions.is_active(other)
+
+
 REJECTED = {
     "bad_signature": lambda sub, sid: logout_token(key=OTHER_KEY, sub=sub, sid=sid),
     "wrong_iss": lambda sub, sid: logout_token(iss="https://op.invalid", sub=sub, sid=sid),
@@ -44,11 +75,19 @@ REJECTED = {
     "no_sub_or_sid": lambda sub, sid: logout_token(sub=_DROP, sid=_DROP),
     "iat_missing": lambda sub, sid: logout_token(iat=_DROP, sub=sub, sid=sid),
     "jti_missing": lambda sub, sid: logout_token(jti=_DROP, sub=sub, sid=sid),
+    "exp_missing": lambda sub, sid: logout_token(exp=_DROP, sub=sub, sid=sid),
+    "expired": lambda sub, sid: logout_token(iat=int(time.time()) - 600, exp=int(time.time()) - 300, sub=sub, sid=sid),
+    "event_member_not_object": lambda sub, sid: logout_token(events={EVENT: "logout"}, sub=sub, sid=sid),
 }
 
 
 @pytest.mark.parametrize("case", sorted(REJECTED))
 def test_rejected_with_400_and_session_kept(client, session, case):
     sub, sid = session
-    assert post(client, REJECTED[case](sub, sid)).status_code == 400
+    resp = post(client, REJECTED[case](sub, sid))
+    assert resp.status_code == 400
     assert sessions.is_active(sid)
+    # §2.8: no body, or a JSON object whose `error` is a string.
+    if resp.content.strip():
+        body = resp.json()
+        assert isinstance(body, dict) and isinstance(body.get("error"), str), resp.text

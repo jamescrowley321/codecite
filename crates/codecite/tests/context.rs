@@ -170,6 +170,8 @@ fn a_corpus_without_guidance_has_no_rules() {
     let demo = Demo { tmp };
     let work = demo.tmp.path().join("work");
     fs::create_dir_all(work.join("corpora")).unwrap();
+    // Pins the repository root, so a stray `.git` above the temp dir can't move it.
+    fs::create_dir_all(work.join(".git")).unwrap();
     fs::write(work.join("corpora/demo.toml"), "name = \"demo\"\n").unwrap();
     assert!(demo.run(&["index", "demo"], None).status.success());
     let output = demo.run(&["context", "demo", "src/a.rs"], None);

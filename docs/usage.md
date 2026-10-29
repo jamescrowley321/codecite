@@ -225,6 +225,15 @@ Each result shows its rank and citation, then its kind (`function`, `class`,
 `section`, `step` or `window`), symbol, score, license class and when it was
 indexed, then the first lines of its text.
 
+Search a spec in its own terms. Search matches words, not meaning, so a
+question asked in plain words finds nothing in a spec that says it
+differently. Search with the terms the spec would use (protocol, parameter,
+claim, endpoint and error names) instead: `token endpoint client
+authentication public client`, not `must a public client log in to get a
+token`. Search the original wording too only when it already holds spec
+terms; on the retrieval benchmark, the rewrite alone found more than the
+rewrite and the original together.
+
 ## Grep
 
 `grep` finds the lines that match a regular expression, or exact text, in
@@ -559,6 +568,9 @@ citation that isn't in the corpus or a symbol nothing defines is a tool error wh
 admits both its result and this error. A `read` of a spec, whose
 license class is `quote`, carries an `instruction` to quote the text exactly
 with its citation.
+
+The `search` tool's description and the server's instructions tell agents to
+search specs in the spec's own terms, as above.
 
 ## The identity corpus
 
