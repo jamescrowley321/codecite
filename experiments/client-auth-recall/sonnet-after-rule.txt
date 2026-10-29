@@ -1,0 +1,12 @@
+== samples/codecite_epoch_1.json 
+ I should reject credentials passed via query string and disallow using multiple authentication methods at once (like Basic auth plus body credentials), treating that as invalid_request. Body credentials alone are still allowed, though discouraged, and I'll keep using unquote_plus for form-urlencoded values per spec.
+== samples/codecite_epoch_2.json 
+ I should not accept credentials from the query string, and if client authentication is attempted via multiple methods—like both a Basic auth header and body-embedded client_id/client_secret—I need to reject that as an invalid_request with a 400 status rather than silently picking one.
+== samples/codecite_epoch_3.json 
+ I need to make sure credentials from the query string are ignored entirely since they're forbidden there, and reject requests that mix Basic auth with body credentials as invalid_request. Body params should be the only source read for client_id/secret and grant_type, with query string values simply discarded rather than causing errors.
+== samples/codecite_epoch_4.json 
+ Query string credentials should be forbidden while body params and Basic auth remain valid per §2.3.1 since those are form-urlencoded appropriately. Multiple auth methods or duplicate params should be rejected with a 400 invalid_request, since the spec says clients must not combine them.
+== samples/codecite_epoch_5.json 
+ I should make sure credentials aren't pulled from the query string, and reject requests that mix multiple auth methods like a Basic header plus body credentials, returning invalid_request with a 400. Basic auth decoding should follow RFC 6749 §2.3.1 using form-urlencoded unquoting for the id/secret, and grant_type should only come from the form body.
+
+For duplicate detection, I'll keep it focused: treat it as invalid_request if client_secret appears in the body alongside Basic auth, or if client_id in the body conflicts with the one in the Basic header, while still tolerating a matching client_id in both places for compatibility.

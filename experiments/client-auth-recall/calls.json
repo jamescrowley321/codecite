@@ -1,0 +1,1286 @@
+[
+ {
+  "run": "cau-main",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_1.json",
+  "passed": 0,
+  "tool": "search",
+  "args": {
+   "corpus": "eval",
+   "query": "RFC 6749 2.3.1 client_id client_secret request-body MUST NOT request URI more than one authentication method",
+   "only": "spec",
+   "limit": 5
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_1.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3.1",
+   "max_lines": 100
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_1.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3",
+   "max_lines": 80
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_2.json",
+  "passed": 0,
+  "tool": "search",
+  "args": {
+   "corpus": "eval",
+   "query": "RFC 6749 2.3.1 client_password request URI more than one authentication method",
+   "only": "spec",
+   "limit": 4
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_2.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "rfc6749@sha256:535362fa3b4c#section-2.3.1",
+   "max_lines": 100
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_2.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a75.2",
+   "max_lines": 100
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_2.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3",
+   "max_lines": 40
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_3.json",
+  "passed": 0,
+  "tool": "search",
+  "args": {
+   "corpus": "eval",
+   "query": "RFC 6749 2.3.1 client_secret request-body MUST NOT request URI more than one authentication method",
+   "only": "spec",
+   "limit": 5
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_3.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3.1",
+   "max_lines": 100
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_3.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3",
+   "max_lines": 80
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_3.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a75.2",
+   "max_lines": 100
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_4.json",
+  "passed": 0,
+  "tool": "search",
+  "args": {
+   "corpus": "eval",
+   "query": "RFC 6749 client password client_id client_secret request-body request URI more than one authentication method",
+   "only": "spec",
+   "limit": 5
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_4.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3.1",
+   "max_lines": 100
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_4.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3",
+   "max_lines": 80
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_4.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a75.2",
+   "max_lines": 100
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_5.json",
+  "passed": 0,
+  "tool": "search",
+  "args": {
+   "corpus": "eval",
+   "query": "RFC 6749 2.3.1 client_password client_id client_secret request URI more than one authentication method",
+   "only": "spec",
+   "limit": 4
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_5.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3",
+   "max_lines": 100
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_5.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3.1",
+   "max_lines": 100
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-sonnet-5.5",
+  "sample": "codecite_epoch_1.json",
+  "passed": 0,
+  "tool": "search",
+  "args": {
+   "query": "client MUST NOT use more than one authentication method in each request",
+   "limit": 4,
+   "corpus": "eval"
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-sonnet-5.5",
+  "sample": "codecite_epoch_1.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3.1",
+   "max_lines": 50,
+   "corpus": "eval"
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-sonnet-5.5",
+  "sample": "codecite_epoch_2.json",
+  "passed": 0,
+  "tool": "search",
+  "args": {
+   "query": "client authentication MUST NOT use more than one authentication method; client_secret request-body parameters",
+   "corpus": "eval",
+   "only": "spec"
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-sonnet-5.5",
+  "sample": "codecite_epoch_3.json",
+  "passed": 0,
+  "tool": "search",
+  "args": {
+   "query": "client MUST NOT use more than one authentication method in each request; client_secret request-body parameters",
+   "limit": 6
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-sonnet-5.5",
+  "sample": "codecite_epoch_3.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "citation": "rfc6749 \u00a72.3"
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-sonnet-5.5",
+  "sample": "codecite_epoch_4.json",
+  "passed": 0,
+  "tool": "search",
+  "args": {
+   "query": "client credentials in request-body; MUST NOT use more than one authentication method; parameters query",
+   "corpus": "eval",
+   "only": "spec"
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-sonnet-5.5",
+  "sample": "codecite_epoch_5.json",
+  "passed": 0,
+  "tool": "search",
+  "args": {
+   "query": "client MUST NOT use more than one authentication method; client credentials in request-body; query parameter",
+   "only": "spec",
+   "limit": 6
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-sonnet-5.5",
+  "sample": "codecite_epoch_5.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "citation": "rfc6749@sha256:535362fa3b4c#section-2.3"
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_1.json",
+  "passed": 0,
+  "tool": "search",
+  "args": {
+   "query": "client MUST NOT use more than one authentication method in each request",
+   "corpus": "eval"
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_1.json",
+  "passed": 0,
+  "tool": "search",
+  "args": {
+   "query": "client password request body query string token endpoint client authentication Basic not recommended",
+   "corpus": "eval",
+   "only": "spec"
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_1.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "citation": "rfc6749#section-3.2.1",
+   "max_lines": 60
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_1.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "citation": "rfc6749@sha256:535362fa3b4c#section-3.2.1",
+   "max_lines": 60
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_1.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "citation": "rfc6749@sha256:535362fa3b4c#section-2.3",
+   "max_lines": 40
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_1.json",
+  "passed": 0,
+  "tool": "search",
+  "args": {
+   "query": "invalid_request includes multiple credentials, utilizes more than one authentication method",
+   "corpus": "eval",
+   "only": "spec",
+   "limit": 3
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_2.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "citation": "rfc6749#section-2.3",
+   "max_lines": 60
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_2.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "citation": "rfc6749@sha256:535362fa3b4c#section-2.3",
+   "max_lines": 60
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_2.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "citation": "rfc6749@sha256:535362fa3b4c#section-2.3.1",
+   "max_lines": 80
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_3.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "citation": "rfc6749@sha256:535362fa3b4c#section-2.3.1",
+   "corpus": "eval",
+   "max_lines": 60
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_3.json",
+  "passed": 0,
+  "tool": "search",
+  "args": {
+   "query": "token endpoint client authentication MUST NOT use more than one authentication method in each request",
+   "corpus": "eval",
+   "only": "spec",
+   "limit": 3
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_3.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "citation": "rfc6749@sha256:535362fa3b4c#section-3.2.1",
+   "corpus": "eval",
+   "max_lines": 30
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_4.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "citation": "rfc6749#section-2.3.1",
+   "max_lines": 80
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_4.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "citation": "rfc6749@sha256:535362fa3b4c#section-2.3.1",
+   "max_lines": 80
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_4.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "citation": "rfc6749@sha256:535362fa3b4c#section-2.3",
+   "max_lines": 40
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_5.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "citation": "rfc6749@sha256:535362fa3b4c#section-2.3",
+   "max_lines": 80
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_5.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "citation": "rfc6749@sha256:535362fa3b4c#section-2.3.1",
+   "max_lines": 80
+  }
+ },
+ {
+  "run": "cau-main",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_5.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "citation": "rfc6749@sha256:535362fa3b4c#section-5.2",
+   "max_lines": 40
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_1.json",
+  "passed": 1,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3.1",
+   "corpus": "eval"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_2.json",
+  "passed": 1,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3.1",
+   "corpus": "eval"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_2.json",
+  "passed": 1,
+  "tool": "search",
+  "args": {
+   "query": "invalid_request error token endpoint request missing parameter or includes unsupported authentication method",
+   "corpus": "eval",
+   "limit": 3
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_3.json",
+  "passed": 1,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3.1",
+   "corpus": "eval"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_3.json",
+  "passed": 1,
+  "tool": "search",
+  "args": {
+   "query": "invalid_request includes multiple credentials, utilizes more than one authentication method",
+   "corpus": "eval",
+   "limit": 3
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_4.json",
+  "passed": 1,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3.1",
+   "corpus": "eval"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_4.json",
+  "passed": 1,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a75.2",
+   "corpus": "eval"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_4.json",
+  "passed": 1,
+  "tool": "search",
+  "args": {
+   "query": "invalid_request includes multiple credentials, utilizes more than one mechanism for authenticating the client",
+   "corpus": "eval",
+   "limit": 2
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_5.json",
+  "passed": 1,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3.1"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_5.json",
+  "passed": 1,
+  "tool": "read",
+  "args": {
+   "citation": "RFC 6749 \u00a75.2",
+   "max_lines": 40
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "claude-sonnet-5.5",
+  "sample": "codecite_epoch_1.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "claude-sonnet-5.5",
+  "sample": "codecite_epoch_2.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3.1"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "claude-sonnet-5.5",
+  "sample": "codecite_epoch_3.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "claude-sonnet-5.5",
+  "sample": "codecite_epoch_4.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3.1"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "claude-sonnet-5.5",
+  "sample": "codecite_epoch_5.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_1.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3.1"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_1.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3.1"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_1.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a75.2"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_1.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a75.2",
+   "max_lines": 100
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_2.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3.1"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_2.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3.1"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_2.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a75.2"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_2.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a75.2",
+   "max_lines": 90
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_3.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3.1"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_3.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a75.2"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_3.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a75.2",
+   "max_lines": 100
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_4.json",
+  "passed": 0,
+  "tool": "search",
+  "args": {
+   "corpus": "eval",
+   "query": "RFC 6749 client authentication request-body request URI more than one authentication method",
+   "only": "spec",
+   "limit": 3
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_4.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_4.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3.1"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_4.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a75.2"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_4.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a75.2",
+   "max_lines": 80
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_5.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3.1"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_5.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a75.2"
+  }
+ },
+ {
+  "run": "cau-40639608970",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_5.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a75.2"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_1.json",
+  "passed": 1,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3",
+   "corpus": "eval"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_1.json",
+  "passed": 1,
+  "tool": "search",
+  "args": {
+   "query": "invalid_request repeats a parameter, includes multiple credentials, utilizes more than one authentication method",
+   "corpus": "eval",
+   "limit": 3
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_2.json",
+  "passed": 1,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3.1"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_2.json",
+  "passed": 1,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a73.2.1"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_2.json",
+  "passed": 1,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a73.2"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_3.json",
+  "passed": 1,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3",
+   "corpus": "eval"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_4.json",
+  "passed": 1,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_4.json",
+  "passed": 1,
+  "tool": "search",
+  "args": {
+   "query": "invalid_request utilizes more than one authentication method multiple credentials",
+   "corpus": "eval",
+   "limit": 3
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_5.json",
+  "passed": 1,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3.1",
+   "corpus": "eval"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_5.json",
+  "passed": 1,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3",
+   "corpus": "eval"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "claude-haiku-5.5",
+  "sample": "codecite_epoch_5.json",
+  "passed": 1,
+  "tool": "search",
+  "args": {
+   "query": "invalid_request malformed request missing parameter multiple authentication methods",
+   "corpus": "eval",
+   "limit": 5
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_1.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_1.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3.1"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_1.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a75.2"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_1.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a75.2",
+   "max_lines": 65
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_2.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_2.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a75.2"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_2.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a75.2",
+   "max_lines": 90
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_3.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3.1"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_3.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_3.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a75.2"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_3.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a75.2",
+   "max_lines": 80
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_4.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3.1"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_4.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_4.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a75.2"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_5.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3.1"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_5.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a72.3"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "gpt-6.1-sol",
+  "sample": "codecite_epoch_5.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "corpus": "eval",
+   "citation": "RFC 6749 \u00a75.2"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "claude-sonnet-5.5",
+  "sample": "codecite_epoch_1.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3.1"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "claude-sonnet-5.5",
+  "sample": "codecite_epoch_1.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "claude-sonnet-5.5",
+  "sample": "codecite_epoch_2.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3.1"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "claude-sonnet-5.5",
+  "sample": "codecite_epoch_2.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "claude-sonnet-5.5",
+  "sample": "codecite_epoch_3.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3.1"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "claude-sonnet-5.5",
+  "sample": "codecite_epoch_4.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3.1"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "claude-sonnet-5.5",
+  "sample": "codecite_epoch_5.json",
+  "passed": 0,
+  "tool": "requirements",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3.1"
+  }
+ },
+ {
+  "run": "cau-40637087363",
+  "model": "claude-sonnet-5.5",
+  "sample": "codecite_epoch_5.json",
+  "passed": 0,
+  "tool": "read",
+  "args": {
+   "citation": "RFC 6749 \u00a72.3"
+  }
+ }
+]
