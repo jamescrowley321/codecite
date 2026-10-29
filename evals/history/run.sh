@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Run the history benchmark: for each mined repository (all of them, or the
-# ones named), index its pinned corpus, score codecite and the git grep
-# baseline on its queries, and rebuild results/scorecard.md.
+# ones named), index its pinned corpus, score codecite, the git grep
+# baseline and the query-blind popular-files floor on its queries, and
+# rebuild results/scorecard.md.
 #
 #   evals/history/run.sh [repo ...]
 #
@@ -25,7 +26,9 @@ fi
 failed=0
 for repo in "$@"; do
   dir="$here/$repo"
-  rm -f "$results/$repo"-*
+  for kind in codecite.json grep.json popular.json index.txt failed.txt; do
+    rm -f "$results/$repo-$kind"
+  done
   fail() {
     printf '%s\n' "$1" | head -n 1 >"$results/$repo-failed.txt"
     echo "$repo: failed: $1" >&2
@@ -43,10 +46,22 @@ for repo in "$@"; do
     continue
   fi
   printf '%s\n' "$out" | grep -E '^(chunks|elapsed):' | paste -sd ' ' | sed 's/ elapsed/ · elapsed/' >"$results/$repo-index.txt"
-  "$bin/codecite-bench" --codecite "$bin/codecite" --queries "$dir/queries.toml" --json \
-    >"$results/$repo-codecite.json" || { fail "codecite-bench failed"; continue; }
-  "$bin/codecite-bench" --queries "$dir/queries.toml" --grep "$clone" --commit "$commit" --json \
-    >"$results/$repo-grep.json" || { fail "grep baseline failed"; continue; }
+  # Each report is written whole or not at all, so a failed run leaves no
+  # partial JSON for the scorecard to trip on.
+  report() {
+    local engine="$1"
+    shift
+    if "$bin/codecite-bench" --queries "$dir/queries.toml" --json "$@" >"$results/.$repo-$engine.json"; then
+      mv "$results/.$repo-$engine.json" "$results/$repo-$engine.json"
+    else
+      rm -f "$results/.$repo-$engine.json"
+      fail "codecite-bench failed for $engine"
+      return 1
+    fi
+  }
+  report codecite --codecite "$bin/codecite" || continue
+  report grep --grep "$clone" --commit "$commit" || continue
+  report popular --popular || continue
 done
 
 (cd "$root/evals" && uv run --locked -q codecite-history-scorecard "$results")

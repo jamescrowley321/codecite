@@ -145,8 +145,10 @@ jobs:
       # repository (evals/README.md). A loss on any repository is a finding.
       - name: Run the history benchmark
         run: |
-          evals/history/run.sh
+          status=0
+          evals/history/run.sh || status=$?
           cat evals/history/results/scorecard.md >>"$GITHUB_STEP_SUMMARY"
+          exit "$status"
 
   # Not a required check: it proves an eval task's hidden tests and checks
   # pass its references and fail its planted bad solutions. No model key.

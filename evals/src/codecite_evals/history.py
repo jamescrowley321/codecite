@@ -14,6 +14,7 @@ files are frozen once committed: remining writes a new version.
 
 import argparse
 import json
+import re
 import subprocess
 from dataclasses import dataclass, field
 from datetime import date
@@ -21,7 +22,8 @@ from pathlib import Path
 from typing import Callable
 
 # Bump when the mining rules change, so a remined file says it is new.
-VERSION = 1
+# 2: release PRs and hub files left out.
+VERSION = 2
 
 LOCKFILES = {"Cargo.lock", "uv.lock", "poetry.lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "go.sum"}
 BOTS = {"dependabot", "renovate", "github-actions"}
@@ -29,6 +31,13 @@ ISSUE_TEXT_LIMIT = 400
 # A PR touching more files says little about where one change belongs, and
 # almost any search would hit one of them.
 MAX_ANSWERS = 20
+# A file more than this share of the sampled PRs changed (a design doc, a
+# manifest) answers so many queries that naming it beats any search.
+MAX_ANSWER_SHARE = 0.25
+# release-please and similar: a version bump, not a change anyone asked for.
+# ... and at least this many, so a small sample's repeats aren't hubs.
+MIN_HUB_PRS = 3
+RELEASE = re.compile(r"^chore(\([^)]*\))?!?: release\b", re.IGNORECASE)
 
 
 @dataclass
@@ -89,23 +98,33 @@ def candidate_paths(changes: list[Change]) -> list[str]:
 
 def eligible(p: PullRequest) -> bool:
     """A PR by a person with between 1 and MAX_ANSWERS candidate answers."""
-    return not is_bot(p.author) and 0 < len(candidate_paths(p.changes)) <= MAX_ANSWERS
+    return (
+        not is_bot(p.author)
+        and not RELEASE.match(p.title)
+        and 0 < len(candidate_paths(p.changes)) <= MAX_ANSWERS
+    )
 
 
 def select_prs(prs: list[PullRequest], exists: Callable[[str, str], bool], max_prs: int) -> tuple[str, list[Mined]]:
     """The pinned commit and the mined PRs, newest first, from `prs` newest first.
 
     The newest `max_prs` eligible PRs are sampled, the commit pinned is the
-    oldest one's parent, and each keeps only the answers that exist there; a
-    PR left with none is dropped.
+    oldest one's parent, and each keeps only the answers that exist there
+    and that no more than MAX_ANSWER_SHARE of the sample changed; a PR left
+    with none is dropped.
     """
     sampled = [p for p in prs if eligible(p)][:max_prs]
     if not sampled:
         raise SystemExit("no eligible merged PRs")
     commit = sampled[-1].parent
+    changed_by: dict[str, int] = {}
+    for p in sampled:
+        for path in candidate_paths(p.changes):
+            changed_by[path] = changed_by.get(path, 0) + 1
+    hubs = {path for path, n in changed_by.items() if n >= MIN_HUB_PRS and n > MAX_ANSWER_SHARE * len(sampled)}
     mined = []
     for p in sampled:
-        answers = [path for path in candidate_paths(p.changes) if exists(commit, path)]
+        answers = [path for path in candidate_paths(p.changes) if path not in hubs and exists(commit, path)]
         if answers:
             mined.append(Mined(p.number, p.url, p.title, p.issue, answers))
     return commit, mined
@@ -261,29 +280,40 @@ def main(argv=None):
     print(f"{args.repo}: {len(mined)} PRs, {queries} queries, pinned at {commit}")
 
 
+ENGINES = ("codecite", "grep", "popular")
+
+
 def scorecard(runs: dict) -> str:
-    """The scorecard: a row per repository, class and engine, from each
-    repository's bench reports (`codecite`, `grep`), its index summary line
+    """The scorecard: a row per repository, class and engine, then a pooled
+    `all` row per engine, from each repository's bench reports (`codecite`,
+    `grep`, `popular`: the query-blind floor), its index summary line
     (`index`), or why it failed (`failed`)."""
     lines = [
         "| Repository | Class | Engine | Queries | Recall@1 | Recall@10 | MRR |",
         "| --- | --- | --- | ---: | ---: | ---: | ---: |",
     ]
     notes = []
+
+    def row(repo, cls, engine, s):
+        lines.append(
+            f"| {repo} | {cls} | {engine} | {s['queries']} | {s['recall_at_1']:.2f}"
+            f" | {s['recall_at_10']:.2f} | {s['mrr']:.2f} |"
+        )
+
     for repo in sorted(runs):
         run = runs[repo]
         if "failed" in run:
             lines.append(f"| {repo} | failed: {run['failed']} |")
             continue
-        classes = sorted({c for engine in ("codecite", "grep") for c in run[engine]["classes"]}, reverse=True)
+        engines = [e for e in ENGINES if e in run]
+        classes = sorted({c for e in engines for c in run[e]["classes"]}, reverse=True)
         for cls in classes:
-            for engine in ("codecite", "grep"):
-                s = run[engine]["classes"].get(cls)
-                if s:
-                    lines.append(
-                        f"| {repo} | {cls} | {engine} | {s['queries']} | {s['recall_at_1']:.2f}"
-                        f" | {s['recall_at_10']:.2f} | {s['mrr']:.2f} |"
-                    )
+            for engine in engines:
+                if s := run[engine]["classes"].get(cls):
+                    row(repo, cls, engine, s)
+        for engine in engines:
+            if s := run[engine].get("all"):
+                row(repo, "all", engine, s)
         if run.get("index"):
             notes.append(f"- {repo}: {run['index']}")
     return "\n".join(lines + ([""] + notes if notes else [])) + "\n"
@@ -291,16 +321,20 @@ def scorecard(runs: dict) -> str:
 
 def scorecard_main(argv=None):
     """`codecite-history-scorecard RESULTS_DIR`: rebuild scorecard.md from
-    `<repo>-codecite.json`, `<repo>-grep.json`, `<repo>-index.txt` and
-    `<repo>-failed.txt`."""
+    `<repo>-<engine>.json`, `<repo>-index.txt` and `<repo>-failed.txt`."""
     parser = argparse.ArgumentParser(description="Rebuild the history benchmark's scorecard.")
     parser.add_argument("results", type=Path)
     args = parser.parse_args(argv)
     runs: dict = {}
     for path in sorted(args.results.iterdir()):
         repo, _, kind = path.stem.rpartition("-")
-        if path.suffix == ".json" and kind in ("codecite", "grep"):
-            runs.setdefault(repo, {})[kind] = json.loads(path.read_text())
+        if path.suffix == ".json" and kind in ENGINES:
+            # An empty or partial report is a failed run, which `failed`
+            # explains; it must not hide the other repositories.
+            try:
+                runs.setdefault(repo, {})[kind] = json.loads(path.read_text())
+            except json.JSONDecodeError:
+                runs.setdefault(repo, {})
         elif path.suffix == ".txt" and kind in ("index", "failed"):
             runs.setdefault(repo, {})[kind] = path.read_text().strip()
     text = scorecard(runs)

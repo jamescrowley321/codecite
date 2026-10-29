@@ -152,3 +152,65 @@ def test_a_pr_touching_more_than_20_files_is_left_out():
     twenty = pr(1, *[Change("M", f"src/g{i}.py") for i in range(20)])
     _, mined = select_prs([wide, twenty], everything_exists, 40)
     assert [m.number for m in mined] == [1]
+
+
+def test_release_prs_are_left_out():
+    prs = [
+        pr(3, Change("M", "src/version.txt")),
+        pr(2, Change("M", "src/a.py")),
+        pr(1, Change("M", "src/b.py")),
+    ]
+    prs[0].title = "chore(main): release 3.12.1"
+    prs[1].title = "chore: release v2"
+    _, mined = select_prs(prs, everything_exists, 40)
+    assert [m.number for m in mined] == [1]
+
+
+def test_files_more_than_a_quarter_of_the_sample_changed_are_no_answer():
+    # docs/design.md is in 3 of 8 sampled PRs (37%); src/x.py in 2 (25%).
+    prs = [pr(n, Change("M", "docs/design.md"), Change("M", f"src/only{n}.py")) for n in (8, 7, 6)]
+    prs += [pr(n, Change("M", "src/x.py")) for n in (5, 4)]
+    prs += [pr(n, Change("M", f"src/only{n}.py")) for n in (3, 2, 1)]
+    _, mined = select_prs(prs, everything_exists, 40)
+    answers = {m.number: m.answers for m in mined}
+    assert answers[8] == ["src/only8.py"]
+    assert answers[5] == ["src/x.py"]
+
+
+def test_a_pr_whose_only_answer_is_a_hub_file_is_dropped():
+    prs = [pr(n, Change("M", "docs/design.md")) for n in (6, 5, 4)]
+    prs += [pr(n, Change("M", f"src/only{n}.py")) for n in (3, 2, 1)]
+    _, mined = select_prs(prs, everything_exists, 40)
+    assert [m.number for m in mined] == [3, 2, 1]
+
+
+def test_a_file_in_two_of_a_small_sample_is_no_hub():
+    prs = [pr(n, Change("M", "src/a.py")) for n in (2, 1)]
+    _, mined = select_prs(prs, everything_exists, 40)
+    assert [m.number for m in mined] == [2, 1]
+
+
+def test_the_scorecard_shows_the_popular_floor_and_a_pooled_row():
+    from codecite_evals.history import scorecard
+
+    run = {
+        "codecite": {**bench("codecite", (0.5, 20), (0.25, 8)), "all": {"queries": 28, "recall_at_1": 0.2, "recall_at_10": 0.43, "mrr": 0.3}},
+        "popular": bench("popular", (0.1, 20), (0.1, 8)),
+    }
+    table = scorecard({"r": run})
+    assert "| r | history-title | popular | 20 | 0.05 | 0.10 | 0.03 |" in table
+    assert "| r | all | codecite | 28 | 0.20 | 0.43 | 0.30 |" in table
+    assert "grep" not in table
+
+
+def test_a_missing_or_unreadable_report_does_not_hide_the_others(tmp_path):
+    import json
+    from codecite_evals.history import scorecard_main
+
+    (tmp_path / "a-codecite.json").write_text(json.dumps(bench("codecite", (0.5, 4), (0.5, 2))))
+    (tmp_path / "b-codecite.json").write_text("")
+    (tmp_path / "b-failed.txt").write_text("codecite-bench failed\n")
+    scorecard_main([str(tmp_path)])
+    text = (tmp_path / "scorecard.md").read_text()
+    assert "| a | history-title | codecite | 4 |" in text
+    assert "| b | failed: codecite-bench failed |" in text
