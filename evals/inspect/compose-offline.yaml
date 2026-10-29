@@ -1,9 +1,23 @@
-# The sandbox alone, for tasks that need no IdP (task.json "idp": null and
-# the task picks this file). It has no network at all, only loopback; pi's
-# model calls leave through Inspect's agent bridge, which needs none.
+# The sandbox without the IdP, for tasks that need none (task.json "idp":
+# null and the task picks this file). Its network has no route out but the
+# proxy (proxy/), which lets through api.anthropic.com alone, for Claude
+# Code; pi's calls leave through Inspect's agent bridge, which needs none.
 services:
   default:
     build: build
     image: codecite-eval-sandbox
     init: true
-    network_mode: none
+    networks: [eval]
+    environment:
+      - CLAUDE_CODE_OAUTH_TOKEN
+    depends_on:
+      proxy:
+        condition: service_started
+  proxy:
+    build: proxy
+    image: codecite-eval-proxy
+    networks: [eval, egress]
+networks:
+  eval:
+    internal: true
+  egress: {}
