@@ -1,7 +1,8 @@
-# The sandbox every sample runs in: pi, the task's project with its
+# The sandbox every sample runs in: pi and Claude Code, the task's project with its
 # dependencies installed, identity-model's source, the task's spec documents
 # as files when it names a directory for them, and codecite with the `eval`
-# corpus indexed. The container has no route to the internet; pi's
+# corpus indexed. The container has no route to the internet but the
+# compose file's proxy, which lets through only Claude Code's API host; pi's
 # model calls leave through Inspect's agent bridge.
 FROM node:24-trixie-slim
 
@@ -9,7 +10,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 git ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /uvx /usr/local/bin/
-RUN npm install -g @earendil-works/pi-coding-agent@1.2.0
+RUN npm install -g @earendil-works/pi-coding-agent@1.2.0 @anthropic-ai/claude-code@2.1.300
 
 COPY identity-model /opt/identity-model
 COPY project /work/project
