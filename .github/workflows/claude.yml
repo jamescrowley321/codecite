@@ -202,7 +202,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: jamescrowley321/blind-peer-review
-          ref: 2436a22abd461b6fb2d8697671e3e96fe5b30975 # v3.9.0
+          ref: 9d1c5036c17e4bc741c36dc8a70a8ffc2b634d41 # v3.12.1
           path: .review-plugin
           persist-credentials: false
 
@@ -291,7 +291,7 @@ jobs:
           # The two `node .review-plugin/scripts/...` entries are the pinned
           # plugin's own helpers, and the only scripts the check skill runs:
           # scope-diff.mjs writes the diff the lenses read, and dispatch.mjs
-          # resolves the configured reviewer. v3.9.0 needs both; without them
+          # resolves the configured reviewer. Plugin v3.9.0 and later need both; without them
           # an `@claude review this PR` run stops before any lens starts
           # (seen on #39). They are exact script paths inside the pinned
           # checkout, not `node:*`, so the no-interpreters rule holds.
