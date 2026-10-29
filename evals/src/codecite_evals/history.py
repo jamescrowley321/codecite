@@ -26,6 +26,9 @@ VERSION = 1
 LOCKFILES = {"Cargo.lock", "uv.lock", "poetry.lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "go.sum"}
 BOTS = {"dependabot", "renovate", "github-actions"}
 ISSUE_TEXT_LIMIT = 400
+# A PR touching more files says little about where one change belongs, and
+# almost any search would hit one of them.
+MAX_ANSWERS = 20
 
 
 @dataclass
@@ -58,7 +61,8 @@ class Mined:
 
 
 def is_bot(login: str) -> bool:
-    return login.endswith("[bot]") or login in BOTS
+    # gh names a GitHub App's PRs `app/<name>`: `app/dependabot`.
+    return login.endswith("[bot]") or login.startswith("app/") or login in BOTS
 
 
 def candidate_paths(changes: list[Change]) -> list[str]:
@@ -83,6 +87,11 @@ def candidate_paths(changes: list[Change]) -> list[str]:
     return paths
 
 
+def eligible(p: PullRequest) -> bool:
+    """A PR by a person with between 1 and MAX_ANSWERS candidate answers."""
+    return not is_bot(p.author) and 0 < len(candidate_paths(p.changes)) <= MAX_ANSWERS
+
+
 def select_prs(prs: list[PullRequest], exists: Callable[[str, str], bool], max_prs: int) -> tuple[str, list[Mined]]:
     """The pinned commit and the mined PRs, newest first, from `prs` newest first.
 
@@ -90,7 +99,7 @@ def select_prs(prs: list[PullRequest], exists: Callable[[str, str], bool], max_p
     oldest one's parent, and each keeps only the answers that exist there; a
     PR left with none is dropped.
     """
-    sampled = [p for p in prs if not is_bot(p.author) and candidate_paths(p.changes)][:max_prs]
+    sampled = [p for p in prs if eligible(p)][:max_prs]
     if not sampled:
         raise SystemExit("no eligible merged PRs")
     commit = sampled[-1].parent
@@ -213,6 +222,8 @@ def mine(repo: str, clone: Path, max_prs: int) -> tuple[str, list[Mined]]:
         merge = (p.get("mergeCommit") or {}).get("oid")
         if not merge or run("git", "cat-file", "-e", f"{merge}^{{commit}}", cwd=clone, check=False).returncode:
             continue
+        if is_bot((p.get("author") or {}).get("login", "")):
+            continue
         parent, found = changes(clone, merge)
         issue = None
         same_repo = [
@@ -223,6 +234,9 @@ def mine(repo: str, clone: Path, max_prs: int) -> tuple[str, list[Mined]]:
             data = gh_json("issue", "view", str(same_repo[0]["number"]), "-R", repo, "--json", "title,body")
             issue = issue_text(data["title"], data.get("body") or "")
         prs.append(PullRequest(p["number"], p["title"], p["url"], (p.get("author") or {}).get("login", ""), parent, found, issue))
+        # Enough to sample from: later PRs could only be older than the sample.
+        if sum(eligible(q) for q in prs) >= max_prs:
+            break
 
     def exists(commit: str, path: str) -> bool:
         return run("git", "cat-file", "-e", f"{commit}:{path}", cwd=clone, check=False).returncode == 0
@@ -245,6 +259,53 @@ def main(argv=None):
     (out / "manifest.toml").write_text(manifest_toml(args.repo, commit, license))
     queries = sum(1 + (m.issue is not None) for m in mined)
     print(f"{args.repo}: {len(mined)} PRs, {queries} queries, pinned at {commit}")
+
+
+def scorecard(runs: dict) -> str:
+    """The scorecard: a row per repository, class and engine, from each
+    repository's bench reports (`codecite`, `grep`), its index summary line
+    (`index`), or why it failed (`failed`)."""
+    lines = [
+        "| Repository | Class | Engine | Queries | Recall@1 | Recall@10 | MRR |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: |",
+    ]
+    notes = []
+    for repo in sorted(runs):
+        run = runs[repo]
+        if "failed" in run:
+            lines.append(f"| {repo} | failed: {run['failed']} |")
+            continue
+        classes = sorted({c for engine in ("codecite", "grep") for c in run[engine]["classes"]}, reverse=True)
+        for cls in classes:
+            for engine in ("codecite", "grep"):
+                s = run[engine]["classes"].get(cls)
+                if s:
+                    lines.append(
+                        f"| {repo} | {cls} | {engine} | {s['queries']} | {s['recall_at_1']:.2f}"
+                        f" | {s['recall_at_10']:.2f} | {s['mrr']:.2f} |"
+                    )
+        if run.get("index"):
+            notes.append(f"- {repo}: {run['index']}")
+    return "\n".join(lines + ([""] + notes if notes else [])) + "\n"
+
+
+def scorecard_main(argv=None):
+    """`codecite-history-scorecard RESULTS_DIR`: rebuild scorecard.md from
+    `<repo>-codecite.json`, `<repo>-grep.json`, `<repo>-index.txt` and
+    `<repo>-failed.txt`."""
+    parser = argparse.ArgumentParser(description="Rebuild the history benchmark's scorecard.")
+    parser.add_argument("results", type=Path)
+    args = parser.parse_args(argv)
+    runs: dict = {}
+    for path in sorted(args.results.iterdir()):
+        repo, _, kind = path.stem.rpartition("-")
+        if path.suffix == ".json" and kind in ("codecite", "grep"):
+            runs.setdefault(repo, {})[kind] = json.loads(path.read_text())
+        elif path.suffix == ".txt" and kind in ("index", "failed"):
+            runs.setdefault(repo, {})[kind] = path.read_text().strip()
+    text = scorecard(runs)
+    (args.results / "scorecard.md").write_text("# History benchmark scorecard\n\n" + text)
+    print(text, end="")
 
 
 if __name__ == "__main__":

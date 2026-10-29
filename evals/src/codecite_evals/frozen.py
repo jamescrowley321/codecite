@@ -9,7 +9,9 @@ refuses moving a task's `frozen_at`, which would re-freeze it on new files.
 
     uv run codecite-eval-frozen [--base REF]
 
-CI runs it on every PR against the base branch.
+CI runs it on every PR against the base branch. With a base, it also
+refuses a change to the history benchmark's mined files
+(`evals/history/<repo>/`) unless queries.toml's version moves up.
 """
 
 import argparse
@@ -67,6 +69,38 @@ def problems(evals_dir: Path, base=None):
                 if old is not None and task_json(old) == task_json(spec.read_text()):
                     continue
             found.append(f"{task_id}: {path} changed since it froze at {frozen_at}")
+    if base:
+        found += history_problems(root, evals_dir, base)
+    return found
+
+
+def history_version(text):
+    """The `# version: N` line of a mined history queries file, or 0."""
+    for line in (text or "").splitlines():
+        if line.startswith("# version:"):
+            return int(line.split(":", 1)[1])
+    return 0
+
+
+def history_problems(root, evals_dir, base):
+    """Mined history queries and manifests are frozen against the base
+    branch: a change needs a higher version in queries.toml, which only
+    remining writes (codecite_evals.history)."""
+    found = []
+    history = evals_dir / "history"
+    for mined in sorted(p for p in history.glob("*") if p.is_dir()):
+        rel = mined.resolve().relative_to(root.resolve()).as_posix()
+        was = show(root, base, f"{rel}/queries.toml")
+        if was is None:
+            continue
+        now = (mined / "queries.toml").read_text() if (mined / "queries.toml").exists() else None
+        if history_version(now) > history_version(was):
+            continue
+        for name in ("manifest.toml", "queries.toml"):
+            path = mined / name
+            current = path.read_text() if path.exists() else None
+            if current != show(root, base, f"{rel}/{name}"):
+                found.append(f"history {mined.name}: {rel}/{name} changed without a new version in queries.toml")
     return found
 
 

@@ -27,6 +27,7 @@ def test_bots_and_lockfile_only_prs_are_left_out():
         pr(4, Change("M", "src/a.py"), author="dependabot[bot]"),
         pr(3, Change("M", "uv.lock"), Change("M", "CHANGELOG.md")),
         pr(2, Change("M", "src/b.py"), author="renovate"),
+        pr(6, Change("M", "src/b.py"), author="app/dependabot"),
         pr(1, Change("M", "src/c.py")),
     ]
     _, mined = select_prs(prs, everything_exists, 40)
@@ -118,3 +119,36 @@ def test_the_manifest_pins_one_git_source():
         {"kind": "git", "name": "r", "url": "https://github.com/o/r", "commit": "abc123", "license": "MIT", "use": "adapt"}
     ]
     assert "license" not in tomllib.loads(manifest_toml("o/r", "abc123", None))["source"][0]
+
+
+def bench(engine, title, issue):
+    def scores(r10, n):
+        return {"queries": n, "recall_at_1": r10 / 2, "recall_at_10": r10, "mrr": r10 / 3}
+
+    return {"engine": engine, "classes": {"history-issue": scores(*issue), "history-title": scores(*title)}}
+
+
+def test_the_scorecard_has_a_row_per_repository_class_and_engine():
+    from codecite_evals.history import scorecard
+
+    runs = {
+        "r": {
+            "codecite": bench("codecite", (0.5, 20), (0.25, 8)),
+            "grep": bench("grep", (0.75, 20), (0.5, 8)),
+            "index": "chunks: 1200 written · elapsed: 2.10s",
+        },
+        "s": {"failed": "error: commit not found"},
+    }
+    table = scorecard(runs)
+    assert "| r | history-title | codecite | 20 | 0.25 | 0.50 | 0.17 |" in table
+    assert "| r | history-title | grep | 20 | 0.38 | 0.75 | 0.25 |" in table
+    assert "| r | history-issue | codecite | 8 | 0.12 | 0.25 | 0.08 |" in table
+    assert "| s | failed: error: commit not found |" in table
+    assert "chunks: 1200 written · elapsed: 2.10s" in table
+
+
+def test_a_pr_touching_more_than_20_files_is_left_out():
+    wide = pr(2, *[Change("M", f"src/f{i}.py") for i in range(21)])
+    twenty = pr(1, *[Change("M", f"src/g{i}.py") for i in range(20)])
+    _, mined = select_prs([wide, twenty], everything_exists, 40)
+    assert [m.number for m in mined] == [1]
