@@ -1,0 +1,11 @@
+# The history benchmark's corpus for jamescrowley321/terraform-provider-descope: the repository at the parent
+# of the oldest PR its queries were mined from. Frozen with queries.toml.
+
+name = "history-terraform-provider-descope"
+
+[[source]]
+kind = "git"
+name = "terraform-provider-descope"
+url = "https://github.com/jamescrowley321/terraform-provider-descope"
+commit = "10e672b5be423bef1e888bd999a8f38ec51b7a44"
+use = "adapt"

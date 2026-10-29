@@ -1,0 +1,359 @@
+# History benchmark queries for jamescrowley321/identity-model, mined from merged PRs by
+# `codecite-history-mine` (evals/src/codecite_evals/history.py). Frozen:
+# never edit by hand; remining writes a new version.
+#
+# version: 1
+# commit: f1456691dd86029efaa4424d6080508b93d940df
+# mined: 2026-10-29
+
+corpus = "history-identity-model"
+
+[[query]]
+id = "identity-model-pr1025-title"
+class = "history-title"
+text = "ci: bump blind-peer-review to v3.12.1"
+answers = [".github/workflows/claude.yml"]
+source = "https://github.com/jamescrowley321/identity-model/pull/1025"
+
+[[query]]
+id = "identity-model-pr920-title"
+class = "history-title"
+text = "fix(conformance): keep PyJWT error text out of the UserInfo 400 page"
+answers = ["conformance/app.py"]
+source = "https://github.com/jamescrowley321/identity-model/pull/920"
+
+[[query]]
+id = "identity-model-pr919-title"
+class = "history-title"
+text = "docs: close 5.0 documentation gaps"
+answers = ["README.md", "docs/api/config.md", "docs/api/exceptions.md", "docs/api/http-client.md", "docs/api/userinfo.md", "docs/index.md", "docs/migration-guide.md", "py/README.md", "py/src/py_identity_model/exceptions.py"]
+source = "https://github.com/jamescrowley321/identity-model/pull/919"
+
+[[query]]
+id = "identity-model-pr918-title"
+class = "history-title"
+text = "ci: stamp pre-release wheels with the pre-release version"
+answers = [".github/workflows/publish-prerelease.yml"]
+source = "https://github.com/jamescrowley321/identity-model/pull/918"
+
+[[query]]
+id = "identity-model-pr910-title"
+class = "history-title"
+text = "docs: 4.x to 5.0 upgrade guide; require py-identity-model 5 in fastapi"
+answers = ["mkdocs.yml", "py/packages/fastapi-identity-model/pyproject.toml"]
+source = "https://github.com/jamescrowley321/identity-model/pull/910"
+
+[[query]]
+id = "identity-model-pr842-title"
+class = "history-title"
+text = "fix(discovery): reject a document whose issuer is not the requested issuer"
+answers = ["docs/api/discovery.md", "docs/troubleshooting.md", "py/examples/docker-compose.test.yml", "py/src/py_identity_model/__init__.py", "py/src/py_identity_model/aio/discovery.py", "py/src/py_identity_model/core/discovery_logic.py", "py/src/py_identity_model/core/error_handlers.py", "py/src/py_identity_model/core/models.py", "py/src/py_identity_model/core/response_processors.py", "py/src/py_identity_model/exceptions.py", "py/src/py_identity_model/sync/discovery.py", "py/src/tests/integration/test_discovery.py", "py/src/tests/unit/test_cache_http_headers.py", "py/src/tests/unit/test_http_security_hardening.py", "spec/capabilities.md"]
+source = "https://github.com/jamescrowley321/identity-model/pull/842"
+
+[[query]]
+id = "identity-model-pr899-title"
+class = "history-title"
+text = "refactor(fastapi)!: move OIDCSettings.from_env to an optional helper; accept http_client"
+answers = ["CLAUDE.md", "py/packages/fastapi-identity-model/README.md", "py/packages/fastapi-identity-model/fastapi_identity_model/config.py", "py/packages/fastapi-identity-model/fastapi_identity_model/middleware.py", "py/packages/fastapi-identity-model/fastapi_identity_model/rp.py", "py/packages/fastapi-identity-model/fastapi_identity_model/token_manager.py", "py/packages/fastapi-identity-model/fastapi_identity_model/ws.py", "py/packages/fastapi-identity-model/tests/test_config.py", "py/pyproject.toml"]
+source = "https://github.com/jamescrowley321/identity-model/pull/899"
+
+[[query]]
+id = "identity-model-pr898-title"
+class = "history-title"
+text = "test(py): fail if library code reads the environment"
+answers = ["CLAUDE.md", "py/pyproject.toml"]
+source = "https://github.com/jamescrowley321/identity-model/pull/898"
+
+[[query]]
+id = "identity-model-pr897-title"
+class = "history-title"
+text = "docs(spec): replace the config spec, vectors and fixtures with one plain page"
+answers = ["docs/api/config.md", "spec/README.md", "spec/capabilities.md", "spec/config.md"]
+source = "https://github.com/jamescrowley321/identity-model/pull/897"
+
+[[query]]
+id = "identity-model-pr893-title"
+class = "history-title"
+text = "feat(py): optional config helpers — config_from_env, config_from_mapping"
+answers = ["docs/api/config.md", "py/pyproject.toml"]
+source = "https://github.com/jamescrowley321/identity-model/pull/893"
+
+[[query]]
+id = "identity-model-pr892-title"
+class = "history-title"
+text = "refactor(py)!: make Config a plain typed value with defaults"
+answers = ["docs/api/config.md", "docs/api/index.md", "py/pyproject.toml", "py/src/py_identity_model/__init__.py", "py/src/py_identity_model/core/config.py", "py/src/tests/unit/test_config.py", "spec/capabilities.md"]
+source = "https://github.com/jamescrowley321/identity-model/pull/892"
+
+[[query]]
+id = "identity-model-pr891-title"
+class = "history-title"
+text = "fix(discovery)!: require every Discovery §3 metadata field (jwks_uri unconditionally)"
+answers = ["docs/api/discovery.md", "docs/discovery_specification_compliance_assessment.md", "go/pkg/discovery/discovery.go", "go/pkg/discovery/discovery_test.go", "py/src/py_identity_model/core/discovery_policy.py", "py/src/py_identity_model/core/models.py", "py/src/py_identity_model/core/response_processors.py", "py/src/py_identity_model/core/validators.py", "py/src/tests/unit/test_aio_token_validation.py", "py/src/tests/unit/test_discovery_compliance.py", "py/src/tests/unit/test_discovery_policy.py", "py/src/tests/unit/test_sync_token_validation.py", "rust/src/discovery/client.rs", "rust/src/discovery/metadata.rs", "spec/README.md", "spec/capabilities.md", "spec/vectors/discovery.json"]
+source = "https://github.com/jamescrowley321/identity-model/pull/891"
+
+[[query]]
+id = "identity-model-pr887-title"
+class = "history-title"
+text = "fix(id-token): require at_hash/c_hash only for values issued with the ID Token"
+answers = ["docs/api/id-token.md", "go/internal/conformance/idtoken.go", "go/internal/conformance/idtoken_conformance_test.go", "go/pkg/idtoken/doc.go", "go/pkg/idtoken/errors.go", "go/pkg/idtoken/idtoken.go", "go/pkg/idtoken/idtoken_integration_test.go", "go/pkg/idtoken/idtoken_test.go", "go/pkg/idtoken/options.go", "py/src/py_identity_model/aio/id_token.py", "py/src/py_identity_model/core/id_token_logic.py", "py/src/py_identity_model/sync/id_token.py", "py/src/tests/integration/test_id_token_validation.py", "py/src/tests/unit/test_id_token_conformance.py", "py/src/tests/unit/test_id_token_validation.py", "rust/src/jwt/id_token.rs", "spec/vectors/id-token.json"]
+source = "https://github.com/jamescrowley321/identity-model/pull/887"
+
+[[query]]
+id = "identity-model-pr884-title"
+class = "history-title"
+text = "fix(py): reject a UserInfo response with no sub claim"
+answers = ["py/packages/fastapi-identity-model/fastapi_identity_model/rp.py", "py/packages/fastapi-identity-model/tests/test_rp.py", "py/src/py_identity_model/__init__.py", "py/src/py_identity_model/aio/__init__.py", "py/src/py_identity_model/core/models.py", "py/src/py_identity_model/core/response_processors.py", "py/src/py_identity_model/sync/__init__.py", "py/src/tests/unit/test_aio_userinfo.py", "py/src/tests/unit/test_sync_userinfo.py", "spec/capabilities.md"]
+source = "https://github.com/jamescrowley321/identity-model/pull/884"
+
+[[query]]
+id = "identity-model-pr882-title"
+class = "history-title"
+text = "fix(py): enforce expected_sub on application/jwt UserInfo responses"
+answers = ["conformance/app.py", "conformance/tests/test_html_escaping.py", "go/internal/conformance/userinfo_test.go", "py/src/py_identity_model/core/models.py", "py/src/py_identity_model/core/userinfo_logic.py", "py/src/tests/unit/test_aio_userinfo.py", "py/src/tests/unit/test_sync_userinfo.py", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/userinfo/README.md", "spec/vectors/userinfo.json"]
+source = "https://github.com/jamescrowley321/identity-model/pull/882"
+
+[[query]]
+id = "identity-model-pr878-title"
+class = "history-title"
+text = "fix(rust): drop azp enforcement from base JWT validation"
+answers = ["rust/README.md", "rust/src/jwt/claims.rs", "rust/src/jwt/mod.rs", "spec/capabilities.md"]
+source = "https://github.com/jamescrowley321/identity-model/pull/878"
+
+[[query]]
+id = "identity-model-pr877-title"
+class = "history-title"
+text = "fix(fapi): treat missing REQUIRED discovery metadata as a violation"
+answers = ["py/src/py_identity_model/core/fapi.py", "py/src/tests/unit/test_fapi.py"]
+source = "https://github.com/jamescrowley321/identity-model/pull/877"
+
+[[query]]
+id = "identity-model-pr875-title"
+class = "history-title"
+text = "fix(logout): require exp in Back-Channel Logout Tokens"
+answers = ["docs/api/logout.md", "py/src/py_identity_model/core/logout_logic.py", "py/src/tests/unit/test_aio_logout_token_validation.py", "py/src/tests/unit/test_logout_token_validation.py"]
+source = "https://github.com/jamescrowley321/identity-model/pull/875"
+
+[[query]]
+id = "identity-model-pr908-title"
+class = "history-title"
+text = "fix(py): enforce the caller's algorithms allowlist on discovery validation"
+answers = ["py/src/py_identity_model/core/token_validation_logic.py", "py/src/tests/security/test_issuer_pinning.py"]
+source = "https://github.com/jamescrowley321/identity-model/pull/908"
+
+[[query]]
+id = "identity-model-pr908-issue"
+class = "history-issue"
+text = "fix(py): discovery validation ignores the caller's algorithms allowlist\n\n`build_resolved_config` in `py/src/py_identity_model/core/token_validation_logic.py` (~L297 on main) builds the resolved config with `algorithms=[alg]`, where `alg` is the resolved JWK `alg` or the JWT header `alg`. The caller's `TokenValidationConfig.algorithms` allowlist is discarded."
+answers = ["py/src/py_identity_model/core/token_validation_logic.py", "py/src/tests/security/test_issuer_pinning.py"]
+source = "https://github.com/jamescrowley321/identity-model/pull/908"
+
+[[query]]
+id = "identity-model-pr871-title"
+class = "history-title"
+text = "ci: run conformance, CodeQL and OSV on PRs into any branch"
+answers = [".github/workflows/codeql.yml", ".github/workflows/conformance.yml", ".github/workflows/osv-scanner.yml"]
+source = "https://github.com/jamescrowley321/identity-model/pull/871"
+
+[[query]]
+id = "identity-model-pr675-title"
+class = "history-title"
+text = "feat(rust): DPoP key pairs, proof generation, and proof verification (RFC 9449)"
+answers = ["rust/Cargo.toml", "rust/README.md", "rust/src/error.rs", "rust/src/http.rs", "rust/src/lib.rs", "spec/capabilities.md", "tools/mutation_security_native.py"]
+source = "https://github.com/jamescrowley321/identity-model/pull/675"
+
+[[query]]
+id = "identity-model-pr826-title"
+class = "history-title"
+text = "test(spec): authorization-code vectors on the shared runners, plus pure-logic runners"
+answers = ["go/internal/conformance/httpvector_test.go", "go/pkg/token/doc.go", "go/pkg/token/pkce_test.go", "go/pkg/token/token_integration_test.go", "infra/README.md", "rust/src/token/mod.rs", "rust/src/token/pkce.rs", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/dpop/README.md", "spec/test-fixtures/dpop/dpop-nonce-error-response.json", "spec/test-fixtures/token/README.md", "spec/vectors/authorization-code.json", "spec/vectors/dpop.json"]
+source = "https://github.com/jamescrowley321/identity-model/pull/826"
+
+[[query]]
+id = "identity-model-pr826-issue"
+class = "history-issue"
+text = "spec vectors: re-land authorization-code vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used)."
+answers = ["go/internal/conformance/httpvector_test.go", "go/pkg/token/doc.go", "go/pkg/token/pkce_test.go", "go/pkg/token/token_integration_test.go", "infra/README.md", "rust/src/token/mod.rs", "rust/src/token/pkce.rs", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/dpop/README.md", "spec/test-fixtures/dpop/dpop-nonce-error-response.json", "spec/test-fixtures/token/README.md", "spec/vectors/authorization-code.json", "spec/vectors/dpop.json"]
+source = "https://github.com/jamescrowley321/identity-model/pull/826"
+
+[[query]]
+id = "identity-model-pr825-title"
+class = "history-title"
+text = "test(spec): client-credentials vectors on the shared HTTP vector runners"
+answers = ["go/internal/conformance/httpvector_test.go", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/token/README.md", "spec/vectors/client-credentials.json"]
+source = "https://github.com/jamescrowley321/identity-model/pull/825"
+
+[[query]]
+id = "identity-model-pr825-issue"
+class = "history-issue"
+text = "spec vectors: re-land client-credentials vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used)."
+answers = ["go/internal/conformance/httpvector_test.go", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/token/README.md", "spec/vectors/client-credentials.json"]
+source = "https://github.com/jamescrowley321/identity-model/pull/825"
+
+[[query]]
+id = "identity-model-pr735-title"
+class = "history-title"
+text = "ci: lint the workflow files with actionlint and shellcheck"
+answers = [".github/workflows/ci.yml", ".github/workflows/publish-prerelease.yml", ".pre-commit-config.yaml"]
+source = "https://github.com/jamescrowley321/identity-model/pull/735"
+
+[[query]]
+id = "identity-model-pr823-title"
+class = "history-title"
+text = "test(spec): token-exchange vectors on the shared HTTP vector runners"
+answers = ["go/internal/conformance/httpvector_test.go", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/token-exchange/README.md", "spec/test-fixtures/token-exchange/exchange-error-invalid-request.json", "spec/vectors/token-exchange.json"]
+source = "https://github.com/jamescrowley321/identity-model/pull/823"
+
+[[query]]
+id = "identity-model-pr823-issue"
+class = "history-issue"
+text = "spec vectors: re-land token-exchange vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used)."
+answers = ["go/internal/conformance/httpvector_test.go", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/token-exchange/README.md", "spec/test-fixtures/token-exchange/exchange-error-invalid-request.json", "spec/vectors/token-exchange.json"]
+source = "https://github.com/jamescrowley321/identity-model/pull/823"
+
+[[query]]
+id = "identity-model-pr822-title"
+class = "history-title"
+text = "test(spec): introspection vectors on the shared HTTP vector runners"
+answers = ["go/internal/conformance/httpvector_test.go", "go/pkg/introspection/introspection_test.go", "rust/src/introspection/response.rs", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/introspection/README.md", "spec/test-fixtures/introspection/active-response.json", "spec/test-fixtures/introspection/discovery-with-introspection.json", "spec/vectors/introspection.json"]
+source = "https://github.com/jamescrowley321/identity-model/pull/822"
+
+[[query]]
+id = "identity-model-pr822-issue"
+class = "history-issue"
+text = "spec vectors: re-land introspection vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used)."
+answers = ["go/internal/conformance/httpvector_test.go", "go/pkg/introspection/introspection_test.go", "rust/src/introspection/response.rs", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/introspection/README.md", "spec/test-fixtures/introspection/active-response.json", "spec/test-fixtures/introspection/discovery-with-introspection.json", "spec/vectors/introspection.json"]
+source = "https://github.com/jamescrowley321/identity-model/pull/822"
+
+[[query]]
+id = "identity-model-pr821-title"
+class = "history-title"
+text = "test(spec): discovery vectors on the shared HTTP vector runners"
+answers = ["go/internal/conformance/httpvector_test.go", "go/pkg/discovery/discovery_test.go", "infra/node-oidc-provider/provider.js", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/discovery/issuer-mismatch.json", "spec/test-fixtures/discovery/missing-jwks-uri.json", "spec/test-fixtures/discovery/missing-multiple-fields.json", "spec/test-fixtures/discovery/valid.json", "spec/vectors/discovery.json"]
+source = "https://github.com/jamescrowley321/identity-model/pull/821"
+
+[[query]]
+id = "identity-model-pr821-issue"
+class = "history-issue"
+text = "spec vectors: re-land discovery vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used)."
+answers = ["go/internal/conformance/httpvector_test.go", "go/pkg/discovery/discovery_test.go", "infra/node-oidc-provider/provider.js", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/discovery/issuer-mismatch.json", "spec/test-fixtures/discovery/missing-jwks-uri.json", "spec/test-fixtures/discovery/missing-multiple-fields.json", "spec/test-fixtures/discovery/valid.json", "spec/vectors/discovery.json"]
+source = "https://github.com/jamescrowley321/identity-model/pull/821"
+
+[[query]]
+id = "identity-model-pr832-title"
+class = "history-title"
+text = "feat(discovery): expose structured Python and Rust failure diagnostics"
+answers = ["docs/api/discovery.md", "py/src/py_identity_model/__init__.py", "py/src/py_identity_model/aio/__init__.py", "py/src/py_identity_model/aio/discovery.py", "py/src/py_identity_model/core/__init__.py", "py/src/py_identity_model/core/discovery_logic.py", "py/src/py_identity_model/core/discovery_policy.py", "py/src/py_identity_model/core/error_handlers.py", "py/src/py_identity_model/core/models.py", "py/src/py_identity_model/core/response_processors.py", "py/src/py_identity_model/core/validators.py", "py/src/py_identity_model/exceptions.py", "py/src/py_identity_model/sync/__init__.py", "py/src/py_identity_model/sync/discovery.py", "rust/src/discovery/client.rs", "rust/src/discovery/mod.rs", "rust/src/lib.rs", "tools/mutation_security_allowlist.txt"]
+source = "https://github.com/jamescrowley321/identity-model/pull/832"
+
+[[query]]
+id = "identity-model-pr838-title"
+class = "history-title"
+text = "test(infra): validate canned vector contracts and scalar form fields"
+answers = ["infra/README.md", "infra/node-oidc-provider/Dockerfile", "infra/node-oidc-provider/package.json", "spec/README.md"]
+source = "https://github.com/jamescrowley321/identity-model/pull/838"
+
+[[query]]
+id = "identity-model-pr736-title"
+class = "history-title"
+text = "test(tools): read the release commands instead of scanning their text"
+answers = ["tools/tests/test_release_tooling_pins.py"]
+source = "https://github.com/jamescrowley321/identity-model/pull/736"
+
+[[query]]
+id = "identity-model-pr736-issue"
+class = "history-issue"
+text = "test(tools): the GitPython pin regex truncates at whitespace, so a second constraint silently vanishes from both sides of the parity check\n\nFound by a retrospective blind-peer-review sweep of PR #666 (`test(tools): compare the whole GitPython bound, and stop enforcing shell comments`), which merged 2026-09-14 with 0 reviews."
+answers = ["tools/tests/test_release_tooling_pins.py"]
+source = "https://github.com/jamescrowley321/identity-model/pull/736"
+
+[[query]]
+id = "identity-model-pr831-title"
+class = "history-title"
+text = "ci(deps): target the Python workspace in Dependabot"
+answers = [".github/dependabot.yml"]
+source = "https://github.com/jamescrowley321/identity-model/pull/831"
+
+[[query]]
+id = "identity-model-pr830-title"
+class = "history-title"
+text = "fix: require patched PyJWT and AnyIO versions"
+answers = ["py/pyproject.toml"]
+source = "https://github.com/jamescrowley321/identity-model/pull/830"
+
+[[query]]
+id = "identity-model-pr817-title"
+class = "history-title"
+text = "test(spec): one Rust runner for HTTP vectors, served by the node-oidc fixture"
+answers = ["spec/README.md"]
+source = "https://github.com/jamescrowley321/identity-model/pull/817"
+
+[[query]]
+id = "identity-model-pr817-issue"
+class = "history-issue"
+text = "spec vectors: generic Rust HTTP vector runner (revocation, userinfo, jwks)\n\nPart of identity-model#801. Needs identity-model#802."
+answers = ["spec/README.md"]
+source = "https://github.com/jamescrowley321/identity-model/pull/817"
+
+[[query]]
+id = "identity-model-pr816-title"
+class = "history-title"
+text = "test(spec): one Go runner for HTTP vectors, served by the node-oidc fixture"
+answers = ["go/internal/conformance/httpvector_test.go", "go/internal/conformance/jwks_test.go", "go/internal/conformance/revocation_test.go", "go/internal/conformance/userinfo_test.go", "spec/README.md"]
+source = "https://github.com/jamescrowley321/identity-model/pull/816"
+
+[[query]]
+id = "identity-model-pr816-issue"
+class = "history-issue"
+text = "spec vectors: generic Go HTTP vector runner (revocation, userinfo, jwks)\n\nPart of identity-model#801. Needs identity-model#802."
+answers = ["go/internal/conformance/httpvector_test.go", "go/internal/conformance/jwks_test.go", "go/internal/conformance/revocation_test.go", "go/internal/conformance/userinfo_test.go", "spec/README.md"]
+source = "https://github.com/jamescrowley321/identity-model/pull/816"
+
+[[query]]
+id = "identity-model-pr827-title"
+class = "history-title"
+text = "test(spec): dpop vectors on the shared runners"
+answers = ["go/internal/conformance/httpvector_test.go", "go/pkg/dpop/dpop_test.go", "go/pkg/dpop/verify.go", "infra/README.md", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/dpop/README.md", "spec/test-fixtures/dpop/dpop-nonce-error-response.json", "spec/vectors/dpop.json"]
+source = "https://github.com/jamescrowley321/identity-model/pull/827"
+
+[[query]]
+id = "identity-model-pr815-title"
+class = "history-title"
+text = "test(spec): one Python runner for HTTP vectors, served by the node-oidc fixture"
+answers = ["spec/README.md", "spec/vectors/jwks.json"]
+source = "https://github.com/jamescrowley321/identity-model/pull/815"
+
+[[query]]
+id = "identity-model-pr815-issue"
+class = "history-issue"
+text = "spec vectors: generic Python HTTP vector runner (revocation, userinfo, jwks)\n\nPart of identity-model#801. Needs identity-model#802."
+answers = ["spec/README.md", "spec/vectors/jwks.json"]
+source = "https://github.com/jamescrowley321/identity-model/pull/815"
+
+[[query]]
+id = "identity-model-pr814-title"
+class = "history-title"
+text = "test(infra): serve spec HTTP vectors from the node-oidc fixture"
+answers = [".github/workflows/ci.yml", "infra/README.md", "infra/docker-compose.yml", "infra/node-oidc-provider/Dockerfile", "infra/node-oidc-provider/package.json", "infra/node-oidc-provider/provider.js"]
+source = "https://github.com/jamescrowley321/identity-model/pull/814"
+
+[[query]]
+id = "identity-model-pr814-issue"
+class = "history-issue"
+text = "spec vectors: serve canned HTTP vectors from the node-oidc fixture\n\nPart of identity-model#801."
+answers = [".github/workflows/ci.yml", "infra/README.md", "infra/docker-compose.yml", "infra/node-oidc-provider/Dockerfile", "infra/node-oidc-provider/package.json", "infra/node-oidc-provider/provider.js"]
+source = "https://github.com/jamescrowley321/identity-model/pull/814"
+
+[[query]]
+id = "identity-model-pr818-title"
+class = "history-title"
+text = "fix(go): report a private embedded jwk in a DPoP proof against jwk, not alg"
+answers = ["go/pkg/dpop/dpop_test.go", "go/pkg/dpop/verify.go"]
+source = "https://github.com/jamescrowley321/identity-model/pull/818"
+
+[[query]]
+id = "identity-model-pr818-issue"
+class = "history-issue"
+text = "fix(go): attribute an embedded private jwk in a DPoP proof to jwk, not alg\n\nPart of identity-model#801. Split out of identity-model#794, where it rode inside a test commit."
+answers = ["go/pkg/dpop/dpop_test.go", "go/pkg/dpop/verify.go"]
+source = "https://github.com/jamescrowley321/identity-model/pull/818"

@@ -1,0 +1,11 @@
+# The history benchmark's corpus for jamescrowley321/identity-stack: the repository at the parent
+# of the oldest PR its queries were mined from. Frozen with queries.toml.
+
+name = "history-identity-stack"
+
+[[source]]
+kind = "git"
+name = "identity-stack"
+url = "https://github.com/jamescrowley321/identity-stack"
+commit = "27e8c8766b685f6f865324b088c6fffeffd391be"
+use = "adapt"

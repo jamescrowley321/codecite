@@ -1,0 +1,250 @@
+{
+  "all": {
+    "mrr": 0.296889400921659,
+    "queries": 31,
+    "recall_at_1": 0.16129032258064516,
+    "recall_at_10": 0.5806451612903226
+  },
+  "classes": {
+    "history-issue": {
+      "mrr": 0.125,
+      "queries": 1,
+      "recall_at_1": 0.0,
+      "recall_at_10": 1.0
+    },
+    "history-title": {
+      "mrr": 0.3026190476190476,
+      "queries": 30,
+      "recall_at_1": 0.16666666666666666,
+      "recall_at_10": 0.5666666666666667
+    }
+  },
+  "engine": "grep",
+  "groups": {
+    "history": {
+      "mrr": 0.296889400921659,
+      "queries": 31,
+      "recall_at_1": 0.16129032258064516,
+      "recall_at_10": 0.5806451612903226
+    }
+  },
+  "outcomes": [
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr235-title",
+      "rank": 2,
+      "text": "fix(deps): bump Go to 1.26.10 and golang.org/x/net to v0.60.0",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:go.sum#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr227-title",
+      "rank": null,
+      "text": "build(deps): consolidate dependabot updates (github-actions group, go-uuid 1.0.4)",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:docs/testing.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr221-title",
+      "rank": null,
+      "text": "ci(claude): scope the review workflow's tool grant and pin the lens plugin",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:CONTRIBUTING.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr210-title",
+      "rank": 2,
+      "text": "chore(testcleanup): delete leftover testacc- tenants",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:README.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr218-title",
+      "rank": 7,
+      "text": "test(integration): run the FGA schema test against its own project",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:docs/testing.md#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "terraform-provider-descope-pr218-issue",
+      "rank": 8,
+      "text": "Integration tests destroy the shared project's FGA schema, breaking identity-stack's E2E gate\n\n`TestFGASchemaCRUD` overwrites the FGA schema of whatever project `DESCOPE_PROJECT_ID` points at. That project is shared with **identity-stack**, whose authorization model this silently deletes — turning its required `E2E Tests` check red with 23 failures and blocking every open PR in that repo until",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:docs/testing.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr217-title",
+      "rank": 1,
+      "text": "ci: let @claude run the blind-peer-review lenses on demand",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:CONTRIBUTING.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr203-title",
+      "rank": null,
+      "text": "test(references): explicit return after t.Fatal nil-guards (staticcheck SA5011)",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:internal/infra/retry_test.go#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr196-title",
+      "rank": null,
+      "text": "fix: bump Go toolchain to 1.26.6 to patch stdlib vulnerabilities",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:release-please-config.json#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr194-title",
+      "rank": null,
+      "text": "docs: correct provider scope in index — tenants are managed, not excluded",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:docs/resources/project.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr189-title",
+      "rank": 7,
+      "text": "ci(release): generate SPDX SBOMs for provider release archives",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:docs/resources/project.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr185-title",
+      "rank": 7,
+      "text": "fix(deps): bump grpc to v1.82.1 (GO-2026-6061)",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:.github/dependabot.yml#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr181-title",
+      "rank": 2,
+      "text": "chore: tpd CI/security maintenance — deps, govulncheck fix, remove Snyk + Sonar",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:docs/testing.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr178-title",
+      "rank": 5,
+      "text": "chore(deps): consolidate go-sdk + actions bumps, fix govulncheck (crypto/tls GO-2026-5856)",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:docs/testing.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr171-title",
+      "rank": null,
+      "text": "chore(deps): consolidate dependency updates (go-sdk v1.26 + GitHub Actions)",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:docs/testing.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr170-title",
+      "rank": 2,
+      "text": "ci(release): replace broken SLSA generator with native build provenance",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:docs/testing.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr156-title",
+      "rank": 1,
+      "text": "Align with upstream: rename inbound_app + deprecate provider project_id",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:README.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr155-title",
+      "rank": 5,
+      "text": "chore: sync from upstream + Go deps + CI security hardening",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:SECURITY.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr151-title",
+      "rank": 4,
+      "text": "chore: sync upstream, update deps, fix code scanning alerts",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:docs/testing.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr142-title",
+      "rank": null,
+      "text": "ci: consolidate dependabot into grouped daily PRs + auto-merge",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:docs/testing.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr141-title",
+      "rank": null,
+      "text": "chore: sync upstream (CI action bumps)",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:docs/testing.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr140-title",
+      "rank": null,
+      "text": "chore: sync upstream and update Go dependencies",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:docs/testing.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr139-title",
+      "rank": 1,
+      "text": "chore(deps): bump actions/setup-go to v6.4.0 and github/codeql-action to v4.35.1",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:.github/workflows/security.yml#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr136-title",
+      "rank": null,
+      "text": "fix: add ralph/claude runtime state to gitignore",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:tests/integration/harness.go#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr129-title",
+      "rank": 1,
+      "text": "fix(test): tolerate last-project deletion error in Destroy",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:tests/integration/harness.go#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr127-title",
+      "rank": null,
+      "text": "fix(ci): add actions:write permission for workflow dispatch",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:docs/resources/project.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr125-title",
+      "rank": 2,
+      "text": "fix(ci): add --repo flag to gh workflow dispatch in release-please",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:tools/gpg-setup/main.go#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr124-title",
+      "rank": 2,
+      "text": "fix(ci): use tag ref for SLSA provenance generator",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:docs/testing.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr122-title",
+      "rank": 1,
+      "text": "fix(ci): trigger goreleaser via workflow_dispatch from release-please",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:.github/workflows/release-please.yml#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr120-title",
+      "rank": null,
+      "text": "feat(docs): comprehensive registry docs audit",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:docs/resources/project.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr119-title",
+      "rank": null,
+      "text": "docs: add missing docs and update index for v1.0.0",
+      "top": "grep@10e672b5be423bef1e888bd999a8f38ec51b7a44:internal/models/project/widgets/tests/testwidget.json#L1"
+    }
+  ]
+}

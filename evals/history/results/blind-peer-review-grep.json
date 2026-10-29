@@ -1,0 +1,327 @@
+{
+  "all": {
+    "mrr": 0.2613378684807256,
+    "queries": 42,
+    "recall_at_1": 0.21428571428571427,
+    "recall_at_10": 0.35714285714285715
+  },
+  "classes": {
+    "history-issue": {
+      "mrr": 0.25,
+      "queries": 5,
+      "recall_at_1": 0.2,
+      "recall_at_10": 0.4
+    },
+    "history-title": {
+      "mrr": 0.2628700128700129,
+      "queries": 37,
+      "recall_at_1": 0.21621621621621623,
+      "recall_at_10": 0.35135135135135137
+    }
+  },
+  "engine": "grep",
+  "groups": {
+    "history": {
+      "mrr": 0.2613378684807256,
+      "queries": 42,
+      "recall_at_1": 0.21428571428571427,
+      "recall_at_10": 0.35714285714285715
+    }
+  },
+  "outcomes": [
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr184-title",
+      "rank": 4,
+      "text": "ci: skip paid self-review on PR edits and release PRs",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:examples/caller-workflow.yml#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr183-title",
+      "rank": null,
+      "text": "chore(main): release 3.12.1",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:.github/workflows/release-please.yml#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr182-title",
+      "rank": 1,
+      "text": "fix(post): stop posting the \"See the review summary.\" placeholder thread",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:evals/contract.test.mjs#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr180-title",
+      "rank": null,
+      "text": "chore(main): release 3.12.0",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:.github/workflows/release-please.yml#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "blind-peer-review-pr180-issue",
+      "rank": null,
+      "text": "feat: Jev pre-gate for the OWASP LLM lens\n\nThe OWASP LLM lens is the most expensive conditional lens (median about $0.195 per run in the public corpus). It self-skips when a diff has no LLM or AI surface, but the self-skip still costs a full lens call: pi starts, reads the diff, and writes a PASS.",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:evals/results/2026-09-14-ceiling-24000/z-ai__glm-5.2.34804436286.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr176-title",
+      "rank": null,
+      "text": "chore(main): release 3.11.0",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:.github/workflows/release-please.yml#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr175-title",
+      "rank": null,
+      "text": "chore(main): release 3.10.0",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:.github/workflows/release-please.yml#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr168-title",
+      "rank": null,
+      "text": "feat(corpus): measure Jev as a pre-gate for the conditional lenses",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:evals/results/2026-09-14-ceiling-24000/z-ai__glm-5.2.34804436286.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr165-title",
+      "rank": null,
+      "text": "chore(main): release 3.9.0",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:.github/workflows/release-please.yml#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr164-title",
+      "rank": 1,
+      "text": "feat(plugin): configurable reviewer instead of auto-dispatching to codex",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:docs/multi-harness-plan.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr163-title",
+      "rank": null,
+      "text": "chore(main): release 3.8.0",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:.github/workflows/release-please.yml#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr156-title",
+      "rank": null,
+      "text": "feat(corpus): deterministic review-round filters with typed reasons",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:docs/model-selection.md#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "blind-peer-review-pr156-issue",
+      "rank": null,
+      "text": "feat(corpus): deterministic case filters with typed reject reasons\n\nCode-only filters: no parseable review, superseded head, truncated or withheld diff, lockfile/generated-only, no AC section, unknown lens set. Reasons are a stable enum.",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:evals/contract.test.mjs#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr161-title",
+      "rank": null,
+      "text": "chore(main): release 3.7.0",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:.github/workflows/release-please.yml#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr157-title",
+      "rank": null,
+      "text": "feat(corpus): Jev screening of filter-accepted rounds",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:evals/contract.test.mjs#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr155-title",
+      "rank": null,
+      "text": "feat(corpus): harvest historical PR reviews into review-time snapshots",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:docs/market-analysis-and-roadmap.md#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "blind-peer-review-pr155-issue",
+      "rank": null,
+      "text": "feat(corpus): harvest PR reviews with review-time evidence and pseudonymization\n\nRead-only harvester: review-time PR body, reviewed head/base SHA and diff, pipeline-classified review outputs, outcome. Flags body_approximate and diff_approximate. Private sources get HMAC case ids and identifier redaction. Config is local.",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:evals/contract.test.mjs#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr160-title",
+      "rank": null,
+      "text": "chore(main): release 3.6.0",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:.github/workflows/release-please.yml#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr145-title",
+      "rank": 7,
+      "text": "feat(evals): persist arm-labelled provider usage telemetry",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:.github/workflows/evals.yml#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr159-title",
+      "rank": null,
+      "text": "chore(main): release 3.5.6",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:.github/workflows/release-please.yml#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr144-title",
+      "rank": null,
+      "text": "fix(acceptance): distinguish required tests from optional coverage",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:evals/contract.test.mjs#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr140-title",
+      "rank": 2,
+      "text": "test(evals): record round six, nine models on the current prompts",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:evals/contract.test.mjs#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr158-title",
+      "rank": null,
+      "text": "chore(main): release 3.5.5",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:.github/workflows/release-please.yml#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr154-title",
+      "rank": 2,
+      "text": "docs: remove references to a private downstream repository",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:docs/market-analysis-and-roadmap.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr139-title",
+      "rank": null,
+      "text": "chore(main): release 3.5.4",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:.github/workflows/release-please.yml#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr138-title",
+      "rank": 1,
+      "text": "fix(security): pin the Claude adapter's actions and drop two dynamic regexes",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:evals/contract.test.mjs#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr137-title",
+      "rank": null,
+      "text": "chore(main): release 3.5.3",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:.github/workflows/release-please.yml#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr136-title",
+      "rank": 1,
+      "text": "fix(evals): run dispatched evals at the push ceiling, not 8000",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:evals/contract.test.mjs#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr135-title",
+      "rank": null,
+      "text": "chore(main): release 3.5.2",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:.github/workflows/release-please.yml#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr134-title",
+      "rank": null,
+      "text": "fix(lenses): make the acceptance PARTIAL severity rule mechanical",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:evals/contract.test.mjs#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr133-title",
+      "rank": null,
+      "text": "chore(main): release 3.5.1",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:.github/workflows/release-please.yml#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr126-title",
+      "rank": 1,
+      "text": "fix(lenses): align personas with the CI tool contract and the manifest",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:evals/contract.test.mjs#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "blind-peer-review-pr126-issue",
+      "rank": 1,
+      "text": "Lenses instruct CI to read code outside the diff that its tools cannot reach",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:evals/contract.test.mjs#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr127-title",
+      "rank": 1,
+      "text": "test(evals): fail fabricated citations and assert OWASP 2025/2026 categories",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:evals/contract.test.mjs#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr132-title",
+      "rank": null,
+      "text": "chore(main): release 3.5.0",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:.github/workflows/release-please.yml#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr128-title",
+      "rank": 1,
+      "text": "ci(citations): weekly check for drift between citations/ and its sources",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:.github/workflows/lint.yml#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr123-title",
+      "rank": 3,
+      "text": "feat(citations): resolve finding citations against pinned OWASP and CWE catalogues",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:evals/contract.test.mjs#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "blind-peer-review-pr123-issue",
+      "rank": 4,
+      "text": "Lens citations: pinned OWASP citation catalogue (web 2025, LLM 2026, ASI 2026)\n\nEach file records the source URL, retrieval date and source sha256.",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:docs/market-analysis-and-roadmap.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr130-title",
+      "rank": null,
+      "text": "feat(report): group cross-lens findings that cite the same CWE at one location",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:evals/contract.test.mjs#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr131-title",
+      "rank": null,
+      "text": "test(evals): fix the two fixtures that failed on every rep",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:evals/contract.test.mjs#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr124-title",
+      "rank": 1,
+      "text": "feat(lenses): cite OWASP Top 10:2025 and LLM/Agentic 2026 entries by year-qualified ID",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:docs/security-hardening.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr110-title",
+      "rank": null,
+      "text": "chore(main): release 3.4.0",
+      "top": "grep@f7704c755bba4dc4bf3a90e13e18220fe317121e:.github/workflows/release-please.yml#L1"
+    }
+  ]
+}

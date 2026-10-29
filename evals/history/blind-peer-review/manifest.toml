@@ -1,0 +1,11 @@
+# The history benchmark's corpus for jamescrowley321/blind-peer-review: the repository at the parent
+# of the oldest PR its queries were mined from. Frozen with queries.toml.
+
+name = "history-blind-peer-review"
+
+[[source]]
+kind = "git"
+name = "blind-peer-review"
+url = "https://github.com/jamescrowley321/blind-peer-review"
+commit = "f7704c755bba4dc4bf3a90e13e18220fe317121e"
+use = "adapt"
