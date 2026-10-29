@@ -130,6 +130,7 @@ pub fn split_guidance(markdown: &str) -> Result<Vec<GuidanceRule>, GuidanceError
     }
     let comments = checked.comments;
     let mut used = vec![false; comments.len()];
+    let mut first_line: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
     let lines: Vec<&str> = markdown.split('\n').collect();
     let (numbered, written) = numbered(&headings);
     let mut slugs = Slugs::default();
@@ -151,22 +152,22 @@ pub fn split_guidance(markdown: &str) -> Result<Vec<GuidanceRule>, GuidanceError
         };
         let parent_number = number.rsplit_once('.').map(|(p, _)| p);
         let parent = parent_number.and_then(|p| rules.iter().rposition(|r| r.section.number == p));
-        if let Some(first) = rules.iter().find(|r| r.section.number == number) {
+        if let Some(&first) = first_line.get(&number) {
             if requirement_keywords(&text).is_empty() {
                 continue;
             }
             return Err(GuidanceError::DuplicateRule {
                 number,
                 line: heading.line,
-                first: first.section.start_line,
+                first,
             });
         }
-        if let Some(i) = comments
-            .iter()
-            .position(|c| (heading.line..=heading.end_line).contains(&c.line))
-        {
+        // Comments come in line order, so the rule's is found by search.
+        let i = comments.partition_point(|c| c.line < heading.line);
+        if comments.get(i).is_some_and(|c| c.line <= heading.end_line) {
             used[i] = true;
         }
+        first_line.insert(number.clone(), heading.line);
         let scope = scope(&comments, heading.line, heading.end_line).map_err(|message| {
             GuidanceError::Scope {
                 number: number.clone(),
@@ -287,7 +288,8 @@ struct ScopeComment<'a> {
 /// The scope a rule gives in the scope comment among `comments` that
 /// starts between its lines `start` and `end`, or `None` when it has none.
 fn scope(comments: &[ScopeComment<'_>], start: u32, end: u32) -> Result<Option<RuleScope>, String> {
-    let Some(comment) = comments.iter().find(|c| (start..=end).contains(&c.line)) else {
+    let i = comments.partition_point(|c| c.line < start);
+    let Some(comment) = comments.get(i).filter(|c| c.line <= end) else {
         return Ok(None);
     };
     let scope: RuleScope =
@@ -308,7 +310,12 @@ fn scope(comments: &[ScopeComment<'_>], start: u32, end: u32) -> Result<Option<R
 /// block that is only a scope comment, `<!-- codecite-scope` then TOML
 /// with no `#` comment then `-->`, at most one under each heading.
 fn check_hidden(markdown: &str) -> Result<Checked<'_>, GuidanceError> {
-    let line_of = |offset: usize| markdown[..offset].matches('\n').count() as u32 + 1;
+    // Where each line starts, so a byte offset's line is a binary search,
+    // not a scan from the top of a file that may be 16 MiB.
+    let starts: Vec<usize> = std::iter::once(0)
+        .chain(markdown.match_indices('\n').map(|(i, _)| i + 1))
+        .collect();
+    let line_of = |offset: usize| starts.partition_point(|&s| s <= offset) as u32;
     let hidden = |offset, what| {
         Err(GuidanceError::HiddenText {
             line: line_of(offset),
@@ -394,6 +401,16 @@ fn check_hidden(markdown: &str) -> Result<Checked<'_>, GuidanceError> {
                     "an image, whose alt text and title don't render",
                 );
             }
+            // The raw bytes were checked above, so an invisible character
+            // here was decoded from a character reference (`&#x200B;`).
+            Event::Text(text) => {
+                if text.chars().any(is_invisible_format) {
+                    return hidden(
+                        range.start,
+                        "a character reference that decodes to a character that renders as nothing",
+                    );
+                }
+            }
             Event::InlineHtml(html) | Event::Html(html) => {
                 let what = if html.starts_with("<!--") {
                     "an HTML comment"
@@ -411,7 +428,6 @@ fn check_hidden(markdown: &str) -> Result<Checked<'_>, GuidanceError> {
                 | TagEnd::Strong
                 | TagEnd::Link,
             )
-            | Event::Text(_)
             | Event::Code(_)
             | Event::SoftBreak
             | Event::HardBreak
@@ -928,10 +944,49 @@ mod tests {
             refused(&format!("{scope}\n\n## 1 Rule\nMUST.\n")),
             (1, "a scope comment outside any rule")
         );
+        // Character references that decode to invisible characters.
+        for reference in ["&#x200B;", "&shy;", "&#xE0041;&#xE0042;", "&zwj;"] {
+            assert_eq!(
+                refused(&format!("## 1 Rule\nYou MUST{reference} log.\n")),
+                (
+                    2,
+                    "a character reference that decodes to a character that renders as nothing"
+                ),
+                "{reference}"
+            );
+        }
+        // In code they render as written.
+        assert_eq!(
+            split_guidance("## 1 Rule\nWrite `&#x200B;`. MUST.\n")
+                .unwrap()
+                .len(),
+            1
+        );
         // A scope comment inside a quote doesn't scope its rule.
         assert_eq!(
             refused(&format!("## 1 Rule\n> {scope}\n\nMUST.\n")),
             (2, "an HTML comment")
+        );
+    }
+
+    #[test]
+    fn a_large_document_splits_in_linear_time() {
+        // 40,000 rules with scope comments: quadratic lookups would take
+        // minutes here, linear ones well under a second.
+        let mut text = String::new();
+        for n in 1..=40_000 {
+            text.push_str(&format!(
+                "## {n} Rule\n<!-- codecite-scope languages = [\"go\"] -->\nMUST.\n"
+            ));
+        }
+        let started = std::time::Instant::now();
+        let rules = split_guidance(&text).unwrap();
+        assert_eq!(rules.len(), 40_000);
+        assert!(rules.iter().all(|r| r.scope.is_some()));
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(20),
+            "{:?}",
+            started.elapsed()
         );
     }
 

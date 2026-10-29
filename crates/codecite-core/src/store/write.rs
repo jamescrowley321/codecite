@@ -94,10 +94,10 @@ pub struct SymbolRecord<'a> {
 
 impl Store {
     /// Creates the source, or updates the stored one's other fields and
-    /// `indexed_at`, and returns its ID. It is no longer guidance, and its
-    /// rule scopes are gone, until [`Store::set_guidance`] marks it again,
-    /// so a guidance source the manifest turns into a plain document stops
-    /// giving rules. A document version is the stored
+    /// `indexed_at`, and returns its ID. Whether it is guidance is left as
+    /// it is: [`Store::set_guidance`] and [`Store::clear_guidance`] change
+    /// that, so a guidance source being indexed again never answers with no
+    /// rules in between. A document version is the stored
     /// document with the same name and revision; any other source is the
     /// stored one with the same name that isn't a document.
     pub fn upsert_source(&mut self, source: &SourceRecord<'_>) -> Result<i64> {
@@ -117,8 +117,7 @@ impl Store {
                    kind = excluded.kind, url = excluded.url, revision = excluded.revision,
                    is_current = excluded.is_current, obsoleted_by = excluded.obsoleted_by,
                    updated_by = excluded.updated_by, license_spdx = excluded.license_spdx,
-                   license_class = excluded.license_class, indexed_at = excluded.indexed_at,
-                   guidance = 0
+                   license_class = excluded.license_class, indexed_at = excluded.indexed_at
                  RETURNING id"
             ),
             params![
@@ -134,9 +133,18 @@ impl Store {
             ],
             |row| row.get(0),
         )?;
-        self.conn
-            .execute("DELETE FROM rule_scope WHERE source_id = ?1", [id])?;
         Ok(id)
+    }
+
+    /// Marks the source as no longer guidance and deletes its rule scopes,
+    /// in one transaction, so a guidance source the manifest turns into a
+    /// plain document stops giving rules.
+    pub fn clear_guidance(&mut self, source_id: i64) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        tx.execute("UPDATE source SET guidance = 0 WHERE id = ?1", [source_id])?;
+        tx.execute("DELETE FROM rule_scope WHERE source_id = ?1", [source_id])?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// The content hash of each document stored for the source, by path.

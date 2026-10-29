@@ -8,7 +8,7 @@ govern a file before it edits it.
 - **Stored as a document.** A guidance source is a `document` source with
   `guidance = 1`, so `search`, `grep`, `read` and `cite` treat its rules as
   spec sections with no change. Scopes live in a new `rule_scope` table keyed
-  by source and rule number (migration 0005), rewritten on every index run
+  by source and rule number (migration 0006), rewritten on every index run
   because the manifest can change them without the bytes changing.
 - **Two origins.** `path` (a local Markdown file, hashed at every run, so an
   edit is a new version) or `url` + `sha256` (fetched and pinned through the
@@ -40,7 +40,7 @@ govern a file before it edits it.
 ## Steps
 
 1. Core: move `Language`; add `imports()` with tests per language.
-2. Core: migration 0005; `RuleScope`, `ContextTarget`, `Store::context`,
+2. Core: migration 0006; `RuleScope`, `ContextTarget`, `Store::context`,
    `Store::set_guidance`, with tests for glob, language and import scopes, a
    rule with no scope, ordering, the byte budget and staleness.
 3. Index: `markdown_headings` from the Markdown chunker; `split_guidance`

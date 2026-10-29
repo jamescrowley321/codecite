@@ -152,7 +152,8 @@ Handlers MUST NOT call a partner with a raw HTTP client; use `partner_client`.
   quotes, lists, emphasis, code spans and blocks, rules, and links with no
   title to a plain URL. Anything else stops the run: a character that
   renders as nothing (zero-width, bidi, tag or variation-selector
-  characters), raw HTML outside code (comments, tags, processing
+  characters), written as itself or as a character reference such as
+  `&#x200B;`, raw HTML outside code (comments, tags, processing
   instructions, declarations, CDATA), images, setext headings and headings
   inside quotes or lists, and link reference definitions. The one HTML
   allowed is a top-level block that is only a scope comment,

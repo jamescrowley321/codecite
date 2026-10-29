@@ -169,9 +169,17 @@ impl ContextTarget {
     ) -> Result<Self> {
         let cwd = std::env::current_dir()?;
         let absolute = normalize(&cwd.join(path));
+        // With symlinks resolved, so the check and the read see one file.
+        let resolved = resolve(&absolute);
+        let inside = within.is_none_or(|dir| {
+            std::fs::canonicalize(dir).is_ok_and(|dir| resolved.starts_with(dir))
+        });
+        // Outside `within`, nothing on disk is looked at, not even for
+        // `.git`, so the answer says nothing about what is there.
         let root = match root {
             Some(root) => Some(normalize(&cwd.join(root))),
-            None => repository_root(&absolute),
+            None if inside => repository_root(&absolute),
+            None => None,
         };
         let relative = root
             .as_deref()
@@ -191,13 +199,7 @@ impl ContextTarget {
         } else {
             shown.join("/")
         };
-        let inside = within.is_none_or(|dir| {
-            match (std::fs::canonicalize(&absolute), std::fs::canonicalize(dir)) {
-                (Ok(file), Ok(dir)) => file.starts_with(dir),
-                _ => false,
-            }
-        });
-        let on_disk = inside.then(|| read_capped(&absolute)).flatten();
+        let on_disk = inside.then(|| read_capped(&resolved)).flatten();
         // The text to be written is scanned to the same cap as the file.
         let content =
             content.map(|text| super::read::byte_prefix(text, MAX_INSPECTED_BYTES as usize).0);
@@ -252,6 +254,23 @@ fn read_capped(path: &Path) -> Option<String> {
         return None;
     }
     String::from_utf8(bytes).ok()
+}
+
+/// `path` with its nearest existing ancestor's symlinks resolved and the
+/// rest, which doesn't exist yet, appended as written: a file about to be
+/// created resolves to where it will be.
+fn resolve(path: &Path) -> PathBuf {
+    for ancestor in path.ancestors() {
+        if let Ok(real) = std::fs::canonicalize(ancestor) {
+            let rest = path.strip_prefix(ancestor).unwrap_or(Path::new(""));
+            return if rest.as_os_str().is_empty() {
+                real
+            } else {
+                real.join(rest)
+            };
+        }
+    }
+    path.to_path_buf()
 }
 
 /// `path` with `.` and `..` resolved by name, without touching the disk.
@@ -783,7 +802,7 @@ mod tests {
     }
 
     #[test]
-    fn a_source_upserted_again_is_not_guidance_until_marked() {
+    fn guidance_is_cleared_only_on_purpose() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("demo.db");
         let mut store = Store::open_read_write(&path).unwrap();
@@ -823,8 +842,11 @@ mod tests {
         let target = ContextTarget::describe("a.py".into(), None, None);
         assert_eq!(ask(&store, target.clone()).total, 1);
 
-        // The manifest now lists it as a plain document, same bytes.
+        // Indexed again as guidance: it keeps its rules throughout.
         assert_eq!(store.upsert_source(&record).unwrap(), id);
+        assert_eq!(ask(&store, target.clone()).total, 1);
+        // The manifest now lists it as a plain document, same bytes.
+        store.clear_guidance(id).unwrap();
         assert_eq!(ask(&store, target).total, 0);
         let scopes: i64 = store
             .conn
@@ -1008,6 +1030,15 @@ mod tests {
         let dotted = inside.join("../elsewhere.py");
         let target = ContextTarget::inspect_within(&dotted, None, None, Some(&inside)).unwrap();
         assert!(target.imports.is_empty());
+        // Outside, no `.git` above it is looked for either.
+        std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+        let target = ContextTarget::inspect_within(&file, None, None, Some(&inside)).unwrap();
+        assert!(target.path.starts_with('/'), "{}", target.path);
+        // Inside, a file not yet written still finds its repository.
+        std::fs::create_dir_all(inside.join(".git")).unwrap();
+        let new = inside.join("app/new.py");
+        let target = ContextTarget::inspect_within(&new, None, None, Some(&inside)).unwrap();
+        assert_eq!(target.path, "app/new.py");
         // Inside, it is read.
         let own = inside.join("own.py");
         std::fs::write(&own, "import requests\n").unwrap();

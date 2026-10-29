@@ -4,9 +4,11 @@
 /// Whether `c` renders as nothing: a Unicode format character (category
 /// Cf) such as the soft hyphen, zero-width spaces and joiners, bidi marks,
 /// embeddings, overrides and isolates, invisible operators, the byte order
-/// mark, interlinear annotation marks and the tag characters; a variation
-/// selector, whose runs can carry bytes; a Hangul filler; or the line and
-/// paragraph separators.
+/// mark, interlinear annotation marks, the tag characters and the
+/// format controls of Arabic, Kaithi, Egyptian hieroglyphs, shorthand and
+/// musical notation; a variation selector, Mongolian ones included, whose
+/// runs can carry bytes; the combining grapheme joiner; a Hangul filler; or
+/// the line and paragraph separators.
 pub fn is_invisible_format(c: char) -> bool {
     matches!(
         c,
@@ -32,6 +34,16 @@ pub fn is_invisible_format(c: char) -> bool {
             | '\u{ffa0}'
             | '\u{2028}'
             | '\u{2029}'
+            | '\u{890}'..='\u{891}'
+            | '\u{8e2}'
+            | '\u{110bd}'
+            | '\u{110cd}'
+            | '\u{13430}'..='\u{1343f}'
+            | '\u{1bca0}'..='\u{1bca3}'
+            | '\u{1d173}'..='\u{1d17a}'
+            | '\u{34f}'
+            | '\u{180b}'..='\u{180d}'
+            | '\u{180f}'
     )
 }
 
@@ -52,6 +64,16 @@ mod tests {
             '\u{e0100}',
             '\u{3164}',
             '\u{2028}',
+            '\u{890}',
+            '\u{8e2}',
+            '\u{110bd}',
+            '\u{110cd}',
+            '\u{13435}',
+            '\u{1bca1}',
+            '\u{1d175}',
+            '\u{34f}',
+            '\u{180c}',
+            '\u{180f}',
         ] {
             assert!(is_invisible_format(c), "{c:?}");
         }

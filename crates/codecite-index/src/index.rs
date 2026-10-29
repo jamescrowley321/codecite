@@ -448,6 +448,8 @@ fn index_document(
         obsoleted_by: doc.obsoleted_by.as_deref(),
         updated_by: doc.updated_by.as_deref(),
     })?;
+    // A spec gives no rules, even when the same version was guidance.
+    store.clear_guidance(source_id)?;
     // A document source holds one document, stored under its name.
     let path = doc.name.as_str();
     let hash = Sha256::digest(bytes);
