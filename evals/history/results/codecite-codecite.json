@@ -1,31 +1,31 @@
 {
   "all": {
-    "mrr": 0.34805194805194806,
-    "queries": 55,
-    "recall_at_1": 0.2,
-    "recall_at_10": 0.7636363636363637
+    "mrr": 0.35083056478405306,
+    "queries": 43,
+    "recall_at_1": 0.2558139534883721,
+    "recall_at_10": 0.627906976744186
   },
   "classes": {
     "history-issue": {
-      "mrr": 0.4592592592592592,
-      "queries": 18,
-      "recall_at_1": 0.2777777777777778,
-      "recall_at_10": 0.8888888888888888
+      "mrr": 0.38333333333333336,
+      "queries": 16,
+      "recall_at_1": 0.3125,
+      "recall_at_10": 0.5625
     },
     "history-title": {
-      "mrr": 0.2939510939510939,
-      "queries": 37,
-      "recall_at_1": 0.16216216216216217,
-      "recall_at_10": 0.7027027027027027
+      "mrr": 0.3315696649029982,
+      "queries": 27,
+      "recall_at_1": 0.2222222222222222,
+      "recall_at_10": 0.6666666666666666
     }
   },
   "engine": "codecite",
   "groups": {
     "history": {
-      "mrr": 0.34805194805194806,
-      "queries": 55,
-      "recall_at_1": 0.2,
-      "recall_at_10": 0.7636363636363637
+      "mrr": 0.35083056478405306,
+      "queries": 43,
+      "recall_at_1": 0.2558139534883721,
+      "recall_at_10": 0.627906976744186
     }
   },
   "outcomes": [
@@ -53,7 +53,7 @@
     {
       "class": "history-title",
       "id": "codecite-pr167-title",
-      "rank": 3,
+      "rank": 6,
       "text": "feat(mcp): add a requirements tool that lists every rule governing a spec section",
       "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:docs/superpowers/specs/2026-10-17-identity-corpus-design.md#L21-L40"
     },
@@ -67,7 +67,7 @@
     {
       "class": "history-title",
       "id": "codecite-pr169-title",
-      "rank": 7,
+      "rank": 5,
       "text": "ci: bump blind-peer-review to v3.12.1",
       "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:.github/workflows/blind-peer-review.yml#L1-L60"
     },
@@ -81,23 +81,9 @@
     {
       "class": "history-issue",
       "id": "codecite-pr163-issue",
-      "rank": 10,
+      "rank": null,
       "text": "feat(mcp): tell agents to search specs in the spec's own terms\n\nPart of #95. This is follow-up 2 of `docs/superpowers/specs/2026-10-23-hybrid-retrieval-design.md`, and arm B of its A/B arms.",
       "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:docs/superpowers/specs/2026-10-20-ab-eval-harness-design.md#L153-L184"
-    },
-    {
-      "class": "history-title",
-      "id": "codecite-pr166-title",
-      "rank": null,
-      "text": "chore(evals): freeze backchannel-logout, client-auth-uri and spec-questions",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:evals/retrieval/queries.toml#L301-L360"
-    },
-    {
-      "class": "history-title",
-      "id": "codecite-pr152-title",
-      "rank": null,
-      "text": "feat(evals): make client-auth-uri also refuse two authentication methods",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:evals/retrieval/queries.toml#L301-L360"
     },
     {
       "class": "history-title",
@@ -115,20 +101,6 @@
     },
     {
       "class": "history-title",
-      "id": "codecite-pr154-title",
-      "rank": null,
-      "text": "feat(evals): hold backchannel-logout to Back-Channel Logout errata set 1",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:evals/retrieval/identity-bench.toml#L61-L120"
-    },
-    {
-      "class": "history-title",
-      "id": "codecite-pr153-title",
-      "rank": null,
-      "text": "feat(evals): add 25 closed-form spec questions from the least-covered documents",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:evals/lib/sandbox.mjs#L122-L127"
-    },
-    {
-      "class": "history-title",
       "id": "codecite-pr148-title",
       "rank": 1,
       "text": "fix(ralph): wait for the @claude review comment instead of the removed Merge Gate",
@@ -143,45 +115,10 @@
     },
     {
       "class": "history-title",
-      "id": "codecite-pr150-title",
-      "rank": null,
-      "text": "fix(evals): score client-auth-uri on what RFC 6749 allows, not one reading",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:evals/run.mjs#L125-L152"
-    },
-    {
-      "class": "history-title",
       "id": "codecite-pr151-title",
       "rank": 3,
       "text": "fix(ci): make the @claude review wait for its lens agents before it posts",
       "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:ralph/README.md#L1-L9"
-    },
-    {
-      "class": "history-title",
-      "id": "codecite-pr144-title",
-      "rank": 2,
-      "text": "feat(evals): measure eval noise with an A/A round and time runs from the transcript",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:docs/superpowers/specs/2026-10-20-ab-eval-harness-design.md#L242-L276"
-    },
-    {
-      "class": "history-issue",
-      "id": "codecite-pr144-issue",
-      "rank": 3,
-      "text": "feat(evals): measure eval noise with an A/A round and time runs from the transcript\n\nWall time is too noisy to call a time loss at 10 runs per arm. Measure the noise, and change the time measure, before trusting another verdict.",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:docs/superpowers/specs/2026-10-20-ab-eval-harness-design.md#L242-L276"
-    },
-    {
-      "class": "history-title",
-      "id": "codecite-pr143-title",
-      "rank": 4,
-      "text": "feat(evals): give pi codecite as native tools and flag arms that never used it",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:evals/agents/pi.mjs#L21-L22"
-    },
-    {
-      "class": "history-issue",
-      "id": "codecite-pr143-issue",
-      "rank": 2,
-      "text": "feat(evals): give agents codecite as a native tool and flag arms that never used it\n\nSome models never use codecite. An arm where it isn't called measures nothing.",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:docs/superpowers/plans/2026-10-20-ab-eval-harness.md#L245-L278"
     },
     {
       "class": "history-title",
@@ -193,21 +130,21 @@
     {
       "class": "history-title",
       "id": "codecite-pr142-title",
-      "rank": 4,
+      "rank": null,
       "text": "feat(evals): calibrate new tasks on the baseline arm only and freeze them before their first A/B run",
       "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:evals/lib/workspace.mjs#L206-L250"
     },
     {
       "class": "history-issue",
       "id": "codecite-pr142-issue",
-      "rank": 5,
+      "rank": null,
       "text": "feat(evals): calibrate new tasks on the baseline arm only and freeze them before their first A/B run\n\nA new eval task should be hard enough that the arms can differ on correctness: in quick-2, every model but devstral passed `fastapi-middleware` 100% of the time in both arms (#92), so pass rate couldn't separate them. Getting a task to the right difficulty means running it and adjusting it. If we",
       "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:docs/superpowers/specs/2026-10-21-fast-eval-design.md#L7-L24"
     },
     {
       "class": "history-title",
       "id": "codecite-pr141-title",
-      "rank": 8,
+      "rank": 7,
       "text": "feat(core): resolve spec citations with codecite cite",
       "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:crates/codecite-core/src/store/search.rs#L427-L430"
     },
@@ -221,21 +158,21 @@
     {
       "class": "history-title",
       "id": "codecite-pr147-title",
-      "rank": 6,
+      "rank": null,
       "text": "feat(evals): add a spec-question task where the agent doesn't know the spec's wording",
       "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:evals/lib/sandbox.mjs#L122-L127"
     },
     {
       "class": "history-issue",
       "id": "codecite-pr147-issue",
-      "rank": 6,
+      "rank": null,
       "text": "feat(evals): add a spec-question task where the agent doesn't know the spec's wording\n\nEvery eval task so far is a code task that names its symbols, and there grep is already fast and precise (#93). codecite's case is spec retrieval: an agent that has to find and cite an OAuth/OIDC requirement without knowing the words the RFC uses.",
       "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:docs/superpowers/specs/2026-10-20-ab-eval-harness-design.md#L62-L112"
     },
     {
       "class": "history-title",
       "id": "codecite-pr140-title",
-      "rank": 8,
+      "rank": null,
       "text": "feat: find definitions with codecite def and the definition tool",
       "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:crates/codecite-index/src/chunk/code.rs#L274-L374"
     },
@@ -284,7 +221,7 @@
     {
       "class": "history-issue",
       "id": "codecite-pr137-issue",
-      "rank": 3,
+      "rank": 5,
       "text": "feat(search): add an exact and regex grep over indexed chunks\n\nBM25 `search` is weak at literal strings: an exact claim name like `\"jti\"`, an error message, a header name, or a pattern such as `token_type_hint=\\w+`. Agents have `rg` for their own checkout, but not for the specs and pinned repositories codecite indexes, and `rg` gives no citations.",
       "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:docs/superpowers/plans/2026-10-20-search-corpus.md#L1808-L1869"
     },
@@ -297,22 +234,15 @@
     },
     {
       "class": "history-title",
-      "id": "codecite-pr134-title",
-      "rank": null,
-      "text": "feat(evals): add a task that fixes client authentication to RFC 6749 and cites the section",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:evals/lib/sandbox.mjs#L122-L127"
-    },
-    {
-      "class": "history-title",
       "id": "codecite-pr131-title",
-      "rank": 4,
+      "rank": null,
       "text": "fix(evals): label sandbox failures apart from agent timeouts",
       "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:crates/codecite-index/src/manifest.rs#L333-L340"
     },
     {
       "class": "history-issue",
       "id": "codecite-pr131-issue",
-      "rank": 2,
+      "rank": null,
       "text": "fix(evals): label sandbox failures apart from agent timeouts\n\n`evals/inspect/task.py`'s `pi()` catches every exception from the agent's `sb.exec` (since ca62b9b, in #113) and records it as `timed_out`. That's deliberate: retrying infrastructure failures would keep only the runs that survive them and bias the scorecard, the same way retrying timeouts did.",
       "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:evals/lib/score.mjs#L128-L284"
     },
@@ -347,7 +277,7 @@
     {
       "class": "history-title",
       "id": "codecite-pr126-title",
-      "rank": 8,
+      "rank": 7,
       "text": "docs: describe running issues in Claude Code cloud sessions",
       "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:docs/design.md#L5-L9"
     },
@@ -361,7 +291,7 @@
     {
       "class": "history-title",
       "id": "codecite-pr123-title",
-      "rank": 4,
+      "rank": 3,
       "text": "fix(ralph): wait on every required workflow and read the lens Merge Gate",
       "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:.github/workflows/blind-peer-review.yml#L61-L120"
     },
@@ -375,23 +305,9 @@
     {
       "class": "history-title",
       "id": "codecite-pr120-title",
-      "rank": 8,
+      "rank": 10,
       "text": "docs: correct install, release and eval docs after the security and Inspect merges",
       "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:docs/superpowers/plans/2026-10-20-crates-io-release.md#L1-L16"
-    },
-    {
-      "class": "history-title",
-      "id": "codecite-pr122-title",
-      "rank": 5,
-      "text": "ci: check only vulnerabilities in dependency review, leaving licenses to cargo-deny",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:docs/superpowers/plans/2026-10-17-pr-gates.md#L38-L80"
-    },
-    {
-      "class": "history-title",
-      "id": "codecite-pr113-title",
-      "rank": 6,
-      "text": "feat(evals): run the A/B eval on Inspect AI and remove the hand-rolled harness",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:docs/superpowers/plans/2026-10-20-ab-eval-harness.md#L245-L278"
     },
     {
       "class": "history-title",
@@ -410,7 +326,7 @@
     {
       "class": "history-issue",
       "id": "codecite-pr103-issue",
-      "rank": 5,
+      "rank": null,
       "text": "feat(search): stop code from burying spec sections in mixed corpora\n\nOn a corpus that holds both a library and the specs it implements, code buries the specs. The retrieval benchmark (#94) shows that 65 of 100 top hits are identity-model files. On spec-keyword queries such as `at_hash`, `invalid_grant`, `jwks_uri`, `token_type_hint` and `login_required`, the library code that uses the term",
       "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:evals/retrieval/queries.toml#L1-L59"
     }

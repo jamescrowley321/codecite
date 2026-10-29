@@ -1,31 +1,31 @@
 {
   "all": {
-    "mrr": 0.48749999999999993,
-    "queries": 50,
-    "recall_at_1": 0.3,
-    "recall_at_10": 0.88
+    "mrr": 0.22193287037037038,
+    "queries": 48,
+    "recall_at_1": 0.10416666666666667,
+    "recall_at_10": 0.5416666666666666
   },
   "classes": {
     "history-issue": {
-      "mrr": 0.6287037037037037,
-      "queries": 12,
-      "recall_at_1": 0.4166666666666667,
-      "recall_at_10": 1.0
+      "mrr": 0.21111111111111114,
+      "queries": 11,
+      "recall_at_1": 0.18181818181818182,
+      "recall_at_10": 0.45454545454545453
     },
     "history-title": {
-      "mrr": 0.4429093567251462,
-      "queries": 38,
-      "recall_at_1": 0.2631578947368421,
-      "recall_at_10": 0.8421052631578947
+      "mrr": 0.22515015015015016,
+      "queries": 37,
+      "recall_at_1": 0.08108108108108109,
+      "recall_at_10": 0.5675675675675675
     }
   },
   "engine": "grep",
   "groups": {
     "history": {
-      "mrr": 0.48749999999999993,
-      "queries": 50,
-      "recall_at_1": 0.3,
-      "recall_at_10": 0.88
+      "mrr": 0.22193287037037038,
+      "queries": 48,
+      "recall_at_1": 0.10416666666666667,
+      "recall_at_10": 0.5416666666666666
     }
   },
   "outcomes": [
@@ -88,7 +88,7 @@
     {
       "class": "history-title",
       "id": "identity-model-pr897-title",
-      "rank": 6,
+      "rank": null,
       "text": "docs(spec): replace the config spec, vectors and fixtures with one plain page",
       "top": "grep@f1456691dd86029efaa4424d6080508b93d940df:py/src/tests/integration/conftest.py#L1"
     },
@@ -109,7 +109,7 @@
     {
       "class": "history-title",
       "id": "identity-model-pr891-title",
-      "rank": 1,
+      "rank": 3,
       "text": "fix(discovery)!: require every Discovery §3 metadata field (jwks_uri unconditionally)",
       "top": "grep@f1456691dd86029efaa4424d6080508b93d940df:spec/capabilities.md#L1"
     },
@@ -137,7 +137,7 @@
     {
       "class": "history-title",
       "id": "identity-model-pr878-title",
-      "rank": 4,
+      "rank": 6,
       "text": "fix(rust): drop azp enforcement from base JWT validation",
       "top": "grep@f1456691dd86029efaa4424d6080508b93d940df:tools/mutation_security_native.py#L1"
     },
@@ -179,35 +179,35 @@
     {
       "class": "history-title",
       "id": "identity-model-pr675-title",
-      "rank": 1,
+      "rank": null,
       "text": "feat(rust): DPoP key pairs, proof generation, and proof verification (RFC 9449)",
       "top": "grep@f1456691dd86029efaa4424d6080508b93d940df:spec/capabilities.md#L1"
     },
     {
       "class": "history-title",
       "id": "identity-model-pr826-title",
-      "rank": 2,
+      "rank": 6,
       "text": "test(spec): authorization-code vectors on the shared runners, plus pure-logic runners",
       "top": "grep@f1456691dd86029efaa4424d6080508b93d940df:py/CHANGELOG.md#L1"
     },
     {
       "class": "history-issue",
       "id": "identity-model-pr826-issue",
-      "rank": 1,
+      "rank": 9,
       "text": "spec vectors: re-land authorization-code vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used).",
       "top": "grep@f1456691dd86029efaa4424d6080508b93d940df:spec/capabilities.md#L1"
     },
     {
       "class": "history-title",
       "id": "identity-model-pr825-title",
-      "rank": 1,
+      "rank": null,
       "text": "test(spec): client-credentials vectors on the shared HTTP vector runners",
       "top": "grep@f1456691dd86029efaa4424d6080508b93d940df:spec/capabilities.md#L1"
     },
     {
       "class": "history-issue",
       "id": "identity-model-pr825-issue",
-      "rank": 1,
+      "rank": null,
       "text": "spec vectors: re-land client-credentials vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used).",
       "top": "grep@f1456691dd86029efaa4424d6080508b93d940df:spec/capabilities.md#L1"
     },
@@ -221,42 +221,42 @@
     {
       "class": "history-title",
       "id": "identity-model-pr823-title",
-      "rank": 1,
+      "rank": null,
       "text": "test(spec): token-exchange vectors on the shared HTTP vector runners",
       "top": "grep@f1456691dd86029efaa4424d6080508b93d940df:spec/capabilities.md#L1"
     },
     {
       "class": "history-issue",
       "id": "identity-model-pr823-issue",
-      "rank": 1,
+      "rank": null,
       "text": "spec vectors: re-land token-exchange vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used).",
       "top": "grep@f1456691dd86029efaa4424d6080508b93d940df:spec/capabilities.md#L1"
     },
     {
       "class": "history-title",
       "id": "identity-model-pr822-title",
-      "rank": 1,
+      "rank": null,
       "text": "test(spec): introspection vectors on the shared HTTP vector runners",
       "top": "grep@f1456691dd86029efaa4424d6080508b93d940df:spec/capabilities.md#L1"
     },
     {
       "class": "history-issue",
       "id": "identity-model-pr822-issue",
-      "rank": 2,
+      "rank": null,
       "text": "spec vectors: re-land introspection vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used).",
       "top": "grep@f1456691dd86029efaa4424d6080508b93d940df:CONTRIBUTING.md#L1"
     },
     {
       "class": "history-title",
       "id": "identity-model-pr821-title",
-      "rank": 1,
+      "rank": null,
       "text": "test(spec): discovery vectors on the shared HTTP vector runners",
       "top": "grep@f1456691dd86029efaa4424d6080508b93d940df:spec/capabilities.md#L1"
     },
     {
       "class": "history-issue",
       "id": "identity-model-pr821-issue",
-      "rank": 3,
+      "rank": null,
       "text": "spec vectors: re-land discovery vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used).",
       "top": "grep@f1456691dd86029efaa4424d6080508b93d940df:CONTRIBUTING.md#L1"
     },
@@ -270,7 +270,7 @@
     {
       "class": "history-title",
       "id": "identity-model-pr838-title",
-      "rank": 2,
+      "rank": null,
       "text": "test(infra): validate canned vector contracts and scalar form fields",
       "top": "grep@f1456691dd86029efaa4424d6080508b93d940df:spec/capabilities.md#L1"
     },
@@ -304,50 +304,36 @@
     },
     {
       "class": "history-title",
-      "id": "identity-model-pr817-title",
-      "rank": 4,
-      "text": "test(spec): one Rust runner for HTTP vectors, served by the node-oidc fixture",
-      "top": "grep@f1456691dd86029efaa4424d6080508b93d940df:.github/workflows/ci.yml#L1"
-    },
-    {
-      "class": "history-issue",
-      "id": "identity-model-pr817-issue",
-      "rank": 2,
-      "text": "spec vectors: generic Rust HTTP vector runner (revocation, userinfo, jwks)\n\nPart of identity-model#801. Needs identity-model#802.",
-      "top": "grep@f1456691dd86029efaa4424d6080508b93d940df:spec/capabilities.md#L1"
-    },
-    {
-      "class": "history-title",
       "id": "identity-model-pr816-title",
-      "rank": 4,
+      "rank": null,
       "text": "test(spec): one Go runner for HTTP vectors, served by the node-oidc fixture",
       "top": "grep@f1456691dd86029efaa4424d6080508b93d940df:spec/capabilities.md#L1"
     },
     {
       "class": "history-issue",
       "id": "identity-model-pr816-issue",
-      "rank": 2,
+      "rank": null,
       "text": "spec vectors: generic Go HTTP vector runner (revocation, userinfo, jwks)\n\nPart of identity-model#801. Needs identity-model#802.",
       "top": "grep@f1456691dd86029efaa4424d6080508b93d940df:spec/capabilities.md#L1"
     },
     {
       "class": "history-title",
       "id": "identity-model-pr827-title",
-      "rank": 1,
+      "rank": null,
       "text": "test(spec): dpop vectors on the shared runners",
       "top": "grep@f1456691dd86029efaa4424d6080508b93d940df:spec/capabilities.md#L1"
     },
     {
       "class": "history-title",
       "id": "identity-model-pr815-title",
-      "rank": 4,
+      "rank": null,
       "text": "test(spec): one Python runner for HTTP vectors, served by the node-oidc fixture",
       "top": "grep@f1456691dd86029efaa4424d6080508b93d940df:.github/workflows/ci.yml#L1"
     },
     {
       "class": "history-issue",
       "id": "identity-model-pr815-issue",
-      "rank": 2,
+      "rank": null,
       "text": "spec vectors: generic Python HTTP vector runner (revocation, userinfo, jwks)\n\nPart of identity-model#801. Needs identity-model#802.",
       "top": "grep@f1456691dd86029efaa4424d6080508b93d940df:spec/capabilities.md#L1"
     },

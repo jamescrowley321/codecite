@@ -2,7 +2,7 @@
 # `codecite-history-mine` (evals/src/codecite_evals/history.py). Frozen:
 # never edit by hand; remining writes a new version.
 #
-# version: 1
+# version: 2
 # commit: f1456691dd86029efaa4424d6080508b93d940df
 # mined: 2026-10-29
 
@@ -47,7 +47,7 @@ source = "https://github.com/jamescrowley321/identity-model/pull/910"
 id = "identity-model-pr842-title"
 class = "history-title"
 text = "fix(discovery): reject a document whose issuer is not the requested issuer"
-answers = ["docs/api/discovery.md", "docs/troubleshooting.md", "py/examples/docker-compose.test.yml", "py/src/py_identity_model/__init__.py", "py/src/py_identity_model/aio/discovery.py", "py/src/py_identity_model/core/discovery_logic.py", "py/src/py_identity_model/core/error_handlers.py", "py/src/py_identity_model/core/models.py", "py/src/py_identity_model/core/response_processors.py", "py/src/py_identity_model/exceptions.py", "py/src/py_identity_model/sync/discovery.py", "py/src/tests/integration/test_discovery.py", "py/src/tests/unit/test_cache_http_headers.py", "py/src/tests/unit/test_http_security_hardening.py", "spec/capabilities.md"]
+answers = ["docs/api/discovery.md", "docs/troubleshooting.md", "py/examples/docker-compose.test.yml", "py/src/py_identity_model/__init__.py", "py/src/py_identity_model/aio/discovery.py", "py/src/py_identity_model/core/discovery_logic.py", "py/src/py_identity_model/core/error_handlers.py", "py/src/py_identity_model/core/models.py", "py/src/py_identity_model/core/response_processors.py", "py/src/py_identity_model/exceptions.py", "py/src/py_identity_model/sync/discovery.py", "py/src/tests/integration/test_discovery.py", "py/src/tests/unit/test_cache_http_headers.py", "py/src/tests/unit/test_http_security_hardening.py"]
 source = "https://github.com/jamescrowley321/identity-model/pull/842"
 
 [[query]]
@@ -68,7 +68,7 @@ source = "https://github.com/jamescrowley321/identity-model/pull/898"
 id = "identity-model-pr897-title"
 class = "history-title"
 text = "docs(spec): replace the config spec, vectors and fixtures with one plain page"
-answers = ["docs/api/config.md", "spec/README.md", "spec/capabilities.md", "spec/config.md"]
+answers = ["docs/api/config.md", "spec/config.md"]
 source = "https://github.com/jamescrowley321/identity-model/pull/897"
 
 [[query]]
@@ -82,14 +82,14 @@ source = "https://github.com/jamescrowley321/identity-model/pull/893"
 id = "identity-model-pr892-title"
 class = "history-title"
 text = "refactor(py)!: make Config a plain typed value with defaults"
-answers = ["docs/api/config.md", "docs/api/index.md", "py/pyproject.toml", "py/src/py_identity_model/__init__.py", "py/src/py_identity_model/core/config.py", "py/src/tests/unit/test_config.py", "spec/capabilities.md"]
+answers = ["docs/api/config.md", "docs/api/index.md", "py/pyproject.toml", "py/src/py_identity_model/__init__.py", "py/src/py_identity_model/core/config.py", "py/src/tests/unit/test_config.py"]
 source = "https://github.com/jamescrowley321/identity-model/pull/892"
 
 [[query]]
 id = "identity-model-pr891-title"
 class = "history-title"
 text = "fix(discovery)!: require every Discovery §3 metadata field (jwks_uri unconditionally)"
-answers = ["docs/api/discovery.md", "docs/discovery_specification_compliance_assessment.md", "go/pkg/discovery/discovery.go", "go/pkg/discovery/discovery_test.go", "py/src/py_identity_model/core/discovery_policy.py", "py/src/py_identity_model/core/models.py", "py/src/py_identity_model/core/response_processors.py", "py/src/py_identity_model/core/validators.py", "py/src/tests/unit/test_aio_token_validation.py", "py/src/tests/unit/test_discovery_compliance.py", "py/src/tests/unit/test_discovery_policy.py", "py/src/tests/unit/test_sync_token_validation.py", "rust/src/discovery/client.rs", "rust/src/discovery/metadata.rs", "spec/README.md", "spec/capabilities.md", "spec/vectors/discovery.json"]
+answers = ["docs/api/discovery.md", "docs/discovery_specification_compliance_assessment.md", "go/pkg/discovery/discovery.go", "go/pkg/discovery/discovery_test.go", "py/src/py_identity_model/core/discovery_policy.py", "py/src/py_identity_model/core/models.py", "py/src/py_identity_model/core/response_processors.py", "py/src/py_identity_model/core/validators.py", "py/src/tests/unit/test_aio_token_validation.py", "py/src/tests/unit/test_discovery_compliance.py", "py/src/tests/unit/test_discovery_policy.py", "py/src/tests/unit/test_sync_token_validation.py", "rust/src/discovery/client.rs", "rust/src/discovery/metadata.rs", "spec/vectors/discovery.json"]
 source = "https://github.com/jamescrowley321/identity-model/pull/891"
 
 [[query]]
@@ -103,21 +103,21 @@ source = "https://github.com/jamescrowley321/identity-model/pull/887"
 id = "identity-model-pr884-title"
 class = "history-title"
 text = "fix(py): reject a UserInfo response with no sub claim"
-answers = ["py/packages/fastapi-identity-model/fastapi_identity_model/rp.py", "py/packages/fastapi-identity-model/tests/test_rp.py", "py/src/py_identity_model/__init__.py", "py/src/py_identity_model/aio/__init__.py", "py/src/py_identity_model/core/models.py", "py/src/py_identity_model/core/response_processors.py", "py/src/py_identity_model/sync/__init__.py", "py/src/tests/unit/test_aio_userinfo.py", "py/src/tests/unit/test_sync_userinfo.py", "spec/capabilities.md"]
+answers = ["py/packages/fastapi-identity-model/fastapi_identity_model/rp.py", "py/packages/fastapi-identity-model/tests/test_rp.py", "py/src/py_identity_model/__init__.py", "py/src/py_identity_model/aio/__init__.py", "py/src/py_identity_model/core/models.py", "py/src/py_identity_model/core/response_processors.py", "py/src/py_identity_model/sync/__init__.py", "py/src/tests/unit/test_aio_userinfo.py", "py/src/tests/unit/test_sync_userinfo.py"]
 source = "https://github.com/jamescrowley321/identity-model/pull/884"
 
 [[query]]
 id = "identity-model-pr882-title"
 class = "history-title"
 text = "fix(py): enforce expected_sub on application/jwt UserInfo responses"
-answers = ["conformance/app.py", "conformance/tests/test_html_escaping.py", "go/internal/conformance/userinfo_test.go", "py/src/py_identity_model/core/models.py", "py/src/py_identity_model/core/userinfo_logic.py", "py/src/tests/unit/test_aio_userinfo.py", "py/src/tests/unit/test_sync_userinfo.py", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/userinfo/README.md", "spec/vectors/userinfo.json"]
+answers = ["conformance/app.py", "conformance/tests/test_html_escaping.py", "go/internal/conformance/userinfo_test.go", "py/src/py_identity_model/core/models.py", "py/src/py_identity_model/core/userinfo_logic.py", "py/src/tests/unit/test_aio_userinfo.py", "py/src/tests/unit/test_sync_userinfo.py", "spec/test-fixtures/userinfo/README.md", "spec/vectors/userinfo.json"]
 source = "https://github.com/jamescrowley321/identity-model/pull/882"
 
 [[query]]
 id = "identity-model-pr878-title"
 class = "history-title"
 text = "fix(rust): drop azp enforcement from base JWT validation"
-answers = ["rust/README.md", "rust/src/jwt/claims.rs", "rust/src/jwt/mod.rs", "spec/capabilities.md"]
+answers = ["rust/README.md", "rust/src/jwt/claims.rs", "rust/src/jwt/mod.rs"]
 source = "https://github.com/jamescrowley321/identity-model/pull/878"
 
 [[query]]
@@ -159,35 +159,35 @@ source = "https://github.com/jamescrowley321/identity-model/pull/871"
 id = "identity-model-pr675-title"
 class = "history-title"
 text = "feat(rust): DPoP key pairs, proof generation, and proof verification (RFC 9449)"
-answers = ["rust/Cargo.toml", "rust/README.md", "rust/src/error.rs", "rust/src/http.rs", "rust/src/lib.rs", "spec/capabilities.md", "tools/mutation_security_native.py"]
+answers = ["rust/Cargo.toml", "rust/README.md", "rust/src/error.rs", "rust/src/http.rs", "rust/src/lib.rs", "tools/mutation_security_native.py"]
 source = "https://github.com/jamescrowley321/identity-model/pull/675"
 
 [[query]]
 id = "identity-model-pr826-title"
 class = "history-title"
 text = "test(spec): authorization-code vectors on the shared runners, plus pure-logic runners"
-answers = ["go/internal/conformance/httpvector_test.go", "go/pkg/token/doc.go", "go/pkg/token/pkce_test.go", "go/pkg/token/token_integration_test.go", "infra/README.md", "rust/src/token/mod.rs", "rust/src/token/pkce.rs", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/dpop/README.md", "spec/test-fixtures/dpop/dpop-nonce-error-response.json", "spec/test-fixtures/token/README.md", "spec/vectors/authorization-code.json", "spec/vectors/dpop.json"]
+answers = ["go/internal/conformance/httpvector_test.go", "go/pkg/token/doc.go", "go/pkg/token/pkce_test.go", "go/pkg/token/token_integration_test.go", "infra/README.md", "rust/src/token/mod.rs", "rust/src/token/pkce.rs", "spec/test-fixtures/dpop/README.md", "spec/test-fixtures/dpop/dpop-nonce-error-response.json", "spec/test-fixtures/token/README.md", "spec/vectors/authorization-code.json", "spec/vectors/dpop.json"]
 source = "https://github.com/jamescrowley321/identity-model/pull/826"
 
 [[query]]
 id = "identity-model-pr826-issue"
 class = "history-issue"
 text = "spec vectors: re-land authorization-code vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used)."
-answers = ["go/internal/conformance/httpvector_test.go", "go/pkg/token/doc.go", "go/pkg/token/pkce_test.go", "go/pkg/token/token_integration_test.go", "infra/README.md", "rust/src/token/mod.rs", "rust/src/token/pkce.rs", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/dpop/README.md", "spec/test-fixtures/dpop/dpop-nonce-error-response.json", "spec/test-fixtures/token/README.md", "spec/vectors/authorization-code.json", "spec/vectors/dpop.json"]
+answers = ["go/internal/conformance/httpvector_test.go", "go/pkg/token/doc.go", "go/pkg/token/pkce_test.go", "go/pkg/token/token_integration_test.go", "infra/README.md", "rust/src/token/mod.rs", "rust/src/token/pkce.rs", "spec/test-fixtures/dpop/README.md", "spec/test-fixtures/dpop/dpop-nonce-error-response.json", "spec/test-fixtures/token/README.md", "spec/vectors/authorization-code.json", "spec/vectors/dpop.json"]
 source = "https://github.com/jamescrowley321/identity-model/pull/826"
 
 [[query]]
 id = "identity-model-pr825-title"
 class = "history-title"
 text = "test(spec): client-credentials vectors on the shared HTTP vector runners"
-answers = ["go/internal/conformance/httpvector_test.go", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/token/README.md", "spec/vectors/client-credentials.json"]
+answers = ["go/internal/conformance/httpvector_test.go", "spec/test-fixtures/token/README.md", "spec/vectors/client-credentials.json"]
 source = "https://github.com/jamescrowley321/identity-model/pull/825"
 
 [[query]]
 id = "identity-model-pr825-issue"
 class = "history-issue"
 text = "spec vectors: re-land client-credentials vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used)."
-answers = ["go/internal/conformance/httpvector_test.go", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/token/README.md", "spec/vectors/client-credentials.json"]
+answers = ["go/internal/conformance/httpvector_test.go", "spec/test-fixtures/token/README.md", "spec/vectors/client-credentials.json"]
 source = "https://github.com/jamescrowley321/identity-model/pull/825"
 
 [[query]]
@@ -201,42 +201,42 @@ source = "https://github.com/jamescrowley321/identity-model/pull/735"
 id = "identity-model-pr823-title"
 class = "history-title"
 text = "test(spec): token-exchange vectors on the shared HTTP vector runners"
-answers = ["go/internal/conformance/httpvector_test.go", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/token-exchange/README.md", "spec/test-fixtures/token-exchange/exchange-error-invalid-request.json", "spec/vectors/token-exchange.json"]
+answers = ["go/internal/conformance/httpvector_test.go", "spec/test-fixtures/token-exchange/README.md", "spec/test-fixtures/token-exchange/exchange-error-invalid-request.json", "spec/vectors/token-exchange.json"]
 source = "https://github.com/jamescrowley321/identity-model/pull/823"
 
 [[query]]
 id = "identity-model-pr823-issue"
 class = "history-issue"
 text = "spec vectors: re-land token-exchange vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used)."
-answers = ["go/internal/conformance/httpvector_test.go", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/token-exchange/README.md", "spec/test-fixtures/token-exchange/exchange-error-invalid-request.json", "spec/vectors/token-exchange.json"]
+answers = ["go/internal/conformance/httpvector_test.go", "spec/test-fixtures/token-exchange/README.md", "spec/test-fixtures/token-exchange/exchange-error-invalid-request.json", "spec/vectors/token-exchange.json"]
 source = "https://github.com/jamescrowley321/identity-model/pull/823"
 
 [[query]]
 id = "identity-model-pr822-title"
 class = "history-title"
 text = "test(spec): introspection vectors on the shared HTTP vector runners"
-answers = ["go/internal/conformance/httpvector_test.go", "go/pkg/introspection/introspection_test.go", "rust/src/introspection/response.rs", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/introspection/README.md", "spec/test-fixtures/introspection/active-response.json", "spec/test-fixtures/introspection/discovery-with-introspection.json", "spec/vectors/introspection.json"]
+answers = ["go/internal/conformance/httpvector_test.go", "go/pkg/introspection/introspection_test.go", "rust/src/introspection/response.rs", "spec/test-fixtures/introspection/README.md", "spec/test-fixtures/introspection/active-response.json", "spec/test-fixtures/introspection/discovery-with-introspection.json", "spec/vectors/introspection.json"]
 source = "https://github.com/jamescrowley321/identity-model/pull/822"
 
 [[query]]
 id = "identity-model-pr822-issue"
 class = "history-issue"
 text = "spec vectors: re-land introspection vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used)."
-answers = ["go/internal/conformance/httpvector_test.go", "go/pkg/introspection/introspection_test.go", "rust/src/introspection/response.rs", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/introspection/README.md", "spec/test-fixtures/introspection/active-response.json", "spec/test-fixtures/introspection/discovery-with-introspection.json", "spec/vectors/introspection.json"]
+answers = ["go/internal/conformance/httpvector_test.go", "go/pkg/introspection/introspection_test.go", "rust/src/introspection/response.rs", "spec/test-fixtures/introspection/README.md", "spec/test-fixtures/introspection/active-response.json", "spec/test-fixtures/introspection/discovery-with-introspection.json", "spec/vectors/introspection.json"]
 source = "https://github.com/jamescrowley321/identity-model/pull/822"
 
 [[query]]
 id = "identity-model-pr821-title"
 class = "history-title"
 text = "test(spec): discovery vectors on the shared HTTP vector runners"
-answers = ["go/internal/conformance/httpvector_test.go", "go/pkg/discovery/discovery_test.go", "infra/node-oidc-provider/provider.js", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/discovery/issuer-mismatch.json", "spec/test-fixtures/discovery/missing-jwks-uri.json", "spec/test-fixtures/discovery/missing-multiple-fields.json", "spec/test-fixtures/discovery/valid.json", "spec/vectors/discovery.json"]
+answers = ["go/internal/conformance/httpvector_test.go", "go/pkg/discovery/discovery_test.go", "infra/node-oidc-provider/provider.js", "spec/test-fixtures/discovery/issuer-mismatch.json", "spec/test-fixtures/discovery/missing-jwks-uri.json", "spec/test-fixtures/discovery/missing-multiple-fields.json", "spec/test-fixtures/discovery/valid.json", "spec/vectors/discovery.json"]
 source = "https://github.com/jamescrowley321/identity-model/pull/821"
 
 [[query]]
 id = "identity-model-pr821-issue"
 class = "history-issue"
 text = "spec vectors: re-land discovery vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used)."
-answers = ["go/internal/conformance/httpvector_test.go", "go/pkg/discovery/discovery_test.go", "infra/node-oidc-provider/provider.js", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/discovery/issuer-mismatch.json", "spec/test-fixtures/discovery/missing-jwks-uri.json", "spec/test-fixtures/discovery/missing-multiple-fields.json", "spec/test-fixtures/discovery/valid.json", "spec/vectors/discovery.json"]
+answers = ["go/internal/conformance/httpvector_test.go", "go/pkg/discovery/discovery_test.go", "infra/node-oidc-provider/provider.js", "spec/test-fixtures/discovery/issuer-mismatch.json", "spec/test-fixtures/discovery/missing-jwks-uri.json", "spec/test-fixtures/discovery/missing-multiple-fields.json", "spec/test-fixtures/discovery/valid.json", "spec/vectors/discovery.json"]
 source = "https://github.com/jamescrowley321/identity-model/pull/821"
 
 [[query]]
@@ -250,7 +250,7 @@ source = "https://github.com/jamescrowley321/identity-model/pull/832"
 id = "identity-model-pr838-title"
 class = "history-title"
 text = "test(infra): validate canned vector contracts and scalar form fields"
-answers = ["infra/README.md", "infra/node-oidc-provider/Dockerfile", "infra/node-oidc-provider/package.json", "spec/README.md"]
+answers = ["infra/README.md", "infra/node-oidc-provider/Dockerfile", "infra/node-oidc-provider/package.json"]
 source = "https://github.com/jamescrowley321/identity-model/pull/838"
 
 [[query]]
@@ -282,52 +282,38 @@ answers = ["py/pyproject.toml"]
 source = "https://github.com/jamescrowley321/identity-model/pull/830"
 
 [[query]]
-id = "identity-model-pr817-title"
-class = "history-title"
-text = "test(spec): one Rust runner for HTTP vectors, served by the node-oidc fixture"
-answers = ["spec/README.md"]
-source = "https://github.com/jamescrowley321/identity-model/pull/817"
-
-[[query]]
-id = "identity-model-pr817-issue"
-class = "history-issue"
-text = "spec vectors: generic Rust HTTP vector runner (revocation, userinfo, jwks)\n\nPart of identity-model#801. Needs identity-model#802."
-answers = ["spec/README.md"]
-source = "https://github.com/jamescrowley321/identity-model/pull/817"
-
-[[query]]
 id = "identity-model-pr816-title"
 class = "history-title"
 text = "test(spec): one Go runner for HTTP vectors, served by the node-oidc fixture"
-answers = ["go/internal/conformance/httpvector_test.go", "go/internal/conformance/jwks_test.go", "go/internal/conformance/revocation_test.go", "go/internal/conformance/userinfo_test.go", "spec/README.md"]
+answers = ["go/internal/conformance/httpvector_test.go", "go/internal/conformance/jwks_test.go", "go/internal/conformance/revocation_test.go", "go/internal/conformance/userinfo_test.go"]
 source = "https://github.com/jamescrowley321/identity-model/pull/816"
 
 [[query]]
 id = "identity-model-pr816-issue"
 class = "history-issue"
 text = "spec vectors: generic Go HTTP vector runner (revocation, userinfo, jwks)\n\nPart of identity-model#801. Needs identity-model#802."
-answers = ["go/internal/conformance/httpvector_test.go", "go/internal/conformance/jwks_test.go", "go/internal/conformance/revocation_test.go", "go/internal/conformance/userinfo_test.go", "spec/README.md"]
+answers = ["go/internal/conformance/httpvector_test.go", "go/internal/conformance/jwks_test.go", "go/internal/conformance/revocation_test.go", "go/internal/conformance/userinfo_test.go"]
 source = "https://github.com/jamescrowley321/identity-model/pull/816"
 
 [[query]]
 id = "identity-model-pr827-title"
 class = "history-title"
 text = "test(spec): dpop vectors on the shared runners"
-answers = ["go/internal/conformance/httpvector_test.go", "go/pkg/dpop/dpop_test.go", "go/pkg/dpop/verify.go", "infra/README.md", "spec/README.md", "spec/capabilities.md", "spec/test-fixtures/dpop/README.md", "spec/test-fixtures/dpop/dpop-nonce-error-response.json", "spec/vectors/dpop.json"]
+answers = ["go/internal/conformance/httpvector_test.go", "go/pkg/dpop/dpop_test.go", "go/pkg/dpop/verify.go", "infra/README.md", "spec/test-fixtures/dpop/README.md", "spec/test-fixtures/dpop/dpop-nonce-error-response.json", "spec/vectors/dpop.json"]
 source = "https://github.com/jamescrowley321/identity-model/pull/827"
 
 [[query]]
 id = "identity-model-pr815-title"
 class = "history-title"
 text = "test(spec): one Python runner for HTTP vectors, served by the node-oidc fixture"
-answers = ["spec/README.md", "spec/vectors/jwks.json"]
+answers = ["spec/vectors/jwks.json"]
 source = "https://github.com/jamescrowley321/identity-model/pull/815"
 
 [[query]]
 id = "identity-model-pr815-issue"
 class = "history-issue"
 text = "spec vectors: generic Python HTTP vector runner (revocation, userinfo, jwks)\n\nPart of identity-model#801. Needs identity-model#802."
-answers = ["spec/README.md", "spec/vectors/jwks.json"]
+answers = ["spec/vectors/jwks.json"]
 source = "https://github.com/jamescrowley321/identity-model/pull/815"
 
 [[query]]

@@ -1,31 +1,31 @@
 {
   "all": {
-    "mrr": 0.2848238482384824,
+    "mrr": 0.30033875338753385,
     "queries": 41,
     "recall_at_1": 0.17073170731707318,
-    "recall_at_10": 0.4878048780487805
+    "recall_at_10": 0.5853658536585366
   },
   "classes": {
     "history-issue": {
-      "mrr": 0.34259259259259256,
+      "mrr": 0.35185185185185186,
       "queries": 12,
       "recall_at_1": 0.25,
-      "recall_at_10": 0.5
+      "recall_at_10": 0.5833333333333334
     },
     "history-title": {
-      "mrr": 0.26091954022988506,
+      "mrr": 0.2790229885057471,
       "queries": 29,
       "recall_at_1": 0.13793103448275862,
-      "recall_at_10": 0.4827586206896552
+      "recall_at_10": 0.5862068965517241
     }
   },
   "engine": "codecite",
   "groups": {
     "history": {
-      "mrr": 0.2848238482384824,
+      "mrr": 0.30033875338753385,
       "queries": 41,
       "recall_at_1": 0.17073170731707318,
-      "recall_at_10": 0.4878048780487805
+      "recall_at_10": 0.5853658536585366
     }
   },
   "outcomes": [
@@ -179,7 +179,7 @@
     {
       "class": "history-title",
       "id": "identity-stack-pr449-title",
-      "rank": 5,
+      "rank": 3,
       "text": "fix(fga): scope target resolution to the caller's tenant",
       "top": "identity-stack@27e8c8766b685f6f865324b088c6fffeffd391be:backend/app/routers/documents.py#L276-L342"
     },
@@ -221,21 +221,21 @@
     {
       "class": "history-title",
       "id": "identity-stack-pr422-title",
-      "rank": null,
+      "rank": 8,
       "text": "feat(infra): put Ory root on Terraform Cloud remote state (TFCENV-4)",
       "top": "identity-stack@27e8c8766b685f6f865324b088c6fffeffd391be:infra/ory/README.md#L81-L96"
     },
     {
       "class": "history-issue",
       "id": "identity-stack-pr422-issue",
-      "rank": null,
+      "rank": 9,
       "text": "[TFCENV-4] Ory root: TFC backend + migrate local state to dev\n\n**Labels:** terraform, phase-6 · **Epic:** TFC-ENV · **Depends on:** none (pattern mirrors TFCENV-1)",
       "top": "identity-stack@27e8c8766b685f6f865324b088c6fffeffd391be:infra/ory/README.md#L81-L96"
     },
     {
       "class": "history-title",
       "id": "identity-stack-pr421-title",
-      "rank": null,
+      "rank": 6,
       "text": "feat(infra): tag-based TFC workspace selection for Descope root (TFCENV-1)",
       "top": "identity-stack@27e8c8766b685f6f865324b088c6fffeffd391be:infra/ory/README.md#L98-L111"
     },
@@ -263,7 +263,7 @@
     {
       "class": "history-title",
       "id": "identity-stack-pr431-title",
-      "rank": null,
+      "rank": 10,
       "text": "fix(infra): track the Descope root's Terraform lock file",
       "top": "identity-stack@27e8c8766b685f6f865324b088c6fffeffd391be:infra/ory/.gitignore#L1-L20"
     },

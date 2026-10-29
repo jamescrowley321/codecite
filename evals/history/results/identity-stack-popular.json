@@ -1,0 +1,320 @@
+{
+  "all": {
+    "mrr": 0.2693283004258613,
+    "queries": 41,
+    "recall_at_1": 0.21951219512195122,
+    "recall_at_10": 0.5609756097560976
+  },
+  "classes": {
+    "history-issue": {
+      "mrr": 0.3544973544973544,
+      "queries": 12,
+      "recall_at_1": 0.3333333333333333,
+      "recall_at_10": 0.5
+    },
+    "history-title": {
+      "mrr": 0.23408593322386426,
+      "queries": 29,
+      "recall_at_1": 0.1724137931034483,
+      "recall_at_10": 0.5862068965517241
+    }
+  },
+  "engine": "codecite",
+  "groups": {
+    "history": {
+      "mrr": 0.2693283004258613,
+      "queries": 41,
+      "recall_at_1": 0.21951219512195122,
+      "recall_at_10": 0.5609756097560976
+    }
+  },
+  "outcomes": [
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr504-title",
+      "rank": null,
+      "text": "fix(deps): clear npm audit high/critical advisories",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr486-title",
+      "rank": 6,
+      "text": "fix: store Document.created_at as aware UTC and install CI deps from uv.lock",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr468-title",
+      "rank": 6,
+      "text": "ci(claude): scope the review workflow's tool grant and pin the lens plugin",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr465-title",
+      "rank": null,
+      "text": "fix(infra): stop the FGA schema from planning a change on every run",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr464-title",
+      "rank": 6,
+      "text": "chore: ignore the ralph loop prompt and worktree dir",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr463-title",
+      "rank": 8,
+      "text": "fix(infra): make the expired-token fixture an input, not a local-file round trip",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr410-title",
+      "rank": 7,
+      "text": "fix(infra): repair descope provider drift + mint TF-owned CI management key",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr461-title",
+      "rank": 7,
+      "text": "fix(e2e): delete leaked test objects through the batch endpoints",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-stack-pr461-issue",
+      "rank": 7,
+      "text": "test(e2e): RBAC sweep counts rate-limited deletes as successes, so debris never drains\n\nFound while working #455. This is why the leaked-RBAC debris keeps coming back after being \"swept\".",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr459-title",
+      "rank": 1,
+      "text": "test(e2e): assert the access-key session's missing canonical identity",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-stack-pr459-issue",
+      "rank": 1,
+      "text": "test(e2e): test_role_created_via_api_is_not_yet_visible_in_ui pins behaviour #392 was meant to change\n\n`backend/tests/e2e/test_identity_repository_ui.py:70`",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr456-title",
+      "rank": null,
+      "text": "test(rate-limit): gate the fastapi<0.137 cap so a bump cannot silently disable it",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr457-title",
+      "rank": 6,
+      "text": "fix(ci): exclude Dependabot from the credentialed jobs",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr453-title",
+      "rank": 1,
+      "text": "test(e2e): sweep leaked access keys and RBAC objects, and stop hiding failures",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-stack-pr453-issue",
+      "rank": 1,
+      "text": "test(e2e): cleanup leaks an owner/admin access key when the delete fails\n\nFound in a fresh-context review of #425 (test-integrity lens). Adjacent to the user-leak fix in #433, but a different object.",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr454-title",
+      "rank": 1,
+      "text": "test(e2e): assert exact statuses instead of accepting whole classes of failure",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-stack-pr454-issue",
+      "rank": 1,
+      "text": "test(e2e): 39 permissive status assertions let a wholly-denied admin surface pass\n\nFound in a fresh-context review of #425 (test-integrity lens). Pre-existing; #425 converts the FGA-conditional `pytest.skip` guards into failures, but these assertions are a separate hollowness.",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr452-title",
+      "rank": 1,
+      "text": "test(e2e): make the four remaining redirect-to-login guards real",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-stack-pr452-issue",
+      "rank": 1,
+      "text": "test(e2e): four not_to_have_url(\"**/login**\") assertions can never fail\n\nFound in a fresh-context review of #425.",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr450-title",
+      "rank": null,
+      "text": "fix(keys): refuse unheld roles and unbounded expiry on access keys",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-stack-pr450-issue",
+      "rank": null,
+      "text": "security: an admin can mint a never-expiring access key carrying roles they do not hold\n\nFound in a fresh-context review of #425 (auth/authz lens). Not caused by that PR — pre-existing, and worth fixing now that bare-project-id session tokens authenticate (#425 makes access-key tokens a live credential path).",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr449-title",
+      "rank": null,
+      "text": "fix(fga): scope target resolution to the caller's tenant",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-stack-pr449-issue",
+      "rank": null,
+      "text": "security: /api/fga/* resolves users project-wide, leaking cross-tenant existence and internal ids\n\nFound in a fresh-context review of #425 (auth/authz lens). Pre-existing.",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr451-title",
+      "rank": null,
+      "text": "refactor(idp-links): make the tenant guard fail closed",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-stack-pr451-issue",
+      "rank": null,
+      "text": "idp_links: _verify_user_in_tenant is fail-open by construction\n\nFound in a fresh-context review of #425 (auth/authz lens). No live bug — all three call sites check the result.",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr423-title",
+      "rank": 9,
+      "text": "feat(infra): non-empty guardrails for Descope project id + mgmt key (TFCENV-3)",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-stack-pr423-issue",
+      "rank": 9,
+      "text": "[TFCENV-3] Declare `descope_project_id` + destroy/empty-secret guardrails\n\n**Labels:** terraform, phase-6, security · **Epic:** TFC-ENV · **Depends on:** none",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr422-title",
+      "rank": null,
+      "text": "feat(infra): put Ory root on Terraform Cloud remote state (TFCENV-4)",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-stack-pr422-issue",
+      "rank": null,
+      "text": "[TFCENV-4] Ory root: TFC backend + migrate local state to dev\n\n**Labels:** terraform, phase-6 · **Epic:** TFC-ENV · **Depends on:** none (pattern mirrors TFCENV-1)",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr421-title",
+      "rank": null,
+      "text": "feat(infra): tag-based TFC workspace selection for Descope root (TFCENV-1)",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-stack-pr421-issue",
+      "rank": null,
+      "text": "[TFCENV-1] Descope root: tag-based TFC workspaces (no rename)\n\n**Labels:** terraform, phase-6 · **Epic:** TFC-ENV · **Depends on:** none",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr435-title",
+      "rank": null,
+      "text": "fix(infra): make access_key.tf valid against the published Descope provider",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr432-title",
+      "rank": 10,
+      "text": "fix(infra): fail loudly instead of blanking CI secrets on an unset variable",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr431-title",
+      "rank": 6,
+      "text": "fix(infra): track the Descope root's Terraform lock file",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr394-title",
+      "rank": null,
+      "text": "feat(backend): provider-aware logout with Ory RP-initiated path (ORY-5.1, FR-17)",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr433-title",
+      "rank": 6,
+      "text": "fix(e2e): stop leaking Descope users on every run",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr396-title",
+      "rank": 6,
+      "text": "test(ci): make a missing credential fail both suites instead of skipping",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr444-title",
+      "rank": null,
+      "text": "chore(deps): one frontend dependency bump instead of three",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr425-title",
+      "rank": 1,
+      "text": "fix: repair the E2E gate, and the four Descope calls it was hiding",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-stack-pr379-title",
+      "rank": null,
+      "text": "infra(ory): workspace API key rotation script (#375)",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-stack-pr379-issue",
+      "rank": null,
+      "text": "security: rotate ORY_WORKSPACE_API_KEY (generated in-session during Epic 1 IaC)\n\nThe Ory Network workspace API key stored in the `ORY_WORKSPACE_API_KEY` GitHub secret was generated during an assistant session while bootstrapping the Epic 1 Ory IaC (PR #370). Per that PR's notes it must be **rotated**.",
+      "top": "popular@0:backend/tests/e2e/test_identity_repository_ui.py#L1"
+    }
+  ]
+}

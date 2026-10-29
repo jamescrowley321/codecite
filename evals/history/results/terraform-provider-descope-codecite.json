@@ -1,9 +1,9 @@
 {
   "all": {
-    "mrr": 0.5118279569892473,
+    "mrr": 0.5189452124935996,
     "queries": 31,
     "recall_at_1": 0.3548387096774194,
-    "recall_at_10": 0.8064516129032258
+    "recall_at_10": 0.8387096774193549
   },
   "classes": {
     "history-issue": {
@@ -13,19 +13,19 @@
       "recall_at_10": 1.0
     },
     "history-title": {
-      "mrr": 0.4955555555555556,
+      "mrr": 0.5029100529100529,
       "queries": 30,
       "recall_at_1": 0.3333333333333333,
-      "recall_at_10": 0.8
+      "recall_at_10": 0.8333333333333334
     }
   },
   "engine": "codecite",
   "groups": {
     "history": {
-      "mrr": 0.5118279569892473,
+      "mrr": 0.5189452124935996,
       "queries": 31,
       "recall_at_1": 0.3548387096774194,
-      "recall_at_10": 0.8064516129032258
+      "recall_at_10": 0.8387096774193549
     }
   },
   "outcomes": [
@@ -39,7 +39,7 @@
     {
       "class": "history-title",
       "id": "terraform-provider-descope-pr227-title",
-      "rank": null,
+      "rank": 9,
       "text": "build(deps): consolidate dependabot updates (github-actions group, go-uuid 1.0.4)",
       "top": "terraform-provider-descope@10e672b5be423bef1e888bd999a8f38ec51b7a44:.github/dependabot.yml#L1-L24"
     },
@@ -81,14 +81,14 @@
     {
       "class": "history-title",
       "id": "terraform-provider-descope-pr203-title",
-      "rank": 8,
+      "rank": 6,
       "text": "test(references): explicit return after t.Fatal nil-guards (staticcheck SA5011)",
       "top": "terraform-provider-descope@10e672b5be423bef1e888bd999a8f38ec51b7a44:internal/models/helpers/model.go#L37-L41"
     },
     {
       "class": "history-title",
       "id": "terraform-provider-descope-pr196-title",
-      "rank": 5,
+      "rank": 4,
       "text": "fix: bump Go toolchain to 1.26.6 to patch stdlib vulnerabilities",
       "top": "terraform-provider-descope@10e672b5be423bef1e888bd999a8f38ec51b7a44:release-please-config.json#L2-L23"
     },
@@ -130,7 +130,7 @@
     {
       "class": "history-title",
       "id": "terraform-provider-descope-pr171-title",
-      "rank": 8,
+      "rank": 7,
       "text": "chore(deps): consolidate dependency updates (go-sdk v1.26 + GitHub Actions)",
       "top": "terraform-provider-descope@10e672b5be423bef1e888bd999a8f38ec51b7a44:docs/testing.md#L317-L324"
     },

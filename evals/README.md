@@ -23,10 +23,12 @@ labels, so nobody can tune them toward one corpus.
 
 - **Mined** by `uv run codecite-history-mine OWNER/REPO --clone DIR` into
   `history/<repo>/queries.toml` and `manifest.toml`. Up to 40 of the newest
-  merged PRs by a person (no bots) that modified 1–20 files are sampled. The
-  repository is pinned at the oldest one's parent, so every answer file is in
-  the index. Lockfiles and changelogs are no answer, and a file that didn't
-  exist at the pinned commit is dropped. `history-title` queries are a PR's
+  merged PRs by a person (no bots, no release PRs) that modified 1–20 files
+  are sampled. The repository is pinned at the oldest one's parent, so every
+  answer file is in the index. Lockfiles and changelogs are no answer, nor is
+  a hub file that at least 3 and more than a quarter of the sampled PRs
+  changed (a design doc, a manifest), since naming it would beat any search.
+  A file that didn't exist at the pinned commit is dropped. `history-title` queries are a PR's
   title. `history-issue` queries are its closing issue's title and first
   paragraph, cut to 400 characters.
 - **Frozen.** `codecite-eval-frozen` refuses a change to a mined file unless
@@ -35,7 +37,13 @@ labels, so nobody can tune them toward one corpus.
 - **Scored** at file level: a result counts when it is in an answer file.
   `codecite-bench --grep <clone> --commit <sha>` ranks the same queries with
   `git grep` instead: files by how many of the query's words they hold, then
-  by matching lines. That is an agent with grep and nothing else.
+  by matching lines. That is an agent with grep and nothing else. For
+  codecite, a file-labelled query ranks distinct files (each file's first
+  result from a 50-deep search), so both engines are judged on 10 files.
+  `--popular` ranks without searching at all: the files the other PRs changed
+  most. It is the floor both engines must beat. The scorecard pools each
+  repository's classes in an `all` row, which is the one to judge by, since
+  some classes hold only a few queries.
 - **Run** with `history/run.sh [repo ...]`, after `cargo build --release
   --locked -p codecite -p codecite-bench`. It writes each engine's report and
   `history/results/scorecard.md`.
