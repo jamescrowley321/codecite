@@ -121,7 +121,9 @@ A query matches identifiers however they are written: `validate token` finds
 `validateToken`, `validate_token` and `validate-token`. A chunk whose symbol is
 exactly the query comes first; the rest rank by BM25, weighting symbol names
 over paths over body text. Spec results come from each document's current
-version.
+version; one whose document also has an older version pinned ends its line with
+`· older version pinned`, and its JSON lists them in `older_versions` (see
+[Diff a spec's versions](#diff-a-specs-versions)).
 
 Specs and code are ranked separately and then merged, so code that repeats a
 term doesn't bury the spec section that defines it. When the query names a
@@ -210,6 +212,10 @@ It accepts:
 | Written forms, with the manifest's aliases | `RFC 9449 §4.3`, `RFC9449 Section 4.3`, `OIDC Core §3.1.3.7 step 13`, `Core 3.1.3.7(13)` |
 | A bare section, when only one current document has it | `§3.1.3.7 step 11` |
 | A spec URL with its anchor | `https://www.rfc-editor.org/rfc/rfc9449.html#section-4.3` |
+
+Text from the current version of a document with an older version pinned ends
+with a line naming it, `older version pinned: <pinned version> (codecite diff
+shows what changed)`; its JSON lists them in `older_versions`.
 
 A citation that doesn't resolve to exactly one span is an error that lists the
 candidates, never a guess:
@@ -348,6 +354,65 @@ statements' text is capped at 64 KiB; past it the rest is left out and
 citation is an error, and a topic the document has no section on is
 `no_section_on_topic`.
 
+## Diff a spec's versions
+
+A corpus can pin several versions of one document, such as Back-Channel Logout
+1.0 before and after errata set 1. Code and models may follow either. `diff`
+lists the rules that differ between two versions: by default the current one
+against the older one pinned last.
+
+```sh
+codecite diff identity openid-connect-backchannel-1_0
+codecite diff identity "Back-Channel Logout" --section 2.4 --json
+codecite diff identity "OIDC Core" --section 3.1.3.7 --from sha256:c9a06af238e2
+```
+
+The document is a name or an alias; `--section` takes a number (`2.4`, or
+`§2.4`); `--from` and `--to` take a version's hash, with or without `sha256:`, or a
+pinned version as `older_versions` and errors list it
+(`openid-connect-backchannel-1_0@sha256:02343424f9e5`). With `--to` alone,
+`--from` is the version pinned before it.
+
+```text
+$ codecite diff identity "Back-Channel Logout"
+openid-connect-backchannel-1_0@sha256:02343424f9e5 → openid-connect-backchannel-1_0@sha256:3b5c933d5269
+2 normative changes · quote · indexed 2026-10-22T17:11:46Z
+
+1. added · section 2.4 · REQUIRED
+   from openid-connect-backchannel-1_0@sha256:02343424f9e5#section-2.4
+   to   openid-connect-backchannel-1_0@sha256:3b5c933d5269#section-2.4
+   + exp
+   + REQUIRED. Expiration time, as specified in Section 2 of [OpenID.Core] (…, December 2023.).
+
+2. changed · section 2.6 · no keyword
+   from openid-connect-backchannel-1_0@sha256:02343424f9e5#section-2.6/step-4
+   to   openid-connect-backchannel-1_0@sha256:3b5c933d5269#section-2.6/step-4
+   - 4. Validate the iss, aud, and iat Claims in the same way they are validated in ID Tokens.
+   + 4. Validate the iss, aud, iat, and exp Claims in the same way they are validated in ID Tokens.
+
+6 reworded, with no normative change:
+  openid-connect-backchannel-1_0@sha256:3b5c933d5269#section-2.4 · iss
+  …
+```
+
+A statement is normative when it holds a requirement keyword or is a numbered
+step. Each change is `added`, `removed`, `changed`, or `strength_changed` (its
+keywords differ: OPTIONAL → REQUIRED, SHOULD → MUST), with the statement's
+citation in each version (or, for one added or removed, the section it is
+missing from), its text and its keywords. Statements whose wording changed but
+not their content, such as a reference's date or a spelling fix, are listed
+apart as `reworded`; prose without a keyword is left out. At most 50 of each
+are listed, with their texts held to 64 KiB in all and 4 KiB each; `total` and
+`reworded_total` count them all, `truncated` says a list was cut, and a cut
+text sets its change's `text_truncated`: `read` its citation for the whole
+statement. A document with no older version,
+or a version or section it doesn't have, is an error with candidates.
+
+`--json` prints `{"document", "from", "to", "section", "changes", "reworded",
+"total", "reworded_total", "truncated", "license_class", "indexed_at",
+"instruction"}`, the
+`diff` tool's JSON.
+
 ## Find a definition
 
 `def` prints where a symbol is defined, from the definitions tree-sitter found
@@ -406,14 +471,14 @@ claude mcp add codecite -- codecite mcp
 ```
 
 The server's tools, `corpora`, `search`, `grep`, `definition`, `read` and
-`requirements`, return the same JSON as the CLI commands `corpora`, `search`,
-`grep`, `def`, `read` and `requirements` print (with `--json` for all but
-`corpora`), byte for byte, so anything an agent sees can be reproduced from a
-terminal. `requirements` takes `citation`, or `topic` and `document`; any
-other mix is an `invalid_arguments` tool error. The server's instructions tell
-the agent to call it on the governing section before implementing or fixing
-anything a spec governs. `search`, `grep`, `definition`, `read` and
-`requirements` take an optional `corpus`; left
+`requirements` and `diff`, return the same JSON as the CLI commands
+`corpora`, `search`, `grep`, `def`, `read`, `requirements` and `diff` print
+(with `--json` for all but `corpora`), byte for byte, so anything an agent
+sees can be reproduced from a terminal. `requirements` takes `citation`, or
+`topic` and `document`; any other mix is an `invalid_arguments` tool error.
+The server's instructions tell the agent to call it on the governing section
+before implementing or fixing anything a spec governs. `search`, `grep`,
+`definition`, `read`, `requirements` and `diff` take an optional `corpus`; left
 out or empty, it is the only corpus in the data directory. `limit` is at most
 50 for `search` and `grep`, and `max_lines` at most 500, for the tools and the
 CLI alike. Text is also
@@ -431,7 +496,11 @@ citation that isn't in the corpus or a symbol nothing defines is a tool error wh
 `{"error": {"kind", "message", "candidates"}}`; each tool's output schema
 admits both its result and this error. A `read` of a spec, whose
 license class is `quote`, carries an `instruction` to quote the text exactly
-with its citation.
+with its citation. A spec `search` or `read` result from the current version of
+a document with older pinned versions lists them in `older_versions`, and the
+server's instructions tell the agent to `diff` the document to see which rules
+changed. `diff` takes `document`, `section?`, `from?`, `to?`, `corpus?` and
+`allow_stale`.
 
 The `search` tool's description and the server's instructions tell agents to
 search specs in the spec's own terms, as above.

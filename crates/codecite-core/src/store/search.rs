@@ -2,6 +2,8 @@
 //! document is for and lifted for a symbol a query word names, with each
 //! result cited.
 
+use std::collections::HashMap;
+
 use rusqlite::functions::FunctionFlags;
 use rusqlite::{Connection, OptionalExtension, params};
 use schemars::JsonSchema;
@@ -123,6 +125,10 @@ pub struct SearchResult {
     /// Whether the snippet stops before the end of the chunk, at the line
     /// limit or the byte budget. The citation still names the whole chunk.
     pub snippet_truncated: bool,
+    /// For a spec result whose document has older pinned versions, their
+    /// pinned citations: `diff` shows how they differ.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub older_versions: Option<Vec<String>>,
 }
 
 /// When a corpus was indexed, and whether that is too long ago.
@@ -226,10 +232,11 @@ impl Store {
             Some(Scope::Spec) => Vec::new(),
             _ => ranked("chunk_fts", &fts, false)?,
         };
-        let spec = match query.only {
+        let mut spec = match query.only {
             Some(Scope::Code) => Vec::new(),
             _ => ranked("spec_fts", &spec_fts_query(query.text).unwrap_or(fts), true)?,
         };
+        self.add_older_versions(&mut spec)?;
         Ok(blend(code, spec, limit, named, |r| r.score))
     }
 
@@ -309,10 +316,31 @@ impl Store {
                     dirty: (!is_spec).then_some(dirty),
                     snippet,
                     snippet_truncated,
+                    older_versions: None,
                 })
             },
         )?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Sets each spec result's `older_versions`. Search reads only current
+    /// versions, so each result's document is current.
+    fn add_older_versions(&self, results: &mut [SearchResult]) -> Result<()> {
+        let mut by_name: HashMap<String, Option<Vec<String>>> = HashMap::new();
+        for r in results {
+            let Some((name, _)) = r.citation.split_once('@') else {
+                continue;
+            };
+            if !by_name.contains_key(name) {
+                let older = match self.current_version(name)? {
+                    Some(current) => self.older_versions(name, current.id)?,
+                    None => None,
+                };
+                by_name.insert(name.to_owned(), older);
+            }
+            r.older_versions.clone_from(&by_name[name]);
+        }
+        Ok(())
     }
 
     /// The [`query_names`] that at least one and at most
@@ -803,6 +831,23 @@ mod tests {
     }
 
     #[test]
+    fn a_spec_result_names_its_documents_older_versions() {
+        let f = fixture();
+        let results = f.search("jti unique");
+        let spec = results.iter().find(|r| r.role == "spec").unwrap();
+        assert_eq!(
+            spec.older_versions.as_deref(),
+            Some(&["rfc9449@sha256:aaaaaaaaaaaa".to_owned()][..])
+        );
+        assert!(
+            results
+                .iter()
+                .filter(|r| r.role != "spec")
+                .all(|r| r.older_versions.is_none())
+        );
+    }
+
+    #[test]
     fn an_exact_symbol_name_comes_first() {
         let f = fixture();
         let results = f.search("validate");
@@ -912,7 +957,8 @@ mod tests {
         assert!(code["score"].is_f64());
         assert_eq!(code["role"], "source");
         let spec = serde_json::to_value(&f.search("jti")[0]).unwrap();
-        // A `Value`'s keys are sorted. A spec result has no symbol or dirty.
+        // A `Value`'s keys are sorted. A spec result has no symbol or dirty;
+        // this one's document has an older version pinned.
         let keys: Vec<&String> = spec.as_object().unwrap().keys().collect();
         assert_eq!(
             keys,
@@ -921,6 +967,7 @@ mod tests {
                 "indexed_at",
                 "kind",
                 "license_class",
+                "older_versions",
                 "role",
                 "score",
                 "snippet",

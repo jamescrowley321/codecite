@@ -28,12 +28,12 @@ pub use role::Role;
 mod store;
 pub use store::{
     ChunkRecord, CiteOptions, CiteResult, Corpora, CorpusInfo, DEFAULT_MAX_AGE_DAYS,
-    DEFAULT_MAX_LINES, DEFAULT_SEARCH_LIMIT, Definition, Definitions, DocumentRecord, Finding,
-    Freshness, GrepMatch, GrepQuery, GrepResults, MAX_READ_BYTES, MAX_READ_LINES, MAX_SEARCH_LIMIT,
-    MAX_SNIPPET_BYTES, MAX_SNIPPET_LINES, QUOTE_INSTRUCTION, QUOTE_TRUNCATED_INSTRUCTION,
-    ReadOptions, ReadResult, Requirement, RequirementSection, Requirements, RequirementsOptions,
-    SCHEMA_VERSION, Scope, SearchQuery, SearchResult, SearchResults, SourceRecord, Store,
-    SymbolRecord, corpora, is_corpus_name,
+    DEFAULT_MAX_LINES, DEFAULT_SEARCH_LIMIT, Definition, Definitions, DiffOptions, DiffResult,
+    DocumentRecord, Finding, Freshness, GrepMatch, GrepQuery, GrepResults, MAX_READ_BYTES,
+    MAX_READ_LINES, MAX_SEARCH_LIMIT, MAX_SNIPPET_BYTES, MAX_SNIPPET_LINES, QUOTE_INSTRUCTION,
+    QUOTE_TRUNCATED_INSTRUCTION, ReadOptions, ReadResult, Requirement, RequirementSection,
+    Requirements, RequirementsOptions, SCHEMA_VERSION, Scope, SearchQuery, SearchResult,
+    SearchResults, SourceRecord, Store, SymbolRecord, VersionChange, corpora, is_corpus_name,
 };
 
 mod terms;
