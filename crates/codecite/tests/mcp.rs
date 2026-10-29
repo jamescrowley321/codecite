@@ -9,16 +9,17 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 use codecite_core::{
     ChunkRecord, DocumentRecord, Keyword, MAX_READ_BYTES, MAX_SEARCH_LIMIT, MAX_SNIPPET_BYTES,
-    SourceRecord, Store, SymbolRecord,
+    RuleScope, SourceRecord, Store, SymbolRecord,
 };
 use serde_json::{Value, json};
 
 const LIB: &str = "pub fn validate(token: &str) -> bool {\n    !token.is_empty()\n}\n";
 const SPEC: &str = "4.3.  Checking DPoP Proofs\n\nThe server MUST validate the proof.";
 
-/// A data home holding one corpus, `demo`, with a code source `app` and a
-/// spec, `rfc9449`, at two versions: the older one says SHOULD where the
-/// current one says MUST.
+/// A data home holding one corpus, `demo`, with a code source `app`, a
+/// spec, `rfc9449`, at two versions (the older one says SHOULD where the
+/// current one says MUST), and guidance, `house-rules`, whose one rule is
+/// for Python.
 fn data_home() -> tempfile::TempDir {
     let home = tempfile::tempdir().unwrap();
     let dir = home.path().join("codecite");
@@ -92,6 +93,41 @@ fn data_home() -> tempfile::TempDir {
         ..code
     };
     store.write_document(rfc, &spec).unwrap();
+    let rules = store
+        .upsert_source(&SourceRecord {
+            name: "house-rules",
+            kind: "document",
+            url: "RULES.md",
+            revision: "9f8e7d6c5b4a00000000000000000000000000000000000000000000000000ff",
+            license_spdx: None,
+            license_class: "adapt",
+            ..source
+        })
+        .unwrap();
+    let rule = ChunkRecord {
+        kind: "section",
+        text: "## 1 Settings\n\nCode MUST read settings through `get_settings`.",
+        number: Some("1"),
+        anchor: Some("1-settings"),
+        title: Some("Settings"),
+        strength: &[Keyword::Must],
+        symbol: None,
+        ..chunk.clone()
+    };
+    let guidance = DocumentRecord {
+        path: "house-rules",
+        language: Some("markdown"),
+        content_hash: b"rules",
+        text: None,
+        chunks: vec![rule],
+        ..code.clone()
+    };
+    store.write_document(rules, &guidance).unwrap();
+    let python = RuleScope {
+        languages: vec!["python".into()],
+        ..RuleScope::default()
+    };
+    store.set_guidance(rules, &[("1", &python)]).unwrap();
     let older = store
         .upsert_source(&SourceRecord {
             name: "rfc9449",
@@ -137,7 +173,8 @@ fn corpora_prints_the_corpora_as_json() {
     assert!(out.status.success(), "{out:?}");
     let listed: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(listed["corpora"][0]["corpus"], "demo");
-    assert_eq!(listed["corpora"][0]["sources"], 3);
+    // `app`, `rfc9449` at two versions, and `house-rules`.
+    assert_eq!(listed["corpora"][0]["sources"], 4);
     assert_eq!(listed["corpora"][0]["stale"], false);
     assert_eq!(listed["corpora"].as_array().unwrap().len(), 1);
 
@@ -228,7 +265,7 @@ impl Session {
         let call = self
             .send(json!({
                 "jsonrpc": "2.0", "id": id, "method": "tools/call",
-                "params": {"name": tool, "arguments": arguments}
+                "params": {"name": tool, "arguments": arguments.clone()}
             }))
             .unwrap();
         assert_eq!(call["result"]["isError"], false, "{call}");
@@ -238,11 +275,21 @@ impl Session {
             call["result"]["structuredContent"],
             "{call}"
         );
-        let cli = codecite()
+        // `context` reads the text it is given from stdin.
+        let mut child = codecite()
             .args(args)
             .env("XDG_DATA_HOME", home)
-            .output()
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
             .unwrap();
+        let mut pipe = child.stdin.take().unwrap();
+        if let Some(content) = arguments.get("content").and_then(Value::as_str) {
+            pipe.write_all(content.as_bytes()).unwrap();
+        }
+        drop(pipe);
+        let cli = child.wait_with_output().unwrap();
         assert!(cli.status.success(), "{args:?}: {cli:?}");
         assert_eq!(
             String::from_utf8(cli.stdout).unwrap(),
@@ -287,6 +334,7 @@ fn mcp_answers_on_stdout_and_logs_on_stderr() {
     assert_eq!(
         names,
         [
+            "context",
             "corpora",
             "definition",
             "diff",
@@ -354,6 +402,22 @@ fn mcp_answers_on_stdout_and_logs_on_stderr() {
             "definition",
             json!({"symbol": "validate"}),
             vec!["def", "demo", "validate", "--json"],
+        ),
+        (
+            "context",
+            json!({"path": "/nonexistent/app/handler.py", "content": "import requests\n"}),
+            vec![
+                "context",
+                "demo",
+                "/nonexistent/app/handler.py",
+                "--json",
+                "--stdin",
+            ],
+        ),
+        (
+            "context",
+            json!({"path": "/nonexistent/README.md"}),
+            vec!["context", "demo", "/nonexistent/README.md", "--json"],
         ),
         (
             "diff",

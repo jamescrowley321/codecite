@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use rusqlite::{Transaction, params};
+use rusqlite::{OptionalExtension, Transaction, params};
 
 use super::Store;
 use crate::{Keyword, Result, SpecAliases, identifier_terms, text_terms};
@@ -94,7 +94,10 @@ pub struct SymbolRecord<'a> {
 
 impl Store {
     /// Creates the source, or updates the stored one's other fields and
-    /// `indexed_at`, and returns its ID. A document version is the stored
+    /// `indexed_at`, and returns its ID. Whether it is guidance is left as
+    /// it is: [`Store::set_guidance`] and [`Store::clear_guidance`] change
+    /// that, so a guidance source being indexed again never answers with no
+    /// rules in between. A document version is the stored
     /// document with the same name and revision; any other source is the
     /// stored one with the same name that isn't a document.
     pub fn upsert_source(&mut self, source: &SourceRecord<'_>) -> Result<i64> {
@@ -133,6 +136,17 @@ impl Store {
         Ok(id)
     }
 
+    /// Marks the source as no longer guidance and deletes its rule scopes,
+    /// in one transaction, so a guidance source the manifest turns into a
+    /// plain document stops giving rules.
+    pub fn clear_guidance(&mut self, source_id: i64) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        tx.execute("UPDATE source SET guidance = 0 WHERE id = ?1", [source_id])?;
+        tx.execute("DELETE FROM rule_scope WHERE source_id = ?1", [source_id])?;
+        tx.commit()?;
+        Ok(())
+    }
+
     /// The content hash of each document stored for the source, by path.
     pub fn document_hashes(&self, source_id: i64) -> Result<HashMap<String, Vec<u8>>> {
         let mut stmt = self
@@ -140,6 +154,20 @@ impl Store {
             .prepare("SELECT path, content_hash FROM document WHERE source_id = ?1")?;
         let rows = stmt.query_map([source_id], |row| Ok((row.get(0)?, row.get(1)?)))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// The language stored for the document at `path` in the source:
+    /// `None` when there is no such document, `Some(None)` when it has no
+    /// language.
+    pub fn document_language(&self, source_id: i64, path: &str) -> Result<Option<Option<String>>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT language FROM document WHERE source_id = ?1 AND path = ?2",
+                params![source_id, path],
+                |row| row.get(0),
+            )
+            .optional()?)
     }
 
     /// Replaces the document at `document.path` in the source, with its

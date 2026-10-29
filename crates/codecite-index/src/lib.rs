@@ -25,12 +25,16 @@ pub use error::{Error, Result};
 mod fetch;
 pub use fetch::{FetchError, Fetched, Fetcher, MAX_DOCUMENT_SIZE};
 
+mod guidance;
+pub use guidance::{GuidanceError, GuidanceRule, split_guidance};
+
 mod index;
 pub use index::{IndexSummary, index_corpus};
 
 mod manifest;
 pub use manifest::{
-    DocumentSource, GitSource, LicenseClass, LocalSource, Manifest, ManifestError, Source,
+    DocumentSource, GitSource, GuidanceSource, LicenseClass, LocalSource, Manifest, ManifestError,
+    Source,
 };
 
 #[cfg(test)]

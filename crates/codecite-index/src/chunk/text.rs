@@ -98,6 +98,65 @@ pub(super) fn windows<'a>(lines: &Lines<'a>, covered: &[bool]) -> Vec<Chunk<'a>>
 /// before the next heading. Headings inside fenced code blocks don't count.
 /// Trailing blank lines are dropped from each section.
 pub(super) fn sections<'a>(lines: &Lines<'a>) -> Vec<Chunk<'a>> {
+    let headings = headings(lines);
+    let mut out = Vec::new();
+    for (i, heading) in headings.iter().enumerate() {
+        let end = section_end(lines, &headings, i);
+        out.push(Chunk {
+            kind: ChunkKind::Section,
+            start_line: heading.line,
+            end_line: end,
+            text: lines.span(heading.line, end),
+            symbol: None,
+            title: Some(heading.title.clone()),
+        });
+    }
+    out
+}
+
+/// One ATX heading of a Markdown file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Heading {
+    /// The heading's line, counting from 1.
+    pub(crate) line: u32,
+    /// How many `#`s it has: 1 to 6.
+    pub(crate) level: usize,
+    /// Its text, without the `#`s.
+    pub(crate) title: String,
+    /// Its section's last line: the line before the next heading, or the
+    /// file's last, with trailing blank lines dropped.
+    pub(crate) end_line: u32,
+}
+
+/// The ATX headings of Markdown `text`, as [`sections`] splits at them,
+/// each with its section's last line.
+pub(crate) fn markdown_headings(text: &str) -> Vec<Heading> {
+    let lines = Lines::new(text);
+    let mut headings = headings(&lines);
+    let ends: Vec<u32> = (0..headings.len())
+        .map(|i| section_end(&lines, &headings, i))
+        .collect();
+    for (heading, end) in headings.iter_mut().zip(ends) {
+        heading.end_line = end;
+    }
+    headings
+}
+
+/// The last line of heading `i`'s section, before any trailing blank line.
+fn section_end(lines: &Lines<'_>, headings: &[Heading], i: usize) -> u32 {
+    let start = headings[i].line;
+    let mut end = headings
+        .get(i + 1)
+        .map_or(lines.len() as u32, |next| next.line - 1);
+    while end > start && lines.is_blank(end) {
+        end -= 1;
+    }
+    end
+}
+
+/// Every ATX heading outside fenced code blocks, in order, with no end
+/// line yet.
+fn headings(lines: &Lines<'_>) -> Vec<Heading> {
     let mut headings = Vec::new();
     let mut fence: Option<(char, usize)> = None;
     for n in 1..=lines.len() as u32 {
@@ -128,28 +187,15 @@ pub(super) fn sections<'a>(lines: &Lines<'a>) -> Vec<Chunk<'a>> {
         if fence.is_none()
             && let Some(title) = atx_heading(body)
         {
-            headings.push((n, title));
+            headings.push(Heading {
+                line: n,
+                level: body.chars().take_while(|&c| c == '#').count(),
+                title,
+                end_line: n,
+            });
         }
     }
-
-    let mut out = Vec::new();
-    for (i, (start, title)) in headings.iter().enumerate() {
-        let mut end = headings
-            .get(i + 1)
-            .map_or(lines.len() as u32, |&(next, _)| next - 1);
-        while end > *start && lines.is_blank(end) {
-            end -= 1;
-        }
-        out.push(Chunk {
-            kind: ChunkKind::Section,
-            start_line: *start,
-            end_line: end,
-            text: lines.span(*start, end),
-            symbol: None,
-            title: Some(title.clone()),
-        });
-    }
-    out
+    headings
 }
 
 /// The text of an ATX heading line, or `None` when `line` isn't one.

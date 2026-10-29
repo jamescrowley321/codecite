@@ -12,6 +12,9 @@ use crate::{Error, Result, identifier_terms, text_terms};
 mod cite;
 pub use cite::{CiteOptions, CiteResult, Finding};
 
+mod context;
+pub use context::{Context, ContextQuery, ContextTarget, MAX_CONTEXT_BYTES, Rule, RuleScope};
+
 mod corpora;
 pub use corpora::{Corpora, CorpusInfo, corpora};
 
@@ -51,6 +54,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0003_document_versions.sql"),
     include_str!("../migrations/0004_read.sql"),
     include_str!("../migrations/0005_spec_fts.sql"),
+    include_str!("../migrations/0006_guidance.sql"),
 ];
 
 /// Version 5's data step: writes a `spec_fts` row for every stored spec

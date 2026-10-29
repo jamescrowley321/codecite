@@ -6,10 +6,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use codecite_core::{
-    CiteOptions, CiteResult, DEFAULT_MAX_LINES, DEFAULT_SEARCH_LIMIT, Definitions, DiffOptions,
-    DiffResult, GrepMatch, GrepQuery, GrepResults, MAX_READ_LINES, MAX_SEARCH_LIMIT, ReadOptions,
-    ReadResult, Requirements, RequirementsOptions, Scope, SearchQuery, SearchResult, SearchResults,
-    Store, is_corpus_name,
+    CiteOptions, CiteResult, Context, ContextQuery, ContextTarget, DEFAULT_MAX_LINES,
+    DEFAULT_SEARCH_LIMIT, Definitions, DiffOptions, DiffResult, GrepMatch, GrepQuery, GrepResults,
+    MAX_READ_LINES, MAX_SEARCH_LIMIT, ReadOptions, ReadResult, Requirements, RequirementsOptions,
+    Scope, SearchQuery, SearchResult, SearchResults, Store, is_corpus_name,
 };
 use codecite_index::{Clones, Fetcher, LicenseClass, Manifest, Source, WalkOptions, index_corpus};
 
@@ -31,7 +31,8 @@ enum Command {
         /// The manifest to read [default: corpora/<CORPUS>.toml].
         #[arg(long)]
         manifest: Option<PathBuf>,
-        /// Download each document source and print its sha256 without
+        /// Download each document source, and each guidance source with a
+        /// `url`, and print its sha256 without
         /// checking it against the manifest or indexing anything.
         #[arg(long)]
         print_hashes: bool,
@@ -140,6 +141,28 @@ enum Command {
         #[arg(long)]
         json: bool,
         /// Check against an index older than its manifest's `max_age_days`.
+        #[arg(long)]
+        allow_stale: bool,
+    },
+    /// Print the rules that govern a file: every guidance rule whose scope
+    /// matches its path, language and imports, MUST first, each cited.
+    Context {
+        /// The corpus whose guidance to apply.
+        corpus: String,
+        /// The file about to be edited or written. It need not exist yet.
+        path: PathBuf,
+        /// Where the rules' path globs start [default: the nearest
+        /// directory above PATH that holds `.git`].
+        #[arg(long)]
+        root: Option<PathBuf>,
+        /// Read the text about to be written from stdin, and count its
+        /// imports with the file's.
+        #[arg(long)]
+        stdin: bool,
+        /// Print the result as JSON, as the MCP `context` tool returns it.
+        #[arg(long)]
+        json: bool,
+        /// Answer from an index older than its manifest's `max_age_days`.
         #[arg(long)]
         allow_stale: bool,
     },
@@ -298,6 +321,14 @@ fn main() -> anyhow::Result<()> {
             json,
             allow_stale,
         } => cite(&corpus, &citation, &CiteOptions { allow_stale }, json),
+        Command::Context {
+            corpus,
+            path,
+            root,
+            stdin,
+            json,
+            allow_stale,
+        } => context(&corpus, &path, root.as_deref(), stdin, allow_stale, json),
         Command::Diff {
             corpus,
             document,
@@ -435,6 +466,34 @@ fn cite(corpus: &str, citation: &str, options: &CiteOptions, json: bool) -> anyh
     let store = Store::open_corpus(dirs.data_dir(), corpus)?;
     let result = store.cite(citation, options)?;
     to_stdout(|out| write_cite(out, &result, json))
+}
+
+/// `codecite context`: describes the file, opens the corpus read-only and
+/// prints the rules that govern the file, as JSON or in its human form.
+fn context(
+    corpus: &str,
+    path: &Path,
+    root: Option<&Path>,
+    stdin: bool,
+    allow_stale: bool,
+    json: bool,
+) -> anyhow::Result<()> {
+    let content = if stdin {
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut std::io::stdin(), &mut text)
+            .context("reading the text to be written from stdin")?;
+        Some(text)
+    } else {
+        None
+    };
+    let target = ContextTarget::inspect(path, root, content.as_deref())?;
+    let dirs = project_dirs()?;
+    let store = Store::open_corpus(dirs.data_dir(), corpus)?;
+    let found = store.context(&ContextQuery {
+        target: &target,
+        allow_stale,
+    })?;
+    to_stdout(|out| write_context(out, &found, json))
 }
 
 /// `codecite diff`: opens the corpus read-only and prints how two pinned
@@ -662,6 +721,71 @@ fn human_matches(matches: &[GrepMatch]) -> String {
     out
 }
 
+/// Writes the rules for a file to `out`, as JSON or in the human form.
+fn write_context(
+    out: &mut impl std::io::Write,
+    found: &Context,
+    json: bool,
+) -> std::io::Result<()> {
+    if json {
+        write_json(out, serde_json::to_value(found)?)?;
+    } else {
+        out.write_all(human_context(found).as_bytes())?;
+    }
+    out.flush()
+}
+
+/// The human form of the rules for a file, which an agent's hook can pass
+/// on as it is: a header with how many rules govern the file, then per
+/// rule a line with its rank, citation, strength and title, and its text
+/// indented, then the citations of any rules left out.
+fn human_context(found: &Context) -> String {
+    use std::fmt::Write as _;
+
+    let mut out = String::new();
+    let n = found.total;
+    if n == 0 {
+        let _ = writeln!(out, "no rules for {}", escape_controls(&found.path));
+        return out;
+    }
+    // `write!` to a `String` can't fail.
+    let _ = write!(
+        out,
+        "{n} rule{} for {}",
+        if n == 1 { "" } else { "s" },
+        escape_controls(&found.path)
+    );
+    if let Some(language) = &found.language {
+        let _ = write!(out, " · {}", escape_controls(language));
+    }
+    out.push('\n');
+    for (rank, rule) in (1..).zip(&found.rules) {
+        let _ = write!(
+            out,
+            "\n{rank}. {} · {}",
+            escape_controls(&rule.citation),
+            rule.strength.join(",")
+        );
+        if let Some(title) = &rule.title {
+            let _ = write!(out, " · {}", escape_controls(title));
+        }
+        out.push('\n');
+        for line in rule.text.lines() {
+            let _ = writeln!(out, "   {}", escape_controls(line));
+        }
+        if rule.truncated {
+            let _ = writeln!(out, "   (cut; read the citation for the whole rule)");
+        }
+    }
+    if !found.omitted.is_empty() {
+        let _ = writeln!(out, "\nleft out to stay in budget; read them by citation:");
+        for citation in &found.omitted {
+            let _ = writeln!(out, "- {}", escape_controls(citation));
+        }
+    }
+    out
+}
+
 /// Writes definitions to `out`, as JSON or in the short human form.
 fn write_definitions(
     out: &mut impl std::io::Write,
@@ -816,12 +940,16 @@ fn cut(text: &str, max: usize) -> std::borrow::Cow<'_, str> {
 }
 
 /// Indexed text is untrusted: an escape sequence in it could drive the
-/// terminal, such as OSC 52 writing to the clipboard. Control characters
-/// other than tab print as Rust escapes like `\u{1b}` instead.
+/// terminal, such as OSC 52 writing to the clipboard, and an invisible
+/// character could hide text from a person reading output a model also
+/// reads. Control characters other than tab, and the invisible format
+/// characters (zero-width spaces and joiners, bidi controls, Unicode tag
+/// characters, the byte order mark), print as Rust escapes like `\u{1b}`
+/// instead.
 fn escape_controls(text: &str) -> String {
     text.chars()
         .map(|c| {
-            if c.is_control() && c != '\t' {
+            if (c.is_control() && c != '\t') || codecite_core::is_invisible_format(c) {
                 c.escape_unicode().to_string()
             } else {
                 c.to_string()
@@ -830,19 +958,24 @@ fn escape_controls(text: &str) -> String {
         .collect()
 }
 
-/// `codecite index --print-hashes`: downloads each document source that is
-/// not `excluded` and prints `<sha256>  <name>  <url>`, plus `(pinned)` when
+/// `codecite index --print-hashes`: downloads each document source, and
+/// each guidance source fetched by URL, that is not `excluded` and prints `<sha256>  <name>  <url>`, plus `(pinned)` when
 /// the hash is the one the manifest pins, so the owner can pin a new or
 /// changed document on purpose.
 fn print_document_hashes(manifest: &Manifest, fetcher: &Fetcher) -> anyhow::Result<()> {
     for source in &manifest.sources {
-        let Source::Document(doc) = source else {
-            continue;
+        let doc = match source {
+            Source::Document(doc) => doc.clone(),
+            Source::Guidance(rules) => match rules.as_document() {
+                Some(doc) => doc,
+                None => continue,
+            },
+            _ => continue,
         };
         if doc.license_class == LicenseClass::Excluded {
             continue;
         }
-        let hash = fetcher.fetch_hash(doc)?;
+        let hash = fetcher.fetch_hash(&doc)?;
         let pinned = if hash == doc.sha256 { "  (pinned)" } else { "" };
         println!("{hash}  {}  {}{pinned}", doc.name, doc.url);
     }
@@ -865,6 +998,15 @@ mod tests {
     fn open() -> anyhow::Result<()> {
         let err = codecite_core::Error::from(std::io::Error::other("disk on fire"));
         Err(err).context("opening corpus /tmp/corpus")
+    }
+
+    #[test]
+    fn invisible_format_characters_are_escaped() {
+        let text = "a\u{200b}b\u{202e}c\u{e0041}d\u{feff}e\u{ad}f é\tg";
+        assert_eq!(
+            escape_controls(text),
+            "a\\u{200b}b\\u{202e}c\\u{e0041}d\\u{feff}e\\u{ad}f é\tg"
+        );
     }
 
     #[test]
