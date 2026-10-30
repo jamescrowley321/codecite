@@ -1,6 +1,7 @@
 //! What a document is for, read from its path: library source, a test, an
 //! example or docs. Search weights tests and examples down, so the code an
-//! agent is asked to use outranks the code that exercises it.
+//! agent is asked to use outranks the code that exercises it, and docs a
+//! little, so prose that repeats a query's words doesn't crowd out the code.
 
 /// What a document is for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -81,10 +82,12 @@ impl Role {
     }
 
     /// How much a match in a document of this role counts in search, as a
-    /// factor on its BM25 score.
+    /// factor on its BM25 score. Docs' 0.8 won the sweep in
+    /// `experiments/one-ranking/` (#183).
     pub fn weight(self) -> f64 {
         match self {
-            Role::Source | Role::Docs | Role::Spec => 1.0,
+            Role::Source | Role::Spec => 1.0,
+            Role::Docs => 0.8,
             Role::Example => 0.6,
             Role::Test => 0.4,
         }
@@ -172,9 +175,10 @@ mod tests {
     }
 
     #[test]
-    fn tests_and_examples_weigh_less_than_source() {
+    fn tests_examples_and_docs_weigh_less_than_source() {
         assert!(Role::Test.weight() < Role::Example.weight());
-        assert!(Role::Example.weight() < Role::Source.weight());
-        assert_eq!(Role::Docs.weight(), Role::Source.weight());
+        assert!(Role::Example.weight() < Role::Docs.weight());
+        assert!(Role::Docs.weight() < Role::Source.weight());
+        assert_eq!(Role::Spec.weight(), Role::Source.weight());
     }
 }
