@@ -29,7 +29,7 @@ Start here:
   codecite grep <CORPUS> '<regex>'       every matching line, cited
   codecite def <CORPUS> <SYMBOL>         where a symbol is defined
   codecite read <CORPUS> '<CITATION>'    the exact text a citation points at
-Add --json to any command for structured output. Quote citations as printed.",
+Add --json to search, grep, def or read for structured output. Quote citations as printed.",
     arg_required_else_help = true
 )]
 struct Cli {
@@ -97,7 +97,8 @@ Pass a printed citation to `read` for the full text.")]
   codecite grep myrepo 'fn \\w+_handler'
   codecite grep myrepo \"TODO(\" --fixed
   codecite grep myrepo 'timeout' -i --language rust --limit 20
-Output: one line per match, in index order:
+Output: a header `N match(es)` (or `no matches`), then one line per match, in index
+order:
   <citation>: <matched line>")]
     Grep {
         /// The corpus to grep.
@@ -1106,6 +1107,21 @@ mod tests {
             assert!(help.contains(line), "{help}");
         }
         assert!(!help.contains("spec would use"), "{help}");
+    }
+
+    #[test]
+    fn grep_help_describes_its_header_and_json_claim_is_true() {
+        use clap::CommandFactory as _;
+        let cmd = Cli::command();
+        let grep = cmd.find_subcommand("grep").unwrap();
+        let help = grep.get_after_long_help().unwrap().to_string();
+        assert!(help.contains("`N match(es)"), "{help}");
+        assert!(help.contains("no matches"), "{help}");
+        let top = cmd.clone().render_long_help().to_string();
+        assert!(
+            top.contains("Add --json to search, grep, def or read for structured output. Quote citations as printed."),
+            "{top}"
+        );
     }
 
     fn open() -> anyhow::Result<()> {
