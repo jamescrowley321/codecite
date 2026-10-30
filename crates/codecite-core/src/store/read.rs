@@ -176,6 +176,9 @@ impl Store {
         let canonical = match text.parse() {
             Ok(Citation::Code(c)) => return self.read_code(&c, options),
             Ok(Citation::Spec(c)) => return self.read_spec(&c, options),
+            // Reading a fetched document's lines lands with its stored text;
+            // until then it is the invalid spec citation it always was.
+            Ok(Citation::Document(_)) => CitationError::MissingSection,
             Err(e) => e,
         };
         match SpecReference::parse(text, &self.aliases()?) {
