@@ -44,7 +44,9 @@ A pair whose codecite arm called codecite in fewer than half its usable runs
 is not measured: the arms then differ by a tool the agent never used, so the
 comparison says nothing about codecite. "used codecite" counts, per arm, the
 runs with at least one call, read from the model calls in the log: a call to
-one of codecite's native tools, or a `bash` call that runs `codecite`.
+one of codecite's native tools, or a `bash` call that runs `codecite`. An
+assist run (`arms=assist`, assist.py) used it when its hook added a block,
+and gets a table of the hook's calls, blocks, bytes and estimated tokens.
 
 A run of the baseline arm alone (`-T arms=baseline`, recorded in the log's
 task arguments) is a calibration, not an A/B run: per task, it gets a
@@ -160,6 +162,11 @@ class Run:
     used: bool = False
     # Assistant messages: the turns of a sample whose log kept no model events.
     replies: int = 0
+    # The assist arm's hook (assist.py): the grep and glob calls it saw, the
+    # blocks it added and their bytes. None outside that arm.
+    assist_calls: int | None = None
+    assist_blocks: int | None = None
+    assist_bytes: int | None = None
 
     @property
     def other_seconds(self):
@@ -387,8 +394,12 @@ def scorecard(logs, tier=None):
                 output_tokens=agent.get("agent_output_tokens", sum(u.output_tokens or 0 for u in usage)),
                 model_seconds=model_seconds,
                 providers=providers,
-                used=agent.get("codecite_calls", codecite_calls(s)) > 0,
+                # An assist run reaches codecite only through its hook's blocks.
+                used=agent["assist_blocks"] > 0 if "assist_blocks" in agent else agent.get("codecite_calls", codecite_calls(s)) > 0,
                 replies=sum(isinstance(m, ChatMessageAssistant) for m in s.messages or []),
+                assist_calls=agent.get("assist_calls"),
+                assist_blocks=agent.get("assist_blocks"),
+                assist_bytes=agent.get("assist_bytes"),
             ))
             if why == "sandbox_error":
                 # A question's sample is named by its question; a code task's by its arm alone.
@@ -496,6 +507,7 @@ def table(rng, name, runs, planned, arms, gate_name="default"):
         "| model | arms | " + " | ".join(measure for measure, _, _ in MEASURES) + " |",
         "|---|---|" + "---|" * len(MEASURES),
     ]
+    assisted = []
     for model in sorted({k[1] for k in planned if k[0] == name}):
         label = model.removeprefix("openrouter/")
         pair = arms[(name, model)]
@@ -549,7 +561,28 @@ def table(rng, name, runs, planned, arms, gate_name="default"):
             )
             out.append(f"| {label} | {arm} | {len(r)} | {sum(x.used for x in r)}/{len(r)} | {cells} | {verdict if i == 1 else ''} |")
             detail.append(f"| {label} | {arm} | {medians(r)} |")
-    return out + detail + spans
+            if hooked := [x for x in r if x.assist_calls is not None]:
+                assisted.append(f"| {label} | {arm} | {assist_medians(hooked)} |")
+    return out + detail + spans + (ASSISTED + assisted if assisted else [])
+
+
+ASSISTED = [
+    "",
+    "What the assist hook added, medians per run (tokens are bytes / 4, an estimate):",
+    "",
+    "| model | arm | grep and glob calls | blocks | bytes | tokens added (est.) |",
+    "|---|---|---|---|---|---|",
+]
+
+
+def assist_medians(runs):
+    """The assist table's cells for one arm's runs."""
+    return " | ".join([
+        f"{median(x.assist_calls for x in runs):.0f}",
+        f"{median(x.assist_blocks for x in runs):.0f}",
+        f"{median(x.assist_bytes for x in runs):,.0f}",
+        f"{median(x.assist_bytes for x in runs) / 4:,.0f}",
+    ])
 
 
 def listed_errors(errors):

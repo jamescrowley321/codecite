@@ -8,7 +8,7 @@ from inspect_ai.agent import AgentState
 from inspect_ai.model import ChatMessageAssistant, ChatMessageUser
 from inspect_ai.util import ExecResult
 
-from codecite_evals import claude_code, task
+from codecite_evals import assist, claude_code, task
 
 
 def assistant(id, usage, *blocks):
@@ -217,3 +217,25 @@ def test_the_agent_picks_claude_code_for_a_claude_code_model(monkeypatch):
     model.api = object()
     asyncio.run(task.coding_agent()(state))
     assert seen == [("claude", "claude-haiku-5-5"), ("pi",)]
+
+
+def test_the_assist_arm_keeps_its_hooks_measures(monkeypatch):
+    log = '{"tool": "grep", "bytes": 300}\n{"tool": "glob", "bytes": 0}\n'
+
+    class Hooked(Sandbox):
+        async def exec(self, cmd, **kwargs):
+            self.files[assist.LOG] = log
+            return await super().exec(cmd, **kwargs)
+
+    sb = Hooked(*finished(stream(DONE)))
+    store = Store(condition="assist")
+    monkeypatch.setattr(task, "sandbox", lambda: sb)
+    monkeypatch.setattr(task, "store", lambda: store)
+    asyncio.run(task.claude("claude-sonnet-5-5")(AgentState(messages=[ChatMessageUser(content="do the task")])))
+    assert (store["assist_calls"], store["assist_blocks"], store["assist_bytes"]) == (2, 1, 300)
+    assert not any(c == ["rm", "-rf", "/opt/codecite"] for c in sb.commands) and claude_code.MCP not in sb.files
+
+
+def test_other_arms_keep_no_assist_measures(monkeypatch):
+    _, store, _ = run_claude(monkeypatch, finished(stream(DONE)))
+    assert "assist_calls" not in store

@@ -27,6 +27,7 @@ import os
 
 from inspect_ai.model import GenerateConfig, ModelAPI, ModelOutput, modelapi
 
+from codecite_evals import assist
 from codecite_evals.report import CLI, NATIVE
 
 PROVIDER = "claude-code"
@@ -73,14 +74,16 @@ def runs(model) -> bool:
 def command(condition: str, prompt: str, model: str, timeout: int) -> list[str]:
     """Claude Code's command line for an arm, its stream-json written to
     OUTPUT. Only the codecite arm gets an MCP config; --strict-mcp-config
-    keeps any other out of both. `timeout` stops it a little before Inspect
-    would."""
+    keeps any other out of every arm. Only the assist arm gets the settings
+    holding its grep and glob hook. `timeout` stops it a little before
+    Inspect would."""
     mcp = ["--mcp-config", MCP] if condition == "codecite" else []
+    settings = ["--settings", assist.SETTINGS_PATH] if condition == "assist" else []
     return [
         "sh", "-c", f'"$@" >{OUTPUT}', "sh",
         "timeout", "--kill-after=10", str(timeout),
         "claude", "-p", "--output-format", "stream-json", "--verbose", "--model", model,
-        "--tools", ",".join(TOOLS), "--strict-mcp-config", *mcp,
+        "--tools", ",".join(TOOLS), "--strict-mcp-config", *mcp, *settings,
         "--dangerously-skip-permissions", "--no-session-persistence", "--", prompt,
     ]  # fmt: skip
 

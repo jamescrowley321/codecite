@@ -249,8 +249,8 @@ and never a required check.
   task. Pushes don't rerun it: to run it again on a new head, take the label
   off and put it back, or dispatch. Fork PRs never run: they get no secrets.
 - **Full:** run the workflow by hand (Actions → Evals → Run workflow) with
-  `tier: full`, the `task` to run and `arms` (`ab`, the default; `aa`; or
-  `baseline` to calibrate; see below). Its scorecard goes to the job summary.
+  `tier: full`, the `task` to run and `arms` (`ab`, the default; `aa`;
+  `assist`; or `baseline` to calibrate; see below). Its scorecard goes to the job summary.
   To finish a run that stopped part way, run it again with `resume` set to
   that run's id: it downloads that run's logs and reruns only their missing
   samples with `inspect eval-retry`.
@@ -277,7 +277,8 @@ scrub, as would one the agent sent out through api.anthropic.com itself (the
 proxy checks only the host), so a token kept for evals alone is the safer
 secret. The Inspect logs, with the scorecard, upload as the
 `eval-logs-<tier>-<task>` artifact (`eval-logs-<tier>-aa-<task>` for an A/A
-round, `eval-logs-calibration-<task>` for a calibration).
+round, `eval-logs-<tier>-assist-<task>` for the assist arm,
+`eval-logs-calibration-<task>` for a calibration).
 
 ## A/A rounds
 
@@ -289,6 +290,24 @@ default, `ab`, is baseline against codecite); `ARMS=aa inspect/panel.sh quick`
 runs a tier that way into `inspect/logs/<tier>-aa/<task>/`. The scorecard heads the
 round as A/A and gives it no verdict: it names each measure whose interval
 noise alone pushed past the 5% margin.
+
+## The assist arm
+
+`-T arms=assist` runs baseline against an `assist` arm, where codecite reaches
+the agent only through `codecite assist` on its own grep and glob calls (#162,
+`docs/usage.md`): the binary stays in the sandbox at `/opt/codecite` but off
+`PATH`, with no MCP config and no note in the prompt, so the prompt is
+baseline's. `src/codecite_evals/assist.py` holds the hook, one Python script
+for both agents since the sandbox has no `jq`: Claude Code runs it as a
+PostToolUse hook on `Grep|Glob` from settings passed with `--settings`, and
+pi's extension, loaded alone with `-e`, hands it the same payload for `grep`
+and `find`. Each call appends `{"tool", "bytes"}` to
+`/tmp/codecite-assist.jsonl`, which the agent reads after the run into the
+sample's store. A run counts as having used codecite when the hook added at
+least one block, and the scorecard adds a table of the hook's calls, blocks
+and bytes per run, with bytes / 4 as an estimate of the tokens added.
+`ARMS=assist inspect/panel.sh quick` logs to `inspect/logs/<tier>-assist/<task>/`;
+on CI, dispatch with `arms: assist`.
 
 ## The scorecard
 
