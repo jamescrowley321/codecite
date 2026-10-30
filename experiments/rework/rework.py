@@ -7,6 +7,7 @@ Stdlib only, so it runs with a bare `python3`.
 
 import json
 import re
+import subprocess
 from typing import NamedTuple
 
 # The overall result of a review that names no lens.
@@ -247,3 +248,50 @@ def violations(rounds):
             elif r.lens == CONVENTION:
                 counts["convention"] += n
     return counts
+
+
+def plan_paths(files):
+    """The Markdown files under a `plans/` directory, in the order given."""
+    return [f for f in files if f.endswith(".md") and "plans" in f.split("/")[:-1]]
+
+
+# The citation forms in docs/usage.md: a repository's lines
+# `name@<sha>:path#L10-L42`, a document's lines `name@sha256:<hex>#L3-L9`,
+# and a spec's section `name@sha256:<hex>#section-4.3`.
+_CITATION = re.compile(
+    r"(?<![\w.-])[\w.-]+@"
+    r"(?:[0-9a-f]{7,64}:[^\s#`()]+#L\d+(?:-L\d+)?"
+    r"|sha256:[0-9a-f]{7,64}#(?:L\d+(?:-L\d+)?|section-[\w.-]+))"
+)
+
+
+def has_citation(text):
+    """True when `text` holds at least one codecite citation."""
+    return _CITATION.search(text) is not None
+
+
+class GhError(Exception):
+    """A `gh` command that failed."""
+
+
+def run_gh(args):
+    """Run `gh` with `args` and return its stdout; raise GhError on failure."""
+    proc = subprocess.run(["gh", *args], capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise GhError(proc.stderr.strip() or f"gh exited {proc.returncode}")
+    return proc.stdout
+
+
+def plan_text(repo, path, ref, gh=run_gh):
+    """The plan's text at commit `ref`, or None when it can't be read there."""
+    try:
+        return gh(
+            [
+                "api",
+                "-H",
+                "Accept: application/vnd.github.raw",
+                f"repos/{repo}/contents/{path}?ref={ref}",
+            ]
+        )
+    except GhError:
+        return None

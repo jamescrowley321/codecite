@@ -120,7 +120,9 @@ class ParseReview(unittest.TestCase):
     def test_lens_aliases(self):
         self.assertEqual(rework.lens_name("edge_case"), "Edge Cases")
         self.assertEqual(rework.lens_name("OWASP LLM"), "OWASP LLM Top 10")
-        self.assertEqual(rework.lens_name("**Policy & Provenance**"), "Policy & Provenance")
+        self.assertEqual(
+            rework.lens_name("**Policy & Provenance**"), "Policy & Provenance"
+        )
         self.assertIsNone(rework.lens_name("Summary"))
 
 
@@ -196,6 +198,60 @@ class Violations(unittest.TestCase):
         self.assertEqual(
             rework.violations(rounds), {"spec": 3, "convention": 1, "all": 4}
         )
+
+
+class Plans(unittest.TestCase):
+    def test_plan_paths_keeps_markdown_under_a_plans_directory(self):
+        files = [
+            "docs/superpowers/plans/x.md",
+            "docs/plans/y.md",
+            "docs/design.md",
+            "plans/x.txt",
+            "src/plans.md",
+        ]
+        self.assertEqual(
+            rework.plan_paths(files),
+            ["docs/superpowers/plans/x.md", "docs/plans/y.md"],
+        )
+
+    def test_citations_in_every_form(self):
+        for text in [
+            "see codecite@56fc2dd:crates/a.rs#L10-L42 for the loop",
+            "notes@sha256:1a2b3c4d5e6f#L3-L9",
+            "(rfc9449@sha256:2d8657f07291#section-4.3)",
+            "`house-rules@sha256:1a2b3c4d5e6f#section-4`",
+        ]:
+            with self.subTest(text=text):
+                self.assertTrue(rework.has_citation(text))
+
+    def test_look_alikes_are_not_citations(self):
+        for text in [
+            "mail james@example.com",
+            "scp user@host:path/to/file",
+            "lines #L10 to #L42",
+            "git@github.com:owner/repo.git#L1",
+        ]:
+            with self.subTest(text=text):
+                self.assertFalse(rework.has_citation(text))
+
+    def test_plan_text_is_none_when_the_head_is_gone(self):
+        def gone(args):
+            raise rework.GhError("gh: Not Found (HTTP 404)")
+
+        self.assertIsNone(rework.plan_text("o/r", "plans/x.md", "abc", gh=gone))
+
+    def test_plan_text_asks_for_the_raw_file_at_the_head(self):
+        seen = []
+
+        def ok(args):
+            seen.append(args)
+            return "# Plan\n"
+
+        self.assertEqual(
+            rework.plan_text("o/r", "plans/x.md", "abc", gh=ok), "# Plan\n"
+        )
+        self.assertIn("repos/o/r/contents/plans/x.md?ref=abc", seen[0])
+        self.assertIn("Accept: application/vnd.github.raw", seen[0])
 
 
 if __name__ == "__main__":
