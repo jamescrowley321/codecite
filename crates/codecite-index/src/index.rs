@@ -16,8 +16,8 @@ use sha2::{Digest, Sha256};
 use crate::{
     Checkout, Chunker, Clones, DocumentSource, Error, Fetcher, GitSource, GuidanceError,
     GuidanceRule, GuidanceSource, Language, LicenseClass, LocalSource, LocalTree,
-    MAX_DOCUMENT_SIZE, Manifest, Result, SkipReason, Source, SpecSection, WalkOptions,
-    split_guidance, split_spec, walk_local,
+    MAX_DOCUMENT_SIZE, Manifest, Result, SkipReason, Source, SpecError, SpecSection, WalkOptions,
+    document::split_document, split_guidance, split_spec, walk_local,
 };
 
 /// What an index run did.
@@ -453,43 +453,89 @@ fn index_document(
     // A document source holds one document, stored under its name.
     let path = doc.name.as_str();
     let hash = Sha256::digest(bytes);
-    // A spec has no language; a version stored as guidance with the same
-    // bytes was split as Markdown, so it is split again.
+    // The same bytes split the same way, unless the version was stored as
+    // guidance: Markdown with no text of its own, split into rules.
     if store
         .document_hashes(source_id)?
         .get(path)
         .is_some_and(|old| old[..] == hash[..])
-        && store.document_language(source_id, path)? == Some(None)
+        && !stored_as_guidance(store, source_id, path)?
     {
         summary.unchanged += 1;
         return Ok(source_id);
     }
 
-    let html = std::str::from_utf8(bytes).map_err(|_| Error::DocumentNotUtf8 {
+    let page = std::str::from_utf8(bytes).map_err(|_| Error::DocumentNotUtf8 {
         name: doc.name.clone(),
     })?;
-    let spec = split_spec(html).map_err(|source| Error::Spec {
-        name: doc.name.clone(),
-        source,
-    })?;
-    let step_numbers: Vec<Vec<String>> = spec
-        .sections
-        .iter()
-        .map(|s| s.steps.iter().map(|step| step.number.to_string()).collect())
-        .collect();
-    let document = DocumentRecord {
-        path,
-        language: None,
-        content_hash: hash.as_slice(),
-        size_bytes: bytes.len() as u64,
-        dirty: false,
-        // A spec's text is its sections and steps.
-        text: None,
-        chunks: spec_chunks(&spec.sections, &step_numbers),
+    let written = match split_spec(page) {
+        Ok(spec) => {
+            let step_numbers: Vec<Vec<String>> = spec
+                .sections
+                .iter()
+                .map(|s| s.steps.iter().map(|step| step.number.to_string()).collect())
+                .collect();
+            store.write_document(
+                source_id,
+                &DocumentRecord {
+                    path,
+                    language: None,
+                    content_hash: hash.as_slice(),
+                    size_bytes: bytes.len() as u64,
+                    dirty: false,
+                    // A spec's text is its sections and steps.
+                    text: None,
+                    chunks: spec_chunks(&spec.sections, &step_numbers),
+                },
+            )?
+        }
+        // Any other page is split at its own headings, like a file in a
+        // repository, and keeps the text its lines count in.
+        Err(SpecError::UnknownFormat) => {
+            let generic = split_document(page, &doc.url);
+            store.write_document(
+                source_id,
+                &DocumentRecord {
+                    path,
+                    language: Some(generic.format.as_str()),
+                    content_hash: hash.as_slice(),
+                    size_bytes: bytes.len() as u64,
+                    dirty: false,
+                    text: Some(&generic.text),
+                    chunks: generic
+                        .chunks()
+                        .iter()
+                        .map(|c| ChunkRecord {
+                            kind: c.kind.as_str(),
+                            start_line: c.start_line,
+                            end_line: c.end_line,
+                            text: c.text,
+                            number: None,
+                            anchor: c.anchor.as_deref(),
+                            title: c.title.as_deref(),
+                            parent: None,
+                            strength: &[],
+                            symbol: None,
+                        })
+                        .collect(),
+                },
+            )?
+        }
     };
-    summary.chunks += store.write_document(source_id, &document)?;
+    summary.chunks += written;
     summary.written += 1;
     Ok(source_id)
+}
+
+/// Whether the document at `path` in the source was stored as guidance:
+/// Markdown split into rules, with no text of its own.
+fn stored_as_guidance(store: &Store, source_id: i64, path: &str) -> Result<bool> {
+    Ok(store
+        .document_language(source_id, path)?
+        .flatten()
+        .as_deref()
+        == Some(Language::Markdown.name())
+        && !store.document_has_text(source_id, path)?)
 }
 
 /// Writes one guidance document into the store as a document version of
@@ -527,18 +573,13 @@ fn index_guidance(
     })?;
     let hash = Sha256::digest(bytes);
     let sections: Vec<SpecSection> = split.iter().map(|r| r.section.clone()).collect();
-    // A version stored as a spec with the same bytes was split as HTML,
-    // so it is split again.
-    let markdown = Language::Markdown.name();
+    // A version stored as a spec or a generic document with the same bytes
+    // was split another way, so it is split again.
     if store
         .document_hashes(source_id)?
         .get(name)
         .is_some_and(|old| old[..] == hash[..])
-        && store
-            .document_language(source_id, name)?
-            .flatten()
-            .as_deref()
-            == Some(markdown)
+        && stored_as_guidance(store, source_id, name)?
     {
         summary.unchanged += 1;
     } else {
@@ -1073,15 +1114,25 @@ mod tests {
         server.set("/RULES.md", RULES);
         let corpus = Corpus::new();
         let rules = guidance(None, Some(server.url("/RULES.md")), Some(sha256(RULES)));
-        corpus.index(&manifest(vec![Source::Guidance(rules)]));
-        // The same bytes as a plain document: not a spec page, so the run
-        // tries to split it as one instead of keeping the guidance chunks.
+        corpus.index(&manifest(vec![Source::Guidance(rules.clone())]));
+        // The same bytes as a plain document: split again as a generic
+        // Markdown document, with its text, instead of keeping the rules.
         let mut doc = document(server.url("/RULES.md"), &sha256(RULES));
         if let Source::Document(d) = &mut doc {
             d.name = "house-rules".into();
         }
-        let err = corpus.try_index(&manifest(vec![doc])).unwrap_err();
-        assert!(matches!(err, Error::Spec { .. }), "{err:?}");
+        let summary = corpus.index(&manifest(vec![doc]));
+        assert_eq!((summary.written, summary.unchanged), (1, 0));
+        let ((language, text), chunks) = generic_rows(&corpus);
+        assert_eq!(language.as_deref(), Some("markdown"));
+        assert_eq!(text.as_deref(), Some(RULES));
+        assert!(chunks.iter().all(|(_, number, ..)| number.is_none()));
+        // And back: the generic document's Markdown is split as rules again.
+        let summary = corpus.index(&manifest(vec![Source::Guidance(rules)]));
+        assert_eq!((summary.written, summary.unchanged), (1, 0));
+        let ((_, text), chunks) = generic_rows(&corpus);
+        assert_eq!(text, None);
+        assert!(chunks.iter().all(|(_, number, ..)| number.is_some()));
     }
 
     #[test]
@@ -1715,18 +1766,101 @@ mod tests {
         assert_eq!(corpus.matches("jose"), 2);
     }
 
+    /// A page in no spec layout, with headings `Release notes`, `v2`
+    /// and `v1`, a nav bar and a script.
+    const PLAIN: &str = include_str!("../tests/fixtures/document/plain.html");
+
+    /// The stored document's (language, text), and its chunks as (kind,
+    /// number, anchor, title), in order.
+    type GenericRows = (
+        (Option<String>, Option<String>),
+        Vec<(String, Option<String>, Option<String>, Option<String>)>,
+    );
+
+    fn generic_rows(corpus: &Corpus) -> GenericRows {
+        let conn = corpus.sql();
+        let document = conn
+            .query_row("SELECT language, text FROM document", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .unwrap();
+        let mut stmt = conn
+            .prepare("SELECT kind, number, anchor, title FROM chunk ORDER BY id")
+            .unwrap();
+        let chunks = stmt
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        (document, chunks)
+    }
+
     #[test]
-    fn a_page_that_is_not_a_spec_is_an_error() {
+    fn a_page_that_is_not_a_spec_is_indexed_as_a_document() {
         let server = Server::start();
-        let page = "<h1>RFC 9449</h1>\n";
-        server.set("/rfc9449.html", page);
+        server.set("/notes.html", PLAIN);
         let corpus = Corpus::new();
-        let manifest = manifest(vec![document(server.url("/rfc9449.html"), &sha256(page))]);
-        let err = corpus.try_index(&manifest).unwrap_err();
-        assert!(
-            matches!(&err, Error::Spec { name, source: crate::SpecError::UnknownFormat } if name == "rfc9449"),
-            "{err:?}"
+        let manifest = manifest(vec![document(server.url("/notes.html"), &sha256(PLAIN))]);
+
+        let summary = corpus.index(&manifest);
+        assert_eq!((summary.downloaded, summary.written), (1, 1));
+        let ((language, text), chunks) = generic_rows(&corpus);
+        assert_eq!(language.as_deref(), Some("html"));
+        let text = text.expect("a generic document stores its text");
+        assert!(text.starts_with("Release notes\n"), "{text}");
+        assert!(!text.contains("Home"), "{text}");
+        let sections: Vec<(Option<String>, Option<String>)> = chunks
+            .iter()
+            .filter(|(kind, ..)| kind == "section")
+            .map(|(_, _, anchor, title)| (anchor.clone(), title.clone()))
+            .collect();
+        assert_eq!(
+            sections,
+            [
+                (Some("release-notes".into()), Some("Release notes".into())),
+                (Some("v2".into()), Some("Version 2".into())),
+                (Some("v1".into()), Some("Version 1".into())),
+            ]
         );
+        assert!(
+            chunks
+                .iter()
+                .all(|(kind, number, ..)| (kind == "section" || kind == "window")
+                    && number.is_none()),
+            "{chunks:?}"
+        );
+        // Only spec chunks, which have numbers, are in the stemmed index.
+        let spec_rows: i64 = corpus
+            .sql()
+            .query_row("SELECT count(*) FROM spec_fts", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(spec_rows, 0);
+
+        // The same pin again is stored already.
+        let again = corpus.index(&manifest);
+        assert_eq!((again.unchanged, again.written), (1, 0));
+    }
+
+    #[test]
+    fn a_markdown_page_is_indexed_as_markdown() {
+        let server = Server::start();
+        let page = "# Notes\n\nSome text.\n\n## Usage\n\nRun it.\n";
+        server.set("/notes.md", page);
+        let corpus = Corpus::new();
+        let manifest = manifest(vec![document(server.url("/notes.md"), &sha256(page))]);
+
+        corpus.index(&manifest);
+        let ((language, text), chunks) = generic_rows(&corpus);
+        assert_eq!(language.as_deref(), Some("markdown"));
+        assert_eq!(text.as_deref(), Some(page));
+        let anchors: Vec<Option<String>> = chunks
+            .iter()
+            .filter(|(kind, ..)| kind == "section")
+            .map(|(_, _, anchor, _)| anchor.clone())
+            .collect();
+        assert_eq!(anchors, [Some("notes".into()), Some("usage".into())]);
     }
 
     #[test]

@@ -170,6 +170,21 @@ impl Store {
             .optional()?)
     }
 
+    /// Whether the document at `path` in the source stores its text: false
+    /// for a spec or guidance, whose chunks are their text, and when there
+    /// is no such document.
+    pub fn document_has_text(&self, source_id: i64, path: &str) -> Result<bool> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT text IS NOT NULL FROM document WHERE source_id = ?1 AND path = ?2",
+                params![source_id, path],
+                |row| row.get(0),
+            )
+            .optional()?
+            .unwrap_or(false))
+    }
+
     /// Replaces the document at `document.path` in the source, with its
     /// chunks, symbols and full-text rows, in one transaction. Returns how
     /// many chunks were written.
@@ -198,13 +213,8 @@ impl Store {
             ],
             |row| row.get(0),
         )?;
-        let is_spec: bool = tx.query_row(
-            "SELECT kind = 'document' FROM source WHERE id = ?1",
-            [source_id],
-            |row| row.get(0),
-        )?;
         clear_document(&tx, document_id)?;
-        insert_chunks(&tx, document_id, document, is_spec)?;
+        insert_chunks(&tx, document_id, document)?;
         tx.commit()?;
         Ok(document.chunks.len())
     }
@@ -302,14 +312,14 @@ fn clear_document(tx: &Transaction<'_>, document_id: i64) -> Result<()> {
 }
 
 /// Inserts a document's symbols, chunks and full-text rows: every chunk's
-/// into `chunk_fts`, and a spec's into the stemmed `spec_fts` as well. Code
-/// ranks against `chunk_fts`, whose BM25 statistics count spec chunks, so
-/// they stay in it.
+/// into `chunk_fts`, and a numbered one's, a spec section or step or a
+/// rule, into the stemmed `spec_fts` as well. Code ranks against
+/// `chunk_fts`, whose BM25 statistics count spec chunks, so they stay in
+/// it.
 fn insert_chunks(
     tx: &Transaction<'_>,
     document_id: i64,
     document: &DocumentRecord<'_>,
-    is_spec: bool,
 ) -> Result<()> {
     let mut symbol = tx.prepare_cached(
         "INSERT INTO symbol (id, display_name, kind, document_id, start_line, end_line)
@@ -367,7 +377,7 @@ fn insert_chunks(
             .as_ref()
             .map_or_else(String::new, |s| identifier_terms(s.display_name));
         fts.execute(params![chunk_id, symbol_terms, path_terms, terms])?;
-        if is_spec {
+        if c.number.is_some() {
             spec_fts.execute(params![chunk_id, symbol_terms, path_terms, terms])?;
         }
     }
