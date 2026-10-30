@@ -145,7 +145,7 @@ jobs:
       # floor on each mined repository (evals/README.md). A loss on any
       # repository is a finding.
       - name: Install ripgrep
-        run: sudo apt-get install -y ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
       - name: Run the history benchmark
         run: |
           status=0

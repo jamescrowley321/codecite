@@ -57,9 +57,10 @@ fn percentile(sorted: &[f64], p: f64) -> f64 {
     sorted[low] + (sorted[high] - sorted[low]) * (at - low as f64)
 }
 
-/// `rg`'s arguments: each term as a whole word in any case, as the `git
+/// `rg`'s arguments, with no path so it searches the working directory and
+/// prints repo-relative paths, as an agent at the repo root sees them: each term as a whole word in any case, as the `git
 /// grep` baseline reads them.
-pub fn rg_args(terms: &[String], dir: &Path, mode: RgMode) -> Vec<String> {
+pub fn rg_args(terms: &[String], mode: RgMode) -> Vec<String> {
     let mut args = vec![
         match mode {
             RgMode::Lines => "-n",
@@ -74,29 +75,41 @@ pub fn rg_args(terms: &[String], dir: &Path, mode: RgMode) -> Vec<String> {
         args.push("-e".into());
         args.push(term.clone());
     }
-    args.push("--".into());
-    args.push(dir.display().to_string());
     args
 }
 
 /// The query's words, or `None` when it has none: neither engine is
 /// measured on it.
 pub fn measured_terms(text: &str) -> Option<Vec<String>> {
-    Some(terms(text)).filter(|t| !t.is_empty())
+    Some(terms(text))
+        .map(|t| {
+            t.into_iter()
+                .filter(|t| t.chars().any(char::is_alphanumeric))
+                .collect::<Vec<_>>()
+        })
+        .filter(|t| !t.is_empty())
 }
 
 /// Runs `program`, returning what it printed to stdout in bytes and the
 /// wall time in milliseconds. A failure names the program.
 pub fn run_timed(program: &Path, args: &[String]) -> anyhow::Result<(u64, f64)> {
-    run_accepting(program, args, &[0])
+    run_accepting(program, args, &[0], None)
 }
 
 /// [`run_timed`], where exit codes in `ok` also count as success.
-fn run_accepting(program: &Path, args: &[String], ok: &[i32]) -> anyhow::Result<(u64, f64)> {
+fn run_accepting(
+    program: &Path,
+    args: &[String],
+    ok: &[i32],
+    dir: Option<&Path>,
+) -> anyhow::Result<(u64, f64)> {
+    let mut command = Command::new(program);
+    command.args(args).stdin(Stdio::null());
+    if let Some(dir) = dir {
+        command.current_dir(dir);
+    }
     let start = Instant::now();
-    let output = Command::new(program)
-        .args(args)
-        .stdin(Stdio::null())
+    let output = command
         .output()
         .with_context(|| format!("running {}", program.display()))?;
     let ms = start.elapsed().as_secs_f64() * 1000.0;
@@ -140,10 +153,19 @@ pub fn cost(
         };
         let context = || format!("query `{}`", query.id);
         let search = ["search", "--allow-stale", "--", corpus, &query.text].map(str::to_owned);
-        ours.push(fastest(|| run_timed(codecite, &search)).with_context(context)?);
+        // The bench's words can include one codecite drops; then no engine
+        // is measured on the query.
+        match fastest(|| run_timed(codecite, &search)) {
+            Ok(m) => ours.push(m),
+            Err(e) if crate::has_no_words(format!("{e:#}").as_bytes()) => continue,
+            Err(e) => return Err(e).with_context(context),
+        }
         for (mode, into) in [(RgMode::Lines, &mut lines), (RgMode::Files, &mut files)] {
-            let args = rg_args(&words, checkout, mode);
-            into.push(fastest(|| run_accepting(rg, &args, &[0, 1])).with_context(context)?);
+            let args = rg_args(&words, mode);
+            into.push(
+                fastest(|| run_accepting(rg, &args, &[0, 1], Some(checkout)))
+                    .with_context(context)?,
+            );
         }
     }
     Ok(serde_json::json!({
@@ -162,19 +184,10 @@ mod tests {
     #[test]
     fn rg_args_search_each_term_as_a_whole_word_in_any_case() {
         assert_eq!(
-            rg_args(
-                &["token".into(), "refresh".into()],
-                Path::new("/c"),
-                RgMode::Lines
-            ),
-            [
-                "-n", "-i", "-w", "-F", "-e", "token", "-e", "refresh", "--", "/c"
-            ]
+            rg_args(&["token".into(), "refresh".into()], RgMode::Lines),
+            ["-n", "-i", "-w", "-F", "-e", "token", "-e", "refresh"]
         );
-        assert_eq!(
-            rg_args(&["x_y".into()], Path::new("/c"), RgMode::Files)[0],
-            "-l"
-        );
+        assert_eq!(rg_args(&["x_y".into()], RgMode::Files)[0], "-l");
     }
 
     #[test]
@@ -188,6 +201,7 @@ mod tests {
     fn a_query_with_no_words_is_not_measured() {
         assert!(measured_terms("a to of").is_none());
         assert!(measured_terms("token refresh").is_some());
+        assert!(measured_terms("___ to").is_none());
     }
 
     #[test]
@@ -197,10 +211,19 @@ mod tests {
     }
 
     #[test]
+    fn rg_runs_in_the_checkout_and_prints_relative_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = ["-c".to_owned(), "pwd -P; ls".to_owned()];
+        let (bytes, _) = run_accepting(Path::new("sh"), &script, &[0], Some(dir.path())).unwrap();
+        let canonical = dir.path().canonicalize().unwrap().display().to_string();
+        assert_eq!(bytes as usize, canonical.len() + 1);
+    }
+
+    #[test]
     fn no_match_is_zero_bytes_for_rg_but_a_failure_for_the_rest() {
         let sh = Path::new("sh");
         let exit1 = ["-c".to_owned(), "exit 1".to_owned()];
-        assert_eq!(run_accepting(sh, &exit1, &[0, 1]).unwrap().0, 0);
+        assert_eq!(run_accepting(sh, &exit1, &[0, 1], None).unwrap().0, 0);
         assert!(run_timed(sh, &exit1).is_err());
     }
 }
