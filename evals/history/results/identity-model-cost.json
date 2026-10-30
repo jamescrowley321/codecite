@@ -1,19 +1,19 @@
 {
   "codecite": {
-    "median_bytes": 666,
-    "median_ms": 42.242394,
-    "p90_ms": 62.9548389
+    "median_bytes": 709,
+    "median_ms": 42.506242,
+    "p90_ms": 63.14228430000001
   },
   "engine": "cost",
   "queries": 48,
   "rg_files": {
     "median_bytes": 16160,
-    "median_ms": 8.954206,
-    "p90_ms": 15.836001200000002
+    "median_ms": 9.394952,
+    "p90_ms": 14.548596500000002
   },
   "rg_lines": {
     "median_bytes": 346853,
-    "median_ms": 10.1416995,
-    "p90_ms": 31.769730000000006
+    "median_ms": 9.9867705,
+    "p90_ms": 31.385738200000002
   }
 }
