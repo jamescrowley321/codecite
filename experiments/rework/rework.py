@@ -5,10 +5,23 @@ Observational only, never a gate. See README.md for what is counted and how.
 Stdlib only, so it runs with a bare `python3`.
 """
 
+import argparse
 import json
 import re
 import subprocess
+import sys
+import time
+from pathlib import Path
 from typing import NamedTuple
+
+# The history benchmark's repositories, all public and the owner's own.
+REPOS = [
+    "jamescrowley321/blind-peer-review",
+    "jamescrowley321/codecite",
+    "jamescrowley321/identity-model",
+    "jamescrowley321/identity-stack",
+    "jamescrowley321/terraform-provider-descope",
+]
 
 # The overall result of a review that names no lens.
 ALL = "All lenses"
@@ -295,3 +308,185 @@ def plan_text(repo, path, ref, gh=run_gh):
         )
     except GhError:
         return None
+
+
+# Merged PRs, 25 a page: one `gh pr list` query for every PR's comments,
+# reviews and files times out on the larger repositories. Each connection
+# below takes its first 100 nodes, enough for every PR in these repositories.
+QUERY = """
+query($owner: String!, $name: String!, $endCursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: MERGED, first: 25, after: $endCursor) {
+      nodes {
+        number
+        title
+        headRefOid
+        files(first: 100) { nodes { path } }
+        comments(first: 100) { nodes { createdAt body } }
+        reviews(first: 100) { nodes { submittedAt body } }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+"""
+
+
+def _prs(pages):
+    """The PRs in `gh api graphql --paginate --slurp` output, nodes unwrapped."""
+    prs = []
+    for page in pages:
+        for pr in page["data"]["repository"]["pullRequests"]["nodes"]:
+            for key in ("files", "comments", "reviews"):
+                pr[key] = (pr.get(key) or {}).get("nodes") or []
+            prs.append(pr)
+    return prs
+
+
+def fetch(repo, cache, refresh=False, gh=run_gh, wait=10):
+    """The repository's merged PRs, cached as JSON in `cache`.
+
+    A GraphQL page can still time out (HTTP 502/504); the fetch is retried
+    twice. Any other error is raised and nothing is cached.
+    """
+    path = Path(cache) / (repo.replace("/", "__") + ".json")
+    if path.exists() and not refresh:
+        return json.loads(path.read_text())
+    owner, _, name = repo.partition("/")
+    args = ["api", "graphql", "--paginate", "--slurp", "-f", f"query={QUERY}"]
+    args += ["-F", f"owner={owner}", "-F", f"name={name}"]
+    for attempt in range(3):
+        try:
+            out = gh(args)
+            break
+        except GhError as err:
+            if attempt == 2 or not re.search(r"\b50[234]\b", str(err)):
+                raise
+            time.sleep(wait)
+    prs = _prs(json.loads(out))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(prs))
+    return prs
+
+
+CITED = "cited plan"
+UNCITED = "uncited plan"
+NO_PLAN = "no plan"
+GROUPS = [CITED, UNCITED, NO_PLAN]
+
+
+def pr_row(repo, pr, plans):
+    """One PR's rework: its group, rounds to pass and violation counts.
+
+    `plans(repo, path, ref)` reads a plan's text at the head, or None.
+    """
+    reviews = [
+        (c["createdAt"], parse_review(c["body"]))
+        for c in pr.get("comments") or []
+        if is_review(c["body"])
+    ]
+    reviews += [
+        (r["submittedAt"], parse_review(r["body"]))
+        for r in pr.get("reviews") or []
+        if is_review(r.get("body") or "")
+    ]
+    grouped = rounds(reviews)
+    paths = plan_paths([f["path"] for f in pr.get("files") or []])
+    texts = [plans(repo, path, pr["headRefOid"]) for path in paths]
+    if not paths:
+        group = NO_PLAN
+    elif any(t is not None and has_citation(t) for t in texts):
+        group = CITED
+    else:
+        group = UNCITED
+    return {
+        "repo": repo,
+        "number": pr["number"],
+        "group": group,
+        "reviewed": bool(grouped),
+        "unreadable": sum(t is None for t in texts),
+        "rounds_to_pass": rounds_to_pass(grouped),
+        **violations(grouped),
+    }
+
+
+def _mean(values):
+    return f"{sum(values) / len(values):.2f}" if values else "–"
+
+
+def _line(repo, group, rows):
+    reviewed = [r for r in rows if r["reviewed"]]
+    passed = [r["rounds_to_pass"] for r in reviewed if r["rounds_to_pass"]]
+    cells = [
+        repo,
+        group,
+        str(len(rows)),
+        str(len(reviewed)),
+        _mean(passed),
+        str(len(reviewed) - len(passed)),
+        *(_mean([r[k] for r in reviewed]) for k in ("spec", "convention", "all")),
+        str(sum(r["unreadable"] for r in rows)),
+    ]
+    return "| " + " | ".join(cells) + " |"
+
+
+def report(rows):
+    """A Markdown table per repository and group, then a pooled row per group."""
+    lines = [
+        "| repository | group | PRs | reviewed | mean rounds to pass"
+        " | never passed | spec / reviewed PR | convention / reviewed PR"
+        " | all MUST+SHOULD / reviewed PR | unreadable plans |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    repos = list(dict.fromkeys(r["repo"] for r in rows))
+    for repo in repos:
+        for group in GROUPS:
+            some = [r for r in rows if r["repo"] == repo and r["group"] == group]
+            if some:
+                lines.append(_line(repo, group, some))
+    for group in GROUPS:
+        some = [r for r in rows if r["group"] == group]
+        if some:
+            lines.append(_line("**all**", group, some))
+    return "\n".join(lines) + "\n"
+
+
+def cached_plans(cache, gh=run_gh):
+    """A `plans(repo, path, ref)` reader that keeps every answer in `cache`."""
+    path = Path(cache) / "plans.json"
+    known = json.loads(path.read_text()) if path.exists() else {}
+
+    def read(repo, plan, ref):
+        key = f"{repo}@{ref}:{plan}"
+        if key not in known:
+            known[key] = plan_text(repo, plan, ref, gh=gh)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(known))
+        return known[key]
+
+    return read
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser.add_argument("repos", nargs="*", default=REPOS, metavar="owner/repo")
+    parser.add_argument("--cache", default="/var/tmp/codecite-rework")
+    parser.add_argument("--refresh", action="store_true", help="refetch the PRs")
+    args = parser.parse_args(argv)
+    plans = cached_plans(args.cache)
+    rows = []
+    for repo in args.repos:
+        try:
+            prs = fetch(repo, args.cache, refresh=args.refresh)
+        except GhError as err:
+            print(f"rework: {repo}: {err}", file=sys.stderr)
+            return 1
+        rows += [
+            pr_row(repo, pr, plans) for pr in sorted(prs, key=lambda p: p["number"])
+        ]
+    sys.stdout.write(report(rows))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -254,5 +254,171 @@ class Plans(unittest.TestCase):
         self.assertIn("Accept: application/vnd.github.raw", seen[0])
 
 
+def pr(number, comments=(), reviews=(), files=(), head="abc"):
+    return {
+        "number": number,
+        "headRefOid": head,
+        "files": [{"path": f} for f in files],
+        "comments": [{"createdAt": t, "body": b} for t, b in comments],
+        "reviews": [{"submittedAt": t, "body": b} for t, b in reviews],
+    }
+
+
+BLOCK = "## Blind peer review — PR #1\n\nVerdict: BLOCK\n"
+PASS = "## Blind peer review — PR #1\n\nVerdict: PASS\n"
+
+
+class PrRow(unittest.TestCase):
+    def test_reviews_come_from_comments_and_review_bodies_in_time_order(self):
+        row = rework.pr_row(
+            "o/r",
+            pr(
+                7,
+                comments=[
+                    ("2026-01-02T00:00:00Z", PASS),
+                    ("2026-01-01T09:00:00Z", "hi"),
+                ],
+                reviews=[("2026-01-01T10:00:00Z", BLOCK)],
+            ),
+            plans=lambda *a: None,
+        )
+        self.assertEqual(row["number"], 7)
+        self.assertTrue(row["reviewed"])
+        self.assertEqual(row["rounds_to_pass"], 2)
+        self.assertEqual(row["group"], rework.NO_PLAN)
+
+    def test_a_pr_without_review_comments_is_unreviewed(self):
+        row = rework.pr_row("o/r", pr(1, comments=[("t", "lgtm")]), plans=None)
+        self.assertFalse(row["reviewed"])
+        self.assertIsNone(row["rounds_to_pass"])
+
+    def test_plan_groups(self):
+        texts = {
+            "docs/plans/a.md": "see codecite@56fc2dd:src/a.rs#L1-L9",
+            "docs/plans/b.md": "no citations here",
+        }
+
+        def reader(repo, path, ref):
+            self.assertEqual((repo, ref), ("o/r", "abc"))
+            return texts.get(path)
+
+        for files, group, unreadable in [
+            (["docs/plans/a.md", "docs/plans/b.md"], rework.CITED, 0),
+            (["docs/plans/b.md"], rework.UNCITED, 0),
+            (["docs/plans/b.md", "docs/plans/gone.md"], rework.UNCITED, 1),
+            (["docs/plans/gone.md"], rework.UNCITED, 1),
+            (["src/main.rs"], rework.NO_PLAN, 0),
+        ]:
+            with self.subTest(files=files):
+                row = rework.pr_row("o/r", pr(1, files=files), plans=reader)
+                self.assertEqual(row["group"], group)
+                self.assertEqual(row["unreadable"], unreadable)
+
+
+def row(repo, group, rounds_to_pass, spec=0, convention=0, all_=0, reviewed=True):
+    return {
+        "repo": repo,
+        "number": 1,
+        "group": group,
+        "reviewed": reviewed,
+        "unreadable": 0,
+        "rounds_to_pass": rounds_to_pass,
+        "spec": spec,
+        "convention": convention,
+        "all": all_,
+    }
+
+
+class Report(unittest.TestCase):
+    def test_means_never_passed_and_the_pooled_row(self):
+        rows = [
+            row("o/a", rework.CITED, 1, spec=2, all_=4),
+            row("o/a", rework.CITED, None, convention=1, all_=3),
+            row("o/b", rework.CITED, 3, spec=1, all_=5),
+            row("o/b", rework.NO_PLAN, None, reviewed=False),
+        ]
+        lines = rework.report(rows).splitlines()
+        cells = {
+            tuple(c.strip() for c in line.strip("|").split("|")[:2]): [
+                c.strip() for c in line.strip("|").split("|")[2:]
+            ]
+            for line in lines
+            if line.startswith("|")
+        }
+        # PRs, reviewed, mean rounds, never passed, spec, convention, all, unreadable
+        self.assertEqual(
+            cells[("o/a", rework.CITED)],
+            ["2", "2", "1.00", "1", "1.00", "0.50", "3.50", "0"],
+        )
+        self.assertEqual(
+            cells[("o/b", rework.NO_PLAN)], ["1", "0", "–", "0", "–", "–", "–", "0"]
+        )
+        self.assertEqual(
+            cells[("**all**", rework.CITED)],
+            ["3", "3", "2.00", "1", "1.00", "0.33", "4.00", "0"],
+        )
+
+
+PAGE = """[{"data": {"repository": {"pullRequests": {
+  "nodes": [{"number": 3, "title": "t", "headRefOid": "abc",
+             "files": {"nodes": [{"path": "a.md"}]},
+             "comments": {"nodes": []},
+             "reviews": {"nodes": [{"submittedAt": "t", "body": "b"}]}}],
+  "pageInfo": {"hasNextPage": false, "endCursor": null}}}}}]"""
+PR3 = {
+    "number": 3,
+    "title": "t",
+    "headRefOid": "abc",
+    "files": [{"path": "a.md"}],
+    "comments": [],
+    "reviews": [{"submittedAt": "t", "body": "b"}],
+}
+
+
+class Fetch(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+
+        self.cache = Path(tempfile.mkdtemp())
+
+    def test_fetches_once_then_reads_the_cache(self):
+        calls = []
+
+        def gh(args):
+            calls.append(args)
+            return PAGE
+
+        self.assertEqual(rework.fetch("o/r", self.cache, gh=gh), [PR3])
+        self.assertEqual(rework.fetch("o/r", self.cache, gh=gh), [PR3])
+        self.assertEqual(len(calls), 1)
+        self.assertIn("--paginate", calls[0])
+        self.assertIn("owner=o", calls[0])
+        self.assertEqual(rework.fetch("o/r", self.cache, refresh=True, gh=gh), [PR3])
+        self.assertEqual(len(calls), 2)
+
+    def test_retries_a_gateway_timeout(self):
+        replies = [rework.GhError("HTTP 504: Gateway Timeout"), "[]"]
+
+        def gh(args):
+            reply = replies.pop(0)
+            if isinstance(reply, Exception):
+                raise reply
+            return reply
+
+        self.assertEqual(rework.fetch("o/r", self.cache, gh=gh, wait=0), [])
+
+    def test_other_errors_are_not_retried(self):
+        calls = []
+
+        def gh(args):
+            calls.append(args)
+            raise rework.GhError("Could not resolve to a Repository")
+
+        with self.assertRaises(rework.GhError):
+            rework.fetch("o/nope", self.cache, gh=gh, wait=0)
+        self.assertEqual(len(calls), 1)
+        self.assertFalse(any(self.cache.iterdir()))
+
+
 if __name__ == "__main__":
     unittest.main()
