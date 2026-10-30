@@ -7,7 +7,10 @@
 #   `#IDTokenValidation`); a step in it also counts, and
 #   `<document>#section-<n>/step-<k>` names one step only;
 # - a code line as `<path>#L<n>`, normally a definition's first line; a
-#   result counts when it is in that file and its lines hold line n.
+#   result counts when it is in that file and its lines hold line n;
+# - a whole file as its bare path (`py/src/client.py`), in `history-*`
+#   classes only: any result in it
+#   counts. The history benchmark (`evals/history/`) labels this way.
 #
 # Queries come from real tasks and agents' eval transcripts, not from the
 # index. Code line numbers hold at the commit pinned in identity-bench.toml.

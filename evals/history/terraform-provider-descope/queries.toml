@@ -1,0 +1,233 @@
+# History benchmark queries for jamescrowley321/terraform-provider-descope, mined from merged PRs by
+# `codecite-history-mine` (evals/src/codecite_evals/history.py). Frozen:
+# never edit by hand; remining writes a new version.
+#
+# version: 3
+# commit: ccebf75b4eb513db9681453ebbcdbcfe68a52fed
+# mined: 2026-10-29
+
+corpus = "history-terraform-provider-descope"
+
+[[query]]
+id = "terraform-provider-descope-pr235-title"
+class = "history-title"
+text = "fix(deps): bump Go to 1.26.10 and golang.org/x/net to v0.60.0"
+answers = ["go.mod"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/235"
+
+[[query]]
+id = "terraform-provider-descope-pr227-title"
+class = "history-title"
+text = "build(deps): consolidate dependabot updates (github-actions group, go-uuid 1.0.4)"
+answers = [".github/workflows/codeql.yml", ".github/workflows/scorecard.yml", ".github/workflows/security.yml", "go.mod"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/227"
+
+[[query]]
+id = "terraform-provider-descope-pr221-title"
+class = "history-title"
+text = "ci(claude): scope the review workflow's tool grant and pin the lens plugin"
+answers = [".gitignore"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/221"
+
+[[query]]
+id = "terraform-provider-descope-pr210-title"
+class = "history-title"
+text = "chore(testcleanup): delete leftover testacc- tenants"
+answers = [".github/workflows/codeql.yml", ".github/workflows/scorecard.yml", ".github/workflows/security.yml", "tools/testcleanup/main.go"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/210"
+
+[[query]]
+id = "terraform-provider-descope-pr218-title"
+class = "history-title"
+text = "test(integration): run the FGA schema test against its own project"
+answers = ["tests/integration/fgaschema_test.go", "tests/integration/harness.go", "tests/integration/verify.go"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/218"
+
+[[query]]
+id = "terraform-provider-descope-pr218-issue"
+class = "history-issue"
+text = "Integration tests destroy the shared project's FGA schema, breaking identity-stack's E2E gate\n\n`TestFGASchemaCRUD` overwrites the FGA schema of whatever project `DESCOPE_PROJECT_ID` points at. That project is shared with **identity-stack**, whose authorization model this silently deletes — turning its required `E2E Tests` check red with 23 failures and blocking every open PR in that repo until"
+answers = ["tests/integration/fgaschema_test.go", "tests/integration/harness.go", "tests/integration/verify.go"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/218"
+
+[[query]]
+id = "terraform-provider-descope-pr217-title"
+class = "history-title"
+text = "ci: let @claude run the blind-peer-review lenses on demand"
+answers = ["CONTRIBUTING.md"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/217"
+
+[[query]]
+id = "terraform-provider-descope-pr203-title"
+class = "history-title"
+text = "test(references): explicit return after t.Fatal nil-guards (staticcheck SA5011)"
+answers = ["internal/models/helpers/references_test.go"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/203"
+
+[[query]]
+id = "terraform-provider-descope-pr196-title"
+class = "history-title"
+text = "fix: bump Go toolchain to 1.26.6 to patch stdlib vulnerabilities"
+answers = ["go.mod"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/196"
+
+[[query]]
+id = "terraform-provider-descope-pr194-title"
+class = "history-title"
+text = "docs: correct provider scope in index — tenants are managed, not excluded"
+answers = ["docs/index.md", "templates/index.md.tmpl"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/194"
+
+[[query]]
+id = "terraform-provider-descope-pr189-title"
+class = "history-title"
+text = "ci(release): generate SPDX SBOMs for provider release archives"
+answers = [".github/workflows/release.yml", ".goreleaser.yml"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/189"
+
+[[query]]
+id = "terraform-provider-descope-pr185-title"
+class = "history-title"
+text = "fix(deps): bump grpc to v1.82.1 (GO-2026-6061)"
+answers = ["go.mod"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/185"
+
+[[query]]
+id = "terraform-provider-descope-pr181-title"
+class = "history-title"
+text = "chore: tpd CI/security maintenance — deps, govulncheck fix, remove Snyk + Sonar"
+answers = [".github/workflows/codeql.yml", ".github/workflows/scorecard.yml", ".github/workflows/security.yml", "go.mod"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/181"
+
+[[query]]
+id = "terraform-provider-descope-pr178-title"
+class = "history-title"
+text = "chore(deps): consolidate go-sdk + actions bumps, fix govulncheck (crypto/tls GO-2026-5856)"
+answers = [".github/actions/ci/setup/action.yml", ".github/workflows/ci.yml", ".github/workflows/codeql.yml", ".github/workflows/release.yml", ".github/workflows/scorecard.yml", ".github/workflows/security.yml", "go.mod"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/178"
+
+[[query]]
+id = "terraform-provider-descope-pr171-title"
+class = "history-title"
+text = "chore(deps): consolidate dependency updates (go-sdk v1.26 + GitHub Actions)"
+answers = [".github/workflows/ci.yml", ".github/workflows/codeql.yml", ".github/workflows/release.yml", ".github/workflows/scorecard.yml", ".github/workflows/security.yml", "go.mod"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/171"
+
+[[query]]
+id = "terraform-provider-descope-pr170-title"
+class = "history-title"
+text = "ci(release): replace broken SLSA generator with native build provenance"
+answers = [".github/workflows/release.yml"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/170"
+
+[[query]]
+id = "terraform-provider-descope-pr156-title"
+class = "history-title"
+text = "Align with upstream: rename inbound_app + deprecate provider project_id"
+answers = [".gitignore", "README.md", "docs/architecture/auth-flows.md", "docs/architecture/descope-model.md", "docs/architecture/oauth2-oidc-mapping.md", "docs/index.md", "docs/resources/inbound_application.md", "internal/datasources/password_settings.go", "internal/provider/provider.go", "internal/resources/access_key.go", "internal/resources/inbound_application.go", "internal/resources/management_key.go", "internal/resources/outbound_application.go", "internal/resources/password_settings.go", "tools/testacc/resource.go"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/156"
+
+[[query]]
+id = "terraform-provider-descope-pr155-title"
+class = "history-title"
+text = "chore: sync from upstream + Go deps + CI security hardening"
+answers = [".github/dependabot.yml", ".github/workflows/ci.yml", ".github/workflows/codeql.yml", ".github/workflows/release-please.yml", ".github/workflows/release.yml", ".github/workflows/scorecard.yml", ".github/workflows/security.yml", ".gitignore", "docs/raw/project/applications/applications.md", "docs/resources/project.md", "go.mod", "internal/docs/docs.go", "internal/docs/models.go", "internal/models/project/applications/applications.go", "internal/models/project/applications/applications_test.go"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/155"
+
+[[query]]
+id = "terraform-provider-descope-pr151-title"
+class = "history-title"
+text = "chore: sync upstream, update deps, fix code scanning alerts"
+answers = [".github/actions/ci/lint/action.yml", ".github/workflows/release-please.yml", ".github/workflows/release.yml", ".github/workflows/security.yml", "docs/raw/project/authentication/passkeys.md", "docs/raw/project/authorization/authorization.md", "docs/resources/project.md", "go.mod", "internal/docs/docs.go", "internal/models/attrs/stringattr/string.go", "internal/models/project/authentication/authentication_test.go", "internal/models/project/authentication/passkeys.go", "internal/models/project/authorization/authorization.go", "internal/models/project/authorization/authorization_test.go", "internal/models/project/connectors/connectors_test.go", "internal/models/project/connectors/recaptchaenterprise.go", "tools/terragen/conngen/naming.json"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/151"
+
+[[query]]
+id = "terraform-provider-descope-pr142-title"
+class = "history-title"
+text = "ci: consolidate dependabot into grouped daily PRs + auto-merge"
+answers = [".github/dependabot.yml"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/142"
+
+[[query]]
+id = "terraform-provider-descope-pr141-title"
+class = "history-title"
+text = "chore: sync upstream (CI action bumps)"
+answers = [".github/actions/ci/setup/action.yml"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/141"
+
+[[query]]
+id = "terraform-provider-descope-pr140-title"
+class = "history-title"
+text = "chore: sync upstream and update Go dependencies"
+answers = [".github/actions/ci/lint/action.yml", "go.mod"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/140"
+
+[[query]]
+id = "terraform-provider-descope-pr139-title"
+class = "history-title"
+text = "chore(deps): bump actions/setup-go to v6.4.0 and github/codeql-action to v4.35.1"
+answers = [".github/workflows/codeql.yml", ".github/workflows/scorecard.yml", ".github/workflows/security.yml"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/139"
+
+[[query]]
+id = "terraform-provider-descope-pr136-title"
+class = "history-title"
+text = "fix: add ralph/claude runtime state to gitignore"
+answers = [".gitignore"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/136"
+
+[[query]]
+id = "terraform-provider-descope-pr129-title"
+class = "history-title"
+text = "fix(test): tolerate last-project deletion error in Destroy"
+answers = ["tests/integration/harness.go"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/129"
+
+[[query]]
+id = "terraform-provider-descope-pr127-title"
+class = "history-title"
+text = "fix(ci): add actions:write permission for workflow dispatch"
+answers = [".github/workflows/release-please.yml"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/127"
+
+[[query]]
+id = "terraform-provider-descope-pr125-title"
+class = "history-title"
+text = "fix(ci): add --repo flag to gh workflow dispatch in release-please"
+answers = [".github/workflows/release-please.yml"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/125"
+
+[[query]]
+id = "terraform-provider-descope-pr124-title"
+class = "history-title"
+text = "fix(ci): use tag ref for SLSA provenance generator"
+answers = [".github/workflows/release.yml"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/124"
+
+[[query]]
+id = "terraform-provider-descope-pr122-title"
+class = "history-title"
+text = "fix(ci): trigger goreleaser via workflow_dispatch from release-please"
+answers = [".github/workflows/release-please.yml", ".github/workflows/release.yml"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/122"
+
+[[query]]
+id = "terraform-provider-descope-pr120-title"
+class = "history-title"
+text = "feat(docs): comprehensive registry docs audit"
+answers = ["docs/data-sources/fga_check.md", "docs/data-sources/password_settings.md", "docs/data-sources/project_export.md", "docs/guides/quickstart.md", "docs/index.md", "docs/resources/fga_schema.md", "docs/resources/inbound_application.md", "docs/resources/list.md", "docs/resources/outbound_application.md", "docs/resources/password_settings.md", "docs/resources/permission.md", "docs/resources/role.md", "docs/resources/sso.md", "docs/resources/sso_application.md", "docs/resources/third_party_application.md"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/120"
+
+[[query]]
+id = "terraform-provider-descope-pr119-title"
+class = "history-title"
+text = "docs: add missing docs and update index for v1.0.0"
+answers = ["docs/guides/quickstart.md", "docs/index.md"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/119"
+
+[[query]]
+id = "terraform-provider-descope-pr117-title"
+class = "history-title"
+text = "fix(release): remove SBOMs from checksums and drop broken Cosign step"
+answers = [".github/workflows/release.yml", ".goreleaser.yml", "release-please-config.json"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/117"

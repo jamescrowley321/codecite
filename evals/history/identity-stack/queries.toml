@@ -1,0 +1,331 @@
+# History benchmark queries for jamescrowley321/identity-stack, mined from merged PRs by
+# `codecite-history-mine` (evals/src/codecite_evals/history.py). Frozen:
+# never edit by hand; remining writes a new version.
+#
+# version: 3
+# commit: bacc362abbf527134278c1fc1f793ed59ea4712e
+# mined: 2026-10-29
+
+corpus = "history-identity-stack"
+
+[[query]]
+id = "identity-stack-pr504-title"
+class = "history-title"
+text = "fix(deps): clear npm audit high/critical advisories"
+answers = ["frontend/package.json"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/504"
+
+[[query]]
+id = "identity-stack-pr486-title"
+class = "history-title"
+text = "fix: store Document.created_at as aware UTC and install CI deps from uv.lock"
+answers = [".github/workflows/ci.yml", "backend/app/models/document.py"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/486"
+
+[[query]]
+id = "identity-stack-pr473-title"
+class = "history-title"
+text = "End-to-end Ory validation with a real provider-signed JWT, and canonical-model RBAC for providers without authorization claims"
+answers = [".github/workflows/ci.yml", ".github/workflows/codeql.yml", ".github/workflows/scorecard.yml", ".github/workflows/security.yml", "backend/.env.example", "backend/app/dependencies/rbac.py", "backend/tests/e2e/conftest.py", "backend/tests/integration/conftest.py", "backend/tests/unit/test_rbac_dependencies.py", "docker-compose.test.yml", "infra/ory/README.md"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/473"
+
+[[query]]
+id = "identity-stack-pr468-title"
+class = "history-title"
+text = "ci(claude): scope the review workflow's tool grant and pin the lens plugin"
+answers = [".gitignore"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/468"
+
+[[query]]
+id = "identity-stack-pr465-title"
+class = "history-title"
+text = "fix(infra): stop the FGA schema from planning a change on every run"
+answers = ["infra/fga.tf"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/465"
+
+[[query]]
+id = "identity-stack-pr464-title"
+class = "history-title"
+text = "chore: ignore the ralph loop prompt and worktree dir"
+answers = [".gitignore"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/464"
+
+[[query]]
+id = "identity-stack-pr463-title"
+class = "history-title"
+text = "fix(infra): make the expired-token fixture an input, not a local-file round trip"
+answers = ["infra/github.tf", "infra/main.tf", "infra/variables.tf"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/463"
+
+[[query]]
+id = "identity-stack-pr410-title"
+class = "history-title"
+text = "fix(infra): repair descope provider drift + mint TF-owned CI management key"
+answers = ["backend/tests/e2e/helpers/auth.py", "infra/access_key.tf", "infra/github.tf", "infra/variables.tf"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/410"
+
+[[query]]
+id = "identity-stack-pr461-title"
+class = "history-title"
+text = "fix(e2e): delete leaked test objects through the batch endpoints"
+answers = ["backend/tests/e2e/helpers/auth.py"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/461"
+
+[[query]]
+id = "identity-stack-pr461-issue"
+class = "history-issue"
+text = "test(e2e): RBAC sweep counts rate-limited deletes as successes, so debris never drains\n\nFound while working #455. This is why the leaked-RBAC debris keeps coming back after being \"swept\"."
+answers = ["backend/tests/e2e/helpers/auth.py"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/461"
+
+[[query]]
+id = "identity-stack-pr459-title"
+class = "history-title"
+text = "test(e2e): assert the access-key session's missing canonical identity"
+answers = ["backend/tests/e2e/test_identity_repository_ui.py"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/459"
+
+[[query]]
+id = "identity-stack-pr459-issue"
+class = "history-issue"
+text = "test(e2e): test_role_created_via_api_is_not_yet_visible_in_ui pins behaviour #392 was meant to change\n\n`backend/tests/e2e/test_identity_repository_ui.py:70`"
+answers = ["backend/tests/e2e/test_identity_repository_ui.py"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/459"
+
+[[query]]
+id = "identity-stack-pr456-title"
+class = "history-title"
+text = "test(rate-limit): gate the fastapi<0.137 cap so a bump cannot silently disable it"
+answers = ["backend/tests/unit/test_rate_limiting.py"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/456"
+
+[[query]]
+id = "identity-stack-pr457-title"
+class = "history-title"
+text = "fix(ci): exclude Dependabot from the credentialed jobs"
+answers = [".github/workflows/ci.yml"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/457"
+
+[[query]]
+id = "identity-stack-pr453-title"
+class = "history-title"
+text = "test(e2e): sweep leaked access keys and RBAC objects, and stop hiding failures"
+answers = ["backend/tests/e2e/conftest.py", "backend/tests/e2e/helpers/auth.py", "backend/tests/e2e/test_identity_repository_ui.py"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/453"
+
+[[query]]
+id = "identity-stack-pr453-issue"
+class = "history-issue"
+text = "test(e2e): cleanup leaks an owner/admin access key when the delete fails\n\nFound in a fresh-context review of #425 (test-integrity lens). Adjacent to the user-leak fix in #433, but a different object."
+answers = ["backend/tests/e2e/conftest.py", "backend/tests/e2e/helpers/auth.py", "backend/tests/e2e/test_identity_repository_ui.py"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/453"
+
+[[query]]
+id = "identity-stack-pr454-title"
+class = "history-title"
+text = "test(e2e): assert exact statuses instead of accepting whole classes of failure"
+answers = ["backend/tests/e2e/test_api_endpoints.py", "backend/tests/e2e/test_identity_repository_ui.py"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/454"
+
+[[query]]
+id = "identity-stack-pr454-issue"
+class = "history-issue"
+text = "test(e2e): 39 permissive status assertions let a wholly-denied admin surface pass\n\nFound in a fresh-context review of #425 (test-integrity lens). Pre-existing; #425 converts the FGA-conditional `pytest.skip` guards into failures, but these assertions are a separate hollowness."
+answers = ["backend/tests/e2e/test_api_endpoints.py", "backend/tests/e2e/test_identity_repository_ui.py"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/454"
+
+[[query]]
+id = "identity-stack-pr452-title"
+class = "history-title"
+text = "test(e2e): make the four remaining redirect-to-login guards real"
+answers = ["backend/tests/e2e/test_authenticated_ui.py", "backend/tests/e2e/test_identity_repository_ui.py"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/452"
+
+[[query]]
+id = "identity-stack-pr452-issue"
+class = "history-issue"
+text = "test(e2e): four not_to_have_url(\"**/login**\") assertions can never fail\n\nFound in a fresh-context review of #425."
+answers = ["backend/tests/e2e/test_authenticated_ui.py", "backend/tests/e2e/test_identity_repository_ui.py"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/452"
+
+[[query]]
+id = "identity-stack-pr450-title"
+class = "history-title"
+text = "fix(keys): refuse unheld roles and unbounded expiry on access keys"
+answers = ["backend/app/middleware/auth.py", "backend/app/routers/accesskeys.py", "backend/tests/unit/test_accesskeys_router.py", "frontend/src/pages/AccessKeys.tsx"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/450"
+
+[[query]]
+id = "identity-stack-pr450-issue"
+class = "history-issue"
+text = "security: an admin can mint a never-expiring access key carrying roles they do not hold\n\nFound in a fresh-context review of #425 (auth/authz lens). Not caused by that PR — pre-existing, and worth fixing now that bare-project-id session tokens authenticate (#425 makes access-key tokens a live credential path)."
+answers = ["backend/app/middleware/auth.py", "backend/app/routers/accesskeys.py", "backend/tests/unit/test_accesskeys_router.py", "frontend/src/pages/AccessKeys.tsx"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/450"
+
+[[query]]
+id = "identity-stack-pr449-title"
+class = "history-title"
+text = "fix(fga): scope target resolution to the caller's tenant"
+answers = ["backend/app/dependencies/fga.py", "backend/app/routers/fga.py", "backend/tests/unit/test_fga_dependencies.py", "backend/tests/unit/test_fga_router.py"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/449"
+
+[[query]]
+id = "identity-stack-pr449-issue"
+class = "history-issue"
+text = "security: /api/fga/* resolves users project-wide, leaking cross-tenant existence and internal ids\n\nFound in a fresh-context review of #425 (auth/authz lens). Pre-existing."
+answers = ["backend/app/dependencies/fga.py", "backend/app/routers/fga.py", "backend/tests/unit/test_fga_dependencies.py", "backend/tests/unit/test_fga_router.py"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/449"
+
+[[query]]
+id = "identity-stack-pr451-title"
+class = "history-title"
+text = "refactor(idp-links): make the tenant guard fail closed"
+answers = ["backend/app/errors/identity.py", "backend/app/errors/problem_detail.py", "backend/app/main.py", "backend/app/routers/idp_links.py", "backend/tests/unit/test_idp_links_router.py"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/451"
+
+[[query]]
+id = "identity-stack-pr451-issue"
+class = "history-issue"
+text = "idp_links: _verify_user_in_tenant is fail-open by construction\n\nFound in a fresh-context review of #425 (auth/authz lens). No live bug — all three call sites check the result."
+answers = ["backend/app/errors/identity.py", "backend/app/errors/problem_detail.py", "backend/app/main.py", "backend/app/routers/idp_links.py", "backend/tests/unit/test_idp_links_router.py"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/451"
+
+[[query]]
+id = "identity-stack-pr423-title"
+class = "history-title"
+text = "feat(infra): non-empty guardrails for Descope project id + mgmt key (TFCENV-3)"
+answers = ["infra/github.tf", "infra/project.tf"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/423"
+
+[[query]]
+id = "identity-stack-pr423-issue"
+class = "history-issue"
+text = "[TFCENV-3] Declare `descope_project_id` + destroy/empty-secret guardrails\n\n**Labels:** terraform, phase-6, security · **Epic:** TFC-ENV · **Depends on:** none"
+answers = ["infra/github.tf", "infra/project.tf"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/423"
+
+[[query]]
+id = "identity-stack-pr422-title"
+class = "history-title"
+text = "feat(infra): put Ory root on Terraform Cloud remote state (TFCENV-4)"
+answers = ["infra/ory/versions.tf"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/422"
+
+[[query]]
+id = "identity-stack-pr422-issue"
+class = "history-issue"
+text = "[TFCENV-4] Ory root: TFC backend + migrate local state to dev\n\n**Labels:** terraform, phase-6 · **Epic:** TFC-ENV · **Depends on:** none (pattern mirrors TFCENV-1)"
+answers = ["infra/ory/versions.tf"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/422"
+
+[[query]]
+id = "identity-stack-pr421-title"
+class = "history-title"
+text = "feat(infra): tag-based TFC workspace selection for Descope root (TFCENV-1)"
+answers = ["infra/main.tf"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/421"
+
+[[query]]
+id = "identity-stack-pr421-issue"
+class = "history-issue"
+text = "[TFCENV-1] Descope root: tag-based TFC workspaces (no rename)\n\n**Labels:** terraform, phase-6 · **Epic:** TFC-ENV · **Depends on:** none"
+answers = ["infra/main.tf"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/421"
+
+[[query]]
+id = "identity-stack-pr435-title"
+class = "history-title"
+text = "fix(infra): make access_key.tf valid against the published Descope provider"
+answers = ["infra/access_key.tf"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/435"
+
+[[query]]
+id = "identity-stack-pr432-title"
+class = "history-title"
+text = "fix(infra): fail loudly instead of blanking CI secrets on an unset variable"
+answers = ["infra/variables.tf"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/432"
+
+[[query]]
+id = "identity-stack-pr431-title"
+class = "history-title"
+text = "fix(infra): track the Descope root's Terraform lock file"
+answers = [".gitignore"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/431"
+
+[[query]]
+id = "identity-stack-pr394-title"
+class = "history-title"
+text = "feat(backend): provider-aware logout with Ory RP-initiated path (ORY-5.1, FR-17)"
+answers = ["backend/.env.example", "backend/app/routers/auth.py", "backend/tests/unit/test_auth_router.py", "frontend/src/components/layout/UserMenu.tsx"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/394"
+
+[[query]]
+id = "identity-stack-pr392-title"
+class = "history-title"
+text = "feat(frontend): source useRBAC/useTenants from canonical GET /api/identity (ORY-4.3, FR-16)"
+answers = ["frontend/src/components/layout/TenantSwitcher.tsx", "frontend/src/components/layout/__tests__/TenantSwitcher.test.tsx", "frontend/src/hooks/__tests__/useRBAC.test.ts", "frontend/src/hooks/__tests__/useTenants.test.ts", "frontend/src/hooks/useRBAC.ts", "frontend/src/hooks/useTenants.ts", "frontend/src/main.tsx"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/392"
+
+[[query]]
+id = "identity-stack-pr433-title"
+class = "history-title"
+text = "fix(e2e): stop leaking Descope users on every run"
+answers = ["backend/tests/e2e/conftest.py", "backend/tests/e2e/helpers/auth.py", "backend/tests/e2e/test_identity_crud_e2e.py"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/433"
+
+[[query]]
+id = "identity-stack-pr396-title"
+class = "history-title"
+text = "test(ci): make a missing credential fail both suites instead of skipping"
+answers = [".github/workflows/ci.yml", "backend/tests/integration/conftest.py"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/396"
+
+[[query]]
+id = "identity-stack-pr444-title"
+class = "history-title"
+text = "chore(deps): one frontend dependency bump instead of three"
+answers = ["frontend/package.json"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/444"
+
+[[query]]
+id = "identity-stack-pr391-title"
+class = "history-title"
+text = "feat(frontend): provider-driven oidcConfig via VITE_OIDC_* with VITE_DESCOPE_* fallback (ORY-4.2)"
+answers = ["docs/environment-variables.md", "frontend/.env.example", "frontend/src/main.tsx", "frontend/src/vite-env.d.ts"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/391"
+
+[[query]]
+id = "identity-stack-pr388-title"
+class = "history-title"
+text = "chore(deps): land safe majors from #382 (jsdom 30 + jest-dom 7); defer TypeScript 7"
+answers = [".github/dependabot.yml", "frontend/package.json"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/388"
+
+[[query]]
+id = "identity-stack-pr379-title"
+class = "history-title"
+text = "infra(ory): workspace API key rotation script (#375)"
+answers = ["infra/ory/README.md"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/379"
+
+[[query]]
+id = "identity-stack-pr379-issue"
+class = "history-issue"
+text = "security: rotate ORY_WORKSPACE_API_KEY (generated in-session during Epic 1 IaC)\n\nThe Ory Network workspace API key stored in the `ORY_WORKSPACE_API_KEY` GitHub secret was generated during an assistant session while bootstrapping the Epic 1 Ory IaC (PR #370). Per that PR's notes it must be **rotated**."
+answers = ["infra/ory/README.md"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/379"
+
+[[query]]
+id = "identity-stack-pr372-title"
+class = "history-title"
+text = "Ory canonical wiring + JIT provisioning + /api/identity (Epic 3)"
+answers = ["backend/app/dependencies/identity.py", "backend/app/models/identity/tenant.py", "backend/app/routers/protected.py"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/372"
+
+[[query]]
+id = "identity-stack-pr371-title"
+class = "history-title"
+text = "Provider-driven backend token validation + Ory OIDC provider (Epic 2)"
+answers = ["backend/.env.example", "backend/app/middleware/auth.py", "backend/app/middleware/claims.py", "backend/app/middleware/factory.py", "backend/tests/unit/test_gateway_claims_middleware.py"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/371"

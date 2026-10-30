@@ -110,8 +110,9 @@ jobs:
       - run: cargo deny check
 
   # Not a required check: it reports retrieval quality so a ranking change
-  # shows its effect, and fails only if the benchmark can't run or the spec
-  # questions don't check out against the index it builds.
+  # shows its effect, on the identity benchmark and on the history benchmark
+  # across the owner's repositories, and fails only if a benchmark can't run
+  # or the spec questions don't check out against the index it builds.
   bench:
     name: bench
     runs-on: ubuntu-latest
@@ -129,7 +130,7 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/codecite
-          key: bench-sources-${{ hashFiles('evals/retrieval/identity-bench.toml') }}
+          key: bench-sources-${{ hashFiles('evals/retrieval/identity-bench.toml', 'evals/history/*/manifest.toml') }}
       - run: cargo build --release --locked -p codecite -p codecite-bench
       - run: target/release/codecite index identity-bench --manifest evals/retrieval/identity-bench.toml
       - name: Run the retrieval benchmark
@@ -140,6 +141,16 @@ jobs:
       - name: Check the spec questions
         run: uv run --locked python -m codecite_evals.spec_questions
         working-directory: evals
+      # The history benchmark: codecite against git grep and the popular-files
+      # floor on each mined repository (evals/README.md). A loss on any
+      # repository is a finding.
+      - name: Run the history benchmark
+        run: |
+          status=0
+          evals/history/run.sh || status=$?
+          cat evals/history/results/scorecard.md >>"$GITHUB_STEP_SUMMARY" ||
+            echo "The history scorecard failed to build; see the log." >>"$GITHUB_STEP_SUMMARY"
+          exit "$status"
 
   # Not a required check: it proves an eval task's hidden tests and checks
   # pass its references and fail its planted bad solutions. No model key.

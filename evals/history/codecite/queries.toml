@@ -1,0 +1,317 @@
+# History benchmark queries for jamescrowley321/codecite, mined from merged PRs by
+# `codecite-history-mine` (evals/src/codecite_evals/history.py). Frozen:
+# never edit by hand; remining writes a new version.
+#
+# version: 3
+# commit: f7209b41a00bdb8e93ff280c10609278631c8624
+# mined: 2026-10-29
+
+corpus = "history-codecite"
+
+[[query]]
+id = "codecite-pr188-title"
+class = "history-title"
+text = "docs: drop the cloud-session queue now that issues are worked locally"
+answers = ["AGENTS.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/188"
+
+[[query]]
+id = "codecite-pr188-issue"
+class = "history-issue"
+text = "Cloud execution queue: the order to work cloud-ready issues\n\nThe order for Claude Code cloud sessions working the `cloud-ready` issues. Each session takes one issue and follows `AGENTS.md` (\"Working an issue end to end\"): open a PR against `main`, answer the CI and lens reviews, and add the `eval` label when the change touches indexing, search, ranking or CLI output. James merges."
+answers = ["AGENTS.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/188"
+
+[[query]]
+id = "codecite-pr173-title"
+class = "history-title"
+text = "feat(evals): run Claude Code on the subscription always, pi on OpenRouter behind a switch"
+answers = ["AGENTS.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/173"
+
+[[query]]
+id = "codecite-pr165-title"
+class = "history-title"
+text = "feat: index house rules as a guidance source and push the ones that govern a file"
+answers = ["Cargo.toml", "crates/codecite-core/Cargo.toml", "crates/codecite-index/src/chunk/language.rs", "crates/codecite-core/src/lib.rs", "crates/codecite-core/src/store.rs", "crates/codecite-core/src/store/write.rs", "crates/codecite-index/Cargo.toml", "crates/codecite-index/src/chunk.rs", "crates/codecite-index/src/chunk/text.rs", "crates/codecite-index/src/error.rs", "crates/codecite-index/src/index.rs", "crates/codecite-index/src/lib.rs", "crates/codecite-index/src/manifest.rs", "crates/codecite-mcp/src/server.rs", "crates/codecite/src/main.rs", "crates/codecite/tests/mcp.rs", "docs/usage.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/165"
+
+[[query]]
+id = "codecite-pr168-title"
+class = "history-title"
+text = "feat(mcp): diff a spec's pinned versions to show what changed in its rules"
+answers = ["README.md", "crates/codecite-core/src/lib.rs", "crates/codecite-core/src/store.rs", "crates/codecite-core/src/store/read.rs", "crates/codecite-core/src/store/search.rs", "crates/codecite-index/src/index.rs", "crates/codecite-mcp/src/server.rs", "crates/codecite/src/main.rs", "crates/codecite/tests/mcp.rs", "docs/usage.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/168"
+
+[[query]]
+id = "codecite-pr168-issue"
+class = "history-issue"
+text = "feat(mcp): diff a spec's pinned versions to show what changed in its rules\n\nIn the quick calibration of backchannel-logout, gpt-6.1-sol failed all 5 runs on one rule: Back-Channel Logout 1.0 errata set 1 made `exp` REQUIRED (§2.4), and the version before it didn't. Models learn from both versions. identity-model's own `validate_logout_token` follows the older one too. The corpus already pins both"
+answers = ["README.md", "crates/codecite-core/src/lib.rs", "crates/codecite-core/src/store.rs", "crates/codecite-core/src/store/read.rs", "crates/codecite-core/src/store/search.rs", "crates/codecite-index/src/index.rs", "crates/codecite-mcp/src/server.rs", "crates/codecite/src/main.rs", "crates/codecite/tests/mcp.rs", "docs/usage.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/168"
+
+[[query]]
+id = "codecite-pr167-title"
+class = "history-title"
+text = "feat(mcp): add a requirements tool that lists every rule governing a spec section"
+answers = ["README.md", "crates/codecite-core/Cargo.toml", "crates/codecite-core/src/citation/written.rs", "crates/codecite-core/src/error.rs", "crates/codecite-core/src/lib.rs", "crates/codecite-core/src/store.rs", "crates/codecite-core/src/store/read.rs", "crates/codecite-mcp/src/server.rs", "crates/codecite/src/main.rs", "crates/codecite/tests/mcp.rs", "docs/usage.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/167"
+
+[[query]]
+id = "codecite-pr167-issue"
+class = "history-issue"
+text = "feat(mcp): add a requirements tool that lists every rule governing a spec section\n\nThe harder eval tasks fail because agents never look rules up, not because search ranks badly. In the quick calibrations, every failed backchannel-logout run missed a rule in Back-Channel Logout 1.0 §2.4: - gpt-6.1-sol never required `exp`. - Haiku never checked that the logout event's value is a JSON object."
+answers = ["README.md", "crates/codecite-core/Cargo.toml", "crates/codecite-core/src/citation/written.rs", "crates/codecite-core/src/error.rs", "crates/codecite-core/src/lib.rs", "crates/codecite-core/src/store.rs", "crates/codecite-core/src/store/read.rs", "crates/codecite-mcp/src/server.rs", "crates/codecite/src/main.rs", "crates/codecite/tests/mcp.rs", "docs/usage.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/167"
+
+[[query]]
+id = "codecite-pr169-title"
+class = "history-title"
+text = "ci: bump blind-peer-review to v3.12.1"
+answers = [".github/workflows/claude.yml"]
+source = "https://github.com/jamescrowley321/codecite/pull/169"
+
+[[query]]
+id = "codecite-pr163-title"
+class = "history-title"
+text = "feat(mcp): tell agents to search specs in the spec's own terms"
+answers = ["crates/codecite-mcp/src/server.rs", "crates/codecite/src/main.rs", "docs/usage.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/163"
+
+[[query]]
+id = "codecite-pr163-issue"
+class = "history-issue"
+text = "feat(mcp): tell agents to search specs in the spec's own terms\n\nPart of #95. This is follow-up 2 of `docs/superpowers/specs/2026-10-23-hybrid-retrieval-design.md`, and arm B of its A/B arms."
+answers = ["crates/codecite-mcp/src/server.rs", "crates/codecite/src/main.rs", "docs/usage.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/163"
+
+[[query]]
+id = "codecite-pr164-title"
+class = "history-title"
+text = "feat(index): stem spec text and drop query stopwords"
+answers = ["crates/codecite-core/src/store.rs", "crates/codecite-core/src/store/search.rs", "crates/codecite-core/src/store/write.rs"]
+source = "https://github.com/jamescrowley321/codecite/pull/164"
+
+[[query]]
+id = "codecite-pr164-issue"
+class = "history-issue"
+text = "feat(index): stem spec text and drop query stopwords\n\nPart of #95. This is follow-up 1 of `docs/superpowers/specs/2026-10-23-hybrid-retrieval-design.md`."
+answers = ["crates/codecite-core/src/store.rs", "crates/codecite-core/src/store/search.rs", "crates/codecite-core/src/store/write.rs"]
+source = "https://github.com/jamescrowley321/codecite/pull/164"
+
+[[query]]
+id = "codecite-pr148-title"
+class = "history-title"
+text = "fix(ralph): wait for the @claude review comment instead of the removed Merge Gate"
+answers = [".github/workflows/ci.yml", ".github/workflows/claude.yml", "AGENTS.md", "ralph/PROMPT.md", "ralph/README.md", "ralph/phases/ci.md", "ralph/phases/pr.md", "ralph/phases/review-fix.md", "ralph/phases/review.md", "ralph/wait-ci.sh", "ralph/wait-review.sh"]
+source = "https://github.com/jamescrowley321/codecite/pull/148"
+
+[[query]]
+id = "codecite-pr148-issue"
+class = "history-issue"
+text = "fix(ralph): wait for the @claude review comment instead of the removed Merge Gate\n\n#145 removes `.github/workflows/blind-peer-review.yml`. That deletes the OpenRouter lens jobs and their Merge Gate, and leaves `claude.yml` as the only PR review. Ralph still waits on the deleted workflow, in `ralph/wait-review.sh`, `ralph/phases/review.md`, `ralph/PROMPT.md` and `ralph/README.md`. So a restarted"
+answers = [".github/workflows/ci.yml", ".github/workflows/claude.yml", "AGENTS.md", "ralph/PROMPT.md", "ralph/README.md", "ralph/phases/ci.md", "ralph/phases/pr.md", "ralph/phases/review-fix.md", "ralph/phases/review.md", "ralph/wait-ci.sh", "ralph/wait-review.sh"]
+source = "https://github.com/jamescrowley321/codecite/pull/148"
+
+[[query]]
+id = "codecite-pr151-title"
+class = "history-title"
+text = "fix(ci): make the @claude review wait for its lens agents before it posts"
+answers = [".github/workflows/claude.yml"]
+source = "https://github.com/jamescrowley321/codecite/pull/151"
+
+[[query]]
+id = "codecite-pr145-title"
+class = "history-title"
+text = "ci: review PRs with the @claude workflow only and drop the OpenRouter lens jobs"
+answers = ["AGENTS.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/145"
+
+[[query]]
+id = "codecite-pr142-title"
+class = "history-title"
+text = "feat(evals): calibrate new tasks on the baseline arm only and freeze them before their first A/B run"
+answers = [".github/workflows/ci.yml", "evals/tasks/fastapi-middleware/task.json"]
+source = "https://github.com/jamescrowley321/codecite/pull/142"
+
+[[query]]
+id = "codecite-pr142-issue"
+class = "history-issue"
+text = "feat(evals): calibrate new tasks on the baseline arm only and freeze them before their first A/B run\n\nA new eval task should be hard enough that the arms can differ on correctness: in quick-2, every model but devstral passed `fastapi-middleware` 100% of the time in both arms (#92), so pass rate couldn't separate them. Getting a task to the right difficulty means running it and adjusting it. If we"
+answers = [".github/workflows/ci.yml", "evals/tasks/fastapi-middleware/task.json"]
+source = "https://github.com/jamescrowley321/codecite/pull/142"
+
+[[query]]
+id = "codecite-pr141-title"
+class = "history-title"
+text = "feat(core): resolve spec citations with codecite cite"
+answers = ["crates/codecite-core/src/citation/written.rs", "crates/codecite-core/src/error.rs", "crates/codecite-core/src/lib.rs", "crates/codecite-core/src/store.rs", "crates/codecite-core/src/store/read.rs", "crates/codecite/src/main.rs", "crates/codecite/tests/identity.rs", "docs/usage.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/141"
+
+[[query]]
+id = "codecite-pr141-issue"
+class = "history-issue"
+text = "feat(core): resolve spec citations with codecite cite\n\n`codecite cite <citation>` in `codecite-core` and the CLI: resolve a spec citation and report what it found."
+answers = ["crates/codecite-core/src/citation/written.rs", "crates/codecite-core/src/error.rs", "crates/codecite-core/src/lib.rs", "crates/codecite-core/src/store.rs", "crates/codecite-core/src/store/read.rs", "crates/codecite/src/main.rs", "crates/codecite/tests/identity.rs", "docs/usage.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/141"
+
+[[query]]
+id = "codecite-pr147-title"
+class = "history-title"
+text = "feat(evals): add a spec-question task where the agent doesn't know the spec's wording"
+answers = [".github/workflows/ci.yml"]
+source = "https://github.com/jamescrowley321/codecite/pull/147"
+
+[[query]]
+id = "codecite-pr147-issue"
+class = "history-issue"
+text = "feat(evals): add a spec-question task where the agent doesn't know the spec's wording\n\nEvery eval task so far is a code task that names its symbols, and there grep is already fast and precise (#93). codecite's case is spec retrieval: an agent that has to find and cite an OAuth/OIDC requirement without knowing the words the RFC uses."
+answers = [".github/workflows/ci.yml"]
+source = "https://github.com/jamescrowley321/codecite/pull/147"
+
+[[query]]
+id = "codecite-pr140-title"
+class = "history-title"
+text = "feat: find definitions with codecite def and the definition tool"
+answers = ["README.md", "crates/codecite-core/src/error.rs", "crates/codecite-core/src/lib.rs", "crates/codecite-core/src/store.rs", "crates/codecite-core/src/store/search.rs", "crates/codecite-mcp/src/server.rs", "crates/codecite/src/main.rs", "crates/codecite/tests/mcp.rs", "docs/usage.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/140"
+
+[[query]]
+id = "codecite-pr140-issue"
+class = "history-issue"
+text = "feat: find definitions with codecite def and the definition tool\n\n`codecite def <symbol>` and the MCP `definition` tool, from the tree-sitter symbols written in M2."
+answers = ["README.md", "crates/codecite-core/src/error.rs", "crates/codecite-core/src/lib.rs", "crates/codecite-core/src/store.rs", "crates/codecite-core/src/store/search.rs", "crates/codecite-mcp/src/server.rs", "crates/codecite/src/main.rs", "crates/codecite/tests/mcp.rs", "docs/usage.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/140"
+
+[[query]]
+id = "codecite-pr139-title"
+class = "history-title"
+text = "fix(index): index Go and Rust doc comments with the definition they document"
+answers = ["crates/codecite-index/src/chunk.rs", "crates/codecite-index/src/chunk/code.rs"]
+source = "https://github.com/jamescrowley321/codecite/pull/139"
+
+[[query]]
+id = "codecite-pr139-issue"
+class = "history-issue"
+text = "fix(index): index Go and Rust doc comments with the definition they document\n\nIn Go and Rust, a function's doc comment is indexed as a separate `window` chunk instead of with the function. For example, the doc comment of Go's `FetchConfiguration` in `go/pkg/discovery/discovery.go` is in the window at L87-L108, and the function's own chunk starts after it."
+answers = ["crates/codecite-index/src/chunk.rs", "crates/codecite-index/src/chunk/code.rs"]
+source = "https://github.com/jamescrowley321/codecite/pull/139"
+
+[[query]]
+id = "codecite-pr136-title"
+class = "history-title"
+text = "feat(evals): label spec questions in an agent's words with closed answers"
+answers = [".github/workflows/ci.yml", "evals/retrieval/queries.toml"]
+source = "https://github.com/jamescrowley321/codecite/pull/136"
+
+[[query]]
+id = "codecite-pr136-issue"
+class = "history-issue"
+text = "feat(evals): label spec questions in an agent's words with closed answers for the spec-question task\n\n#104's task needs at least 20 spec questions, asked the way an agent asks them, each with a closed-form answer and the spec sections that support it. The questions are data. They need no harness, so they can be labelled now while #111 and #104's task wait."
+answers = [".github/workflows/ci.yml", "evals/retrieval/queries.toml"]
+source = "https://github.com/jamescrowley321/codecite/pull/136"
+
+[[query]]
+id = "codecite-pr137-title"
+class = "history-title"
+text = "feat(search): add an exact and regex grep over indexed chunks"
+answers = ["Cargo.toml", "README.md", "crates/codecite-core/Cargo.toml", "crates/codecite-core/src/error.rs", "crates/codecite-core/src/lib.rs", "crates/codecite-core/src/store.rs", "crates/codecite-core/src/store/read.rs", "crates/codecite-core/src/store/search.rs", "crates/codecite-mcp/src/server.rs", "crates/codecite/src/main.rs", "crates/codecite/tests/mcp.rs", "crates/codecite/tests/read.rs", "crates/codecite/tests/search.rs", "docs/usage.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/137"
+
+[[query]]
+id = "codecite-pr137-issue"
+class = "history-issue"
+text = "feat(search): add an exact and regex grep over indexed chunks\n\nBM25 `search` is weak at literal strings: an exact claim name like `\"jti\"`, an error message, a header name, or a pattern such as `token_type_hint=\\w+`. Agents have `rg` for their own checkout, but not for the specs and pinned repositories codecite indexes, and `rg` gives no citations."
+answers = ["Cargo.toml", "README.md", "crates/codecite-core/Cargo.toml", "crates/codecite-core/src/error.rs", "crates/codecite-core/src/lib.rs", "crates/codecite-core/src/store.rs", "crates/codecite-core/src/store/read.rs", "crates/codecite-core/src/store/search.rs", "crates/codecite-mcp/src/server.rs", "crates/codecite/src/main.rs", "crates/codecite/tests/mcp.rs", "crates/codecite/tests/read.rs", "crates/codecite/tests/search.rs", "docs/usage.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/137"
+
+[[query]]
+id = "codecite-pr135-title"
+class = "history-title"
+text = "feat(evals): add a back-channel logout task stated as behaviour"
+answers = [".github/workflows/ci.yml"]
+source = "https://github.com/jamescrowley321/codecite/pull/135"
+
+[[query]]
+id = "codecite-pr131-title"
+class = "history-title"
+text = "fix(evals): label sandbox failures apart from agent timeouts"
+answers = [".github/workflows/ci.yml"]
+source = "https://github.com/jamescrowley321/codecite/pull/131"
+
+[[query]]
+id = "codecite-pr131-issue"
+class = "history-issue"
+text = "fix(evals): label sandbox failures apart from agent timeouts\n\n`evals/inspect/task.py`'s `pi()` catches every exception from the agent's `sb.exec` (since ca62b9b, in #113) and records it as `timed_out`. That's deliberate: retrying infrastructure failures would keep only the runs that survive them and bias the scorecard, the same way retrying timeouts did."
+answers = [".github/workflows/ci.yml"]
+source = "https://github.com/jamescrowley321/codecite/pull/131"
+
+[[query]]
+id = "codecite-pr132-title"
+class = "history-title"
+text = "fix(mcp): cap result size in bytes, not only lines"
+answers = ["crates/codecite-core/src/lib.rs", "crates/codecite-core/src/store.rs", "crates/codecite-core/src/store/read.rs", "crates/codecite-core/src/store/search.rs", "crates/codecite-mcp/src/server.rs", "crates/codecite/src/main.rs", "crates/codecite/tests/mcp.rs", "crates/codecite/tests/read.rs", "docs/usage.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/132"
+
+[[query]]
+id = "codecite-pr132-issue"
+class = "history-issue"
+text = "fix(mcp): cap result size in bytes, not only lines\n\n`max_lines` and `limit` bound lines and results, but a snippet or read keeps whole lines. One minified or generated file with a 1 MiB line comes back whole even with `max_lines=1`, and `search` can return several such snippets. That floods an agent's context."
+answers = ["crates/codecite-core/src/lib.rs", "crates/codecite-core/src/store.rs", "crates/codecite-core/src/store/read.rs", "crates/codecite-core/src/store/search.rs", "crates/codecite-mcp/src/server.rs", "crates/codecite/src/main.rs", "crates/codecite/tests/mcp.rs", "crates/codecite/tests/read.rs", "docs/usage.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/132"
+
+[[query]]
+id = "codecite-pr133-title"
+class = "history-title"
+text = "feat(evals): run the A/B eval in CI as a quick tier on labelled PRs and a full tier on dispatch"
+answers = ["AGENTS.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/133"
+
+[[query]]
+id = "codecite-pr133-issue"
+class = "history-issue"
+text = "feat(evals): run the A/B eval in CI as a quick tier on labelled PRs and a full tier on dispatch\n\nThe full A/B panel (9 models × 10 epochs × 2 arms, `evals/inspect/panel.sh`) takes one to two hours, so it can't be the loop we check a ranking or CLI change against. Split it into two tiers that share one task and one scorer, and **run both in GitHub Actions**. Issues are now worked by Claude Code"
+answers = ["AGENTS.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/133"
+
+[[query]]
+id = "codecite-pr126-title"
+class = "history-title"
+text = "docs: describe running issues in Claude Code cloud sessions"
+answers = ["AGENTS.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/126"
+
+[[query]]
+id = "codecite-pr124-title"
+class = "history-title"
+text = "chore: set codecite up for Claude Code cloud sessions"
+answers = ["AGENTS.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/124"
+
+[[query]]
+id = "codecite-pr123-title"
+class = "history-title"
+text = "fix(ralph): wait on every required workflow and read the lens Merge Gate"
+answers = ["ralph/PROMPT.md", "ralph/README.md", "ralph/phases/ci.md", "ralph/phases/pr.md", "ralph/phases/review-fix.md", "ralph/phases/review.md", "ralph/wait-ci.sh", "ralph/wait-review.sh"]
+source = "https://github.com/jamescrowley321/codecite/pull/123"
+
+[[query]]
+id = "codecite-pr116-title"
+class = "history-title"
+text = "docs: design hybrid retrieval for spec corpora"
+answers = ["AGENTS.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/116"
+
+[[query]]
+id = "codecite-pr120-title"
+class = "history-title"
+text = "docs: correct install, release and eval docs after the security and Inspect merges"
+answers = ["AGENTS.md", "README.md", "SECURITY.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/120"
+
+[[query]]
+id = "codecite-pr122-title"
+class = "history-title"
+text = "ci: check only vulnerabilities in dependency review, leaving licenses to cargo-deny"
+answers = [".github/workflows/dependency-review.yml"]
+source = "https://github.com/jamescrowley321/codecite/pull/122"

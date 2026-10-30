@@ -1,0 +1,11 @@
+# The history benchmark's corpus for jamescrowley321/codecite: the repository at the parent
+# of the oldest PR its queries were mined from. Frozen with queries.toml.
+
+name = "history-codecite"
+
+[[source]]
+kind = "git"
+name = "codecite"
+url = "https://github.com/jamescrowley321/codecite"
+commit = "f7209b41a00bdb8e93ff280c10609278631c8624"
+use = "adapt"

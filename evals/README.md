@@ -8,8 +8,48 @@ Evaluation plan):
   `search` and `read` as native tools, the `codecite` CLI on `PATH` and a
   prebuilt corpus. Hidden tests and deterministic checks
   score both. Runs on [Inspect AI](https://inspect.aisi.org.uk/).
+- **History benchmark** (`history/`): queries mined from merged PRs in the
+  owner's repositories, scored against a plain `git grep` ranking; CI runs it
+  on every PR. See below.
 - **Retrieval benchmark** (`retrieval/`): labelled queries run through
   `codecite-bench`; CI runs it on every PR.
+
+## History benchmark
+
+The question an agent asks most is "where does this change go?". Every merged
+PR answers it: the PR's title, and the issue it closes as it was asked, are
+the question, and the files it modified are the answer. Nobody writes these
+labels, so nobody can tune them toward one corpus.
+
+- **Mined** by `uv run codecite-history-mine OWNER/REPO --clone DIR` into
+  `history/<repo>/queries.toml` and `manifest.toml`. Up to 40 of the newest
+  merged PRs by a person (no bots, no release PRs) that modified 1–20 files
+  are sampled. The repository is pinned at the oldest one's parent, so every
+  answer file is in the index. Lockfiles and changelogs are no answer, nor is
+  a hub file that at least 3 and more than a quarter of the sampled PRs
+  changed (a design doc, a manifest), since naming it would beat any search.
+  A file that didn't exist at the pinned commit is dropped. `history-title` queries are a PR's
+  title. `history-issue` queries are its closing issue's title and first
+  paragraph, cut to 400 characters.
+- **Frozen.** `codecite-eval-frozen` refuses a change to a mined file unless
+  `queries.toml`'s `# version:` moves up, which only remining with changed
+  rules (`history.VERSION`) does. Never edit them by hand.
+- **Scored** at file level: a result counts when it is in an answer file.
+  `codecite-bench --grep <clone> --commit <sha>` ranks the same queries with
+  `git grep` instead: files by how many of the query's words they hold, then
+  by matching lines. That is an agent with grep and nothing else. For
+  codecite, a file-labelled query ranks distinct files (each file's first
+  result from a 50-deep search), so both engines are judged on 10 files.
+  `--popular` ranks without searching at all: the files the other PRs changed
+  most. It is the floor both engines must beat. The scorecard pools each
+  repository's classes in an `all` row, which is the one to judge by, since
+  some classes hold only a few queries.
+- **Run** with `history/run.sh [repo ...]`, after `cargo build --release
+  --locked -p codecite -p codecite-bench`. It writes each engine's report and
+  `history/results/scorecard.md`.
+
+The rule from the general-purpose design: a ranking or indexing change that
+loses on any repository doesn't merge.
 
 ## Layout
 

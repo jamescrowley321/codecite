@@ -1,0 +1,369 @@
+{
+  "all": {
+    "mrr": 0.3608713624338624,
+    "queries": 48,
+    "recall_at_1": 0.1875,
+    "recall_at_10": 0.7291666666666666
+  },
+  "classes": {
+    "history-issue": {
+      "mrr": 0.2878787878787879,
+      "queries": 11,
+      "recall_at_1": 0.18181818181818182,
+      "recall_at_10": 0.5454545454545454
+    },
+    "history-title": {
+      "mrr": 0.3825718575718575,
+      "queries": 37,
+      "recall_at_1": 0.1891891891891892,
+      "recall_at_10": 0.7837837837837838
+    }
+  },
+  "engine": "codecite",
+  "groups": {
+    "history": {
+      "mrr": 0.3608713624338624,
+      "queries": 48,
+      "recall_at_1": 0.1875,
+      "recall_at_10": 0.7291666666666666
+    }
+  },
+  "outcomes": [
+    {
+      "class": "history-title",
+      "id": "identity-model-pr1025-title",
+      "rank": 2,
+      "text": "ci: bump blind-peer-review to v3.12.1",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:py/CHANGELOG.md#L203-L223"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr920-title",
+      "rank": null,
+      "text": "fix(conformance): keep PyJWT error text out of the UserInfo 400 page",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:tools/release_parsers.py#L81-L83"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr919-title",
+      "rank": 10,
+      "text": "docs: close 5.0 documentation gaps",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:go/pkg/dpop/transport.go#L171"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr918-title",
+      "rank": 3,
+      "text": "ci: stamp pre-release wheels with the pre-release version",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:CLAUDE.md#L347-L355"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr910-title",
+      "rank": 8,
+      "text": "docs: 4.x to 5.0 upgrade guide; require py-identity-model 5 in fastapi",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:docs/pre-release-guide.md#L118-L141"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr842-title",
+      "rank": 7,
+      "text": "fix(discovery): reject a document whose issuer is not the requested issuer",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:rust/src/jwt/claims_validation.rs#L469-L474"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr899-title",
+      "rank": 1,
+      "text": "refactor(fastapi)!: move OIDCSettings.from_env to an optional helper; accept http_client",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:py/packages/fastapi-identity-model/fastapi_identity_model/config.py#L16-L86"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr898-title",
+      "rank": null,
+      "text": "test(py): fail if library code reads the environment",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/config.md#L7-L13"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr897-title",
+      "rank": 2,
+      "text": "docs(spec): replace the config spec, vectors and fixtures with one plain page",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/test-fixtures/config/README.md#L1-L8"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr893-title",
+      "rank": 2,
+      "text": "feat(py): optional config helpers — config_from_env, config_from_mapping",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:py/src/py_identity_model/core/config.py#L358-L385"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr892-title",
+      "rank": 9,
+      "text": "refactor(py)!: make Config a plain typed value with defaults",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/config.md#L45-L57"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr891-title",
+      "rank": 3,
+      "text": "fix(discovery)!: require every Discovery §3 metadata field (jwks_uri unconditionally)",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:rust/src/discovery/cache.rs#L138-L143"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr887-title",
+      "rank": 2,
+      "text": "fix(id-token): require at_hash/c_hash only for values issued with the ID Token",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:py/packages/fastapi-identity-model/fastapi_identity_model/middleware.py#L44"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr884-title",
+      "rank": 5,
+      "text": "fix(py): reject a UserInfo response with no sub claim",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:py/src/py_identity_model/core/userinfo_logic.py#L82-L126"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr882-title",
+      "rank": 1,
+      "text": "fix(py): enforce expected_sub on application/jwt UserInfo responses",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:py/src/py_identity_model/core/userinfo_logic.py#L82-L126"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr878-title",
+      "rank": 3,
+      "text": "fix(rust): drop azp enforcement from base JWT validation",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:rust/src/jwks/cache.rs#L318-L320"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr877-title",
+      "rank": 7,
+      "text": "fix(fapi): treat missing REQUIRED discovery metadata as a violation",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:rust/src/discovery/cache.rs#L138-L143"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr875-title",
+      "rank": 2,
+      "text": "fix(logout): require exp in Back-Channel Logout Tokens",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:py/packages/fastapi-identity-model/fastapi_identity_model/rp.py#L462-L472"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr908-title",
+      "rank": 2,
+      "text": "fix(py): enforce the caller's algorithms allowlist on discovery validation",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:py/src/py_identity_model/oidc_constants.py#L471-L573"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-model-pr908-issue",
+      "rank": 1,
+      "text": "fix(py): discovery validation ignores the caller's algorithms allowlist\n\n`build_resolved_config` in `py/src/py_identity_model/core/token_validation_logic.py` (~L297 on main) builds the resolved config with `algorithms=[alg]`, where `alg` is the resolved JWK `alg` or the JWT header `alg`. The caller's `TokenValidationConfig.algorithms` allowlist is discarded.",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:py/src/py_identity_model/core/token_validation_logic.py#L275-L310"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr871-title",
+      "rank": 1,
+      "text": "ci: run conformance, CodeQL and OSV on PRs into any branch",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:.github/workflows/codeql.yml#L1-L39"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr675-title",
+      "rank": null,
+      "text": "feat(rust): DPoP key pairs, proof generation, and proof verification (RFC 9449)",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:go/pkg/dpop/verify.go#L29-L44"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr826-title",
+      "rank": 3,
+      "text": "test(spec): authorization-code vectors on the shared runners, plus pure-logic runners",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:go/pkg/token/token.go#L138-L170"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-model-pr826-issue",
+      "rank": 4,
+      "text": "spec vectors: re-land authorization-code vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used).",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:go/pkg/token/token.go#L138-L170"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr825-title",
+      "rank": 5,
+      "text": "test(spec): client-credentials vectors on the shared HTTP vector runners",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:rust/src/token/mod.rs#L180-L205"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-model-pr825-issue",
+      "rank": 6,
+      "text": "spec vectors: re-land client-credentials vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used).",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:rust/src/token/mod.rs#L180-L205"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr735-title",
+      "rank": 2,
+      "text": "ci: lint the workflow files with actionlint and shellcheck",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:CLAUDE.md#L20-L47"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr823-title",
+      "rank": 10,
+      "text": "test(spec): token-exchange vectors on the shared HTTP vector runners",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:rust/src/token/mod.rs#L256-L411"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-model-pr823-issue",
+      "rank": null,
+      "text": "spec vectors: re-land token-exchange vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used).",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:rust/src/token/mod.rs#L256-L411"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr822-title",
+      "rank": 1,
+      "text": "test(spec): introspection vectors on the shared HTTP vector runners",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:rust/src/introspection/response.rs#L60-L96"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-model-pr822-issue",
+      "rank": 1,
+      "text": "spec vectors: re-land introspection vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used).",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:rust/src/introspection/response.rs#L60-L96"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr821-title",
+      "rank": 5,
+      "text": "test(spec): discovery vectors on the shared HTTP vector runners",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/README.md#L21-L44"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-model-pr821-issue",
+      "rank": null,
+      "text": "spec vectors: re-land discovery vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used).",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/README.md#L14-L19"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr832-title",
+      "rank": null,
+      "text": "feat(discovery): expose structured Python and Rust failure diagnostics",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:py/src/py_identity_model/core/config.py#L63-L65"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr838-title",
+      "rank": null,
+      "text": "test(infra): validate canned vector contracts and scalar form fields",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/README.md#L95-L117"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr736-title",
+      "rank": null,
+      "text": "test(tools): read the release commands instead of scanning their text",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:tools/mutation_security_native.py#L1098-L1099"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-model-pr736-issue",
+      "rank": null,
+      "text": "test(tools): the GitPython pin regex truncates at whitespace, so a second constraint silently vanishes from both sides of the parity check\n\nFound by a retrospective blind-peer-review sweep of PR #666 (`test(tools): compare the whole GitPython bound, and stop enforcing shell comments`), which merged 2026-09-14 with 0 reviews.",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:tools/publish_parity.py#L168-L231"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr831-title",
+      "rank": 1,
+      "text": "ci(deps): target the Python workspace in Dependabot",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:.github/dependabot.yml#L1-L43"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr830-title",
+      "rank": null,
+      "text": "fix: require patched PyJWT and AnyIO versions",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:SECURITY.md#L25-L32"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr816-title",
+      "rank": null,
+      "text": "test(spec): one Go runner for HTTP vectors, served by the node-oidc fixture",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:go/README.md#L46-L62"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-model-pr816-issue",
+      "rank": null,
+      "text": "spec vectors: generic Go HTTP vector runner (revocation, userinfo, jwks)\n\nPart of identity-model#801. Needs identity-model#802.",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/README.md#L68-L93"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr827-title",
+      "rank": 2,
+      "text": "test(spec): dpop vectors on the shared runners",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:go/CHANGELOG.md#L78-L86"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr815-title",
+      "rank": 2,
+      "text": "test(spec): one Python runner for HTTP vectors, served by the node-oidc fixture",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:go/README.md#L46-L62"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-model-pr815-issue",
+      "rank": null,
+      "text": "spec vectors: generic Python HTTP vector runner (revocation, userinfo, jwks)\n\nPart of identity-model#801. Needs identity-model#802.",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/README.md#L68-L93"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr814-title",
+      "rank": 1,
+      "text": "test(infra): serve spec HTTP vectors from the node-oidc fixture",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:infra/node-oidc-provider/package.json#L2-L13"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-model-pr814-issue",
+      "rank": 4,
+      "text": "spec vectors: serve canned HTTP vectors from the node-oidc fixture\n\nPart of identity-model#801.",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/vectors/userinfo.json#L362-L369"
+    },
+    {
+      "class": "history-title",
+      "id": "identity-model-pr818-title",
+      "rank": 1,
+      "text": "fix(go): report a private embedded jwk in a DPoP proof against jwk, not alg",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:go/pkg/dpop/verify.go#L29-L44"
+    },
+    {
+      "class": "history-issue",
+      "id": "identity-model-pr818-issue",
+      "rank": 2,
+      "text": "fix(go): attribute an embedded private jwk in a DPoP proof to jwk, not alg\n\nPart of identity-model#801. Split out of identity-model#794, where it rode inside a test commit.",
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:go/pkg/dpop/proof.go#L55-L108"
+    }
+  ]
+}

@@ -89,3 +89,56 @@ def test_fastapi_middleware_is_frozen_at_its_first_ab_run():
 
 def test_an_unknown_base_fails_rather_than_skipping_the_check(repo):
     assert problems(repo / "evals", "origin/no-such-branch") == ["base ref origin/no-such-branch is not a commit here (CI needs the full history)"]
+
+
+def history_repo(tmp_path, version=1):
+    git(tmp_path, "init", "-q")
+    mined = tmp_path / "evals" / "history" / "r"
+    mined.mkdir(parents=True)
+    (tmp_path / "evals" / "tasks").mkdir()
+    (mined / "queries.toml").write_text(f"# version: {version}\ncorpus = \"history-r\"\n")
+    (mined / "manifest.toml").write_text("name = \"history-r\"\n")
+    return tmp_path, commit(tmp_path, "mine r")
+
+
+def test_mined_history_unchanged_passes(tmp_path):
+    repo, base = history_repo(tmp_path)
+    assert problems(repo / "evals", base) == []
+
+
+def test_editing_mined_history_fails(tmp_path):
+    repo, base = history_repo(tmp_path)
+    (repo / "evals/history/r/queries.toml").write_text("# version: 1\ncorpus = \"history-r\"\n# tuned\n")
+    (repo / "evals/history/r/manifest.toml").write_text("name = \"history-r\"\n# moved\n")
+    assert problems(repo / "evals", base) == [
+        "history r: evals/history/r/manifest.toml changed without a new version in queries.toml",
+        "history r: evals/history/r/queries.toml changed without a new version in queries.toml",
+    ]
+
+
+def test_remining_with_a_new_version_passes(tmp_path):
+    repo, base = history_repo(tmp_path)
+    (repo / "evals/history/r/queries.toml").write_text("# version: 2\ncorpus = \"history-r\"\n# remined\n")
+    (repo / "evals/history/r/manifest.toml").write_text("name = \"history-r\"\n# moved\n")
+    assert problems(repo / "evals", base) == []
+
+
+def test_newly_mined_history_passes(tmp_path):
+    repo, base = history_repo(tmp_path)
+    (repo / "evals/history/s").mkdir()
+    (repo / "evals/history/s/queries.toml").write_text("# version: 1\n")
+    assert problems(repo / "evals", base) == []
+
+
+def test_deleting_a_mined_repository_fails(tmp_path):
+    import shutil
+
+    repo, base = history_repo(tmp_path)
+    shutil.rmtree(repo / "evals/history/r")
+    assert problems(repo / "evals", base) == ["history r: evals/history/r was mined at the base and is gone"]
+
+
+def test_a_malformed_version_line_is_a_problem_not_a_crash(tmp_path):
+    repo, base = history_repo(tmp_path)
+    (repo / "evals/history/r/queries.toml").write_text("# version: two\ncorpus = \"history-r\"\n")
+    assert problems(repo / "evals", base) == ["history r: evals/history/r/queries.toml has a `# version:` line that isn't a number"]

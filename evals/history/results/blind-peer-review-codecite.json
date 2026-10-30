@@ -1,0 +1,285 @@
+{
+  "all": {
+    "mrr": 0.4647707231040564,
+    "queries": 36,
+    "recall_at_1": 0.3333333333333333,
+    "recall_at_10": 0.8888888888888888
+  },
+  "classes": {
+    "history-issue": {
+      "mrr": 0.675,
+      "queries": 4,
+      "recall_at_1": 0.5,
+      "recall_at_10": 1.0
+    },
+    "history-title": {
+      "mrr": 0.4384920634920635,
+      "queries": 32,
+      "recall_at_1": 0.3125,
+      "recall_at_10": 0.875
+    }
+  },
+  "engine": "codecite",
+  "groups": {
+    "history": {
+      "mrr": 0.4647707231040564,
+      "queries": 36,
+      "recall_at_1": 0.3333333333333333,
+      "recall_at_10": 0.8888888888888888
+    }
+  },
+  "outcomes": [
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr184-title",
+      "rank": 6,
+      "text": "ci: skip paid self-review on PR edits and release PRs",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:docs/security-hardening.md#L68-L87"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr182-title",
+      "rank": 9,
+      "text": "fix(post): stop posting the \"See the review summary.\" placeholder thread",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:CHANGELOG.md#L252-L272"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr164-title",
+      "rank": 1,
+      "text": "feat(plugin): configurable reviewer instead of auto-dispatching to codex",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:docs/multi-harness-plan.md#L12-L48"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr145-title",
+      "rank": 10,
+      "text": "feat(evals): persist arm-labelled provider usage telemetry",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:evals/fixtures/cold_read_logic_bugs/diff.patch#L1-L39"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr144-title",
+      "rank": null,
+      "text": "fix(acceptance): distinguish required tests from optional coverage",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:evals/results/2026-09-14-ceiling-24000/openai__gpt-6-astra.34804056266.md#L87-L101"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr140-title",
+      "rank": 1,
+      "text": "test(evals): record round six, nine models on the current prompts",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:docs/model-selection.md#L295-L321"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr154-title",
+      "rank": 6,
+      "text": "docs: remove references to a private downstream repository",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:docs/releases.md#L52-L84"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr138-title",
+      "rank": 7,
+      "text": "fix(security): pin the Claude adapter's actions and drop two dynamic regexes",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:.github/blind-peer-review/policy.md#L2-L20"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr136-title",
+      "rank": 4,
+      "text": "fix(evals): run dispatched evals at the push ceiling, not 8000",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:docs/model-selection.md#L219-L224"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr134-title",
+      "rank": 1,
+      "text": "fix(lenses): make the acceptance PARTIAL severity rule mechanical",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:lenses/acceptance.md#L22-L58"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr126-title",
+      "rank": 6,
+      "text": "fix(lenses): align personas with the CI tool contract and the manifest",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:scripts/vendor.mjs#L50"
+    },
+    {
+      "class": "history-issue",
+      "id": "blind-peer-review-pr126-issue",
+      "rank": 5,
+      "text": "Lenses instruct CI to read code outside the diff that its tools cannot reach\n\n`security`, `edge_case` and `red_team` tell the model to read surrounding code (auth stack, codebase). In CI the only tools are `get_pr_diff` and `get_issue_or_pr_thread`, and `shared_instructions.md` says the model cannot read files outside the diff. An instruction to verify what it cannot see invites invented",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:lenses/shared_instructions.md#L35-L52"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr127-title",
+      "rank": 1,
+      "text": "test(evals): fail fabricated citations and assert OWASP 2025/2026 categories",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:evals/validate-fixtures.mjs#L17"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr123-title",
+      "rank": 5,
+      "text": "feat(citations): resolve finding citations against pinned OWASP and CWE catalogues",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:scripts/compose-prompt.cjs#L158-L177"
+    },
+    {
+      "class": "history-issue",
+      "id": "blind-peer-review-pr123-issue",
+      "rank": 2,
+      "text": "Lens citations: pinned OWASP citation catalogue (web 2025, LLM 2026, ASI 2026)\n\nLens findings name OWASP categories but cite nothing a reader can check. The model cannot fetch sources, so any URL it writes is a guess. Citations must resolve against a pinned, versioned catalogue the project ships.",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:scripts/compose-prompt.cjs#L158-L177"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr130-title",
+      "rank": 8,
+      "text": "feat(report): group cross-lens findings that cite the same CWE at one location",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:agents/policy.md#L2-L13"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr131-title",
+      "rank": null,
+      "text": "test(evals): fix the two fixtures that failed on every rep",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:evals/fixtures/acceptance_non_implementation_pr/diff.patch#L1-L14"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr124-title",
+      "rank": 1,
+      "text": "feat(lenses): cite OWASP Top 10:2025 and LLM/Agentic 2026 entries by year-qualified ID",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:docs/security-hardening.md#L111-L117"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr106-title",
+      "rank": 8,
+      "text": "feat: harden local review and report combined findings",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:evals/fixtures/security_clean/expected.json#L2-L14"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr105-title",
+      "rank": 2,
+      "text": "feat: load trusted CI lens overrides from immutable PR base",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:skills/check/SKILL.md#L34-L46"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr104-title",
+      "rank": 6,
+      "text": "docs: refresh contributor guidance and historical backlog",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:evals/fixtures/red_team_skip/expected.json#L2-L9"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr107-title",
+      "rank": null,
+      "text": "fix: preflight the lens budget and distinguish provider limits",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:evals/collect.mjs#L51-L67"
+    },
+    {
+      "class": "history-issue",
+      "id": "blind-peer-review-pr107-issue",
+      "rank": 1,
+      "text": "provider-check probes with max_tokens:1, so a key spending limit slips through and every lens dies on 402\n\n`scripts/provider-check.mjs` exists to turn \"out of credit / revoked key / bad model id\" into a fast, accurate failure before the agent spends anything. Its own header states the failure it prevents:",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:scripts/provider-check.mjs#L1-L16"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr99-title",
+      "rank": 4,
+      "text": "feat(lenses): run all eight lenses by default, not five",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:scripts/run-local.mjs#L90"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr98-title",
+      "rank": 1,
+      "text": "fix(ci): the release auto-merge failed because gh had no repo, not a race",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:.github/workflows/release-please.yml#L121-L170"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr96-title",
+      "rank": 2,
+      "text": "fix(ci): releases needed a manual merge because the auto-merge arm always raced",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:docs/releases.md#L110-L114"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr92-title",
+      "rank": 2,
+      "text": "feat(plugin): dispatch the lenses to codex, one process per lens",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:README.md#L227-L270"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr94-title",
+      "rank": null,
+      "text": "feat(adapters): adversarial review on GitHub via the Claude App, one lens per job",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:docs/market-analysis-and-roadmap.md#L255-L288"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr93-title",
+      "rank": 9,
+      "text": "feat(evals): run them locally for free, and stop shipping a ceiling we measured as too low",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:evals/collect.mjs#L160-L178"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr91-title",
+      "rank": 1,
+      "text": "fix(adapters): one lens per session — batching them loses findings",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:adapters/README.md#L17-L26"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr85-title",
+      "rank": 5,
+      "text": "fix: resolve the PR head SHA so the workflow_dispatch path can actually run",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:scripts/compose-prompt.cjs#L158-L177"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr88-title",
+      "rank": 4,
+      "text": "fix: a dropped compliance floor fails the step, and lens identity is now tested",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:docs/multi-harness-plan.md#L260-L269"
+    },
+    {
+      "class": "history-issue",
+      "id": "blind-peer-review-pr88-issue",
+      "rank": 1,
+      "text": "models_config: a compliance floor that applies to no model the lens runs is only a warning\n\nRaised by the **Red Team** lens on #71 as a MUST FIX. The finding is about the action's behaviour, not about that PR (which documents the behaviour accurately), so it belongs here.",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:scripts/models-config.mjs#L250-L277"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr89-title",
+      "rank": 1,
+      "text": "chore(deps): bump the pi engine to v2.28.0 — all three upstream defects survive",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:docs/upstream-issues.md#L1-L11"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr86-title",
+      "rank": 1,
+      "text": "fix(adapters): the Cursor rule pointed at paths no consumer has",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:adapters/README.md#L28-L34"
+    },
+    {
+      "class": "history-title",
+      "id": "blind-peer-review-pr84-title",
+      "rank": 1,
+      "text": "fix(vendor): the vendored manifest pointed at a file it never shipped",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:scripts/vendor.mjs#L50"
+    }
+  ]
+}

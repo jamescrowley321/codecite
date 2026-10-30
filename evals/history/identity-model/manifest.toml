@@ -1,0 +1,11 @@
+# The history benchmark's corpus for jamescrowley321/identity-model: the repository at the parent
+# of the oldest PR its queries were mined from. Frozen with queries.toml.
+
+name = "history-identity-model"
+
+[[source]]
+kind = "git"
+name = "identity-model"
+url = "https://github.com/jamescrowley321/identity-model"
+commit = "f1456691dd86029efaa4424d6080508b93d940df"
+use = "adapt"

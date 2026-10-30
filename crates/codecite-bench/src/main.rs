@@ -2,6 +2,7 @@
 //! reports Recall@1, Recall@10 and MRR for each query class, with every miss.
 
 mod answer;
+mod grep;
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -33,6 +34,17 @@ struct Cli {
     /// Print the report as JSON.
     #[arg(long)]
     json: bool,
+    /// Rank with `git grep` over this repository instead of running
+    /// `codecite search`: the baseline the history benchmark compares with.
+    #[arg(long, requires = "commit")]
+    grep: Option<PathBuf>,
+    /// The commit `--grep` searches.
+    #[arg(long, requires = "grep")]
+    commit: Option<String>,
+    /// Rank with no search at all: the files the other queries' PRs changed
+    /// most often. A query-blind floor that both engines must beat.
+    #[arg(long, conflicts_with = "grep")]
+    popular: bool,
 }
 
 /// The queries file.
@@ -106,7 +118,7 @@ fn main() -> anyhow::Result<()> {
     )
     .with_context(|| format!("parsing {}", cli.queries.display()))?;
     check(&file)?;
-    let codecite = match cli.codecite {
+    let codecite = match cli.codecite.clone() {
         Some(path) => path,
         None => std::env::current_exe()?
             .with_file_name(format!("codecite{}", std::env::consts::EXE_SUFFIX)),
@@ -126,8 +138,18 @@ fn main() -> anyhow::Result<()> {
             .iter()
             .map(|a| Answer::parse(a))
             .collect::<anyhow::Result<Vec<_>>>()?;
-        let citations = search(&codecite, &file.corpus, &query.text)
-            .with_context(|| format!("query `{}`", query.id))?;
+        // Several chunks of one file would fill a file-level top 10 with
+        // fewer files than grep's, so a file-labelled query ranks distinct
+        // files: each file's first result, from a deeper search.
+        let by_file = answers.iter().all(|a| matches!(a, Answer::File { .. }));
+        let citations = match (&cli.grep, &cli.commit) {
+            _ if cli.popular => Ok(popular_rank(&file.query, query, DEPTH)),
+            (Some(repo), Some(commit)) => grep::grep_rank(repo, commit, &query.text, DEPTH),
+            _ if by_file => search(&codecite, &file.corpus, &query.text, FILE_SEARCH_DEPTH)
+                .map(|c| first_per_file(c, DEPTH)),
+            _ => search(&codecite, &file.corpus, &query.text, DEPTH),
+        }
+        .with_context(|| format!("query `{}`", query.id))?;
         let rank = citations
             .iter()
             .position(|c| {
@@ -152,7 +174,7 @@ fn main() -> anyhow::Result<()> {
         .iter()
         .map(|(class, os)| (*class, Scores::of(os.iter().copied())))
         .collect();
-    let groups: BTreeMap<&str, Scores> = ["spec", "code"]
+    let groups: BTreeMap<&str, Scores> = ["spec", "code", "history"]
         .into_iter()
         .map(|g| {
             (
@@ -164,13 +186,15 @@ fn main() -> anyhow::Result<()> {
         .collect();
     let all = Scores::of(outcomes.iter());
 
+    let engine = engine(&cli);
     if cli.json {
         let report = serde_json::json!({
-            "classes": classes, "groups": groups, "all": all, "outcomes": outcomes,
+            "engine": engine, "classes": classes, "groups": groups, "all": all, "outcomes": outcomes,
         });
         println!("{}", serde_json::to_string_pretty(&report)?);
         return Ok(());
     }
+    println!("Engine: {engine}\n");
     println!("| Class | Queries | Recall@1 | Recall@10 | MRR |");
     println!("| --- | ---: | ---: | ---: | ---: |");
     let row = |name: &str, s: &Scores| {
@@ -201,6 +225,18 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The engine that ranked a run: `codecite`, the `git grep` baseline or the
+/// query-blind popular-files floor.
+fn engine(cli: &Cli) -> &'static str {
+    if cli.popular {
+        "popular"
+    } else if cli.grep.is_some() {
+        "grep"
+    } else {
+        "codecite"
+    }
+}
+
 /// Rejects a queries file with a duplicate id, an empty field or a bad
 /// label, before any search runs.
 fn check(file: &QueryFile) -> anyhow::Result<()> {
@@ -213,19 +249,75 @@ fn check(file: &QueryFile) -> anyhow::Result<()> {
             bail!("query `{}` needs a class, text and answers", query.id);
         }
         for answer in &query.answers {
-            Answer::parse(answer).with_context(|| format!("query `{}`", query.id))?;
+            let parsed = Answer::parse(answer).with_context(|| format!("query `{}`", query.id))?;
+            // Only mined history queries label whole files, so elsewhere a
+            // bare path is a spec or code label that lost its fragment.
+            if matches!(parsed, Answer::File { .. }) && !query.class.starts_with("history") {
+                bail!(
+                    "query `{}`: answer `{answer}` is a bare file path, which only \
+                     history queries take; add `#L<line>` or `#section-<number>`",
+                    query.id
+                );
+            }
         }
     }
     Ok(())
 }
 
-/// The citations `codecite search` returns for `text`, best first.
-fn search(codecite: &Path, corpus: &str, text: &str) -> anyhow::Result<Vec<String>> {
+/// How many results a file-labelled query asks for, so that
+/// [`first_per_file`] still has [`DEPTH`] distinct files to keep.
+const FILE_SEARCH_DEPTH: u32 = 50;
+
+/// Each code file's first citation, and every other citation, in order,
+/// at most `depth`.
+fn first_per_file(citations: Vec<String>, depth: u32) -> Vec<String> {
+    let mut seen = HashSet::new();
+    citations
+        .into_iter()
+        .filter(|c| match Citation::parse(c) {
+            Citation::Code { path, .. } => seen.insert(path),
+            _ => true,
+        })
+        .take(depth as usize)
+        .collect()
+}
+
+/// The files the other PRs' queries name as answers, most PRs first, then by
+/// path, at most `depth`, cited `popular@0:<path>#L1`. A PR is a query's
+/// `source`, so its title and issue queries count once, and never for each
+/// other.
+fn popular_rank(queries: &[Query], query: &Query, depth: u32) -> Vec<String> {
+    let mut prs: BTreeMap<&str, HashSet<&str>> = BTreeMap::new();
+    for other in queries {
+        let pr = other.source.as_deref().unwrap_or(&other.id);
+        if pr == query.source.as_deref().unwrap_or(&query.id) {
+            continue;
+        }
+        for answer in &other.answers {
+            prs.entry(answer.as_str()).or_default().insert(pr);
+        }
+    }
+    let mut ranked: Vec<(&str, usize)> = prs.into_iter().map(|(p, s)| (p, s.len())).collect();
+    // The map is in path order, and the sort is stable.
+    ranked.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+    ranked
+        .into_iter()
+        .take(depth as usize)
+        .map(|(path, _)| format!("popular@0:{path}#L1"))
+        .collect()
+}
+
+/// The citations `codecite search` returns for `text`, best first, at most
+/// `limit`. A query with no words to search for has no results, as grep's
+/// would, rather than failing the run.
+fn search(codecite: &Path, corpus: &str, text: &str, limit: u32) -> anyhow::Result<Vec<String>> {
     let output = Command::new(codecite)
-        .args(["search", corpus, text, "--json", "--allow-stale", "--limit"])
-        .arg(DEPTH.to_string())
+        .args(search_args(corpus, text, limit))
         .output()
         .with_context(|| format!("running {}", codecite.display()))?;
+    if !output.status.success() && has_no_words(&output.stderr) {
+        return Ok(Vec::new());
+    }
     if !output.status.success() {
         bail!(
             "codecite search failed: {}",
@@ -233,6 +325,30 @@ fn search(codecite: &Path, corpus: &str, text: &str) -> anyhow::Result<Vec<Strin
         );
     }
     citations(&output.stdout).context("parsing codecite search --json")
+}
+
+/// `codecite search`'s arguments. A mined query can start with `--`, so it
+/// follows `--` and is never read as a flag.
+fn search_args(corpus: &str, text: &str, limit: u32) -> Vec<String> {
+    let limit = limit.to_string();
+    [
+        "search",
+        "--json",
+        "--allow-stale",
+        "--limit",
+        &limit,
+        "--",
+        corpus,
+        text,
+    ]
+    .map(str::to_owned)
+    .to_vec()
+}
+
+/// Whether `codecite search` failed because the query has no words. The
+/// message is codecite's own, pinned by `crates/codecite/tests/search.rs`.
+fn has_no_words(stderr: &[u8]) -> bool {
+    String::from_utf8_lossy(stderr).contains("no words to search for")
 }
 
 /// The citations in what `codecite search --json` prints,
@@ -268,5 +384,98 @@ mod tests {
         // The bare array `search --json` printed before is refused, not
         // read as no results.
         assert!(citations(br#"[{"citation":"a@0123456:x.rs#L1"}]"#).is_err());
+    }
+
+    #[test]
+    fn file_level_ranking_keeps_each_files_first_result() {
+        let cited = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let ranked = cited(&[
+            "r@0123abcd:a.py#L1-L9",
+            "r@0123abcd:a.py#L20-L30",
+            "r@0123abcd:b.py#L1",
+            "rfc9449@sha256:1a2b3c4d5e6f#section-4.3",
+            "r@0123abcd:c.py#L3",
+        ]);
+        assert_eq!(
+            first_per_file(ranked, 3),
+            cited(&[
+                "r@0123abcd:a.py#L1-L9",
+                "r@0123abcd:b.py#L1",
+                "rfc9449@sha256:1a2b3c4d5e6f#section-4.3",
+            ])
+        );
+    }
+
+    #[test]
+    fn query_text_that_looks_like_a_flag_is_searched_as_text() {
+        let args = search_args("c", "--path=src fix the parser", 10);
+        let dashes = args.iter().position(|a| a == "--").unwrap();
+        assert_eq!(&args[dashes + 1..], ["c", "--path=src fix the parser"]);
+    }
+
+    #[test]
+    fn only_a_query_with_no_words_counts_as_no_results() {
+        assert!(has_no_words(
+            b"error: the query has no words to search for\n"
+        ));
+        assert!(!has_no_words(b"error: no corpus named c\n"));
+    }
+
+    #[test]
+    fn each_engine_names_itself_in_the_report() {
+        let engine_of = |args: &[&str]| {
+            let cli =
+                Cli::parse_from(std::iter::once("codecite-bench").chain(args.iter().copied()));
+            engine(&cli)
+        };
+        assert_eq!(engine_of(&[]), "codecite");
+        assert_eq!(engine_of(&["--grep", "r", "--commit", "abc1234"]), "grep");
+        assert_eq!(engine_of(&["--popular"]), "popular");
+    }
+
+    #[test]
+    fn only_history_queries_take_a_bare_file_answer() {
+        let file = |class: &str, answer: &str| QueryFile {
+            corpus: "c".into(),
+            query: vec![Query {
+                class: class.into(),
+                ..query("q", "s", &[answer])
+            }],
+        };
+        assert!(check(&file("history-title", "src/a.py")).is_ok());
+        // A spec label that lost its `#section-<n>` is still an error.
+        let err = check(&file("spec-keyword", "rfc9449.txt")).unwrap_err();
+        assert!(format!("{err:#}").contains("history"), "{err:#}");
+        assert!(check(&file("code-symbol", "src/a.py#L3")).is_ok());
+    }
+
+    fn query(id: &str, source: &str, answers: &[&str]) -> Query {
+        Query {
+            id: id.into(),
+            class: "history-title".into(),
+            text: "t".into(),
+            answers: answers.iter().map(|a| a.to_string()).collect(),
+            source: Some(source.into()),
+        }
+    }
+
+    #[test]
+    fn the_popular_baseline_ranks_files_by_how_many_other_prs_changed_them() {
+        let queries = vec![
+            query("q1-title", "pr1", &["docs/design.md", "src/a.rs"]),
+            query("q1-issue", "pr1", &["docs/design.md", "src/a.rs"]),
+            query("q2-title", "pr2", &["docs/design.md", "src/b.rs"]),
+            query("q3-title", "pr3", &["docs/design.md", "src/b.rs"]),
+        ];
+        // For pr1: design.md is in pr2 and pr3, b.rs in both; a.rs only in
+        // pr1 itself, so it is left out.
+        assert_eq!(
+            popular_rank(&queries, &queries[0], 10),
+            ["popular@0:docs/design.md#L1", "popular@0:src/b.rs#L1"]
+        );
+        assert_eq!(
+            popular_rank(&queries, &queries[2], 1),
+            ["popular@0:docs/design.md#L1"]
+        );
     }
 }
