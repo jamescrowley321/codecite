@@ -433,7 +433,7 @@ Each source needs `use`; `license` is optional until SPDX detection lands. A git
 
 ## Interfaces
 
-The CLI and the MCP server expose the same operations and return the same JSON, so anything an agent sees can be reproduced from a terminal. The human forms are written for an agent that reads them: one line per hit, citation first, as `rg` prints a match. `codecite --help` opens with a start-here block and each command's help carries an example; a paste-in snippet for an agent's own instructions file is in `docs/usage.md`.
+The CLI and the MCP server expose the same operations and return the same JSON, so anything an agent sees can be reproduced from a terminal. The human forms are written for an agent that reads them: one line per hit, citation first, as `rg` prints a match. `codecite`, `codecite -h` and `codecite --help` end with a start-here block, each output-printing command's `-h` says what its output looks like, and its `--help` adds examples; a paste-in snippet for an agent's own instructions file is in `docs/usage.md`.
 
 | CLI command | Purpose |
 | --- | --- |

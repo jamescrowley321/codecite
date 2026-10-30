@@ -22,7 +22,7 @@ use codecite_index::{Clones, Fetcher, LicenseClass, Manifest, Source, WalkOption
 prints cited results. A corpus is a named set of sources; a citation is a \
 stable pointer to exact text, such as `myrepo@9458d60:src/lib.rs#L10-L20`, \
 that `read` resolves back to that text.",
-    after_long_help = "\
+    after_help = "\
 Start here:
   codecite corpora                       what is indexed, and how fresh
   codecite search <CORPUS> \"<words>\"     ranked hits, one line each, cited
@@ -58,13 +58,21 @@ enum Command {
         print_hashes: bool,
     },
     /// Search a corpus and print ranked, cited results.
-    #[command(after_long_help = "Examples:
+    #[command(
+        after_help = "\
+Output: a header `N result(s)` (or `no results`), with ` · <license> · indexed <at>`
+when every hit shares them, then one line per hit, best first:
+  <citation> · <kind>[ <symbol>] · <first snippet line>
+Pass a printed citation to `read` for the full text.",
+        after_long_help = "Examples:
   codecite search myrepo \"retry backoff\"
   codecite search myrepo \"parse error\" --language rust --limit 5
   codecite search myrepo \"token\" --path \"src/auth/*\" --json
-Output: a header `N result(s)`, then one line per hit, best first:
+Output: a header `N result(s)` (or `no results`), with ` · <license> · indexed <at>`
+when every hit shares them, then one line per hit, best first:
   <citation> · <kind>[ <symbol>] · <first snippet line>
-Pass a printed citation to `read` for the full text.")]
+Pass a printed citation to `read` for the full text."
+    )]
     Search {
         /// The corpus to search.
         corpus: String,
@@ -93,13 +101,19 @@ Pass a printed citation to `read` for the full text.")]
     },
     /// Print the lines of a corpus that match a regex or exact text, each
     /// cited, in index order.
-    #[command(after_long_help = "Examples:
+    #[command(
+        after_help = "\
+Output: a header `N match(es)` (or `no matches`), with ` · <license> · indexed <at>`
+when every match shares them, then one line per match, in index order:
+  <citation>: <matched line>",
+        after_long_help = "Examples:
   codecite grep myrepo 'fn \\w+_handler'
   codecite grep myrepo \"TODO(\" --fixed
   codecite grep myrepo 'timeout' -i --language rust --limit 20
-Output: a header `N match(es)` (or `no matches`), then one line per match, in index
-order:
-  <citation>: <matched line>")]
+Output: a header `N match(es)` (or `no matches`), with ` · <license> · indexed <at>`
+when every match shares them, then one line per match, in index order:
+  <citation>: <matched line>"
+    )]
     Grep {
         /// The corpus to grep.
         corpus: String,
@@ -132,12 +146,19 @@ order:
         allow_stale: bool,
     },
     /// Print where a symbol is defined: every definition, cited.
-    #[command(after_long_help = "Examples:
+    #[command(
+        after_help = "\
+Output: a header `N definition(s) of <symbol>`, with ` · <license> · indexed <at>`
+when every definition shares them, then one line each:
+  <citation> · <kind> <symbol> · <role> · <first snippet line>",
+        after_long_help = "Examples:
   codecite def myrepo parse_config
   codecite def myrepo Client.connect
   codecite def myrepo Config --json
-Output: a header `N definition(s) of <symbol>`, then one line each:
-  <citation> · <kind> <symbol> · <role> · <first snippet line>")]
+Output: a header `N definition(s) of <symbol>`, with ` · <license> · indexed <at>`
+when every definition shares them, then one line each:
+  <citation> · <kind> <symbol> · <role> · <first snippet line>"
+    )]
     Def {
         /// The corpus to look in.
         corpus: String,
@@ -152,11 +173,16 @@ Output: a header `N definition(s) of <symbol>`, then one line each:
         allow_stale: bool,
     },
     /// Print the exact text a citation points at, with its pinned citation.
-    #[command(after_long_help = "Examples:
+    #[command(
+        after_help = "\
+Output: the pinned citation, a line saying what it is, a blank line, then the
+exact text.",
+        after_long_help = "Examples:
   codecite read myrepo 'myrepo@9458d60:src/lib.rs#L10-L20'
   codecite read myrepo 'myrepo@9458d60:src/lib.rs#L10-L20' --max-lines 20 --json
 Output: the pinned citation, a line saying what it is, a blank line, then the
-exact text.")]
+exact text."
+    )]
     Read {
         /// The corpus to read from.
         corpus: String,
@@ -280,9 +306,13 @@ exact text.")]
     },
     /// List the corpora with their age, size, source count and staleness,
     /// as JSON.
-    #[command(after_long_help = "Examples:
+    #[command(
+        after_help = "\
+Output: JSON, one entry per corpus with its age, size, source count and staleness.",
+        after_long_help = "Examples:
   codecite corpora
-Output: JSON, one entry per corpus with its age, size, source count and staleness.")]
+Output: JSON, one entry per corpus with its age, size, source count and staleness."
+    )]
     Corpora,
     /// Run the MCP server on stdin and stdout.
     #[command(after_long_help = "Examples:
@@ -1110,6 +1140,65 @@ mod tests {
             assert!(help.contains(line), "{help}");
         }
         assert!(!help.contains("spec would use"), "{help}");
+    }
+
+    /// What clap prints for `args`, as an agent sees it.
+    fn printed_help(args: &[&str]) -> String {
+        match Cli::try_parse_from(args) {
+            Ok(_) => panic!("{args:?} printed no help"),
+            Err(err) => err.render().to_string(),
+        }
+    }
+
+    #[test]
+    fn the_short_help_says_where_to_start() {
+        use clap::CommandFactory as _;
+        let short = Cli::command().render_help().to_string();
+        for help in [
+            short,
+            printed_help(&["codecite"]),
+            printed_help(&["codecite", "-h"]),
+        ] {
+            for line in [
+                "Start here:",
+                "codecite corpora",
+                "codecite search <CORPUS>",
+                "codecite read <CORPUS>",
+                "Add --json",
+            ] {
+                assert!(help.contains(line), "{help}");
+            }
+        }
+    }
+
+    #[test]
+    fn search_short_help_gives_its_output_but_not_its_examples() {
+        let help = printed_help(&["codecite", "search", "-h"]);
+        assert!(help.contains("Output: a header `N result(s)`"), "{help}");
+        assert!(help.contains("no results"), "{help}");
+        assert!(!help.contains("Examples:"), "{help}");
+        let long = printed_help(&["codecite", "search", "--help"]);
+        assert!(long.contains("Examples:"), "{long}");
+        assert!(long.contains("Output: a header `N result(s)`"), "{long}");
+    }
+
+    #[test]
+    fn a_short_output_line_is_also_in_the_long_help() {
+        use clap::CommandFactory as _;
+        let mut with_output = Vec::new();
+        for sub in Cli::command().get_subcommands() {
+            let long = sub.get_after_long_help().unwrap().to_string();
+            if let Some(short) = sub.get_after_help() {
+                let short = short.to_string();
+                assert!(short.starts_with("Output:"), "{short}");
+                assert!(!short.contains("Examples:"), "{short}");
+                assert!(long.ends_with(&short), "`{}`: {long}", sub.get_name());
+                with_output.push(sub.get_name().to_owned());
+            } else {
+                assert!(!long.contains("Output:"), "`{}`: {long}", sub.get_name());
+            }
+        }
+        assert_eq!(with_output, ["search", "grep", "def", "read", "corpora"]);
     }
 
     #[test]
