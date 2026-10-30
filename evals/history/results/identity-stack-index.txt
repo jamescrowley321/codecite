@@ -1,1 +1,1 @@
-chunks: 3920 written · elapsed: 0.74s
+chunks: 3920 written · elapsed: 0.64s
