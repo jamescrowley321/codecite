@@ -735,8 +735,9 @@ fn write_matches(
 }
 
 /// The short human form of grep matches, as [`human`]'s for search: a
-/// header with the license class and `indexed_at` when every match shares
-/// them, otherwise on each match's line. Per match, one line as `rg` prints
+/// header with how many matches there are, and the license class and
+/// `indexed_at` when every match shares them, otherwise on each match's
+/// line. Per match, one line as `rg` prints
 /// `path:line:text`: the citation, any `dirty` mark and unshared
 /// provenance, a colon, then the line it matched, trimmed and cut.
 fn human_matches(matches: &[GrepMatch]) -> String {
@@ -749,17 +750,18 @@ fn human_matches(matches: &[GrepMatch]) -> String {
         .iter()
         .all(|m| m.license_class == first.license_class && m.indexed_at == first.indexed_at);
     let mut out = String::new();
+    let n = matches.len();
     // `write!` to a `String` can't fail.
+    let _ = write!(out, "{n} match{}", if n == 1 { "" } else { "es" });
     if shared {
-        let n = matches.len();
-        let _ = writeln!(
+        let _ = write!(
             out,
-            "{n} match{} · {} · indexed {}",
-            if n == 1 { "" } else { "es" },
+            " · {} · indexed {}",
             escape_controls(&first.license_class),
             escape_controls(&first.indexed_at)
         );
     }
+    out.push('\n');
     for m in matches {
         out.push_str(&escape_controls(&abbreviate_commit(&m.citation)));
         if m.dirty == Some(true) {
@@ -938,9 +940,9 @@ const HUMAN_SNIPPET_CHARS: usize = 120;
 /// shows. `codecite read` accepts the abbreviation.
 const HUMAN_COMMIT_CHARS: usize = 12;
 
-/// The short human form of the results. A header carries the license class
-/// and `indexed_at` when every result shares them; otherwise each result's
-/// line does. Per result, one line: citation, kind and symbol, then any
+/// The short human form of the results. A header says how many there are
+/// and carries the license class and `indexed_at` when every result shares
+/// them; otherwise each result's line does. Per result, one line: citation, kind and symbol, then any
 /// `dirty` and `older version pinned` marks, the license and `indexed_at`
 /// if not shared, and the snippet's first non-blank line. No rank and no
 /// score, which `--json` keeps.
@@ -954,17 +956,18 @@ fn human(results: &[SearchResult]) -> String {
         .iter()
         .all(|r| r.license_class == first.license_class && r.indexed_at == first.indexed_at);
     let mut out = String::new();
+    let n = results.len();
     // `write!` to a `String` can't fail.
+    let _ = write!(out, "{n} result{}", if n == 1 { "" } else { "s" });
     if shared {
-        let n = results.len();
-        let _ = writeln!(
+        let _ = write!(
             out,
-            "{n} result{} · {} · indexed {}",
-            if n == 1 { "" } else { "s" },
+            " · {} · indexed {}",
             escape_controls(&first.license_class),
             escape_controls(&first.indexed_at)
         );
     }
+    out.push('\n');
     for r in results {
         let _ = write!(
             out,
@@ -1615,8 +1618,12 @@ code · adapt · indexed 2026-10-20T06:00:00Z
         let mut b = result("y@0123456789abcdef0123456789abcdef01234567:b#L1");
         b.license_class = "quote".into();
         let text = human(&[a, b]);
-        assert_eq!(text.lines().count(), 2, "{text}");
-        assert!(text.lines().all(|l| l.contains(" · indexed ")), "{text}");
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines, ["2 results", lines[1], lines[2]], "{text}");
+        assert!(
+            lines[1..].iter().all(|l| l.contains(" · indexed ")),
+            "{text}"
+        );
     }
 
     #[test]
@@ -1650,12 +1657,13 @@ app@0123456789ab:a.rs#L1-L5 · function · x
         later.indexed_at = "2026-10-21T06:00:00Z".into();
         assert_eq!(
             human(&[code("a.rs", None, "x"), quote]),
-            "app@0123456789ab:a.rs#L1-L5 · function · adapt · indexed 2026-10-20T06:00:00Z · x
+            "2 results
+app@0123456789ab:a.rs#L1-L5 · function · adapt · indexed 2026-10-20T06:00:00Z · x
 app@0123456789ab:b.rs#L1-L5 · function · quote · indexed 2026-10-20T06:00:00Z
 "
         );
         let out = human(&[code("a.rs", None, "x"), later]);
-        assert!(out.starts_with("app@"), "{out}");
+        assert!(out.starts_with("2 results\napp@"), "{out}");
         assert!(out.contains("indexed 2026-10-21T06:00:00Z · y\n"), "{out}");
     }
 
@@ -1816,7 +1824,8 @@ app@0123456789ab:src/b.rs#L7 · dirty: let jti = x;\\u{1b}
         let out = human_matches(&[matched("app@0123456:a.rs#L1", "x"), spec]);
         assert_eq!(
             out,
-            "app@0123456:a.rs#L1 · adapt · indexed 2026-10-20T06:00:00Z: x
+            "2 matches
+app@0123456:a.rs#L1 · adapt · indexed 2026-10-20T06:00:00Z: x
 rfc9449@sha256:0123456789ab#section-4.3/step-2 · quote · indexed 2026-10-20T06:00:00Z: The jti
 "
         );

@@ -224,11 +224,18 @@ rfc9449@sha256:2d8657f07291#section-11.1 · section · 11.1. DPoP Proof Replay
 rfc9449@sha256:2d8657f07291#section-4.3/step-2 · step · Check that the jti has not been used before.
 ```
 
-One line per result: its citation, then its kind (`function`, `class`,
-`section`, `step` or `window`) and symbol, then the first line of its text.
-Results come best first; `--json` adds each one's score. When the results
-share a license class and index time, a header gives them once; otherwise each
-line carries its own, before the text.
+A header says how many results there are, or `no results`. Then one line
+per result: its citation, then its kind (`function`, `class`, `section`,
+`step` or `window`) and symbol, then the first line of its text. Results come
+best first; `--json` adds each one's score. When the results share a license
+class and index time, the header gives them once; otherwise each line carries
+its own, before the text:
+
+```text
+2 results
+rfc9449@sha256:2d8657f07291#section-4.3/step-2 · step · quote · indexed 2026-10-20T22:56:30Z · Check that the jti has not been used before.
+app@0123456789ab:src/dpop.rs#L40-L58 · function check_jti · adapt · indexed 2026-10-20T22:56:30Z · pub fn check_jti(&self, jti: &str) -> bool {
+```
 
 Search a spec in its own terms. Search matches words, not meaning, so a
 question asked in plain words finds nothing in a spec that says it
@@ -258,7 +265,9 @@ matched against one line at a time, so `^` and `$` are a line's ends.
 case. `--language`, `--path`, `--only` and `--limit` work as they do for
 `search`.
 
-Each match is one line, `citation: text` as `rg` prints `path:line:text`: a code line cites itself (`repo@sha:path#L12`), and a
+A header says how many matches there are, or `no matches`, with the license
+class and index time when every match shares them, as search's does. Each
+match is then one line, `citation: text` as `rg` prints `path:line:text`: a code line cites itself (`repo@sha:path#L12`), and a
 spec line cites the step or section that holds it, so `read` turns any match
 back into its text. Matches come in index order, unscored: each source in
 the manifest's order, its files by path, then lines. So a grep over code and

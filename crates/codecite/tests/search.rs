@@ -159,7 +159,6 @@ fn the_human_form_is_short() {
     let (citation, rest) = lines[1].split_once(" · ").unwrap();
     assert!(citation.starts_with("app@"), "{text}");
     assert!(citation.ends_with(":web/check.ts#L1-L3"), "{text}");
-    assert!(citation.contains("@") && citation.contains("#L"), "{text}");
     let commit = &citation["app@".len()..citation.find(':').unwrap()];
     assert_eq!(commit.len(), 12, "{text}");
     assert!(lines[1].contains("function checkToken · "), "{text}");
@@ -171,6 +170,52 @@ fn the_human_form_is_short() {
     let json = demo.json(&["check token"]);
     assert_eq!(lines.len(), 1 + json.len(), "{text}");
     assert!(lines.iter().all(|l| l.chars().count() <= 300), "{text}");
+}
+
+#[test]
+fn the_human_form_counts_hits_whose_provenance_differs() {
+    let demo = Demo::new();
+    // A second source with another license class, so no header can carry
+    // one license for every hit.
+    let notes = demo.tmp.path().join("notes");
+    fs::create_dir_all(&notes).unwrap();
+    git(&notes, &["init", "-q"]);
+    fs::write(
+        notes.join("token.md"),
+        "# Check token\n\nCheck the token.\n",
+    )
+    .unwrap();
+    git(&notes, &["add", "."]);
+    git(&notes, &["commit", "-q", "-m", "init"]);
+    let manifest = demo.tmp.path().join("work/corpora/demo.toml");
+    let mut text = fs::read_to_string(&manifest).unwrap();
+    text.push_str(&format!(
+        "\n[[source]]\nkind = \"local\"\npath = {:?}\nuse = \"quote\"\n",
+        notes.to_str().unwrap()
+    ));
+    fs::write(&manifest, text).unwrap();
+    let indexed = demo.run(&["index", "demo"]);
+    assert!(indexed.status.success(), "{}", stderr(&indexed));
+
+    let json = demo.json(&["check token", "--limit", "2"]);
+    let classes: Vec<&str> = json
+        .iter()
+        .map(|r| r["license_class"].as_str().unwrap())
+        .collect();
+    assert!(
+        classes.contains(&"adapt") && classes.contains(&"quote"),
+        "{json:#?}"
+    );
+    let output = demo.run(&["search", "demo", "check token", "--limit", "2"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let text = String::from_utf8(output.stdout).unwrap();
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines[0], "2 results", "{text}");
+    assert_eq!(lines.len(), 1 + json.len(), "{text}");
+    assert!(
+        lines[1..].iter().all(|l| l.contains(" · indexed ")),
+        "{text}"
+    );
 }
 
 #[test]
