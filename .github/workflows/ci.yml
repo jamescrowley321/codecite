@@ -168,9 +168,6 @@ jobs:
           - spec-questions
           - replay-identity-model-908
           - replay-identity-stack-449
-          - replay-identity-stack-450
-          - replay-identity-stack-451
-          - replay-terraform-provider-descope-35
           - replay-terraform-provider-descope-75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
