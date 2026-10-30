@@ -65,6 +65,9 @@ pub struct IndexSummary {
 /// the two commits. Sources marked `excluded` are reported in
 /// [`IndexSummary::skipped_sources`]. Every source the run did not index, a document version no
 /// longer pinned included, is then deleted from the store.
+///
+/// A reindex leaves `store` as a fresh index of the same pins would: the
+/// same rows and the same full-text totals, so search ranks alike.
 pub fn index_corpus(
     store: &mut Store,
     manifest: &Manifest,
