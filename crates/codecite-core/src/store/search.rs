@@ -47,10 +47,6 @@ const NAME_BOOST: f64 = 3.0;
 /// many helpers are named after (`app`, `user`, `get`) is not.
 const MAX_NAME_DEFINITIONS: u32 = 3;
 
-/// The most slots at the end of a result list held for the best spec
-/// results when the query names a symbol and code fills the rest.
-const SPEC_SLOTS: usize = 3;
-
 /// Which sources a search covers: specs, or everything else.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
@@ -115,9 +111,8 @@ pub struct SearchResult {
     /// `docs` or `spec`.
     pub role: &'static str,
     /// The ranking score, higher first: BM25 times the role's weight, times
-    /// a boost when the query names the chunk's symbol. Spec and code
-    /// results each come in this order; how the two are merged is up to
-    /// `Store::search`, since their scores are not on one scale.
+    /// a boost when the query names the chunk's symbol. Results of every
+    /// kind come in this one order.
     pub score: f64,
     /// How agents may use the source: `adapt`, `approach_only` or `quote`.
     pub license_class: String,
@@ -209,18 +204,11 @@ impl Store {
     /// [`MAX_NAME_DEFINITIONS`] symbols have that name. Only the current
     /// version of each document is searched.
     ///
-    /// Specs are searched in their own full-text table, stemmed with Porter,
-    /// so "authenticates" finds "authentication", and without the query's
-    /// [`STOPWORDS`] (see [`spec_fts_query`]). Code is searched as written,
-    /// with every term.
-    ///
-    /// Spec and code results are ranked separately, because their BM25
-    /// scores are not on one scale: a short constants file that repeats a
-    /// term outscores the long section that defines it. The two lists are
-    /// then merged. When the query names a symbol, results keep score
-    /// order, except that the best spec results, up to [`SPEC_SLOTS`] and a
-    /// third of `query.limit`, are lifted into the last slots. Otherwise the
-    /// two alternate, spec first. `query.only` searches just one of them.
+    /// Code, repository prose, fetched documents and specs are ranked
+    /// together, in one score order: a spec section ranks where its score
+    /// puts it, with no slots held for it. Every kind is searched as
+    /// written, without stemming, and with every term. `query.only` narrows
+    /// the search to specs or to everything else.
     ///
     /// A query with no letter or digit is [`Error::EmptyQuery`]. An index
     /// older than its maximum age is [`Error::StaleIndex`] unless
@@ -228,65 +216,45 @@ impl Store {
     pub fn search(&self, query: &SearchQuery<'_>) -> Result<Vec<SearchResult>> {
         let fts = fts_query(query.text).ok_or(Error::EmptyQuery)?;
         self.check_fresh(query.allow_stale)?;
-        let boosted = self.boosted_names(query.text)?;
-        let named = !boosted.is_empty();
         let mut names = String::from(NAME_SEPARATOR);
-        for name in boosted {
+        for name in self.boosted_names(query.text)? {
             names.push_str(&name);
             names.push(NAME_SEPARATOR);
         }
-        let limit = usize::try_from(query.limit).unwrap_or(usize::MAX);
-        let ranked =
-            |table: &str, fts: &str, spec: bool| self.ranked(table, fts, spec, &names, query);
-        let code = match query.only {
-            Some(Scope::Spec) => Vec::new(),
-            _ => ranked("chunk_fts", &fts, false)?,
-        };
-        let mut spec = match query.only {
-            Some(Scope::Code) => Vec::new(),
-            _ => ranked("spec_fts", &spec_fts_query(query.text).unwrap_or(fts), true)?,
-        };
-        self.add_older_versions(&mut spec)?;
-        Ok(blend(code, spec, limit, named, |r| r.score))
+        let mut results = self.ranked(&fts, &names, query)?;
+        self.add_older_versions(results.iter_mut().filter(|r| r.role == "spec"))?;
+        Ok(results)
     }
 
-    /// The best `query.limit` spec chunks, or code chunks, that the
-    /// full-text `table` matches for `fts`, best first. `chunk_fts` holds
-    /// every chunk, `spec_fts` only specs. A fetched document stored with
-    /// its text is a generic page, ranked with code.
-    fn ranked(
-        &self,
-        table: &str,
-        fts: &str,
-        spec: bool,
-        names: &str,
-        query: &SearchQuery<'_>,
-    ) -> Result<Vec<SearchResult>> {
+    /// The best `query.limit` chunks that `chunk_fts` matches for `fts`,
+    /// best first, within `query.only`. A fetched document stored without
+    /// its text is a spec; one stored with its text is a generic page.
+    fn ranked(&self, fts: &str, names: &str, query: &SearchQuery<'_>) -> Result<Vec<SearchResult>> {
         let (w_symbol, w_path, w_text) = COLUMN_WEIGHTS;
-        let mut stmt = self.conn.prepare_cached(&format!(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT c.kind, c.start_line, c.end_line, c.number, p.number, c.text, d.path, d.dirty,
                s.name, s.kind, s.revision, s.license_class, s.indexed_at, sym.display_name,
-               -bm25({table}, ?3, ?4, ?5)
+               -bm25(chunk_fts, ?3, ?4, ?5)
                  * codecite_role_weight(d.path, s.kind, d.text IS NOT NULL)
                  * CASE WHEN instr(?2, char(31) || codecite_name_key(sym.display_name) || char(31)) > 0
                         THEN ?9 ELSE 1.0 END AS score,
                d.text IS NOT NULL, c.title, c.anchor
-             FROM {table}
-             JOIN chunk c ON c.id = {table}.rowid
+             FROM chunk_fts
+             JOIN chunk c ON c.id = chunk_fts.rowid
              JOIN document d ON d.id = c.document_id
              JOIN source s ON s.id = d.source_id
              LEFT JOIN chunk p ON p.id = c.parent_id
              LEFT JOIN symbol sym ON sym.id = c.symbol_id
-             WHERE {table} MATCH ?1 AND s.is_current
+             WHERE chunk_fts MATCH ?1 AND s.is_current
                AND (?6 IS NULL OR d.language = ?6)
                AND (?7 IS NULL OR d.path GLOB ?7)
-               AND (s.kind = 'document' AND d.text IS NULL) = ?10
+               AND (?10 IS NULL OR (s.kind = 'document' AND d.text IS NULL) = ?10)
              -- Break ties on what the result cites, not on c.id: a chunk ID
              -- records when the chunk was written, and a reindex keeps the
              -- IDs of unchanged files, so ID order differs from a fresh index.
              ORDER BY score DESC, s.name, d.path, c.start_line, c.end_line
-             LIMIT ?8"
-        ))?;
+             LIMIT ?8",
+        )?;
         let rows = stmt.query_map(
             params![
                 fts,
@@ -298,7 +266,7 @@ impl Store {
                 query.path,
                 query.limit,
                 NAME_BOOST,
-                spec,
+                query.only.map(|scope| scope == Scope::Spec),
             ],
             |row| {
                 let kind: String = row.get(0)?;
@@ -350,7 +318,10 @@ impl Store {
 
     /// Sets each spec result's `older_versions`. Search reads only current
     /// versions, so each result's document is current.
-    fn add_older_versions(&self, results: &mut [SearchResult]) -> Result<()> {
+    fn add_older_versions<'a>(
+        &self,
+        results: impl IntoIterator<Item = &'a mut SearchResult>,
+    ) -> Result<()> {
         let mut by_name: HashMap<String, Option<Vec<String>>> = HashMap::new();
         for r in results {
             let Some((name, _)) = r.citation.split_once('@') else {
@@ -429,67 +400,6 @@ pub(super) fn register_functions(conn: &Connection) -> rusqlite::Result<()> {
     )
 }
 
-/// Merges code and spec results, each best first, into at most `limit`.
-///
-/// When the query `named` a symbol, the order is by `score`, with ties to
-/// code, except that the best `reserve` spec results move up into the last
-/// `reserve` slots if they would fall below them. Otherwise the two kinds
-/// alternate, spec first, and whichever runs out first leaves the rest to
-/// the other.
-fn blend<T>(
-    code: Vec<T>,
-    spec: Vec<T>,
-    limit: usize,
-    named: bool,
-    score: impl Fn(&T) -> f64,
-) -> Vec<T> {
-    // Sized by the results, not the caller's limit, which may be huge.
-    let room = limit.min(code.len() + spec.len());
-    if !named {
-        let mut merged = Vec::with_capacity(room);
-        let (mut code, mut spec) = (code.into_iter(), spec.into_iter());
-        while merged.len() < limit {
-            match (spec.next(), code.next()) {
-                (None, None) => break,
-                (s, c) => merged.extend(s.into_iter().chain(c)),
-            }
-        }
-        merged.truncate(limit);
-        return merged;
-    }
-    let reserve = (limit / 3).min(SPEC_SLOTS).min(spec.len());
-    let head = limit - reserve;
-    // (held for a spec, result), best first.
-    let mut by_score: Vec<(bool, bool, T)> = code
-        .into_iter()
-        .map(|r| (false, false, r))
-        .chain(
-            spec.into_iter()
-                .enumerate()
-                .map(|(i, r)| (true, i < reserve, r)),
-        )
-        .collect();
-    by_score.sort_by(|a, b| score(&b.2).total_cmp(&score(&a.2)).then(a.0.cmp(&b.0)));
-    // The first `head` by score, then the held spec results that missed
-    // them, then the next best.
-    let mut slots: Vec<Option<(bool, bool, T)>> = by_score.into_iter().map(Some).collect();
-    let mut merged = Vec::with_capacity(room);
-    for slot in slots.iter_mut().take(head) {
-        merged.extend(slot.take());
-    }
-    let held = slots.iter_mut().filter(|s| s.as_ref().is_some_and(|s| s.1));
-    let held: Vec<_> = held.filter_map(Option::take).collect();
-    let rest = slots.into_iter().flatten();
-    let mut tail: Vec<_> = held
-        .into_iter()
-        .chain(rest)
-        .take(limit - merged.len())
-        .collect();
-    tail.sort_by(|a, b| score(&b.2).total_cmp(&score(&a.2)).then(a.0.cmp(&b.0)));
-    merged.extend(tail);
-    merged.into_iter().map(|(_, _, r)| r).collect()
-}
-
 /// Turns the user's text into an FTS5 query, or `None` when it has no
 /// terms.
 ///
@@ -498,25 +408,6 @@ fn blend<T>(
 fn fts_query(text: &str) -> Option<String> {
     let terms = query_terms(text);
     (!terms.is_empty()).then(|| join_terms(&terms, " OR "))
-}
-
-/// [`fts_query`] for specs: the terms without [`STOPWORDS`], since in an
-/// `OR` of every term, "is client authentication required" matches every
-/// section that says "is". A query of only stopwords keeps them all and
-/// joins them with `AND`, so it finds the sections that say all of them
-/// rather than every section.
-fn spec_fts_query(text: &str) -> Option<String> {
-    let terms = query_terms(text);
-    let kept: Vec<String> = terms
-        .iter()
-        .filter(|t| STOPWORDS.binary_search(&t.as_str()).is_err())
-        .cloned()
-        .collect();
-    if kept.is_empty() {
-        (!terms.is_empty()).then(|| join_terms(&terms, " AND "))
-    } else {
-        Some(join_terms(&kept, " OR "))
-    }
 }
 
 /// The query's terms, as the index splits text, lowercased and without
@@ -540,24 +431,6 @@ fn join_terms(terms: &[String], op: &str) -> String {
         .collect();
     quoted.join(op)
 }
-
-/// Common English words, and the question words agents put in front of a
-/// query, that a spec search leaves out: the list the retrieval spike
-/// measured (`experiments/spec-retrieval/lexical.py`), without the words
-/// that say which requirement a query is after. Those are RFC 2119's
-/// keywords ("must", "shall", "should", "may", "required") and the
-/// negation in "MUST NOT" and "no". Sorted, for `binary_search`.
-const STOPWORDS: &[&str] = &[
-    "a", "about", "all", "also", "an", "and", "any", "are", "as", "at", "be", "been", "being",
-    "by", "can", "could", "did", "do", "does", "doing", "done", "down", "each", "every", "for",
-    "from", "get", "got", "had", "has", "have", "having", "he", "her", "his", "how", "i", "if",
-    "in", "into", "is", "it", "its", "just", "let", "make", "me", "more", "most", "my", "of",
-    "off", "on", "only", "or", "other", "our", "out", "over", "own", "s", "same", "she", "so",
-    "some", "someone", "such", "sure", "t", "than", "that", "the", "their", "them", "then",
-    "there", "these", "they", "this", "those", "to", "too", "under", "up", "very", "was", "we",
-    "were", "what", "when", "where", "which", "who", "whom", "whose", "why", "will", "with",
-    "would", "you", "your",
-];
 
 /// Separates the names passed to the search, so SQL finds one with
 /// `instr`. No name holds it: [`query_names`] splits words at it.
@@ -1100,51 +973,24 @@ mod tests {
     }
 
     #[test]
-    fn a_spec_section_is_not_buried_under_code_that_repeats_its_term() {
+    fn results_are_in_one_score_order_across_code_and_specs() {
         let (_dir, store) = buried_spec();
         let results = store.search(&query("token_type_hint")).unwrap();
-        assert_eq!(results[0].role, "spec", "{results:?}");
-        // On score alone, every code chunk beats it.
-        let mut code = results.iter().filter(|r| r.role != "spec");
-        assert!(code.clone().count() > 1);
-        assert!(code.all(|r| r.score > results[0].score), "{results:?}");
-    }
-
-    #[test]
-    fn a_query_that_names_a_symbol_keeps_score_order_with_a_spec_slot() {
-        // Named results keep score order but hold the last slots for the
-        // best spec results.
-        let r = |spec: bool, score: f64| (spec, score);
-        let code: Vec<_> = (0..5).map(|i| r(false, 10.0 - f64::from(i))).collect();
-        let spec = vec![r(true, 1.0)];
-        let blended = blend(code.clone(), spec.clone(), 3, true, |x| x.1);
-        assert_eq!(blended, [r(false, 10.0), r(false, 9.0), r(true, 1.0)]);
-        // A spec that already makes the cut keeps its place.
-        let high = vec![r(true, 9.5)];
-        let blended = blend(code.clone(), high, 3, true, |x| x.1);
-        assert_eq!(blended, [r(false, 10.0), r(true, 9.5), r(false, 9.0)]);
-        // At limit 10, all three held slots go to the three best specs.
-        let code: Vec<_> = (0..20).map(|i| r(false, 100.0 - f64::from(i))).collect();
-        let spec: Vec<_> = (0..5).map(|i| r(true, 3.0 - f64::from(i) * 0.5)).collect();
-        let blended = blend(code.clone(), spec.clone(), 10, true, |x| x.1);
-        assert_eq!(blended[..7], code[..7]);
-        assert_eq!(blended[7..], spec[..3]);
-        // A query that names nothing alternates, spec first.
-        let code: Vec<_> = (0..5).map(|i| r(false, 10.0 - f64::from(i))).collect();
-        let spec = vec![r(true, 1.0), r(true, 0.5)];
-        let blended = blend(code.clone(), spec, 4, false, |x| x.1);
-        assert_eq!(
-            blended,
-            [r(true, 1.0), r(false, 10.0), r(true, 0.5), r(false, 9.0)]
+        assert!(
+            results.windows(2).all(|w| w[0].score >= w[1].score),
+            "{results:?}"
         );
-        // With one kind, it is that kind in order.
-        assert_eq!(blend(code.clone(), vec![], 2, false, |x| x.1), code[..2]);
-        assert_eq!(blend(vec![], code.clone(), 2, true, |x| x.1), code[..2]);
-        // A huge limit returns what there is without reserving room for it.
-        for named in [true, false] {
-            let blended = blend(code.clone(), vec![], usize::MAX, named, |x| x.1);
-            assert_eq!(blended, code);
-        }
+        // The spec section ranks where its own score puts it: below the
+        // four code chunks that repeat the term.
+        let spec = results.iter().position(|r| r.role == "spec");
+        assert_eq!(spec, Some(4), "{results:?}");
+        let specs = SearchQuery {
+            only: Some(Scope::Spec),
+            ..query("token_type_hint")
+        };
+        let only = store.search(&specs).unwrap();
+        assert_eq!(only.len(), 1, "{only:?}");
+        assert_eq!(only[0].role, "spec");
     }
 
     #[test]
@@ -1340,45 +1186,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn spec_queries_drop_stopwords() {
-        assert_eq!(
-            spec_fts_query("Is client authentication required?").as_deref(),
-            Some("\"client\" OR \"authentication\" OR \"required\"")
-        );
-        // Requirement keywords and their negation stay: they say which
-        // requirement a query is after.
-        assert_eq!(
-            spec_fts_query("what MUST NOT the client send").as_deref(),
-            Some("\"must\" OR \"not\" OR \"client\" OR \"send\"")
-        );
-        assert_eq!(
-            spec_fts_query("what SHOULD it do if no SHALL").as_deref(),
-            Some("\"should\" OR \"no\" OR \"shall\"")
-        );
-        // Only stopwords: all of them, joined with AND.
-        assert_eq!(
-            spec_fts_query("what is this").as_deref(),
-            Some("\"what\" AND \"is\" AND \"this\"")
-        );
-        assert_eq!(spec_fts_query("-- !!"), None);
-        // Code queries keep every term.
-        assert_eq!(
-            fts_query("Is client authentication required?").as_deref(),
-            Some("\"is\" OR \"client\" OR \"authentication\" OR \"required\"")
-        );
-    }
-
-    #[test]
-    fn stopwords_are_sorted_lowercase_and_unique() {
-        assert!(STOPWORDS.windows(2).all(|w| w[0] < w[1]), "{STOPWORDS:?}");
-        assert!(
-            STOPWORDS
-                .iter()
-                .all(|w| w.chars().all(|c| c.is_ascii_lowercase()))
-        );
-    }
-
     /// A store with three spec sections and no code.
     fn specs(sections: &[&'static str]) -> (tempfile::TempDir, Store) {
         let dir = tempfile::tempdir().unwrap();
@@ -1408,26 +1215,7 @@ mod tests {
     }
 
     #[test]
-    fn spec_search_is_stemmed_and_ignores_stopwords() {
-        let (_dir, store) = specs(&[
-            "The client authenticates with the authorization server.",
-            "It is what it is: this is the section that says is and the.",
-            "Clients are registered by the server.",
-        ]);
-        let section = |n: &str| format!("rfc9449@sha256:1a2b3c4d5e6f#section-{n}");
-        // "authentication" finds "authenticates", and "is" doesn't pull in
-        // every section that says it.
-        assert_eq!(
-            spec_citations(&store, "is client authentication required"),
-            [section("1"), section("3")]
-        );
-        // A query of only stopwords finds the sections that hold all of
-        // them, not every section.
-        assert_eq!(spec_citations(&store, "what is this"), [section("2")]);
-    }
-
-    #[test]
-    fn code_search_is_not_stemmed_and_keeps_stopwords() {
+    fn search_is_not_stemmed_and_keeps_stopwords() {
         let f = fixture();
         let code = |text| SearchQuery {
             only: Some(Scope::Code),
@@ -1440,99 +1228,20 @@ mod tests {
             f.citations(&code("validates")),
             [format!("app@{HEAD}:README.md#L1-L2")]
         );
-        // "the" is a stopword only for specs.
         assert_eq!(
             f.citations(&code("the")),
             [format!("app@{HEAD}:README.md#L1-L2")]
         );
-    }
-
-    /// Code results as the search ranked them before specs had their own
-    /// table: one query over `chunk_fts`, code and spec chunks together.
-    fn code_as_before(store: &Store, text: &str) -> Vec<(String, f64)> {
-        let mut names = String::from(NAME_SEPARATOR);
-        for name in store.boosted_names(text).unwrap() {
-            names.push_str(&name);
-            names.push(NAME_SEPARATOR);
-        }
-        let (w_symbol, w_path, w_text) = COLUMN_WEIGHTS;
-        let mut stmt = store
-            .conn
-            .prepare(
-                "SELECT s.name, s.revision, d.path, c.start_line, c.end_line,
-                   -bm25(chunk_fts, ?3, ?4, ?5)
-                     * codecite_role_weight(d.path, s.kind, d.text IS NOT NULL)
-                     * CASE WHEN instr(?2, char(31) || codecite_name_key(sym.display_name) || char(31)) > 0
-                            THEN ?6 ELSE 1.0 END AS score
-                 FROM chunk_fts
-                 JOIN chunk c ON c.id = chunk_fts.rowid
-                 JOIN document d ON d.id = c.document_id
-                 JOIN source s ON s.id = d.source_id
-                 LEFT JOIN symbol sym ON sym.id = c.symbol_id
-                 WHERE chunk_fts MATCH ?1 AND s.is_current AND s.kind <> 'document'
-                 ORDER BY score DESC, s.name, d.path, c.start_line, c.end_line",
-            )
-            .unwrap();
-        let rows = stmt
-            .query_map(
-                params![
-                    fts_query(text).unwrap(),
-                    names,
-                    w_symbol,
-                    w_path,
-                    w_text,
-                    NAME_BOOST
-                ],
-                |row| {
-                    let citation = code_citation(
-                        &row.get::<_, String>(0)?,
-                        &row.get::<_, String>(1)?,
-                        &row.get::<_, String>(2)?,
-                        row.get(3)?,
-                        row.get(4)?,
-                    );
-                    Ok((citation, row.get(5)?))
-                },
-            )
-            .unwrap();
-        rows.collect::<rusqlite::Result<_>>().unwrap()
-    }
-
-    #[test]
-    fn code_results_are_ranked_as_before_specs_had_their_own_table() {
-        let f = fixture();
-        // Spec chunks, both versions, stay in chunk_fts, so code's BM25
-        // statistics are what they were.
-        let spec_rows: i64 = f
-            .store
-            .conn
-            .query_row(
-                "SELECT count(*) FROM chunk_fts WHERE chunk_fts MATCH 'jti'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(spec_rows, 2);
-        for text in [
-            "validate",
-            "validate token",
-            "is the token validated",
-            "what is this",
-            "jti checking dpop",
-        ] {
-            let code = SearchQuery {
-                only: Some(Scope::Code),
-                ..query(text)
-            };
-            let now: Vec<(String, f64)> = f
-                .store
-                .search(&code)
-                .unwrap()
-                .into_iter()
-                .map(|r| (r.citation, r.score))
-                .collect();
-            assert_eq!(now, code_as_before(&f.store, text), "{text}");
-        }
+        // Specs are searched the same way.
+        let (_dir, store) = specs(&[
+            "The client authenticates with the authorization server.",
+            "It is what it is: this is the section that says is and the.",
+            "Clients are registered by the server.",
+        ]);
+        let section = |n: &str| format!("rfc9449@sha256:1a2b3c4d5e6f#section-{n}");
+        assert!(spec_citations(&store, "authentication").is_empty());
+        assert_eq!(spec_citations(&store, "authenticates"), [section("1")]);
+        assert_eq!(spec_citations(&store, "is"), [section("2")]);
     }
 
     #[test]
