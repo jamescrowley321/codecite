@@ -281,7 +281,10 @@ impl Store {
                AND (?6 IS NULL OR d.language = ?6)
                AND (?7 IS NULL OR d.path GLOB ?7)
                AND (s.kind = 'document' AND d.text IS NULL) = ?10
-             ORDER BY score DESC, c.id
+             -- Break ties on what the result cites, not on c.id: a chunk ID
+             -- records when the chunk was written, and a reindex keeps the
+             -- IDs of unchanged files, so ID order differs from a fresh index.
+             ORDER BY score DESC, s.name, d.path, c.start_line, c.end_line
              LIMIT ?8"
         ))?;
         let rows = stmt.query_map(
@@ -1467,7 +1470,7 @@ mod tests {
                  JOIN source s ON s.id = d.source_id
                  LEFT JOIN symbol sym ON sym.id = c.symbol_id
                  WHERE chunk_fts MATCH ?1 AND s.is_current AND s.kind <> 'document'
-                 ORDER BY score DESC, c.id",
+                 ORDER BY score DESC, s.name, d.path, c.start_line, c.end_line",
             )
             .unwrap();
         let rows = stmt

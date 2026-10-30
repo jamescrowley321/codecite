@@ -1658,6 +1658,31 @@ mod tests {
     }
 
     #[test]
+    fn equal_scores_rank_in_citation_order_whatever_was_indexed_first() {
+        let repo = Repo::new();
+        repo.write("b.rs", "pub fn tied() {}\n");
+        repo.commit_all(&["b.rs"]);
+        let reindexed = Corpus::new();
+        let manifest = manifest(vec![local(&repo, Some("app"))]);
+        reindexed.index(&manifest);
+        // `a.rs` is written second, so its chunk has the higher ID.
+        repo.write("a.rs", "pub fn tied() {}\n");
+        repo.commit_all(&["a.rs"]);
+        reindexed.index(&manifest);
+        let fresh = Corpus::new();
+        fresh.index(&manifest);
+
+        let results = reindexed.search("tied");
+        let paths: Vec<_> = results
+            .iter()
+            .map(|(c, _)| c.split_once(':').unwrap().1)
+            .collect();
+        assert_eq!(paths, ["a.rs#L1", "b.rs#L1"]);
+        assert_eq!(results[0].1, results[1].1);
+        assert_eq!(results, fresh.search("tied"));
+    }
+
+    #[test]
     fn a_missing_commit_stops_the_run_before_any_write() {
         let repo = fixture();
         let remote = Remote::new();
