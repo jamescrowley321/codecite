@@ -7,7 +7,7 @@ mod text;
 
 pub use code::ChunkerError;
 pub use codecite_core::Language;
-pub(crate) use text::{Heading, Slugs, markdown_headings};
+pub(crate) use text::{Heading, Lines, Slugs, markdown_headings, sections, sections_at};
 
 /// The longest window, in lines.
 pub const WINDOW_LINES: u32 = 60;
@@ -152,20 +152,26 @@ impl Chunker {
     /// windows.
     pub fn chunk<'a>(&mut self, path: &str, text: &'a str) -> Vec<Chunk<'a>> {
         let lines = text::Lines::new(text);
-        let mut chunks = match Language::detect(path, text) {
+        let chunks = match Language::detect(path, text) {
             Some(Language::Markdown) => text::sections(&lines),
             Some(Language::Html) => text::html_sections(&lines),
             Some(language) => self.code.chunk(language, &lines),
             None => Vec::new(),
         };
-        let mut covered = vec![false; lines.len()];
-        for c in &chunks {
-            covered[c.start_line as usize - 1..c.end_line as usize].fill(true);
-        }
-        chunks.extend(text::windows(&lines, &covered));
-        chunks.sort_by_key(|c| (c.start_line, std::cmp::Reverse(c.end_line)));
-        chunks
+        with_windows(&lines, chunks)
     }
+}
+
+/// `chunks` plus a window over every run of lines no chunk covers, ordered
+/// by start line, then longest first.
+pub(crate) fn with_windows<'a>(lines: &Lines<'a>, mut chunks: Vec<Chunk<'a>>) -> Vec<Chunk<'a>> {
+    let mut covered = vec![false; lines.len()];
+    for c in &chunks {
+        covered[c.start_line as usize - 1..c.end_line as usize].fill(true);
+    }
+    chunks.extend(text::windows(lines, &covered));
+    chunks.sort_by_key(|c| (c.start_line, std::cmp::Reverse(c.end_line)));
+    chunks
 }
 
 #[cfg(test)]

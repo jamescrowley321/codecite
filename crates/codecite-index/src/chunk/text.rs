@@ -10,13 +10,13 @@ use super::{Chunk, ChunkKind, WINDOW_LINES};
 
 /// A file's text and the byte offset where each line starts. Every offset
 /// sits just after a `\n`, so slicing at them never splits a character.
-pub(super) struct Lines<'a> {
+pub(crate) struct Lines<'a> {
     text: &'a str,
     starts: Vec<usize>,
 }
 
 impl<'a> Lines<'a> {
-    pub(super) fn new(text: &'a str) -> Self {
+    pub(crate) fn new(text: &'a str) -> Self {
         let mut starts = vec![0];
         starts.extend(text.match_indices('\n').map(|(i, _)| i + 1));
         // A final newline ends the last line; it doesn't start an empty one.
@@ -32,7 +32,7 @@ impl<'a> Lines<'a> {
     }
 
     /// The number of lines.
-    pub(super) fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.starts.len()
     }
 
@@ -68,7 +68,7 @@ impl<'a> Lines<'a> {
 /// Windows over every run of lines that `covered` marks false, cut every
 /// [`WINDOW_LINES`] lines. A window never starts or ends on a line without
 /// a letter or digit, so a lone `}` between definitions makes no window.
-pub(super) fn windows<'a>(lines: &Lines<'a>, covered: &[bool]) -> Vec<Chunk<'a>> {
+pub(crate) fn windows<'a>(lines: &Lines<'a>, covered: &[bool]) -> Vec<Chunk<'a>> {
     let mut out = Vec::new();
     let mut n = 1;
     let last = lines.len() as u32;
@@ -104,7 +104,7 @@ pub(super) fn windows<'a>(lines: &Lines<'a>, covered: &[bool]) -> Vec<Chunk<'a>>
 /// One section per ATX heading (`#` to `######`), running to the line
 /// before the next heading. Headings inside fenced code blocks don't count.
 /// Trailing blank lines are dropped from each section.
-pub(super) fn sections<'a>(lines: &Lines<'a>) -> Vec<Chunk<'a>> {
+pub(crate) fn sections<'a>(lines: &Lines<'a>) -> Vec<Chunk<'a>> {
     let headings = headings(lines);
     let mut slugs = Slugs::default();
     let mut out = Vec::new();
@@ -128,20 +128,35 @@ pub(super) fn sections<'a>(lines: &Lines<'a>) -> Vec<Chunk<'a>> {
 /// `<pre>`, `<script>`, `<style>` or a comment don't count. The anchor is
 /// the tag's `id`, or else the title's slug.
 pub(super) fn html_sections<'a>(lines: &Lines<'a>) -> Vec<Chunk<'a>> {
-    let found = html_headings(lines);
-    let headings: Vec<Heading> = found.iter().map(|(h, _)| h.clone()).collect();
     let mut slugs = Slugs::default();
+    let (headings, anchors): (Vec<Heading>, Vec<String>) = html_headings(lines)
+        .into_iter()
+        .map(|(heading, id)| {
+            let anchor = id.unwrap_or_else(|| slugs.slug(&heading.title));
+            (heading, anchor)
+        })
+        .unzip();
+    sections_at(lines, &headings, anchors)
+}
+
+/// One section per heading, each with its anchor, running to the line
+/// before the next heading with trailing blank lines dropped. `headings`
+/// are in order, on lines of `lines`.
+pub(crate) fn sections_at<'a>(
+    lines: &Lines<'a>,
+    headings: &[Heading],
+    anchors: Vec<String>,
+) -> Vec<Chunk<'a>> {
     let mut out = Vec::new();
-    for (i, (heading, id)) in found.into_iter().enumerate() {
-        let end = section_end(lines, &headings, i);
-        let anchor = id.unwrap_or_else(|| slugs.slug(&heading.title));
+    for (i, (heading, anchor)) in headings.iter().zip(anchors).enumerate() {
+        let end = section_end(lines, headings, i);
         out.push(Chunk {
             kind: ChunkKind::Section,
             start_line: heading.line,
             end_line: end,
             text: lines.span(heading.line, end),
             symbol: None,
-            title: Some(heading.title),
+            title: Some(heading.title.clone()),
             anchor: Some(anchor),
         });
     }

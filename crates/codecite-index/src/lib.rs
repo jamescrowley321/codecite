@@ -19,6 +19,15 @@ pub use chunk::{
 mod clone;
 pub use clone::{Checkout, CloneError, Clones};
 
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "index_document splits pages with it from the next commit"
+    )
+)]
+mod document;
+
 mod error;
 pub use error::{Error, Result};
 

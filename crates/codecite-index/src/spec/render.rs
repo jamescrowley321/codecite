@@ -1,54 +1,67 @@
-//! Renders a parsed spec page as plain-text lines and finds its headings,
-//! in one walk over the HTML tree.
+//! Renders a parsed HTML page as plain-text lines and finds its headings,
+//! in one walk over the HTML tree: a spec page by its layout's section
+//! markup, any other page at its `<h1>` to `<h6>` tags.
 
 use ego_tree::NodeId;
 use ego_tree::iter::Edge;
 use scraper::{CaseSensitivity, ElementRef, Html, Node, Selector};
 
 use super::SpecFormat;
+use crate::chunk::Slugs;
 
 /// The page as lines, and every heading and numbered list item in it in
 /// document order.
-pub(super) struct Rendered {
+pub(crate) struct Rendered {
     /// Lines without line endings. Blank lines are empty strings, and two
     /// never follow each other.
-    pub(super) lines: Vec<String>,
-    pub(super) headings: Vec<Heading>,
+    pub(crate) lines: Vec<String>,
+    pub(crate) headings: Vec<Heading>,
     /// The items of each numbered `<ol>` that is not inside another list.
     /// An older RFC's steps are plain text, so it has none.
-    pub(super) items: Vec<Item>,
+    pub(crate) items: Vec<Item>,
 }
 
 /// An item of a numbered list: a step, if it falls inside a section.
-pub(super) struct Item {
+pub(crate) struct Item {
     /// The number written before the item: its list's `start` plus its
     /// position.
-    pub(super) number: u64,
+    pub(crate) number: u64,
     /// The item's first line in [`Rendered::lines`], counting from 0. It
     /// may be blank when the item starts with a paragraph.
-    pub(super) start: usize,
+    pub(crate) start: usize,
     /// The line after the item's last.
-    pub(super) end: usize,
+    pub(crate) end: usize,
 }
 
 /// A heading: the start of a section, or of an unnumbered part such as
 /// the table of contents, which ends the section before it.
-pub(super) struct Heading {
+pub(crate) struct Heading {
     /// The heading's line in [`Rendered::lines`], counting from 0.
-    pub(super) line: usize,
+    pub(crate) line: usize,
     /// The number, title and anchor, for a numbered section.
-    pub(super) numbered: Option<Numbered>,
+    pub(crate) numbered: Option<Numbered>,
 }
 
-pub(super) struct Numbered {
-    pub(super) number: String,
-    pub(super) title: String,
-    pub(super) anchor: String,
+pub(crate) struct Numbered {
+    pub(crate) number: String,
+    pub(crate) title: String,
+    pub(crate) anchor: String,
+}
+
+/// Which headings [`render`] looks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Layout {
+    /// A spec page: its layout's numbered section headings, and for an
+    /// older RFC its plain headings, with page footers dropped.
+    Spec(SpecFormat),
+    /// Any other page: every `<h1>` to `<h6>`, outside `<nav>`, with no
+    /// number.
+    Generic,
 }
 
 /// Which layout the page uses, from the markup each one puts around its
 /// section numbers.
-pub(super) fn detect(html: &Html) -> Option<SpecFormat> {
+pub(crate) fn detect(html: &Html) -> Option<SpecFormat> {
     let has = |css: &str| {
         let selector = Selector::parse(css).expect("a valid selector");
         html.select(&selector).next().is_some()
@@ -69,13 +82,14 @@ pub(super) fn detect(html: &Html) -> Option<SpecFormat> {
 /// `traverse` yields an `Open` edge when the walk enters a node and a
 /// `Close` edge when it leaves, so this needs no recursion and a deeply
 /// nested page can't overflow the stack.
-pub(super) fn render(html: &Html, format: SpecFormat) -> Rendered {
+pub(crate) fn render(html: &Html, layout: Layout) -> Rendered {
     let mut out = Writer::default();
     let mut headings = Vec::new();
     let mut lists: Vec<List> = Vec::new();
     let mut items = Items::default();
     let mut pre_depth = 0usize;
     let mut skipping: Option<NodeId> = None;
+    let mut slugs = Slugs::default();
 
     for edge in html.tree.root().traverse() {
         match edge {
@@ -88,12 +102,12 @@ pub(super) fn render(html: &Html, format: SpecFormat) -> Rendered {
                     Node::Text(text) => out.text(text),
                     Node::Element(_) => {
                         let el = ElementRef::wrap(node).expect("an element node");
-                        if is_skipped(el) {
+                        if is_skipped(layout, el) {
                             skipping = Some(node.id());
                             continue;
                         }
                         open(el, &mut out, &mut lists, &mut items, &mut pre_depth);
-                        if let Some(numbered) = heading(format, el) {
+                        if let Some(numbered) = heading(layout, el, &mut slugs) {
                             headings.push(Heading {
                                 line: out.next_line(),
                                 numbered,
@@ -115,7 +129,7 @@ pub(super) fn render(html: &Html, format: SpecFormat) -> Rendered {
         }
     }
     let mut lines = out.finish();
-    if format == SpecFormat::RfcText {
+    if layout == Layout::Spec(SpecFormat::RfcText) {
         lines = drop_page_footers(lines, &mut headings);
         add_plain_headings(&lines, &mut headings);
     }
@@ -129,13 +143,16 @@ pub(super) fn render(html: &Html, format: SpecFormat) -> Rendered {
     }
 }
 
-/// Elements whose text is not part of the spec: page furniture, scripts,
-/// and the links each layout adds beside its paragraphs and headings.
-fn is_skipped(el: ElementRef) -> bool {
+/// Elements whose text is not part of the page: page furniture, scripts,
+/// and the links each spec layout adds beside its paragraphs and headings.
+/// A generic page also drops its `<nav>`, whose links repeat the site's
+/// menu on every page.
+fn is_skipped(layout: Layout, el: ElementRef) -> bool {
     let e = el.value();
     let class = |name| e.has_class(name, CaseSensitivity::AsciiCaseInsensitive);
     match e.name() {
         "head" | "script" | "style" | "noscript" | "template" => true,
+        "nav" => layout == Layout::Generic,
         // The ¶ after each paragraph of an xml2rfc v3 page.
         "a" => class("pilcrow"),
         // The "TOC" link box before each heading of an OpenID page.
@@ -294,10 +311,17 @@ fn is_block(name: &str) -> bool {
 }
 
 /// `Some` when `el` is a heading in this layout, holding its number, title
-/// and anchor when it starts a numbered section.
-fn heading(format: SpecFormat, el: ElementRef) -> Option<Option<Numbered>> {
+/// and anchor when it starts a numbered section. A generic heading has an
+/// empty number, its anchor is its own `id`, its `<section>`'s, or else
+/// its title's slug, and one with no text is not a heading.
+fn heading(layout: Layout, el: ElementRef, slugs: &mut Slugs) -> Option<Option<Numbered>> {
     let e = el.value();
     let is_h = matches!(e.name(), "h1" | "h2" | "h3" | "h4" | "h5" | "h6");
+    let format = match layout {
+        Layout::Generic if is_h => return generic_heading(el, slugs).map(Some),
+        Layout::Generic => return None,
+        Layout::Spec(format) => format,
+    };
     match format {
         // <section id="section-4.3"><h3><a class="section-number">4.3. </a>
         //   <a class="section-name">Checking DPoP Proofs</a></h3>
@@ -316,6 +340,28 @@ fn heading(format: SpecFormat, el: ElementRef) -> Option<Option<Numbered>> {
         SpecFormat::OpenId if is_h => Some(openid_heading(el)),
         _ => None,
     }
+}
+
+fn generic_heading(el: ElementRef, slugs: &mut Slugs) -> Option<Numbered> {
+    let title = collapse(&el.text().collect::<String>());
+    if title.is_empty() {
+        return None;
+    }
+    let section_id = || {
+        el.parent()
+            .and_then(ElementRef::wrap)
+            .filter(|p| p.value().name() == "section")
+            .and_then(|p| p.value().id())
+    };
+    let anchor = match el.value().id().or_else(section_id) {
+        Some(id) => id.to_owned(),
+        None => slugs.slug(&title),
+    };
+    Some(Numbered {
+        number: String::new(),
+        title,
+        anchor,
+    })
 }
 
 fn rfc_v3_heading(el: ElementRef) -> Option<Numbered> {
@@ -603,7 +649,7 @@ mod tests {
             "<pre><span class=\"h2\"><a class=\"selflink\" id=\"section-1\">1</a>.  Intro</span>\n\
              \n   Text.\n\nHardt     Standards Track     [Page 76]\n\n   See [Page 2].\n</pre>",
         );
-        let rendered = render(&html, SpecFormat::RfcText);
+        let rendered = render(&html, Layout::Spec(SpecFormat::RfcText));
         assert_eq!(
             rendered.lines,
             ["1.  Intro", "", "   Text.", "", "   See [Page 2]."]
@@ -633,7 +679,7 @@ mod tests {
              <ol type=\"a\"><li>first</li><li>second</li></ol>\
              <ul><li>dot</li></ul></section>",
         );
-        let lines = render(&html, SpecFormat::RfcV3).lines;
+        let lines = render(&html, Layout::Spec(SpecFormat::RfcV3)).lines;
         assert_eq!(
             lines,
             [
@@ -656,7 +702,7 @@ mod tests {
             "<section id=\"section-1\"><h2><a class=\"section-number\">1. </a>Big</h2>\
              <ol start=\"4294967295\"><li>max</li><li>past</li></ol></section>",
         );
-        let lines = render(&html, SpecFormat::RfcV3).lines;
+        let lines = render(&html, Layout::Spec(SpecFormat::RfcV3)).lines;
         assert_eq!(lines, ["1. Big", "", "4294967295. max", "4294967296. past"]);
     }
 
@@ -666,7 +712,7 @@ mod tests {
             "<section id=\"section-1\"><h2><a class=\"section-number\">1. </a>Empty</h2>\
              <ol><li></li></ol><p>MUST validate.</p></section>",
         );
-        let lines = render(&html, SpecFormat::RfcV3).lines;
+        let lines = render(&html, Layout::Spec(SpecFormat::RfcV3)).lines;
         assert_eq!(lines, ["1. Empty", "", "MUST validate."]);
     }
 }
