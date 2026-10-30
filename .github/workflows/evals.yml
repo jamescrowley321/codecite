@@ -110,9 +110,18 @@ jobs:
           rustc --version
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo build --release --locked -p codecite
+      # A replay task's project is its own repository at the task's base.
       - name: Fetch identity-model at the task's pinned commit
         run: |
-          commit="$(jq -r .corpus.commit "evals/tasks/$TASK_ID/task.json")"
+          task="evals/tasks/$TASK_ID/task.json"
+          if [[ "$(jq -r '.kind // ""' "$task")" == replay ]]; then
+            repo="$RUNNER_TEMP/replay"
+            git init -q "$repo"
+            git -C "$repo" fetch -q --depth 1 "$(jq -r .url "$task")" "$(jq -r .base "$task")"
+            echo "REPLAY_REPO=$repo" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          commit="$(jq -r .corpus.commit "$task")"
           repo="$RUNNER_TEMP/identity-model"
           git init -q "$repo"
           git -C "$repo" fetch -q --depth 1 https://github.com/jamescrowley321/identity-model "$commit"
