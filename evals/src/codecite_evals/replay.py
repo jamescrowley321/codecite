@@ -9,6 +9,7 @@ docs/design.md, Evaluation plan.
 import argparse
 import json
 import os
+import posixpath
 import re
 import shutil
 import subprocess
@@ -42,6 +43,8 @@ SETUP = {
     "rust": ("Cargo.lock", ["cargo", "fetch", "--locked"]),
     "node": ("package-lock.json", ["npm", "ci"]),
 }
+# What proves a task: copied into each one write_task writes.
+CHECK = Path(__file__).resolve().parents[2] / "tasks" / "_replay" / "check.sh"
 # The panel's default epochs per tier (inspect/panel.sh).
 EPOCHS = {"quick": 5, "full": 10}
 PROMPT = """The repository at `/work/project` is {repo}. Make the change this issue
@@ -169,6 +172,16 @@ def exists(clone: Path, commit: str, path: str) -> bool:
     return run("git", "cat-file", "-e", f"{commit}:{path}", cwd=clone, check=False).returncode == 0
 
 
+def project_dir(clone: Path, commit: str, lock: str, hidden: list[str]) -> str:
+    """The directory a project's setup and tests run from: the nearest one
+    above the first hidden test that holds `lock` at `commit`, so a project
+    in a monorepo's subdirectory finds its dependencies. "." is the root."""
+    for parent in PurePosixPath(hidden[0]).parents:
+        if exists(clone, commit, str(parent / lock)):
+            return str(parent)
+    return "."
+
+
 def write_task(c: Candidate, clone: Path, out: Path) -> Path:
     """Write `c` as the task directory `out/replay-<repo>-<pr>/` and return
     it. `clone` holds both of its commits."""
@@ -186,6 +199,9 @@ def write_task(c: Candidate, clone: Path, out: Path) -> Path:
     (task / "reference" / "fix.patch").write_bytes(fix.stdout)
     (task / "prompt.md").write_text(PROMPT.format(repo=c.repo, title=c.title.strip(), body=c.body.strip()))
     lock, setup = SETUP[c.language]
+    workdir = project_dir(clone, c.base, lock, list(c.tests))
+    # The test command runs in workdir, so it names the hidden tests from there.
+    local = [posixpath.relpath(t, workdir) for t in c.tests]
     meta = {
         "id": task_id,
         "kind": "replay",
@@ -198,11 +214,13 @@ def write_task(c: Candidate, clone: Path, out: Path) -> Path:
         "issue": c.issue,
         "language": c.language,
         "hidden": list(c.tests),
-        "test": command_for(c.language, list(c.tests)),
-        "setup": setup if exists(clone, c.base, lock) else [],
+        "test": command_for(c.language, local),
+        "setup": setup if exists(clone, c.base, str(PurePosixPath(workdir) / lock)) else [],
+        "workdir": workdir,
         "epochs": EPOCHS,
     }
     (task / "task.json").write_text(json.dumps(meta, indent=2) + "\n")
+    shutil.copy2(CHECK, task / "check.sh")
     return task
 
 

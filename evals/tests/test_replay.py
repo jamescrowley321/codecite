@@ -1,11 +1,14 @@
 """The replay miner's choice of past PRs, without the network."""
 
 import json
+import os
 import subprocess
+import sys
+from dataclasses import replace
 
 import pytest
 
-from codecite_evals.replay import Candidate, acceptance_only, candidates, command_for, is_test_path, language, write_task
+from codecite_evals.replay import Candidate, acceptance_only, accepted, candidates, command_for, is_test_path, language, project_dir, write_task
 
 REPO = "o/r"
 
@@ -211,7 +214,7 @@ def test_write_task_lays_out_the_task(clone, tmp_path):
     repo, base, merge = clone
     task = write_task(replay(base, merge), repo, tmp_path / "tasks")
     assert task == tmp_path / "tasks" / "replay-r-7"
-    for name in ("task.json", "prompt.md", "reference/fix.patch", "hidden/tests/test_new.py", "hidden/tests/test_old.py"):
+    for name in ("task.json", "prompt.md", "check.sh", "reference/fix.patch", "hidden/tests/test_new.py", "hidden/tests/test_old.py"):
         assert (task / name).is_file(), name
 
 
@@ -261,8 +264,27 @@ def test_task_json_round_trips(clone, tmp_path):
         "hidden": ["tests/test_new.py", "tests/test_old.py"],
         "test": command_for("python", ["tests/test_new.py", "tests/test_old.py"]),
         "setup": [],
+        "workdir": ".",
         "epochs": {"quick": 5, "full": 10},
     }
+
+
+def test_a_project_in_a_subdirectory_runs_from_there(clone, tmp_path):
+    """A monorepo's project: setup and the tests run from the nearest
+    directory above the hidden tests that holds the lock file."""
+    repo, base, merge = clone
+    git(repo, "checkout", "-q", base)
+    (repo / "uv.lock").write_text("")
+    for d in ("py", "py/tests"):
+        (repo / d).mkdir(exist_ok=True)
+    (repo / "py/uv.lock").write_text("")
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "a nested project")
+    base = git(repo, "rev-parse", "HEAD")
+    c = replace(replay(base, merge), tests=("py/tests/test_a.py",))
+    assert project_dir(repo, base, "uv.lock", list(c.tests)) == "py"
+    assert project_dir(repo, base, "go.sum", list(c.tests)) == "."
+    assert project_dir(repo, base, "uv.lock", ["tests/test_a.py"]) == "."
 
 
 def test_commands_by_language():
@@ -270,3 +292,75 @@ def test_commands_by_language():
     assert command_for("go", ["internal/a/a_test.go", "internal/a/b_test.go", "c_test.go"]) == ["go", "test", "-count=1", ".", "./internal/a"]
     assert command_for("rust", ["crates/x/tests/cli.rs", "tests/a.rs"]) == ["cargo", "test", "--locked", "--offline", "--test", "cli", "--test", "a"]
     assert command_for("node", ["src/a.test.ts"]) == ["npm", "test", "--", "{hidden}"]
+
+
+def accepted_task(tmp_path, fixed, at=""):
+    """A replay task whose hidden test wants `f() == 2`, with a PR that makes
+    f return `fixed`; check.sh runs it with this interpreter's pytest. `at`
+    puts the project, and its lock file, in that subdirectory."""
+    repo = tmp_path / "check-clone"
+    project = repo / at
+    project.mkdir(parents=True)
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "config", "user.email", "t@example.com")
+    git(repo, "config", "user.name", "t")
+    (project / "a.py").write_text("def f():\n    return 1\n")
+    if at:
+        (project / "uv.lock").write_text("")
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "base")
+    base = git(repo, "rev-parse", "HEAD")
+    (project / "a.py").write_text(f"def f():\n    return {fixed}\n")
+    (project / "tests").mkdir()
+    (project / "tests/test_a.py").write_text("from a import f\n\n\ndef test_f():\n    assert f() == 2\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "fix")
+    prefix = f"{at}/" if at else ""
+    c = replace(replay(base, git(repo, "rev-parse", "HEAD")), tests=(f"{prefix}tests/test_a.py",), sources=(f"{prefix}a.py",))
+    task = write_task(c, repo, tmp_path / "tasks")
+    meta = json.loads((task / "task.json").read_text())
+    # This interpreter's pytest in place of uv's, and no `uv sync`.
+    meta["test"] = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "{hidden}"]
+    meta["setup"] = []
+    (task / "task.json").write_text(json.dumps(meta))
+    return task, repo
+
+
+def test_check_accepts_a_fix_the_hidden_tests_need(tmp_path):
+    task, repo = accepted_task(tmp_path, fixed=2)
+    result = accepted(task, repo)
+    assert result.returncode == 0, result.stderr
+
+
+def test_check_runs_a_project_from_its_directory(tmp_path):
+    task, repo = accepted_task(tmp_path, fixed=2, at="py")
+    assert json.loads((task / "task.json").read_text())["workdir"] == "py"
+    result = accepted(task, repo)
+    assert result.returncode == 0, result.stderr
+
+
+def test_check_rejects_a_fix_that_leaves_the_tests_failing(tmp_path):
+    task, repo = accepted_task(tmp_path, fixed=3)
+    result = accepted(task, repo)
+    assert result.returncode != 0
+    assert "fail with the reference fix" in result.stderr
+
+
+def test_check_rejects_tests_that_already_pass_at_the_base(tmp_path):
+    task, repo = accepted_task(tmp_path, fixed=2)
+    git(repo, "checkout", "-q", "HEAD~1")
+    (repo / "a.py").write_text("def f():\n    return 2\n")
+    git(repo, "commit", "-qam", "already right")
+    meta = json.loads((task / "task.json").read_text())
+    meta["base"] = git(repo, "rev-parse", "HEAD")
+    (task / "task.json").write_text(json.dumps(meta))
+    result = accepted(task, repo)
+    assert result.returncode != 0
+    assert "pass at the base" in result.stderr
+
+
+def test_check_needs_the_repository(tmp_path):
+    task, _ = accepted_task(tmp_path, fixed=2)
+    result = subprocess.run(["bash", str(task / "check.sh")], env={"PATH": os.environ["PATH"]}, capture_output=True, text=True)
+    assert result.returncode != 0
+    assert "REPLAY_REPO" in result.stderr
