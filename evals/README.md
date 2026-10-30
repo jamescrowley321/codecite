@@ -155,10 +155,33 @@ loses on any repository doesn't merge.
   (`inspect/compose-offline.yaml`). One epoch is a run per question, so its
   `task.json` sets 1 epoch on the quick tier and 3 on the full.
 
+- **Replay tasks** (`replay-<repo>-<pr>`, `"kind": "replay"`): real past
+  work. The prompt is an issue as it was asked, the project is its repository
+  at the base of the merged PR that closed it, and the hidden tests are the
+  test files that PR added or changed, at its merge commit. The `eval` corpus
+  is that same tree. `codecite-replay-mine OWNER/REPO --clone <dir>`
+  (`src/codecite_evals/replay.py`) lists merged PRs by a person that close an
+  issue, change source and add tests kept apart from it (Python `tests/`
+  and `test_*.py`, Go `*_test.go` without `TF_ACC` acceptance tests, Rust
+  `crates/<crate>/tests/*.rs`, JS/TS `*.test.*`), newest first, and writes up
+  to `--max` of them as task directories: `task.json` (the base, the hidden
+  paths, the language, the `setup` and `test` commands and the `workdir` they
+  run in), `prompt.md`, `hidden/`, `reference/fix.patch` (the PR's non-test
+  diff) and `check.sh`. It keeps a task only when `check.sh` shows the hidden
+  tests fail at the base and pass with the fix. The project the agent sees is
+  `git archive` of the base in a fresh one-commit repository, so no later
+  history reaches it; `hidden/` is overlaid on the agent's tree after it
+  exits and only those files run, offline, with the dependencies warmed into
+  the image. `check.sh` and `prepare.sh` read the repository from
+  `REPLAY_REPO`, by default the history benchmark's clone in
+  `~/.cache/codecite/history/<repo>`. A replay task has no registered name:
+  it runs as `codecite_evals/ab -T task_id=<id>`, which `panel.sh` does for it.
+
 Each task's `check.sh` proves it is well-formed; `backchannel-logout`'s needs
 only uv and an identity-model checkout, and `spec-questions`' only python3
 (it runs `score.py` on every question's reference answer and on planted
-wrong ones). CI runs both (`eval-task`):
+wrong ones), and a replay task's only its repository and the language's
+toolchain. CI runs them (`eval-task`):
 
 ```
 IDENTITY_MODEL_REPO=~/repos/auth/identity-model evals/tasks/backchannel-logout/check.sh
@@ -194,7 +217,11 @@ model each: `claude-code/<model>` and `openrouter/<model>`.
 
 A code task has one sample per arm, so its runs per arm are its epochs. The
 spec-question task has one sample per question per arm, so its runs per arm
-are questions × epochs: 59 on the quick tier, 177 on the full. A task's
+are questions × epochs: 59 on the quick tier, 177 on the full.
+
+A replay task runs on its own panel at both tiers: Claude Code alone, on
+claude-haiku-5-5, claude-sonnet-5-5 and claude-opus-5-5. OpenRouter is skipped
+for it even when switched on. A task's
 `task.json` sets its own epochs (`"epochs": {"quick": 1, "full": 3}`), and
 `EPOCHS` overrides both.
 
@@ -276,7 +303,11 @@ noise alone pushed past the 5% margin.
   against the first, with `*` on each that reaches past 5% either side of 0.
 
 The verdict uses pass rate, total tokens and wall time (`docs/design.md`,
-Success criteria). Logs whose samples kept no model events leave the
+Success criteria). A task's `task.json` can name another gate (`"gate"`); a
+replay task's is `replay`: pass rate loses when its interval's upper bound is
+below 0, wall time when its lower bound is above +25%, and tokens get an
+interval but never lose. The scorecard prints a `Gate:` line above a task
+whose gate isn't the default. Logs whose samples kept no model events leave the
 transcript measures blank.
 
 ## Running the A/B eval locally
