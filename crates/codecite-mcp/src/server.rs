@@ -35,7 +35,8 @@ pub struct SearchParams {
     /// Only files whose path matches this glob; `*` matches `/` too.
     #[serde(default)]
     pub path: Option<String>,
-    /// `spec` for only spec sections, `code` for only code. Omitted, both.
+    /// `spec` for only spec sections, `code` for code and every document
+    /// that is not a spec. Omitted, both.
     #[serde(default)]
     pub only: Option<Scope>,
     /// The most results to return, at most 50.
@@ -70,7 +71,8 @@ pub struct GrepParams {
     /// Only files whose path matches this glob; `*` matches `/` too.
     #[serde(default)]
     pub path: Option<String>,
-    /// `spec` for only spec sections, `code` for only code. Omitted, both.
+    /// `spec` for only spec sections, `code` for code and every document
+    /// that is not a spec. Omitted, both.
     #[serde(default)]
     pub only: Option<Scope>,
     /// The most matches to return, at most 50.
@@ -353,7 +355,7 @@ impl Server {
 
     /// The `search` tool: the same JSON as `codecite search --json`.
     #[tool(
-        description = "Search a corpus of code and specs. Returns ranked results, best first, each with its citation, kind, role (source, test, example, docs or spec), symbol, score, license class, indexed_at and a snippet of at most 40 lines and 4 KiB. A snippet is an exact prefix of its chunk's lines, with `\\n` line endings, cut on a character boundary with no marker in the text; `snippet_truncated` is true when it stops before the chunk ends. Pass a result's citation to `read` for its exact text. For a spec question asked in plain words, search with the terms the spec would use (protocol, parameter, claim, endpoint and error names), not the asker's words: `token endpoint client authentication public client`, not `must a public client log in to get a token`. Search the original wording too only when it already holds spec terms. A search that matches nothing returns no results; an unknown corpus, a stale index or a query with no words is an error."
+        description = "Search a corpus of code, documents and specs. Returns ranked results, best first, each with its citation (a code span `repo@sha:path#L10-L42`, a fetched document's lines `doc@sha256:<12 hex>#L3-L9`, or a spec section `doc@sha256:<12 hex>#section-4.3[/step-2]`), kind, role (source, test, example, docs or spec), symbol, a section's heading title and anchor, score, license class, indexed_at and a snippet of at most 40 lines and 4 KiB. A snippet is an exact prefix of its chunk's lines, with `\\n` line endings, cut on a character boundary with no marker in the text; `snippet_truncated` is true when it stops before the chunk ends. Pass a result's citation to `read` for its exact text. For a spec question asked in plain words, search with the terms the spec would use (protocol, parameter, claim, endpoint and error names), not the asker's words: `token endpoint client authentication public client`, not `must a public client log in to get a token`. Search the original wording too only when it already holds spec terms. A search that matches nothing returns no results; an unknown corpus, a stale index or a query with no words is an error."
     )]
     async fn search(
         &self,
@@ -379,7 +381,7 @@ impl Server {
 
     /// The `grep` tool: the same JSON as `codecite grep --json`.
     #[tool(
-        description = "Find the lines of a corpus's code and specs that match a regular expression, or with `fixed` an exact string: claim names, error messages, header names, patterns like `token_type_hint=\\w+`. Each match is one line with its citation (a code line `repo@sha:path#L12`, or the spec step or section holding it), kind, role, license class, indexed_at and text, the line held to 4 KiB with `truncated` true when cut; matches come in index order, unscored. Nothing matching is no matches; an unknown corpus, a stale index, or an empty, invalid or multi-line pattern is an error."
+        description = "Find the lines of a corpus's code, documents and specs that match a regular expression, or with `fixed` an exact string: claim names, error messages, header names, patterns like `token_type_hint=\\w+`. Each match is one line with its citation (a code line `repo@sha:path#L12`, a fetched document's line `doc@sha256:<12 hex>#L12`, or the spec step or section holding it), kind, role, license class, indexed_at and text, the line held to 4 KiB with `truncated` true when cut; matches come in index order, unscored. Nothing matching is no matches; an unknown corpus, a stale index, or an empty, invalid or multi-line pattern is an error."
     )]
     async fn grep(
         &self,
@@ -449,7 +451,7 @@ impl Server {
 
     /// The `read` tool: the same JSON as `codecite read --json`.
     #[tool(
-        description = "Read the exact text a citation points at, under its pinned citation, with its license class. The text is at most `max_lines` lines and 64 KiB: an exact prefix of the cited lines, with `\\n` line endings, cut on a character boundary with no marker in the text, and `truncated` is true when it stops before the end of what was cited, whose citation still names it all. A spec section or step adds its title and requirement keywords (strength). Text from a `quote` source carries an instruction: quote it exactly with its citation, never paraphrase, and say a truncated quote is partial. A citation that is not in the corpus is an error with candidates, never the nearest guess."
+        description = "Read the exact text a citation points at, under its pinned citation, with its license class. A citation is a code span `repo@sha:path#L10-L42`, a fetched document's lines `doc@sha256:<12 hex>#L3-L9`, a heading's anchor in a file or fetched document (`repo@sha:path#install`, `doc@sha256:<12 hex>#install`), or a spec section or step `doc@sha256:<12 hex>#section-4.3[/step-2]`. The text is at most `max_lines` lines and 64 KiB: an exact prefix of the cited lines, with `\\n` line endings, cut on a character boundary with no marker in the text, and `truncated` is true when it stops before the end of what was cited, whose citation still names it all. A spec section or step adds its title and requirement keywords (strength). Text from a `quote` source carries an instruction: quote it exactly with its citation, never paraphrase, and say a truncated quote is partial. A citation that is not in the corpus is an error with candidates, never the nearest guess."
     )]
     async fn read(
         &self,

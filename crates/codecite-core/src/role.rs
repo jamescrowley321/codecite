@@ -13,7 +13,7 @@ pub enum Role {
     Example,
     /// Prose: Markdown, reStructuredText or plain text.
     Docs,
-    /// A spec document source.
+    /// A spec: a fetched document in a spec layout.
     Spec,
 }
 
@@ -55,6 +55,17 @@ impl Role {
             Role::Docs
         } else {
             Role::Source
+        }
+    }
+
+    /// The role of a stored document: as [`Role::of`], except that a
+    /// fetched document stored with its text is a generic page, not a spec,
+    /// and so docs. A spec is stored without its text.
+    pub fn of_stored(path: &str, source_kind: &str, has_text: bool) -> Role {
+        if source_kind == "document" && has_text {
+            Role::Docs
+        } else {
+            Role::of(path, source_kind)
         }
     }
 
