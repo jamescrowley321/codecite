@@ -178,6 +178,31 @@ work on them unchanged. A guidance file read from `path` is hashed at every
 run, and an edit makes it a new version: its citations change, as a
 document's do when its pin moves.
 
+## Add repositories
+
+```sh
+codecite add mywork https://github.com/panva/openid-client https://github.com/panva/jose
+codecite add mywork https://github.com/me/tool --manifest ~/m.toml
+```
+
+`add` appends each URL to the manifest as a git source, pinned at the commit
+the remote's default branch points to now, and creates the manifest when it
+doesn't exist yet. It clones each repository into the cache, so the next
+`index` run starts from it, and reads its license file to propose `license`
+and `use`:
+
+```text
+added https://github.com/panva/openid-client @ 3f1c9a0b7d2e · MIT · adapt
+added https://github.com/panva/jose @ 8e04d5c1a9f3 · MIT · adapt
+check each license and use, then run: codecite index mywork
+```
+
+Both fields are proposals: check them before you index. A repository with no
+license file it recognises gets no `license` and `use = "approach_only"`. A
+URL already in the manifest is kept at its pin (`kept <url> @ <commit>`); to
+move a pin, edit its `commit`. The rest of the manifest, comments included,
+is left as it was. If any URL can't be reached or cloned, nothing is written.
+
 ## Index
 
 ```sh
