@@ -279,3 +279,104 @@ def test_the_note_is_cli_first():
     note = task.codecite_note(config.task_dir("fastapi-middleware"))
     assert note.index("codecite search eval") < note.index("mcp__codecite__search")
     assert all(tool in note for tool in task.CODECITE_TOOLS)
+
+
+REPLAY = {
+    "id": "replay-demo-7",
+    "kind": "replay",
+    "repo": "owner/demo",
+    "language": "python",
+    "hidden": ["py/tests/test_fix.py", "py/tests/data/case.json"],
+    "test": ["uv", "run", "pytest", "-q", "{hidden}"],
+    "workdir": "py",
+}
+
+
+@pytest.fixture
+def replay_task(tmp_path, monkeypatch):
+    """A replay task the miner could have written, under a stand-in evals/."""
+    d = tmp_path / "tasks" / REPLAY["id"]
+    for path in REPLAY["hidden"]:
+        (d / "hidden" / path).parent.mkdir(parents=True, exist_ok=True)
+        (d / "hidden" / path).write_text(f"contents of {path}\n")
+    (d / "task.json").write_text(json.dumps(REPLAY))
+    (d / "prompt.md").write_text("The repository at `/work/project` is owner/demo. Fix it.\n")
+    monkeypatch.setattr(config, "EVALS_DIR", tmp_path)
+    return d
+
+
+class ReplaySandbox:
+    """Records each write and exec in order; the tests pass unless told not to."""
+
+    def __init__(self, passes=True):
+        self.passes, self.log = passes, []
+
+    async def write_file(self, path, contents):
+        self.log.append(("write", path, contents))
+
+    async def exec(self, cmd, **kwargs):
+        self.log.append(("exec", cmd, kwargs))
+        return ExecResult(success=self.passes, returncode=0 if self.passes else 1, stdout="1 passed" if self.passes else "1 failed", stderr="")
+
+
+def test_a_replay_task_is_scored_by_its_prs_tests_at_their_repo_paths(monkeypatch, replay_task):
+    sb = ReplaySandbox()
+    score = score_with(monkeypatch, Store(), REPLAY["id"], sb)
+    writes = {path: contents for kind, path, contents in (e for e in sb.log if e[0] == "write")}
+    assert writes == {
+        f"{task.PROJECT}/{p}": (replay_task / "hidden" / p).read_bytes() for p in REPLAY["hidden"]
+    }
+    (_, cmd, kwargs), = [e for e in sb.log if e[0] == "exec"]
+    # {hidden} names the hidden files from the workdir, where the tests run.
+    assert cmd == ["uv", "run", "pytest", "-q", "tests/test_fix.py", "tests/data/case.json"]
+    assert kwargs["cwd"] == f"{task.PROJECT}/py"
+    assert kwargs["env"]["UV_OFFLINE"] == "1" and kwargs["timeout"] == 300
+    # The hidden files are written only now, at scoring, before the run.
+    assert [e[0] for e in sb.log] == ["write", "write", "exec"]
+    assert score.value == 1 and "checks" not in score.explanation
+
+
+def test_a_replay_task_fails_when_its_tests_fail(monkeypatch, replay_task):
+    score = score_with(monkeypatch, Store(), REPLAY["id"], ReplaySandbox(passes=False))
+    assert score.value == 0
+    assert score.explanation == "hidden tests failed"
+    assert score.metadata["tests_tail"] == "1 failed"
+
+
+def test_a_stopped_replay_agent_cannot_pass(monkeypatch, replay_task):
+    score = score_with(monkeypatch, Store(stopped="agent_timeout"), REPLAY["id"], ReplaySandbox())
+    assert score.value == 0
+    assert score.explanation == "agent timed out; hidden tests passed"
+
+
+def test_a_replay_tasks_tests_hanging_is_a_failure(monkeypatch, replay_task):
+    class Hangs(ReplaySandbox):
+        async def exec(self, cmd, **kwargs):
+            raise TimeoutError
+
+    score = score_with(monkeypatch, Store(), REPLAY["id"], Hangs())
+    assert score.value == 0 and score.metadata["tests_tail"] == "hidden tests timed out"
+
+
+@pytest.mark.parametrize("language, offline", [
+    ("python", {"UV_OFFLINE": "1"}),
+    ("go", {"GOPROXY": "off", "GOFLAGS": "-mod=mod"}),
+    ("rust", {"CARGO_NET_OFFLINE": "true"}),
+    ("node", {"npm_config_offline": "true"}),
+])
+def test_a_replay_task_runs_offline_in_its_language(language, offline):
+    env = task.offline_env(language)
+    assert offline.items() <= env.items()
+    assert env["PYTHONDONTWRITEBYTECODE"] == "1"
+
+
+def test_the_replay_note_names_the_tasks_repository(replay_task):
+    note = task.codecite_note(replay_task)
+    assert note.startswith(f"## codecite\n\ncodecite indexes the owner/demo source at `{task.PROJECT}` as the corpus `eval`")
+    assert "identity-model" not in note and "requirements eval" not in note
+
+
+def test_ab_runs_a_replay_task_by_its_id(replay_task):
+    t = task.ab(REPLAY["id"])
+    assert [s.id for s in t.dataset] == ["baseline", "codecite"]
+    assert "owner/demo source" in t.dataset[1].input
