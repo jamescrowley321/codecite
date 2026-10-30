@@ -155,16 +155,22 @@ fn the_human_form_is_short() {
     // One header, since every result shares its license and index time.
     assert!(lines[0].contains(" · adapt · indexed "), "{text}");
     assert!(lines[0].contains(" result"), "{text}");
-    // The commit is abbreviated to 12 characters.
+    // The commit is abbreviated to 12 characters, and a hit is one line.
     let (citation, rest) = lines[1].split_once(" · ").unwrap();
-    assert!(citation.starts_with("1. app@"), "{text}");
+    assert!(citation.starts_with("app@"), "{text}");
     assert!(citation.ends_with(":web/check.ts#L1-L3"), "{text}");
-    let commit = &citation["1. app@".len()..citation.find(':').unwrap()];
+    assert!(citation.contains("@") && citation.contains("#L"), "{text}");
+    let commit = &citation["app@".len()..citation.find(':').unwrap()];
     assert_eq!(commit.len(), 12, "{text}");
-    assert!(rest.starts_with("function checkToken · "), "{text}");
+    assert!(lines[1].contains("function checkToken · "), "{text}");
     assert!(!rest.contains("indexed"), "{text}");
-    assert_eq!(lines[2], "   export function checkToken(token) {");
-    assert!(lines.iter().all(|l| l.chars().count() <= 200), "{text}");
+    assert!(
+        lines[1].ends_with("export function checkToken(token) {"),
+        "{text}"
+    );
+    let json = demo.json(&["check token"]);
+    assert_eq!(lines.len(), 1 + json.len(), "{text}");
+    assert!(lines.iter().all(|l| l.chars().count() <= 300), "{text}");
 }
 
 #[test]

@@ -124,9 +124,9 @@ fn a_citation_from_the_human_search_form_reads_back() {
     let text = String::from_utf8(output.stdout).unwrap();
     let line = text
         .lines()
-        .find(|l| l.starts_with("1. "))
+        .find(|l| l.starts_with("app@"))
         .unwrap_or_else(|| panic!("{text}"));
-    let citation = line["1. ".len()..].split(" · ").next().unwrap();
+    let citation = line.split(" · ").next().unwrap();
     assert!(citation.ends_with(":src/lib.rs#L1-L3"), "{text}");
     let read = demo.json(&["read", "demo", citation, "--json"]);
     assert_eq!(read["kind"], "code");

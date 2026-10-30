@@ -208,8 +208,8 @@ A query matches identifiers however they are written: `validate token` finds
 `validateToken`, `validate_token` and `validate-token`. A chunk whose symbol is
 exactly the query comes first; the rest rank by BM25, weighting symbol names
 over paths over body text. Spec results come from each document's current
-version; one whose document also has an older version pinned ends its line with
-`· older version pinned`, and its JSON lists them in `older_versions` (see
+version; one whose document also has an older version pinned carries
+`· older version pinned` on its line, and its JSON lists them in `older_versions` (see
 [Diff a spec's versions](#diff-a-specs-versions)).
 
 Specs and code are ranked separately and then merged, so code that repeats a
@@ -219,14 +219,16 @@ otherwise the results alternate, spec first. `--only spec` or `--only code`
 searches one kind.
 
 ```text
-1. rfc9449@sha256:2d8657f07291#section-11.1
-   section · score 38.85 · quote · indexed 2026-10-20T22:56:30Z
-     11.1. DPoP Proof Replay
+2 results · quote · indexed 2026-10-20T22:56:30Z
+rfc9449@sha256:2d8657f07291#section-11.1 · section · 11.1. DPoP Proof Replay
+rfc9449@sha256:2d8657f07291#section-4.3/step-2 · step · Check that the jti has not been used before.
 ```
 
-Each result shows its rank and citation, then its kind (`function`, `class`,
-`section`, `step` or `window`), symbol, score, license class and when it was
-indexed, then the first lines of its text.
+One line per result: its citation, then its kind (`function`, `class`,
+`section`, `step` or `window`) and symbol, then the first line of its text.
+Results come best first; `--json` adds each one's score. When the results
+share a license class and index time, a header gives them once; otherwise each
+line carries its own, before the text.
 
 Search a spec in its own terms. Search matches words, not meaning, so a
 question asked in plain words finds nothing in a spec that says it
