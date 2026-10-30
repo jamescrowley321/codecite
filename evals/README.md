@@ -44,9 +44,27 @@ labels, so nobody can tune them toward one corpus.
   most. It is the floor both engines must beat. The scorecard pools each
   repository's classes in an `all` row, which is the one to judge by, since
   some classes hold only a few queries.
+- **Cost** (`codecite-bench --cost <checkout>`) is a second table in the
+  scorecard, `## Cost per query`. For each query with words in it, it runs
+  `codecite search` as an agent does (default limit, the human output) and
+  `rg -n` and `rg -l` over the pinned tree with the same words as whole
+  words in any case, three times each, and keeps the fastest run. The table
+  gives the median output bytes and median time per query, with the 90th
+  percentile of the time in parentheses. A query with no words is skipped
+  for both. The byte comparison is uneven by design: codecite prints its
+  default 5 hits, `rg -n` every matching line, uncapped, so `rg -l` is the
+  closer comparison. And they see different trees: `rg` searches the pinned
+  tree as `git archive` extracts it, with its defaults, so hidden files are
+  skipped and, outside a git checkout, no `.gitignore` applies; codecite
+  searches what the manifest indexed. A missing `rg` fails the cost step
+  (`--rg`, or `RG` for `run.sh`, names the program; `--rg` needs `--cost`).
 - **Run** with `history/run.sh [repo ...]`, after `cargo build --release
-  --locked -p codecite -p codecite-bench`. It writes each engine's report and
-  `history/results/scorecard.md`.
+  --locked -p codecite -p codecite-bench`, with ripgrep installed. It writes
+  each engine's report, the cost report and `history/results/scorecard.md`.
+  A repository whose cost step fails keeps its recall rows; the failure,
+  from `<repo>.cost-failed.txt`, is a row of the cost table, and it leaves
+  the exit status alone. A cost report that measured no query (all were
+  skipped) shows as `no measured queries`.
 
 The rule from the general-purpose design: a ranking or indexing change that
 loses on any repository doesn't merge.
@@ -365,7 +383,10 @@ benchmark).
   server's exposure `direct`), so `mcp__codecite__search`,
   `mcp__codecite__read` and `mcp__codecite__requirements` sit in pi's tool list next to `grep` and `find`, with
   codecite's descriptions; it keeps codecite on `PATH` too, and its prompt
-  gets a note naming the tools and the command. Otherwise the arms are identical.
+  gets a note: the agent snippet from `docs/usage.md`, saying what the corpus
+  indexes, then, for a corpus with specs, advice to list a spec's rules with
+  `codecite requirements` before implementing what it governs, then which MCP
+  tools mirror which commands. Otherwise the arms are identical.
 - The scorecard's `used codecite` column counts, per arm, the runs with at
   least one call to codecite, read from the model calls in the Inspect log: a
   native tool call, or a `bash` call that runs `codecite`. Text that only

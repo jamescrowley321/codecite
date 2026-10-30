@@ -24,6 +24,7 @@ difficulty without watching codecite's (evals/README.md).
 
 import json
 import os
+import re
 from pathlib import Path
 from time import monotonic
 
@@ -61,20 +62,35 @@ MCP_CONFIG = {
 AGENT_TIMEOUT = 600
 
 
+def snippet(corpus: str, what: str) -> str:
+    """The AGENTS.md snippet from docs/usage.md, for `corpus` indexing
+    `what`, without its heading's fence. Fails loudly if the markers or the
+    fence are missing."""
+    text = (config.ROOT / "docs" / "usage.md").read_text()
+    m = re.search(r"<!-- agent-snippet -->\s*```markdown\n(.*?)```\s*<!-- /agent-snippet -->", text, re.S)
+    if not m:
+        raise ValueError("docs/usage.md has no <!-- agent-snippet --> block holding a markdown fence")
+    return m.group(1).strip().replace("<CORPUS>", corpus).replace("<WHAT>", what)
+
+
 def codecite_note(task_dir: Path) -> str:
-    """The codecite arm's note, naming what the task's `eval` corpus indexes."""
+    """The codecite arm's note: the snippet, naming what the task's `eval`
+    corpus indexes, then spec advice when the corpus has specs, then which
+    MCP tools mirror which commands."""
     corpus = json.loads((task_dir / "task.json").read_text())["corpus"]
     indexes = f"the identity-model source at `{IDENTITY_MODEL}`"
+    note = []
     if corpus.get("documents"):
         indexes += " and the OAuth 2.0, OpenID Connect and FAPI specifications it implements"
-    return (
-        f"codecite indexes {indexes} as its corpus `eval`. Its tools `mcp__codecite__search` (ranked "
-        "results with citations) and `mcp__codecite__read` (the text a citation points at) search and "
-        "read it, and `mcp__codecite__requirements` lists the normative statements governing a spec section, each "
-        "with its citation: use it before implementing or fixing anything a spec governs. The `codecite` command on "
-        'your PATH does the same: `codecite search eval "<query>"`, `codecite read eval "<citation>"` and '
-        '`codecite requirements eval "<citation>"`.'
+        note.append(
+            "Before implementing or fixing anything a spec governs, list its rules with "
+            '`codecite requirements eval "<citation>"` and search with the terms the spec would use.'
+        )
+    note.append(
+        "As MCP tools, `mcp__codecite__search` mirrors `codecite search` and `mcp__codecite__read` mirrors "
+        "`codecite read`; `mcp__codecite__requirements` lists the rules a spec section states."
     )
+    return "\n\n".join([snippet("eval", indexes), *note])
 
 
 def prompt(task_dir: Path, condition: str) -> str:

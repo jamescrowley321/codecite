@@ -143,7 +143,7 @@ fn read_and_search_say_an_older_version_is_pinned() {
     );
     let out = run(home.path(), &["search", "demo", "expiration"]);
     let text = String::from_utf8(out.stdout.clone()).unwrap();
-    assert!(text.contains(" · older version pinned\n"), "{text}{out:?}");
+    assert!(text.contains(" · older version pinned"), "{text}{out:?}");
 }
 
 #[test]

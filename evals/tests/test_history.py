@@ -260,3 +260,138 @@ def test_a_rebase_merged_pr_spans_all_its_commits():
     # A rebase merge: the merge commit is the PR's last commit of several.
     assert merged_span(1, "feat: add x", 7, lambda: 3) == 3
     assert merged_span(1, "feat: add x (#70)", 7, lambda: 1) == 1
+
+
+def cost_report(queries, ours, lines, files):
+    def c(v):
+        return {"median_bytes": v[0], "median_ms": v[1], "p90_ms": v[2]}
+
+    return {"engine": "cost", "queries": queries, "codecite": c(ours), "rg_lines": c(lines), "rg_files": c(files)}
+
+
+def test_the_scorecard_shows_what_a_query_costs_next_to_rg():
+    from codecite_evals.history import scorecard
+
+    run = {
+        "codecite": bench("codecite", (0.5, 20), (0.25, 8)),
+        "cost": cost_report(28, (1200, 41.5, 60.2), (90000, 12.0, 30.0), (800, 11.0, 29.5)),
+    }
+    table = scorecard({"r": run, "s": {"codecite": bench("codecite", (0.5, 4), (0.5, 2))}})
+    assert "## Cost per query" in table
+    assert "| Repository | Queries | codecite bytes | codecite ms | rg -n bytes | rg -n ms | rg -l bytes | rg -l ms |" in table
+    assert "| r | 28 | 1200 | 41.5 (60.2) | 90000 | 12.0 (30.0) | 800 | 11.0 (29.5) |" in table
+    assert "| s |" not in table.split("## Cost per query")[1]
+
+
+def test_without_a_cost_report_the_scorecard_has_no_cost_table():
+    from codecite_evals.history import scorecard
+
+    assert "Cost per query" not in scorecard({"r": {"codecite": bench("codecite", (0.5, 20), (0.25, 8))}})
+
+
+def test_a_cost_report_is_read_from_the_results_directory(tmp_path):
+    import json
+    from codecite_evals.history import scorecard_main
+
+    (tmp_path / "a-codecite.json").write_text(json.dumps(bench("codecite", (0.5, 4), (0.5, 2))))
+    (tmp_path / "a-cost.json").write_text(json.dumps(cost_report(6, (10, 1.0, 2.0), (20, 3.0, 4.0), (5, 6.0, 7.0))))
+    scorecard_main([str(tmp_path)])
+    assert "| a | 6 | 10 | 1.0 (2.0) | 20 | 3.0 (4.0) | 5 | 6.0 (7.0) |" in (tmp_path / "scorecard.md").read_text()
+
+
+def test_a_failed_cost_step_keeps_the_recall_rows():
+    from codecite_evals.history import scorecard
+
+    run = {"codecite": bench("codecite", (0.5, 20), (0.25, 8)), "cost_failed": "codecite-bench failed for cost"}
+    table = scorecard({"r": run})
+    recall, cost = table.split("## Cost per query")
+    assert "| r | history-title | codecite | 20 | 0.25 | 0.50 | 0.17 |" in recall
+    assert "failed" not in recall
+    assert "| r | failed: codecite-bench failed for cost |" in cost
+
+
+def test_a_cost_failure_is_read_from_the_results_directory(tmp_path):
+    import json
+    from codecite_evals.history import scorecard_main
+
+    (tmp_path / "a-codecite.json").write_text(json.dumps(bench("codecite", (0.5, 4), (0.5, 2))))
+    (tmp_path / "a.cost-failed.txt").write_text("cannot extract abc\n")
+    # A repository named `b-cost` whose whole run failed is not a cost
+    # failure of `b`.
+    (tmp_path / "b-cost-failed.txt").write_text("cannot clone\n")
+    scorecard_main([str(tmp_path)])
+    text = (tmp_path / "scorecard.md").read_text()
+    recall, cost = text.split("## Cost per query")
+    assert "| a | history-title | codecite | 4 |" in recall
+    assert "| a | failed: cannot extract abc |" in cost
+    assert "| b-cost | failed: cannot clone |" in recall
+    assert "| b |" not in text and "a.cost" not in text
+
+
+def test_a_cost_report_with_no_measured_queries_shows_no_zeros():
+    from codecite_evals.history import scorecard
+
+    table = scorecard({"r": {"cost": cost_report(0, (0, 0.0, 0.0), (0, 0.0, 0.0), (0, 0.0, 0.0))}})
+    cost = table.split("## Cost per query")[1]
+    assert "| r | no measured queries |" in cost
+    assert "| r | 0 |" not in cost
+
+
+def test_run_sh_files_a_cost_failure_apart_from_the_recall_reports(tmp_path):
+    """run.sh against stub binaries whose cost step fails: the recall
+    reports stay, the failure lands in `<repo>.cost-failed.txt` and under
+    the cost table, a stale one from an earlier run is cleared first, and
+    the run still succeeds: cost is a report, not a gate."""
+    import os
+    import shutil
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    here = tmp_path / "evals" / "history"
+    (here / "demo").mkdir(parents=True)
+    shutil.copy(Path(__file__).resolve().parents[1] / "history" / "run.sh", here / "run.sh")
+    clones, repo = tmp_path / "clones", tmp_path / "clones" / "demo"
+    repo.mkdir(parents=True)
+    git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    (repo / "a.py").write_text("x = 1\n")
+    subprocess.run([*git, "add", "."], check=True)
+    subprocess.run([*git, "commit", "-q", "-m", "init"], check=True)
+    commit = subprocess.run([*git, "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+    (here / "demo" / "manifest.toml").write_text(f'url = "{repo}"\ncommit = "{commit}"\n')
+    (here / "demo" / "queries.toml").write_text("")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "codecite").write_text("#!/bin/sh\nprintf 'chunks: 1 written\\nelapsed: 0.01s\\n'\n")
+    (bin_dir / "codecite-bench").write_text(
+        '#!/bin/sh\nfor a in "$@"; do [ "$a" = --cost ] && exit 1; done\necho \'{"classes": {}}\'\n'
+    )
+    for stub in bin_dir.iterdir():
+        stub.chmod(0o755)
+    results = here / "results"
+    results.mkdir()
+    (results / "demo.cost-failed.txt").write_text("stale\n")
+    # A `uv` that rebuilds the scorecard with this interpreter, so the run
+    # can finish without a project to sync.
+    (bin_dir / "uv").write_text(
+        f'#!/bin/sh\nfor a; do last="$a"; done\nexec {sys.executable} -c '
+        '"import sys; from codecite_evals.history import scorecard_main; scorecard_main(sys.argv[1:])" "$last"\n'
+    )
+    (bin_dir / "uv").chmod(0o755)
+    env = {
+        **os.environ,
+        "CODECITE_BIN": str(bin_dir),
+        "HISTORY_CLONES": str(clones),
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+    }
+    done = subprocess.run(["bash", str(here / "run.sh"), "demo"], env=env, capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    assert "demo: cost failed: codecite-bench failed for cost" in done.stderr
+    for kind in ("codecite", "grep", "popular"):
+        assert (results / f"demo-{kind}.json").exists(), kind
+    assert not (results / "demo-cost.json").exists()
+    assert not (results / "demo-failed.txt").exists()
+    assert (results / "demo.cost-failed.txt").read_text() == "codecite-bench failed for cost\n"
+    cost = (results / "scorecard.md").read_text().split("## Cost per query")[1]
+    assert "| demo | failed: codecite-bench failed for cost |" in cost
