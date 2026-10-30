@@ -1,8 +1,11 @@
 """The replay miner's choice of past PRs, without the network."""
 
+import json
+import subprocess
+
 import pytest
 
-from codecite_evals.replay import Candidate, acceptance_only, candidates, is_test_path, language
+from codecite_evals.replay import Candidate, acceptance_only, candidates, command_for, is_test_path, language, write_task
 
 REPO = "o/r"
 
@@ -159,3 +162,111 @@ def test_acceptance_only():
     assert acceptance_only(ACCEPTANCE)
     assert not acceptance_only(UNIT)
     assert not acceptance_only("package p\n\nfunc helper() {}\n")
+
+
+def git(repo, *args):
+    return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+
+
+@pytest.fixture
+def clone(tmp_path):
+    """A throwaway repository: a base commit, then a PR's merge that fixes
+    `src/a.py`, adds `tests/test_new.py` and changes `tests/test_old.py`."""
+    repo = tmp_path / "clone"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "config", "user.email", "t@example.com")
+    git(repo, "config", "user.name", "t")
+    (repo / "src").mkdir()
+    (repo / "tests").mkdir()
+    (repo / "src/a.py").write_text("def f():\n    return 1\n")
+    (repo / "tests/test_old.py").write_text("old\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "base")
+    base = git(repo, "rev-parse", "HEAD")
+    (repo / "src/a.py").write_text("def f():\n    return 2\n")
+    (repo / "tests/test_old.py").write_text("changed\n")
+    (repo / "tests/test_new.py").write_text("new\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "fix (#7)")
+    return repo, base, git(repo, "rev-parse", "HEAD")
+
+
+def replay(base, merge):
+    return Candidate(
+        repo="o/r",
+        pr=7,
+        issue=10,
+        title="f returns the wrong number",
+        body="It should return 2.",
+        base=base,
+        merge=merge,
+        tests=("tests/test_new.py", "tests/test_old.py"),
+        sources=("src/a.py",),
+        language="python",
+    )
+
+
+def test_write_task_lays_out_the_task(clone, tmp_path):
+    repo, base, merge = clone
+    task = write_task(replay(base, merge), repo, tmp_path / "tasks")
+    assert task == tmp_path / "tasks" / "replay-r-7"
+    for name in ("task.json", "prompt.md", "reference/fix.patch", "hidden/tests/test_new.py", "hidden/tests/test_old.py"):
+        assert (task / name).is_file(), name
+
+
+def test_hidden_tests_are_the_merge_versions(clone, tmp_path):
+    repo, base, merge = clone
+    task = write_task(replay(base, merge), repo, tmp_path / "tasks")
+    assert (task / "hidden/tests/test_new.py").read_text() == "new\n"
+    assert (task / "hidden/tests/test_old.py").read_text() == "changed\n"
+    # What the agent sees: the added test is absent at the base, the changed
+    # one is its base version.
+    assert subprocess.run(["git", "cat-file", "-e", f"{base}:tests/test_new.py"], cwd=repo).returncode != 0
+    assert git(repo, "show", f"{base}:tests/test_old.py") == "old"
+
+
+def test_fix_patch_holds_the_sources_and_no_test(clone, tmp_path):
+    repo, base, merge = clone
+    patch = (write_task(replay(base, merge), repo, tmp_path / "tasks") / "reference/fix.patch").read_text()
+    assert "src/a.py" in patch and "+    return 2" in patch
+    assert "tests/" not in patch
+
+
+def test_prompt_is_the_issue_and_no_pr_text(clone, tmp_path):
+    repo, base, merge = clone
+    prompt = (write_task(replay(base, merge), repo, tmp_path / "tasks") / "prompt.md").read_text()
+    assert "# f returns the wrong number" in prompt
+    assert "It should return 2." in prompt
+    assert "/work/project" in prompt
+    for leak in ("fix (#7)", "test_new", "test_old", "#7"):
+        assert leak not in prompt
+
+
+def test_task_json_round_trips(clone, tmp_path):
+    repo, base, merge = clone
+    task = write_task(replay(base, merge), repo, tmp_path / "tasks")
+    data = json.loads((task / "task.json").read_text())
+    assert data == {
+        "id": "replay-r-7",
+        "kind": "replay",
+        "gate": "replay",
+        "repo": "o/r",
+        "url": "https://github.com/o/r",
+        "base": base,
+        "merge": merge,
+        "pr": 7,
+        "issue": 10,
+        "language": "python",
+        "hidden": ["tests/test_new.py", "tests/test_old.py"],
+        "test": command_for("python", ["tests/test_new.py", "tests/test_old.py"]),
+        "setup": [],
+        "epochs": {"quick": 5, "full": 10},
+    }
+
+
+def test_commands_by_language():
+    assert command_for("python", ["tests/test_a.py"]) == ["uv", "run", "--with", "pytest==9.1.1", "pytest", "-q", "-p", "no:cacheprovider", "{hidden}"]
+    assert command_for("go", ["internal/a/a_test.go", "internal/a/b_test.go", "c_test.go"]) == ["go", "test", "-count=1", ".", "./internal/a"]
+    assert command_for("rust", ["crates/x/tests/cli.rs", "tests/a.rs"]) == ["cargo", "test", "--locked", "--offline", "--test", "cli", "--test", "a"]
+    assert command_for("node", ["src/a.test.ts"]) == ["npm", "test", "--", "{hidden}"]
