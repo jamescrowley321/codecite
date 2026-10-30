@@ -9,6 +9,6 @@ event_loop:
   prompt_file: "PROMPT.md"
   completion_promise: "CODECITE_QUEUE_EMPTY"
   # Matched anywhere in the output text, so it must be a word no phase writes by accident.
-  # About 9 phases per issue; 24 issues in M2 and M3 plus CI retries.
+  # About 9 phases per issue; 7 issues in General purpose plus CI and review retries.
   max_iterations: 400
   max_consecutive_failures: 5
