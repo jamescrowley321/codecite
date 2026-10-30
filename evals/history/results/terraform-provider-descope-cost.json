@@ -1,0 +1,19 @@
+{
+  "codecite": {
+    "median_bytes": 618,
+    "median_ms": 12.2078485,
+    "p90_ms": 18.2636502
+  },
+  "engine": "cost",
+  "queries": 32,
+  "rg_files": {
+    "median_bytes": 2019,
+    "median_ms": 7.4559945,
+    "p90_ms": 14.9976506
+  },
+  "rg_lines": {
+    "median_bytes": 26093,
+    "median_ms": 7.328609999999999,
+    "p90_ms": 22.256771000000015
+  }
+}
