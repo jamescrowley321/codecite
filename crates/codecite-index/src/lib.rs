@@ -33,6 +33,9 @@ pub use guidance::{GuidanceError, GuidanceRule, split_guidance};
 mod index;
 pub use index::{IndexSummary, index_corpus};
 
+mod license;
+pub use license::{DetectedLicense, detect_license};
+
 mod manifest;
 pub use manifest::{
     DocumentSource, GitSource, GuidanceSource, LicenseClass, LocalSource, Manifest, ManifestError,
