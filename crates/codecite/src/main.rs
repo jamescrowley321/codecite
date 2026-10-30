@@ -11,7 +11,9 @@ use codecite_core::{
     MAX_READ_LINES, MAX_SEARCH_LIMIT, ReadOptions, ReadResult, Requirements, RequirementsOptions,
     Scope, SearchQuery, SearchResult, SearchResults, Store, is_corpus_name,
 };
-use codecite_index::{Clones, Fetcher, LicenseClass, Manifest, Source, WalkOptions, index_corpus};
+use codecite_index::{
+    Clones, Fetcher, LicenseClass, Manifest, Source, WalkOptions, add_sources, index_corpus,
+};
 
 /// Command-line arguments.
 #[derive(Parser)]
@@ -41,6 +43,22 @@ struct Cli {
 /// The subcommands. Later milestones add more here.
 #[derive(Subcommand)]
 enum Command {
+    /// Add git repositories to a corpus's manifest, pinned at their current
+    /// commit with their license detected.
+    #[command(after_long_help = "Examples:
+  codecite add mywork https://github.com/owner/repo
+  codecite add mywork https://github.com/a/one https://github.com/b/two
+  codecite add mywork https://github.com/owner/repo --manifest ~/m.toml")]
+    Add {
+        /// The corpus to add to, as named in its manifest.
+        corpus: String,
+        /// The repositories' clone URLs.
+        #[arg(required = true)]
+        urls: Vec<String>,
+        /// The manifest to write [default: corpora/<CORPUS>.toml].
+        #[arg(long)]
+        manifest: Option<PathBuf>,
+    },
     /// Index a corpus's sources into its corpus file.
     #[command(after_long_help = "Examples:
   codecite index myrepo
@@ -346,6 +364,11 @@ impl From<Only> for Scope {
 
 fn main() -> anyhow::Result<()> {
     match Cli::parse().command {
+        Command::Add {
+            corpus,
+            urls,
+            manifest,
+        } => add(&corpus, &urls, manifest),
         Command::Index {
             corpus,
             manifest,
@@ -506,6 +529,42 @@ fn index(corpus: &str, manifest: Option<PathBuf>, print_hashes: bool) -> anyhow:
     .with_context(|| format!("indexing corpus `{corpus}`"))?;
     println!("indexed corpus `{corpus}` into {}", path.display());
     println!("{summary}");
+    Ok(())
+}
+
+/// `codecite add`: adds each URL to the corpus's manifest as a git source,
+/// creating the manifest when it is missing, and prints what it proposed.
+fn add(corpus: &str, urls: &[String], manifest: Option<PathBuf>) -> anyhow::Result<()> {
+    check_corpus_name(corpus)?;
+    let manifest_path =
+        manifest.unwrap_or_else(|| Path::new("corpora").join(format!("{corpus}.toml")));
+    let dirs = project_dirs()?;
+    let clones = Clones::new(dirs.cache_dir().join("repos"));
+    let added = add_sources(&manifest_path, corpus, urls, &clones)
+        .with_context(|| format!("adding to manifest {}", manifest_path.display()))?;
+    for source in &added {
+        // A commit is 40 hex digits, so the first 12 are always there.
+        let commit = &source.commit[..source.commit.len().min(12)];
+        if source.skipped {
+            println!(
+                "kept {} @ {commit} · already in {}",
+                source.url,
+                manifest_path.display()
+            );
+        } else {
+            let license = source
+                .license
+                .spdx
+                .as_deref()
+                .unwrap_or("no license detected");
+            println!(
+                "added {} @ {commit} · {license} · {}",
+                source.url,
+                source.license.class.as_str()
+            );
+        }
+    }
+    println!("check each license and use, then run: codecite index {corpus}");
     Ok(())
 }
 
