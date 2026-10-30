@@ -2,6 +2,7 @@
 apart, codecite's use, A/A rounds, calibrations, and the measures read from
 each sample's transcript."""
 
+import json
 from datetime import datetime, timezone
 
 import pytest
@@ -11,6 +12,7 @@ from inspect_ai.model import ChatMessageAssistant, ChatMessageUser, GenerateConf
 from inspect_ai.scorer import Score
 from inspect_ai.tool import ToolCall
 
+from codecite_evals import config
 from codecite_evals.report import codecite_calls, logs, scorecard
 
 EPOCHS = 4
@@ -524,3 +526,77 @@ def test_a_claude_code_log_reads_its_measures_from_the_store(tmp_path):
     assert (runs[key]["median tokens"], runs[key]["used codecite"]) == ("9,000", f"{EPOCHS}/{EPOCHS}")
     r = transcript[key]
     assert (r["turns"], r["output tokens"], r["model time"], r["decode rate"], r["providers"]) == ("6", "800", "20s", "40 tok/s", "-")
+
+
+def gated(task_id, monkeypatch, tmp_path, gate=None, code_passes=100, tokens=1000, seconds=60.0, runs=100):
+    """An A/B log of task_id over runs epochs: baseline passes every run in 60 s
+    on 1,000 tokens; codecite passes code_passes of them on its own tokens and
+    seconds. The task's task.json, under a stand-in evals/, names its gate."""
+    task = tmp_path / "tasks" / task_id
+    task.mkdir(parents=True)
+    (task / "task.json").write_text(json.dumps({"id": task_id} | ({"gate": gate} if gate else {})))
+    monkeypatch.setattr(config, "EVALS_DIR", tmp_path)
+    samples = [sample("baseline", e, passed=True) for e in range(1, runs + 1)]
+    for e in range(1, runs + 1):
+        s = sample("codecite", e, passed=e <= code_passes)
+        s.model_usage = {"m": ModelUsage(total_tokens=tokens)}
+        s.total_time = seconds
+        samples.append(s)
+    l = log("openrouter/m", samples, task="codecite_evals/ab", epochs=runs)
+    l.eval.task_args = {"task_id": task_id}
+    return l
+
+
+def verdict(l):
+    _, rows = table(scorecard([l]))
+    return rows[("m", "codecite")]["verdict"]
+
+
+def test_a_replay_task_loses_on_any_sure_drop_in_pass_rate(monkeypatch, tmp_path):
+    # -4 points, with the interval's top below 0.
+    assert verdict(gated("replay-x", monkeypatch, tmp_path, "replay", code_passes=96)).startswith("loses on pass")
+
+
+def test_a_default_task_allows_a_small_drop_in_pass_rate(monkeypatch, tmp_path):
+    assert verdict(gated("plain", monkeypatch, tmp_path, code_passes=96)).startswith("no loss")
+
+
+def test_a_replay_task_allows_a_fifth_more_time(monkeypatch, tmp_path):
+    assert verdict(gated("replay-x", monkeypatch, tmp_path, "replay", seconds=72.0)).startswith("no loss")
+
+
+def test_a_replay_task_loses_past_a_quarter_more_time(monkeypatch, tmp_path):
+    assert verdict(gated("replay-x", monkeypatch, tmp_path, "replay", seconds=78.0)).startswith("loses on time")
+
+
+def test_a_default_task_loses_on_a_fifth_more_time(monkeypatch, tmp_path):
+    assert verdict(gated("plain", monkeypatch, tmp_path, seconds=72.0)).startswith("loses on time")
+
+
+def test_a_replay_task_reports_tokens_but_never_loses_on_them(monkeypatch, tmp_path):
+    l = gated("replay-x", monkeypatch, tmp_path, "replay", tokens=1400)
+    out = scorecard([l])
+    assert verdict(l).startswith("no loss")
+    assert "tokens +40%..+40%" in verdict(l)
+    # Tokens have no margin on a replay task, so their interval is never starred.
+    _, spans = table(out, 2, ("model", "arms"))
+    assert spans[("m", "codecite vs baseline")]["tokens"] == "+40%..+40%"
+    assert "Gate: replay" in out
+
+
+def test_a_default_task_loses_on_tokens(monkeypatch, tmp_path):
+    out = scorecard([gated("plain", monkeypatch, tmp_path, tokens=1400)])
+    _, rows = table(out)
+    assert rows[("m", "codecite")]["verdict"].startswith("loses on tokens")
+    assert "Gate:" not in out
+
+
+def test_a_task_without_a_task_json_takes_the_default_gate():
+    # PANEL's task, fastapi_middleware, is read as fastapi-middleware's task.json, else the default.
+    _, rows = table(scorecard(PANEL))
+    assert rows[("m1", "codecite")]["verdict"].startswith("no loss")
+
+
+
+def test_a_task_run_by_id_is_named_by_its_id(monkeypatch, tmp_path):
+    assert scorecard([gated("replay-x", monkeypatch, tmp_path, "replay")]).startswith("**Task: `replay-x`**")

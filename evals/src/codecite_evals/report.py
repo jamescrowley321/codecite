@@ -10,7 +10,9 @@ time relative to the first arm's median (second / first - 1). Each gets a 95%
 percentile bootstrap interval, each arm resampled on its own. codecite loses
 when an interval is past the margin at its favourable end: pass rate's upper
 bound more than 5 points below 0, or tokens' or time's lower bound more than
-5% above 0. A model short of the planned runs in either arm is incomplete,
+5% above 0. A task's task.json can name another gate (GATES): a replay task
+loses on pass rate when its upper bound is below 0 and on time when its lower
+bound is more than 25% above 0, and never on tokens, which are only reported. A model short of the planned runs in either arm is incomplete,
 not a pass. A model's planned runs per arm are the arm's samples times
 epochs: one sample for a code task, one per question for spec-questions. An
 A/A round gets no verdict: it reports which intervals noise alone pushes past
@@ -44,17 +46,6 @@ comparison says nothing about codecite. "used codecite" counts, per arm, the
 runs with at least one call, read from the model calls in the log: a call to
 one of codecite's native tools, or a `bash` call that runs `codecite`.
 
-A calibration (`-T arms=baseline`) is not an A/B run: per task, it gets a
-calibration table, with pass rate, median turns, tokens and time per model and
-the pooled pass rate against the band, and no verdict. A calibration is never
-a pass.
-
-A pair whose codecite arm called codecite in fewer than half its usable runs
-is not measured: the arms then differ by a tool the agent never used, so the
-comparison says nothing about codecite. "used codecite" counts, per arm, the
-runs with at least one call, read from the model calls in the log: a call to
-one of codecite's native tools, or a `bash` call that runs `codecite`.
-
 A run of the baseline arm alone (`-T arms=baseline`, recorded in the log's
 task arguments) is a calibration, not an A/B run: per task, it gets a
 calibration table, with pass rate, median turns, tokens and time per model and
@@ -71,6 +62,7 @@ a quick loss means run the full tier.
 """
 
 import argparse
+import json
 import random
 import re
 import sys
@@ -86,6 +78,14 @@ from inspect_ai.model import ChatMessageAssistant
 from codecite_evals import config
 
 MARGIN = 0.05
+# Each gate's margins for the verdict's three measures; a task's task.json
+# picks one by name ("gate", default "default"). None means reported, never a
+# loss. A replay task (replay.py) loses on any sure drop in pass rate and on
+# time past a quarter more, and spends whatever tokens it needs.
+GATES = {
+    "default": {"pass": MARGIN, "tokens": MARGIN, "time": MARGIN},
+    "replay": {"pass": 0.0, "tokens": None, "time": 0.25},
+}
 # A pair is measured when its codecite arm used codecite in at least this
 # share of its usable runs.
 ADOPTION = 0.5
@@ -274,9 +274,22 @@ def listed(error, limit=200):
     return f"`{text[:limit]}…`" if len(text) > limit else f"`{text}`"
 
 
-def fits(lo, hi):
-    """Whether an interval lies inside the margin on both sides of 0."""
-    return -MARGIN <= lo and hi <= MARGIN
+def fits(lo, hi, margin=MARGIN):
+    """Whether an interval lies inside the margin on both sides of 0. With no
+    margin (None), it always does: the measure is only reported."""
+    return margin is None or (-margin <= lo and hi <= margin)
+
+
+def gate(log):
+    """The name of the gate the log's task is judged by, from its task.json
+    (the task's name with `-` for `_`). A task with no task.json here takes
+    the default."""
+    task_id = task_name(log).replace("_", "-")
+    path = config.EVALS_DIR / "tasks" / task_id / "task.json"
+    name = json.loads(path.read_text()).get("gate", "default") if path.is_file() else "default"
+    if name not in GATES:
+        raise ValueError(f"{path} names gate {name!r}; the gates are {', '.join(GATES)}")
+    return name
 
 
 def span(lo, hi, kind):
@@ -310,7 +323,10 @@ def medians(runs):
 
 
 def task_name(log):
-    return log.eval.task.removeprefix("codecite_evals/")
+    """The task's name: its task_id argument when it ran as the `ab` task
+    (codecite_evals/ab -T task_id=<id>, as a replay task does), else its own."""
+    name = log.eval.task.removeprefix("codecite_evals/")
+    return (log.eval.task_args or {}).get("task_id", name) if name == "ab" else name
 
 
 def per_arm(log, arm, arms=2):
@@ -321,11 +337,6 @@ def per_arm(log, arm, arms=2):
     if ids:
         return sum(str(i) == arm or str(i).startswith(f"{arm}:") for i in ids) or 1
     return max(1, (log.eval.dataset.samples or arms) // arms)
-
-
-def calibrating(log):
-    """Whether this log ran the baseline arm alone."""
-    return (log.eval.task_args or {}).get("arms") == "baseline"
 
 
 def calibrating(log):
@@ -345,10 +356,12 @@ def scorecard(logs, tier=None):
     errors = defaultdict(list)  # task -> [(model, arm, question, epoch, sandbox error)]
     planned = {}  # (task, model, arm) -> runs
     arms = {}  # (task, model) -> ((label, condition), ...)
+    gates = {}  # task -> gate name
     for log in logs:
         name, model = task_name(log), log.eval.model
         pair = config.ARMS.get((log.eval.task_args or {}).get("arms", "ab"), config.ARMS["ab"])
         arms[(name, model)] = pair
+        gates[name] = gate(log)
         for label, _ in pair:
             planned[(name, model, label)] = per_arm(log, label, len(pair)) * (log.eval.config.epochs or 1)
         for s in log.samples or []:
@@ -394,7 +407,7 @@ def scorecard(logs, tier=None):
         if kinds == {True}:
             out += calibration(name, runs, planned)
         else:
-            out += table(rng, name, runs, planned, arms)
+            out += table(rng, name, runs, planned, arms, gates[name])
         out += listed_errors(errors[name])
     return "\n".join(out)
 
@@ -450,12 +463,20 @@ def calibration(name, runs, planned):
     return out
 
 
-def table(rng, name, runs, planned, arms):
+def table(rng, name, runs, planned, arms, gate_name="default"):
     """One task's tables: per model, both arms and the verdict; the
-    transcript medians; and every measure's interval."""
-    out = [
-        f"**Task: `{name}`**",
-        "",
+    transcript medians; and every measure's interval. The gate sets the
+    margins of pass, tokens and time; every other measure keeps MARGIN."""
+    margins = {m: GATES[gate_name].get(m, MARGIN) for m, _, _ in MEASURES}
+    out = [f"**Task: `{name}`**", ""]
+    if gate_name != "default":
+        shown = ", ".join(
+            f"{m} {'reported, never a loss' if v is None else span(-v, v, kind).split('..')[1]}"
+            for m, _, kind in MEASURES[:3]
+            for v in [margins[m]]
+        )
+        out += [f"Gate: {gate_name} (margins: {shown}).", ""]
+    out += [
         "| model | arm | runs | used codecite | pass | fails | timeouts | sandbox errors | median tokens | median time | verdict |",
         "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
@@ -468,7 +489,9 @@ def table(rng, name, runs, planned, arms):
     ]
     spans = [
         "",
-        f"95% intervals, second arm against the first (* past the {MARGIN:.0%} margin on either side of 0):",
+        f"95% intervals, second arm against the first (* past the {MARGIN:.0%} margin on either side of 0"
+        + (", or the gate's margin" if gate_name != "default" else "")
+        + "):",
         "",
         "| model | arms | " + " | ".join(measure for measure, _, _ in MEASURES) + " |",
         "|---|---|" + "---|" * len(MEASURES),
@@ -496,7 +519,7 @@ def table(rng, name, runs, planned, arms):
                 b = [v for v in map(value, second) if v is not None]
                 found[measure] = interval(rng, a, b, pass_diff if kind == "points" else median_ratio) if a and b else None
             cells = [
-                "-" if found[m] is None else span(*found[m], kind) + ("" if fits(*found[m]) else " *")
+                "-" if found[m] is None else span(*found[m], kind) + ("" if fits(*found[m], margins[m]) else " *")
                 for m, _, kind in MEASURES
             ]
             spans.append(f"| {label} | {b_label} vs {a_label} | " + " | ".join(cells) + " |")
@@ -505,12 +528,13 @@ def table(rng, name, runs, planned, arms):
             if aa:
                 # Noise alone made these differences: no verdict, only which
                 # intervals it pushed past the margin.
-                wide = [m for m, _, _ in MEASURES if found[m] is not None and not fits(*found[m])]
+                wide = [m for m, _, _ in MEASURES if found[m] is not None and not fits(*found[m], margins[m])]
                 verdict = ("noise past the margin on " + ", ".join(wide) if wide else "noise inside the margin") + ranges
             elif (used := sum(x.used for x in second)) < ADOPTION * len(second):
                 verdict = f"not measured (codecite used in {used} of {len(second)} runs)"
             else:
-                losses = [n for n, lost in (("pass", p[1] < -MARGIN), ("tokens", t[0] > MARGIN), ("time", s[0] > MARGIN)) if lost]
+                lost = {"pass": lambda m: p[1] < -m, "tokens": lambda m: t[0] > m, "time": lambda m: s[0] > m}
+                losses = [n for n, past in lost.items() if margins[n] is not None and past(margins[n])]
                 verdict = ("loses on " + ", ".join(losses) if losses else "no loss") + ranges
         crashed = [sum(x.stopped == "sandbox_error" for x in r) for r in (first, second)]
         if any(crashed):
