@@ -18,8 +18,8 @@ Repo `jamescrowley321/codecite`: a Rust workspace (`crates/*`). Read `~/repos/co
 
 GitHub issues are the only queue and the only status. No status words in files.
 
-1. Scope: open issues in milestones numbered up to `LAST_MILESTONE = 3` (M3 MCP server), across milestones, in dependency order. List them with `gh issue list --state open --limit 200 --json number,title,body,milestone,labels`.
-2. A candidate is an in-scope issue without the `blocked` label, not in the stack ledger and not in the parked list. Take the lowest number whose every `Depends on #N` (from its body) is closed or in the ledger. An issue that depends on a parked issue is never a candidate.
+1. Scope: open issues in the `General purpose` milestone, taken in this order: `ORDER = 182 186 183 184 185 179 162`. List them with `gh issue list --state open --milestone "General purpose" --limit 200 --json number,title,body,milestone,labels`. An issue in the milestone but not in `ORDER` is out of scope until the owner adds it here.
+2. A candidate is an in-scope issue without the `blocked` label, not in the stack ledger and not in the parked list, whose every `Depends on #N` (from its body) is closed or in the ledger. Take the first candidate in `ORDER`. An issue that depends on a parked issue is never a candidate.
 3. No candidate → output `<promise>CODECITE_QUEUE_EMPTY</promise>`. There is no cap on the stack's depth.
 
 ## Stacked PRs
@@ -62,13 +62,17 @@ The blind peer review runs in CI (`.github/workflows/claude.yml`) when a PR open
 
 ## Gates (mirror CI's Rust checks; run before every push)
 
-`cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`, plus `cargo deny check` once `deny.toml` exists. Never push a red gate.
+`cargo fmt --check && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo test --workspace --locked && cargo deny check`, plus `(cd evals && uv run --locked pytest)` when the change touches `evals/`. Never push a red gate.
+
+## History benchmark (judges every change to indexing, search or ranking)
+
+A change to indexing, search, ranking or the CLI's output is judged on the history benchmark (`evals/history/`, see `evals/README.md`). Before the PR, build release (`cargo build --release --locked -p codecite -p codecite-bench`) and run `evals/history/run.sh`; `run.sh` here exports `RG`. Commit `evals/history/results/` with the change. Compare each repository's pooled `all` rows for `codecite` with the committed `scorecard.md` on `origin/<base_branch>`: lower on Recall@1, Recall@10 or MRR on any repository is a loss. A loss → park the issue with both rows in the comment; never open its PR.
 
 ## Rules
 
 - ONE issue per iteration's work. Never start a second issue.
 - Follow `AGENTS.md`: conventional commits, `<type>/<short-description>` branches, no private ID schemes (refer to `#N`), the code wins over the docs, so fix any stale doc in the same PR.
 - `git add <paths>`, never `git add .` or `-A`. Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
-- Never push to `main`, never merge, never force-push a branch that isn't in the ledger, never create or edit labels, and never change GitHub repo settings (those live in Terraform in oss-admin).
+- Never push to `main`, never merge, never force-push a branch that isn't in the ledger, never create or edit label definitions (adding the existing `eval` label to a loop PR is allowed), and never change GitHub repo settings (those live in Terraform in oss-admin).
 - A spec gap or decision the issue and `docs/design.md` cannot settle → park the issue (see Parking). Never guess at a design decision.
 - Block (`phase: blocked`, the reason under `## Blocked`, end) only when the stack itself is in trouble: a restack conflict, a loop PR closed without merging, or CI that still fails after 3 fix attempts. A PR still at BLOCK after two re-reviews stays open in the stack with a comment for the owner; the run continues.

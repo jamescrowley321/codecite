@@ -1,11 +1,11 @@
 # ralph loop
 
-[Ralph Orchestrator](https://github.com/mikeyobrien/ralph-orchestrator) works through the open issues of M2 and M3 in dependency order (`LAST_MILESTONE` in `PROMPT.md`), one phase per iteration, and opens a stack of PRs for review.
+[Ralph Orchestrator](https://github.com/mikeyobrien/ralph-orchestrator) works through the open issues of the `General purpose` milestone in the order `ORDER` in `PROMPT.md` lists, skipping any whose `Depends on #N` isn't closed or in the stack, one phase per iteration, and opens a stack of PRs for review. A change to indexing, search, ranking or the CLI's output runs the history benchmark before its PR, and a loss on any repository parks it; its PR gets the `eval` label.
 
 - `PROMPT.md`: the router. It reads the queue from GitHub issues and routes each iteration to one phase file.
 - `phases/`: `restack → setup → plan → implement → pr → ci → review → review-fix → complete`. Planning and TDD use the superpowers skills.
 - Review runs in CI: `.github/workflows/claude.yml` runs the lenses when a PR opens and on each `@claude review this PR` comment, and posts one `## Blind peer review` comment with the verdict. The loop waits for that comment on the head commit, answers each round in a PR comment, pushes its fixes and comments `@claude review this PR`, for up to two re-reviews. If CI doesn't review, the loop runs `blind-peer-review:check` locally and posts the result. The plugin chooses the lenses, so tuning the review means changing the plugin pin in `claude.yml`.
-- `run.sh`: launches or resumes the loop from the runner worktree `~/repos/codecite-worktrees/ralph-loop`.
+- `run.sh`: launches or resumes the loop from the runner worktree `~/repos/codecite-worktrees/ralph-loop`, and exports `RG` (a ripgrep binary) for the history benchmark.
 - `wait-ci.sh` and `wait-review.sh`: after each push, sleep a minute, then wait for every non-review workflow on that commit, or for claude[bot]'s review of it. `request-review.sh` posts the one `@claude review this PR at head <sha>` request the loop uses; `wait-review.sh` calls it when a head has no request. `tests/wait-review.test.sh` tests `wait-review.sh` against a stub `gh` and runs in CI as `ralph-test`. A verdict read from a comment is advice: the review is a model reading untrusted PR content, and the owner still reviews before merging. `ci` fixes failures from the log the script prints and pushes again (up to 3 attempts).
 
 ## Run
