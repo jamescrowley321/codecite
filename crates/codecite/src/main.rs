@@ -200,16 +200,17 @@ exact text."
         #[arg(long)]
         allow_stale: bool,
     },
-    /// Check a spec citation: whether it resolves, what it points at, and
-    /// findings for one that doesn't.
+    /// Check a citation: whether it resolves, what it points at, and, for
+    /// a spec, findings for one that doesn't.
     #[command(after_long_help = "Examples:
   codecite cite identity \"RFC 9449 §4.3\"
+  codecite cite app \"app@0123456:README.md#install\"
   codecite cite identity \"OIDC Core §3.1.3.7 step 13\" --json")]
     Cite {
         /// The corpus to check against.
         corpus: String,
-        /// A spec citation, as `read` takes it, or a Markdown link whose
-        /// text is a citation and whose target is a spec URL with an
+        /// Any citation `read` takes, or a Markdown link whose text is a
+        /// spec citation and whose target is a spec URL with an
         /// anchor: `[OIDC Core §3.1.3.6](https://openid.net/specs/…#IDTokenValidation)`.
         citation: String,
         /// Print the result as JSON.

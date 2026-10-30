@@ -102,10 +102,10 @@ pub enum Error {
         text: String,
     },
 
-    /// `cite` and `requirements` take spec citations, and the text is a
-    /// code citation.
+    /// `requirements` takes spec citations, and the text names lines of a
+    /// file or fetched document.
     #[error(
-        "{text:?} is a code citation; cite and requirements take spec citations, and read reads code citations"
+        "{text:?} is not a spec citation; requirements takes spec citations, and read and cite take any citation"
     )]
     NotASpecCitation {
         /// The text as given.
