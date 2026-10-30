@@ -222,11 +222,9 @@ version; one whose document also has an older version pinned carries
 `· older version pinned` on its line, and its JSON lists them in `older_versions` (see
 [Diff a spec's versions](#diff-a-specs-versions)).
 
-Specs and code are ranked separately and then merged, so code that repeats a
-term doesn't bury the spec section that defines it. When the query names a
-symbol, code keeps the top slots and the best spec sections take the last few;
-otherwise the results alternate, spec first. `--only spec` or `--only code`
-searches one kind.
+Code, prose and specs are ranked together, in one score order, so a spec
+section comes above a code chunk only when it scores higher. `--only spec` or
+`--only code` keeps one kind and leaves the order as it is.
 
 ```text
 2 results · quote · indexed 2026-10-20T22:56:30Z
