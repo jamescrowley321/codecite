@@ -8,10 +8,10 @@ use schemars::JsonSchema;
 use serde::Serialize;
 
 use super::Store;
-use super::search::code_citation;
 use crate::{
-    Citation, CitationError, CodeCitation, Error, Result, SectionNumber, SpecAliases, SpecCitation,
-    SpecReference, SpecTarget,
+    AnchorCitation, Citation, CitationError, CodeCitation, CommitSha, ContentHash,
+    DocumentCitation, Error, Pin, Result, SectionNumber, SpecAliases, SpecCitation, SpecReference,
+    SpecTarget,
 };
 
 /// How many lines `read` returns when the caller doesn't say.
@@ -61,14 +61,21 @@ pub const QUOTE_TRUNCATED_INSTRUCTION: &str = "Quote this text exactly, with its
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct ReadResult {
     /// The canonical citation of the text, always with its pinned version:
-    /// `repo@<full sha>:path#L10-L42`, or
+    /// `repo@<full sha>:path#L10-L42`, `doc@sha256:<12 hex>#L3-L8`, or
     /// `doc@sha256:<12 hex>#section-4.3[/step-2]`.
     pub citation: String,
-    /// `code` for lines of a file, `section` or `step` for a spec.
+    /// `code` for lines of a file, `document` for lines of a fetched
+    /// document, `section` for a heading's whole span or a spec section,
+    /// `step` for a spec step.
     pub kind: String,
-    /// A spec section's heading; a step has its section's.
+    /// A section's heading; a spec step has its section's.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// The heading's anchor, without `#`, when the lines are one heading's
+    /// whole span in a file or fetched document: `…#install` reads them
+    /// too. Spec results have none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor: Option<String>,
     /// A spec section's or step's requirement keywords, such as `MUST`.
     /// Code has none.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -109,6 +116,9 @@ impl fmt::Display for ReadResult {
         if let Some(title) = &self.title {
             write!(f, " · {title}")?;
         }
+        if let Some(anchor) = &self.anchor {
+            write!(f, " · #{anchor}")?;
+        }
         if let Some(strength) = self.strength.as_ref().filter(|s| !s.is_empty()) {
             write!(f, " · {}", strength.join(", "))?;
         }
@@ -141,6 +151,20 @@ pub(super) struct SourceRow {
     pub(super) indexed_at: String,
 }
 
+/// A file or fetched document with stored text, whose lines a read cites.
+struct TextDocument {
+    id: i64,
+    /// What a line span follows in a citation: `app@<full sha>:path` or
+    /// `notes@sha256:<12 hex>`.
+    cited: String,
+    text: String,
+    /// For a repository file, whether it differed from the commit.
+    dirty: Option<bool>,
+    /// What lines that are not one heading's whole span are: `code` or
+    /// `document`.
+    kind: &'static str,
+}
+
 /// A spec section or step row.
 struct SpecChunk {
     id: i64,
@@ -153,8 +177,10 @@ struct SpecChunk {
 impl Store {
     /// Reads the text `citation` points at.
     ///
-    /// `citation` is a canonical code or spec citation, or a spec citation
-    /// as people write it (`RFC 9449 §4.3`, `OIDC Core §3.1.3.7 step 13`, a
+    /// `citation` is a canonical code, document or spec citation, a heading
+    /// named by its anchor (`app@<sha>:README.md#install`,
+    /// `notes@sha256:<12 hex>#install`), or a spec citation as people write
+    /// it (`RFC 9449 §4.3`, `OIDC Core §3.1.3.7 step 13`, a
     /// spec URL), with the corpus's document aliases. A spec citation that
     /// names no version reads the current one, and one that names no
     /// document reads the one current document that has its section and
@@ -176,11 +202,12 @@ impl Store {
         let canonical = match text.parse() {
             Ok(Citation::Code(c)) => return self.read_code(&c, options),
             Ok(Citation::Spec(c)) => return self.read_spec(&c, options),
-            // Reading a fetched document's lines lands with its stored text;
-            // until then it is the invalid spec citation it always was.
-            Ok(Citation::Document(_)) => CitationError::MissingSection,
+            Ok(Citation::Document(c)) => return self.read_document(text, &c, options),
             Err(e) => e,
         };
+        if let Ok(anchor) = text.parse::<AnchorCitation>() {
+            return self.read_anchor(&anchor, options);
+        }
         match SpecReference::parse(text, &self.aliases()?) {
             Ok(Some(reference)) => self.read_reference(text, &reference, options),
             Ok(None) => match canonical {
@@ -209,49 +236,89 @@ impl Store {
 
     /// Reads lines of a code file.
     fn read_code(&self, c: &CodeCitation, options: &ReadOptions) -> Result<ReadResult> {
-        let versions = self.sources(c.repo(), false)?;
-        if versions.is_empty() {
-            return Err(Error::UnknownSource {
-                name: c.repo().into(),
-                known: self.source_names(false)?,
-            });
-        }
-        // A citation may abbreviate the commit, as git does.
-        let Some(source) = versions
-            .iter()
-            .find(|s| s.revision.starts_with(c.commit().as_str()))
-        else {
-            return Err(Error::UnknownVersion {
-                name: c.repo().into(),
-                version: c.commit().to_string(),
-                known: versions
-                    .iter()
-                    .map(|s| format!("{}@{}", s.name, s.revision))
-                    .collect(),
+        let (source, file) = self.repository_file(c.repo(), c.commit(), c.path())?;
+        let lines = c.lines();
+        self.read_lines(&source, &file, lines.start(), lines.end(), options)
+    }
+
+    /// Reads lines of a fetched document's stored text. A spec stores
+    /// none: it is cited by section, so its lines are the invalid spec
+    /// citation they always were.
+    fn read_document(
+        &self,
+        text: &str,
+        c: &DocumentCitation,
+        options: &ReadOptions,
+    ) -> Result<ReadResult> {
+        let source = self.document_version(c.doc(), c.hash())?;
+        let Some(document) = self.fetched_text(&source)? else {
+            return Err(Error::BadCitation {
+                text: text.into(),
+                source: CitationError::MissingSection,
             });
         };
-        let row: Option<(Option<String>, bool)> = self
+        let lines = c.lines();
+        self.read_lines(&source, &document, lines.start(), lines.end(), options)
+    }
+
+    /// Reads the heading an anchor names: its section's lines in a file or
+    /// fetched document, or the spec section with that anchor.
+    fn read_anchor(&self, a: &AnchorCitation, options: &ReadOptions) -> Result<ReadResult> {
+        let (source, document) = match (a.pin(), a.path()) {
+            (Pin::Commit(commit), Some(path)) => self.repository_file(a.source(), commit, path)?,
+            (Pin::Hash(hash), _) => {
+                let source = self.document_version(a.source(), hash)?;
+                match self.fetched_text(&source)? {
+                    Some(document) => (source, document),
+                    None => {
+                        let target = SpecTarget::Anchor(a.anchor().into());
+                        return self.read_target(&source, &target, None, options);
+                    }
+                }
+            }
+            // A commit pin always has a path: the parser requires one.
+            (Pin::Commit(_), None) => {
+                return Err(Error::NotACitation {
+                    text: a.to_string(),
+                });
+            }
+        };
+        let span: Option<(u32, u32)> = self
             .conn
             .query_row(
-                "SELECT text, dirty FROM document WHERE source_id = ?1 AND path = ?2",
-                params![source.id, c.path()],
+                "SELECT start_line, end_line FROM chunk
+                 WHERE document_id = ?1 AND kind = 'section' AND anchor = ?2
+                 ORDER BY id LIMIT 1",
+                params![document.id, a.anchor()],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()?;
-        let Some((text, dirty)) = row else {
-            return Err(Error::NoSuchFile {
-                repo: format!("{}@{}", source.name, c.commit()),
-                path: c.path().into(),
-                candidates: self.same_file_name(source.id, c.path())?,
+        let Some((start, end)) = span else {
+            return Err(Error::NoSuchAnchor {
+                candidates: self.nearest_anchors(&document, a.anchor())?,
+                document: document.cited,
+                anchor: a.anchor().into(),
             });
         };
-        let text = text.ok_or_else(|| Error::InvalidCorpus {
-            path: self.path.clone(),
-            reason: format!("it holds no text for {}; re-run codecite index", c.path()),
-        })?;
-        let (start, end) = (c.lines().start(), c.lines().end());
-        let citation = code_citation(&source.name, &source.revision, c.path(), start, end);
-        let lines = file_lines(&text);
+        self.read_lines(&source, &document, start, end, options)
+    }
+
+    /// Reads lines `start` to `end` of a file or fetched document. Lines
+    /// that are one heading's whole span carry its title and anchor.
+    fn read_lines(
+        &self,
+        source: &SourceRow,
+        document: &TextDocument,
+        start: u32,
+        end: u32,
+        options: &ReadOptions,
+    ) -> Result<ReadResult> {
+        let citation = if start == end {
+            format!("{}#L{start}", document.cited)
+        } else {
+            format!("{}#L{start}-L{end}", document.cited)
+        };
+        let lines = file_lines(&document.text);
         let count = u32::try_from(lines.len()).unwrap_or(u32::MAX);
         if end > count {
             return Err(Error::LinesPastEnd {
@@ -259,44 +326,182 @@ impl Store {
                 lines: count,
             });
         }
+        let heading: Option<(Option<String>, String)> = self
+            .conn
+            .query_row(
+                "SELECT title, anchor FROM chunk
+                 WHERE document_id = ?1 AND kind = 'section' AND anchor IS NOT NULL
+                   AND start_line = ?2 AND end_line = ?3
+                 ORDER BY id LIMIT 1",
+                params![document.id, start, end],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let kind = if heading.is_some() {
+            "section"
+        } else {
+            document.kind
+        };
+        let (title, anchor) = heading.map_or((None, None), |(t, a)| (t, Some(a)));
         let cited = &lines[start as usize - 1..end as usize];
         let (text, truncated) = cap(cited, options.max_lines);
+        let older_versions = match document.dirty {
+            Some(_) => None,
+            None => self.older_versions(&source.name, source.id)?,
+        };
         Ok(ReadResult {
             citation,
-            kind: "code".into(),
-            title: None,
+            kind: kind.into(),
+            title,
+            anchor,
             strength: None,
             license_class: source.license_class.clone(),
             indexed_at: source.indexed_at.clone(),
-            dirty: Some(dirty),
+            dirty: document.dirty,
             text,
             truncated,
             instruction: instruction(&source.license_class, truncated),
-            older_versions: None,
+            older_versions,
         })
+    }
+
+    /// The source `repo` at `commit`, which a citation may abbreviate as
+    /// git does, and its file at `path`.
+    fn repository_file(
+        &self,
+        repo: &str,
+        commit: &CommitSha,
+        path: &str,
+    ) -> Result<(SourceRow, TextDocument)> {
+        let versions = self.sources(repo, false)?;
+        if versions.is_empty() {
+            return Err(Error::UnknownSource {
+                name: repo.into(),
+                known: self.source_names(false)?,
+            });
+        }
+        let known = versions
+            .iter()
+            .map(|s| format!("{}@{}", s.name, s.revision))
+            .collect();
+        let Some(source) = versions
+            .into_iter()
+            .find(|s| s.revision.starts_with(commit.as_str()))
+        else {
+            return Err(Error::UnknownVersion {
+                name: repo.into(),
+                version: commit.to_string(),
+                known,
+            });
+        };
+        let row: Option<(i64, Option<String>, bool)> = self
+            .conn
+            .query_row(
+                "SELECT id, text, dirty FROM document WHERE source_id = ?1 AND path = ?2",
+                params![source.id, path],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?;
+        let Some((id, text, dirty)) = row else {
+            return Err(Error::NoSuchFile {
+                repo: format!("{}@{commit}", source.name),
+                path: path.into(),
+                candidates: self.same_file_name(source.id, path)?,
+            });
+        };
+        let text = text.ok_or_else(|| Error::InvalidCorpus {
+            path: self.path.clone(),
+            reason: format!("it holds no text for {path}; re-run codecite index"),
+        })?;
+        let cited = format!("{}@{}:{path}", source.name, source.revision);
+        let document = TextDocument {
+            id,
+            cited,
+            text,
+            dirty: Some(dirty),
+            kind: "code",
+        };
+        Ok((source, document))
+    }
+
+    /// The version of the document `doc` whose content hash starts with
+    /// `hash`.
+    fn document_version(&self, doc: &str, hash: &ContentHash) -> Result<SourceRow> {
+        let versions = self.sources(doc, true)?;
+        if versions.is_empty() {
+            return Err(Error::UnknownSource {
+                name: doc.into(),
+                known: self.source_names(true)?,
+            });
+        }
+        let known = versions.iter().map(pinned).collect();
+        versions
+            .into_iter()
+            .find(|s| s.revision.starts_with(hash.as_str()))
+            .ok_or_else(|| Error::UnknownVersion {
+                name: doc.into(),
+                version: format!("sha256:{hash}"),
+                known,
+            })
+    }
+
+    /// A fetched document version's stored text, or `None` for a spec,
+    /// which stores none.
+    fn fetched_text(&self, source: &SourceRow) -> Result<Option<TextDocument>> {
+        let row: Option<(i64, Option<String>)> = self
+            .conn
+            .query_row(
+                "SELECT id, text FROM document WHERE source_id = ?1 ORDER BY id LIMIT 1",
+                [source.id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        Ok(row.and_then(|(id, text)| {
+            Some(TextDocument {
+                id,
+                cited: pinned(source),
+                text: text?,
+                dirty: None,
+                kind: "document",
+            })
+        }))
+    }
+
+    /// The anchors in `document` that share the longest start with
+    /// `wanted`, as anchor citations; none when no anchor shares any.
+    fn nearest_anchors(&self, document: &TextDocument, wanted: &str) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT anchor FROM chunk
+             WHERE document_id = ?1 AND kind = 'section' AND anchor IS NOT NULL
+             ORDER BY id",
+        )?;
+        let anchors = stmt.query_map([document.id], |row| row.get::<_, String>(0))?;
+        let mut scored = Vec::new();
+        for anchor in anchors {
+            let anchor = anchor?;
+            let shared = anchor
+                .chars()
+                .zip(wanted.chars())
+                .take_while(|(a, b)| a == b)
+                .count();
+            if shared > 0 {
+                scored.push((std::cmp::Reverse(shared), anchor));
+            }
+        }
+        // A stable sort keeps document order among equals.
+        scored.sort_by_key(|s| s.0);
+        Ok(scored
+            .into_iter()
+            .take(MAX_CANDIDATES)
+            .map(|(_, anchor)| format!("{}#{anchor}", document.cited))
+            .collect())
     }
 
     /// Reads a canonical spec citation, at the version its hash names.
     fn read_spec(&self, c: &SpecCitation, options: &ReadOptions) -> Result<ReadResult> {
-        let versions = self.sources(c.doc(), true)?;
-        if versions.is_empty() {
-            return Err(Error::UnknownSource {
-                name: c.doc().into(),
-                known: self.source_names(true)?,
-            });
-        }
-        let Some(source) = versions
-            .iter()
-            .find(|s| s.revision.starts_with(c.hash().as_str()))
-        else {
-            return Err(Error::UnknownVersion {
-                name: c.doc().into(),
-                version: format!("sha256:{}", c.hash()),
-                known: versions.iter().map(pinned).collect(),
-            });
-        };
+        let source = self.document_version(c.doc(), c.hash())?;
         let target = SpecTarget::Section(c.section().clone());
-        self.read_target(source, &target, c.step(), options)
+        self.read_target(&source, &target, c.step(), options)
     }
 
     /// Reads a spec citation as people write it.
@@ -392,6 +597,7 @@ impl Store {
             citation,
             kind: if step.is_some() { "step" } else { "section" }.into(),
             title: chunk.title,
+            anchor: None,
             strength: Some(
                 chunk
                     .strength
@@ -528,8 +734,9 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// The section of a document version whose `column` (`number` or
-    /// `anchor`) is `value`.
+    /// The spec section of a document version whose `column` (`number` or
+    /// `anchor`) is `value`. A generic document's headings have no number,
+    /// so they are never one.
     fn section(&self, source_id: i64, column: &str, value: &str) -> Result<Option<SpecChunk>> {
         Ok(self
             .conn
@@ -538,6 +745,7 @@ impl Store {
                     "SELECT c.id, c.number, c.title, c.strength, c.text
                      FROM chunk c JOIN document d ON d.id = c.document_id
                      WHERE d.source_id = ?1 AND c.kind = 'section' AND c.{column} = ?2
+                       AND c.number IS NOT NULL
                      ORDER BY c.id LIMIT 1"
                 ),
                 params![source_id, value],
@@ -570,7 +778,8 @@ impl Store {
     ) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT c.number FROM chunk c JOIN document d ON d.id = c.document_id
-             WHERE d.source_id = ?1 AND c.kind = 'section' ORDER BY c.id",
+             WHERE d.source_id = ?1 AND c.kind = 'section' AND c.number IS NOT NULL
+             ORDER BY c.id",
         )?;
         let numbers = stmt.query_map([source.id], |row| row.get::<_, String>(0))?;
         let want = wanted.parts();
@@ -1336,6 +1545,224 @@ pub fn validate() {{
         assert_eq!(
             f.ok(&format!("app@{HEAD}:src/lib.rs#L1")).older_versions,
             None
+        );
+    }
+
+    /// Ten lines of Markdown: `# Notes` over lines 1-3, `## Install`
+    /// over 4-8, then two lines no section holds.
+    const NOTES: &str = "# Notes\n\nIntro.\n## Install\n\nRun it.\nThen check.\n\nfree\nlast\n";
+    const NOTES_HASH: &str = "9a9b00000000000000000000000000000000000000000000000000000000beef";
+
+    fn heading<'a>(anchor: &'a str, title: &'a str, lines: (u32, u32)) -> ChunkRecord<'a> {
+        ChunkRecord {
+            kind: "section",
+            start_line: lines.0,
+            end_line: lines.1,
+            text: "",
+            number: None,
+            anchor: Some(anchor),
+            title: Some(title),
+            parent: None,
+            strength: &[],
+            symbol: None,
+        }
+    }
+
+    fn markdown<'a>(path: &'a str, dirty: bool) -> DocumentRecord<'a> {
+        DocumentRecord {
+            path,
+            language: Some("markdown"),
+            content_hash: path.as_bytes(),
+            size_bytes: 1,
+            dirty,
+            text: Some(NOTES),
+            chunks: vec![
+                heading("notes", "Notes", (1, 3)),
+                heading("install", "Install", (4, 8)),
+            ],
+        }
+    }
+
+    /// A corpus with a repository README and a fetched generic document
+    /// `notes`, both the same Markdown, and RFC 9449 as a spec.
+    fn documents() -> Fixture {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("docs.db");
+        let mut store = Store::open_read_write(&path).unwrap();
+        let app = store
+            .upsert_source(&source("app", "local", HEAD, true))
+            .unwrap();
+        store
+            .write_document(app, &markdown("README.md", false))
+            .unwrap();
+        let notes = store
+            .upsert_source(&source("notes", "document", NOTES_HASH, true))
+            .unwrap();
+        store
+            .write_document(notes, &markdown("notes", false))
+            .unwrap();
+        let rfc = store
+            .upsert_source(&source("rfc9449", "document", RFC9449, true))
+            .unwrap();
+        store
+            .write_document(
+                rfc,
+                &spec(
+                    "rfc9449",
+                    vec![
+                        section(
+                            "4.3",
+                            "checking-dpop-proofs",
+                            "Checking DPoP Proofs",
+                            "4.3.  Checking",
+                        ),
+                        section("A", "appendix-A", "Acknowledgements", "Appendix A."),
+                    ],
+                ),
+            )
+            .unwrap();
+        store.set_indexed_at(30).unwrap();
+        drop(store);
+        Fixture {
+            store: Store::open_read_only(&path).unwrap(),
+            _dir: dir,
+        }
+    }
+
+    #[test]
+    fn a_document_citation_reads_lines_of_its_stored_text() {
+        let f = documents();
+        let r = f.ok("notes@sha256:9a9b00000000#L3-L6");
+        assert_eq!(r.citation, "notes@sha256:9a9b00000000#L3-L6");
+        assert_eq!(r.kind, "document");
+        assert_eq!(r.text, "Intro.\n## Install\n\nRun it.");
+        assert_eq!((r.title, r.anchor, r.dirty), (None, None, None));
+        assert_eq!(r.license_class, "quote");
+        assert!(r.instruction.is_some());
+
+        let err = f.read("notes@sha256:9a9b00000000#L9-L11").unwrap_err();
+        assert!(
+            matches!(&err, Error::LinesPastEnd { citation, lines: 10 }
+                if citation == "notes@sha256:9a9b00000000#L9-L11"),
+            "{err:?}"
+        );
+        assert!(matches!(
+            f.read("notes@sha256:000000000000#L1"),
+            Err(Error::UnknownVersion { .. })
+        ));
+        assert!(matches!(
+            f.read("nope@sha256:9a9b00000000#L1"),
+            Err(Error::UnknownSource { .. })
+        ));
+        // A spec has no stored text to cite lines of.
+        assert!(matches!(
+            f.read("rfc9449@sha256:1a2b3c4d5e6f#L1"),
+            Err(Error::BadCitation { .. })
+        ));
+    }
+
+    #[test]
+    fn lines_that_span_a_section_carry_its_title_and_anchor() {
+        let f = documents();
+        let r = f.ok("notes@sha256:9a9b00000000#L4-L8");
+        assert_eq!(r.kind, "section");
+        assert_eq!(r.title.as_deref(), Some("Install"));
+        assert_eq!(r.anchor.as_deref(), Some("install"));
+        let r = f.ok("app@0123456:README.md#L1-L3");
+        assert_eq!(r.kind, "section");
+        assert_eq!(r.anchor.as_deref(), Some("notes"));
+        assert_eq!(r.dirty, Some(false));
+        // Lines outside any section, or not a section's whole span, stay
+        // lines of a file.
+        let r = f.ok("app@0123456:README.md#L9-L10");
+        assert_eq!((r.kind.as_str(), r.anchor), ("code", None));
+        assert_eq!(f.ok("app@0123456:README.md#L4-L7").kind, "code");
+    }
+
+    #[test]
+    fn an_anchor_reads_its_sections_lines() {
+        let f = documents();
+        let r = f.ok("app@0123456:README.md#install");
+        assert_eq!(r.citation, format!("app@{HEAD}:README.md#L4-L8"));
+        assert_eq!(r.kind, "section");
+        assert_eq!(r.title.as_deref(), Some("Install"));
+        assert_eq!(r.anchor.as_deref(), Some("install"));
+        assert_eq!(r.text, "## Install\n\nRun it.\nThen check.\n");
+        assert_eq!(r.dirty, Some(false));
+
+        let r = f.ok("notes@sha256:9a9b00000000#notes");
+        assert_eq!(r.citation, "notes@sha256:9a9b00000000#L1-L3");
+        assert_eq!(r.kind, "section");
+        assert_eq!(r.text, "# Notes\n\nIntro.");
+        // The anchor read and the lines read are the same read.
+        assert_eq!(r, f.ok("notes@sha256:9a9b00000000#L1-L3"));
+    }
+
+    #[test]
+    fn a_missing_anchor_names_the_document_and_the_nearest() {
+        let f = documents();
+        let err = f.read("app@0123456:README.md#instal").unwrap_err();
+        assert_eq!(err.kind(), "no_such_anchor");
+        assert!(
+            matches!(&err, Error::NoSuchAnchor { document, anchor, candidates }
+                if document == &format!("app@{HEAD}:README.md")
+                    && anchor == "instal"
+                    && candidates == &[format!("app@{HEAD}:README.md#install")]),
+            "{err:?}"
+        );
+        let err = f.read("notes@sha256:9a9b00000000#zzz").unwrap_err();
+        assert!(
+            matches!(&err, Error::NoSuchAnchor { document, candidates, .. }
+                if document == "notes@sha256:9a9b00000000" && candidates.is_empty()),
+            "{err:?}"
+        );
+        assert!(matches!(
+            f.read("app@0123456:NOPE.md#install"),
+            Err(Error::NoSuchFile { .. })
+        ));
+    }
+
+    #[test]
+    fn a_spec_documents_anchor_reads_its_section() {
+        let f = documents();
+        let r = f.ok("rfc9449@sha256:1a2b3c4d5e6f#checking-dpop-proofs");
+        assert_eq!(r.citation, "rfc9449@sha256:1a2b3c4d5e6f#section-4.3");
+        assert_eq!(r.kind, "section");
+        let err = f
+            .read("rfc9449@sha256:1a2b3c4d5e6f#appendix-A")
+            .unwrap_err();
+        assert!(matches!(err, Error::UncitableSection { .. }), "{err:?}");
+        // A generic document's headings have no numbers to cite.
+        let err = f.read("notes@sha256:9a9b00000000#section-4").unwrap_err();
+        assert!(
+            matches!(&err, Error::NoSuchSection { section, candidates, .. }
+                if section == "4" && candidates.is_empty()),
+            "{err:?}"
+        );
+        let err = f.read("rfc9449@sha256:1a2b3c4d5e6f#nowhere").unwrap_err();
+        assert!(
+            matches!(&err, Error::NoSuchSection { section, .. } if section == "#nowhere"),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn an_anchor_shows_in_both_forms() {
+        let f = documents();
+        let mut r = f.ok("notes@sha256:9a9b00000000#install");
+        assert_eq!(serde_json::to_value(&r).unwrap()["anchor"], "install");
+        r.indexed_at = "2026-10-20T06:00:00Z".into();
+        assert_eq!(
+            r.to_string(),
+            "notes@sha256:9a9b00000000#L4-L8
+section · Install · #install · quote · indexed 2026-10-20T06:00:00Z
+
+## Install
+
+Run it.
+Then check.
+
+"
         );
     }
 }

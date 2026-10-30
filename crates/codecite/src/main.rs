@@ -1631,6 +1631,7 @@ app@0123456789ab:src/b.rs#L1-L5 · method callback · source · quote · indexed
             citation: "app@0123456:a.md#L1-L2".into(),
             kind: "code".into(),
             title: None,
+            anchor: None,
             strength: None,
             license_class: "adapt".into(),
             indexed_at: "2026-10-20T06:00:00Z".into(),

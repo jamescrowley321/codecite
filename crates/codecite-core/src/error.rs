@@ -170,6 +170,23 @@ pub enum Error {
         candidates: Vec<String>,
     },
 
+    /// The file or fetched document has no heading with this anchor.
+    #[error(
+        "{} has no heading #{anchor}; {}",
+        escape_controls(document),
+        list_of("nearest", candidates)
+    )]
+    NoSuchAnchor {
+        /// The pinned file or document: `app@<sha>:README.md` or
+        /// `notes@sha256:1a2b3c4d5e6f`.
+        document: String,
+        /// The anchor asked for, without `#`.
+        anchor: String,
+        /// The anchors that share the longest start with it, as pinned
+        /// citations.
+        candidates: Vec<String>,
+    },
+
     /// The section exists, but its number, like an appendix's `A.1`, has no
     /// canonical citation form, so no citation could read it back.
     #[error("{document} section {section} has no canonical citation form yet")]
@@ -263,6 +280,7 @@ impl Error {
             Error::UnknownVersion { .. } => "unknown_version",
             Error::AmbiguousDocument { .. } => "ambiguous_document",
             Error::NoSuchSection { .. } => "no_such_section",
+            Error::NoSuchAnchor { .. } => "no_such_anchor",
             Error::UncitableSection { .. } => "uncitable_section",
             Error::NoSuchStep { .. } => "no_such_step",
             Error::NoSuchFile { .. } => "no_such_file",
@@ -283,6 +301,7 @@ impl Error {
             | Error::UnknownVersion { known, .. } => known,
             Error::AmbiguousDocument { candidates, .. }
             | Error::NoSuchSection { candidates, .. }
+            | Error::NoSuchAnchor { candidates, .. }
             | Error::NoSuchStep { candidates, .. }
             | Error::NoSuchFile { candidates, .. }
             | Error::NoSuchSymbol { candidates, .. } => candidates,
@@ -500,6 +519,16 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "rfc9449@sha256:1a2b3c4d5e6f#section-4.3 has no step 14; nearest: rfc9449@sha256:1a2b3c4d5e6f#section-4.3/step-12"
+        );
+        let err = Error::NoSuchAnchor {
+            document: "app@0123abc:README.md".into(),
+            anchor: "instal".into(),
+            candidates: vec!["app@0123abc:README.md#install".into()],
+        };
+        assert_eq!(err.kind(), "no_such_anchor");
+        assert_eq!(
+            err.to_string(),
+            "app@0123abc:README.md has no heading #instal; nearest: app@0123abc:README.md#install"
         );
         let err = Error::NoSuchFile {
             repo: "app@0123abc".into(),
