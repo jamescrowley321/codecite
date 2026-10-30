@@ -69,6 +69,13 @@ labels, so nobody can tune them toward one corpus.
 The rule from the general-purpose design: a ranking or indexing change that
 loses on any repository doesn't merge.
 
+`codecite-bench --assist` times `codecite assist` instead: a grep call per
+labelled query with its text as the pattern and one with its first word as
+a symbol, three runs each, the fastest counting. It reports the median and
+95th percentile time and the share of calls that printed a block.
+`experiments/assist-latency/` runs it on the retrieval corpus against a
+p95 guardrail of 150 ms.
+
 ## Layout
 
 | Path | What |

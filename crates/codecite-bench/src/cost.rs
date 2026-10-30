@@ -48,7 +48,7 @@ impl Cost {
 }
 
 /// The `p` quantile of sorted values, 0 for none.
-fn percentile(sorted: &[f64], p: f64) -> f64 {
+pub fn percentile(sorted: &[f64], p: f64) -> f64 {
     if sorted.is_empty() {
         return 0.0;
     }
@@ -125,7 +125,7 @@ fn run_accepting(
 }
 
 /// The fastest of [`RUNS`] runs. Bytes are the same every run.
-fn fastest(run: impl Fn() -> anyhow::Result<(u64, f64)>) -> anyhow::Result<(u64, f64)> {
+pub fn fastest(run: impl Fn() -> anyhow::Result<(u64, f64)>) -> anyhow::Result<(u64, f64)> {
     let mut best: Option<(u64, f64)> = None;
     for _ in 0..RUNS {
         let run = run()?;
