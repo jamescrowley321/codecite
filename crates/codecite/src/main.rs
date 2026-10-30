@@ -268,6 +268,28 @@ exact text."
         #[arg(long)]
         allow_stale: bool,
     },
+    /// Print what the corpus knows about an agent's own grep or glob call
+    /// that the call's result does not show, for a hook to attach to it.
+    /// Never fails: on any error it prints nothing and exits 0.
+    #[command(after_long_help = "Examples:
+  codecite assist myrepo --tool grep --input '{\"pattern\": \"validate_token\"}'
+  rg -l 'logout.*token' | codecite assist myrepo --tool grep --input '{\"pattern\": \"logout.*token\"}'
+  codecite assist myrepo --tool glob --input '{\"pattern\": \"**/*logout*.py\"}' < /dev/null
+Stdin, when it is not a terminal, is the tool's output: hits in files it names are left out.
+Set CODECITE_ASSIST_DEBUG=1 to see on stderr why nothing was printed.")]
+    Assist {
+        /// The corpus to look in.
+        corpus: String,
+        /// The agent tool that was called.
+        #[arg(long, value_enum)]
+        tool: assist::Tool,
+        /// The tool call's input as JSON: `pattern`, and optionally `path`.
+        #[arg(long)]
+        input: String,
+        /// The most bytes to print; lines that don't fit are left out whole.
+        #[arg(long, default_value_t = 2048)]
+        max_bytes: usize,
+    },
     /// List the normative statements that differ between two pinned
     /// versions of a spec document: added, removed, changed, or changed in
     /// strength, with both versions' citations.
@@ -453,6 +475,15 @@ fn main() -> anyhow::Result<()> {
             json,
             allow_stale,
         } => context(&corpus, &path, root.as_deref(), stdin, allow_stale, json),
+        Command::Assist {
+            corpus,
+            tool,
+            input,
+            max_bytes,
+        } => {
+            assist(&corpus, tool, &input, max_bytes);
+            Ok(())
+        }
         Command::Diff {
             corpus,
             document,
@@ -654,6 +685,41 @@ fn context(
         allow_stale,
     })?;
     to_stdout(|out| write_context(out, &found, json))
+}
+
+/// `codecite assist`: prints the block for one grep or glob call, or
+/// nothing. A hook runs it on every call, so it never fails: an error
+/// prints nothing, or, with `CODECITE_ASSIST_DEBUG` set, the error on
+/// stderr.
+fn assist(corpus: &str, tool: assist::Tool, input: &str, max_bytes: usize) {
+    use std::io::{IsTerminal as _, Read as _, Write as _};
+
+    let block = (|| -> anyhow::Result<String> {
+        let input = assist::ToolInput::parse(input)?;
+        // A terminal on stdin means no tool output was piped in; reading it
+        // would wait for the user.
+        let mut output = String::new();
+        let stdin = std::io::stdin();
+        if !stdin.is_terminal() {
+            // Lossy, so output that is not UTF-8 still names its paths.
+            let mut bytes = Vec::new();
+            stdin.lock().read_to_end(&mut bytes)?;
+            output = String::from_utf8_lossy(&bytes).into_owned();
+        }
+        let dirs = project_dirs()?;
+        let store = Store::open_corpus(dirs.data_dir(), corpus)?;
+        assist::run(&store, corpus, tool, &input, &output, max_bytes)
+    })();
+    match block {
+        Ok(block) => {
+            let _ = std::io::stdout().lock().write_all(block.as_bytes());
+        }
+        Err(e) => {
+            if std::env::var_os("CODECITE_ASSIST_DEBUG").is_some() {
+                eprintln!("codecite assist: {e:#}");
+            }
+        }
+    }
 }
 
 /// `codecite diff`: opens the corpus read-only and prints how two pinned
