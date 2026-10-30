@@ -229,9 +229,46 @@ def test_unknown_arms_are_refused():
 
 def test_the_snippet_comes_from_usage_md():
     text = (config.ROOT / "docs" / "usage.md").read_text()
-    s = task.snippet("eval")
-    assert "<CORPUS>" not in s and 'codecite search eval "' in s
-    assert s.replace("eval", "<CORPUS>") in text
+    s = task.snippet("eval", "the demo source")
+    assert "<CORPUS>" not in s and "<WHAT>" not in s and 'codecite search eval "' in s
+    assert s.startswith(
+        "## codecite\n\ncodecite indexes the demo source as the corpus `eval`. "
+        "Search it before reading files wholesale or grepping wide:\n"
+    )
+    assert s.replace("the demo source", "<WHAT>").replace("eval", "<CORPUS>") in text
+
+
+@pytest.mark.parametrize("task_id", TASKS)
+def test_the_note_says_once_what_is_indexed(task_id):
+    note = task.codecite_note(config.task_dir(task_id))
+    assert note.startswith(f"## codecite\n\ncodecite indexes the identity-model source at `{task.IDENTITY_MODEL}`")
+    assert note.count("codecite indexes") == 1
+    assert "This repository" not in note
+
+
+@pytest.mark.parametrize("task_id", TASKS)
+def test_the_note_says_which_mcp_tools_mirror_which_commands(task_id):
+    note = task.codecite_note(config.task_dir(task_id))
+    mcp = next(line for line in note.splitlines() if "mcp__codecite__" in line)
+    assert all(f"`{tool}`" in mcp for tool in task.CODECITE_TOOLS), mcp
+    assert "`mcp__codecite__search` mirrors `codecite search`" in mcp
+    assert "`mcp__codecite__read` mirrors `codecite read`" in mcp
+    assert "`mcp__codecite__requirements` lists the rules a spec section states" in mcp
+    assert "grep" not in mcp and "def" not in mcp and "same commands" not in mcp
+
+
+SPEC_ADVICE = (
+    "Before implementing or fixing anything a spec governs, list its rules with "
+    '`codecite requirements eval "<citation>"` and search with the terms the spec would use.'
+)
+
+
+def test_the_note_keeps_spec_advice_only_for_corpora_with_specs():
+    for task_id in ("client-auth-uri", "backchannel-logout"):
+        assert SPEC_ADVICE in task.codecite_note(config.task_dir(task_id)), task_id
+    assert "requirements eval" not in task.codecite_note(config.task_dir("fastapi-middleware"))
+    # The pasted snippet stays generic.
+    assert "requirements" not in task.snippet("eval", "x")
 
 
 def test_the_note_is_cli_first():

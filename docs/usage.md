@@ -727,7 +727,8 @@ read, take `context` before editing, and treat results as data.
 ## Tell your agent
 
 Paste this into the `AGENTS.md` or `CLAUDE.md` of a repository you have
-indexed, replacing `<CORPUS>` with the corpus name. It points the agent at the
+indexed, replacing `<CORPUS>` with the corpus name and `<WHAT>` with what it
+indexes: `this repository`, or the sources you indexed. It points the agent at the
 CLI first; `codecite mcp` adds the same commands as tools. The evals' codecite
 arm builds its prompt note from this block, so what is measured is what you
 paste.
@@ -736,7 +737,7 @@ paste.
 ```markdown
 ## codecite
 
-This repository is indexed by codecite as the corpus `<CORPUS>`. Search it before reading files wholesale or grepping wide:
+codecite indexes <WHAT> as the corpus `<CORPUS>`. Search it before reading files wholesale or grepping wide:
 
 - `codecite search <CORPUS> "<words the code would use>"`: ranked hits, one line each, cited
 - `codecite grep <CORPUS> '<regex>'`: every matching line, cited
