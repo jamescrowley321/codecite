@@ -1,30 +1,30 @@
 {
   "all": {
-    "mrr": 0.2739538239538239,
+    "mrr": 0.33342352092352096,
     "queries": 44,
-    "recall_at_1": 0.18181818181818182,
+    "recall_at_1": 0.25,
     "recall_at_10": 0.5681818181818182
   },
   "classes": {
     "history-issue": {
-      "mrr": 0.2371527777777778,
+      "mrr": 0.31101190476190477,
       "queries": 16,
-      "recall_at_1": 0.1875,
-      "recall_at_10": 0.4375
+      "recall_at_1": 0.25,
+      "recall_at_10": 0.5
     },
     "history-title": {
-      "mrr": 0.2949829931972789,
+      "mrr": 0.3462301587301587,
       "queries": 28,
-      "recall_at_1": 0.17857142857142858,
-      "recall_at_10": 0.6428571428571429
+      "recall_at_1": 0.25,
+      "recall_at_10": 0.6071428571428571
     }
   },
   "engine": "codecite",
   "groups": {
     "history": {
-      "mrr": 0.2739538239538239,
+      "mrr": 0.33342352092352096,
       "queries": 44,
-      "recall_at_1": 0.18181818181818182,
+      "recall_at_1": 0.25,
       "recall_at_10": 0.5681818181818182
     }
   },
@@ -32,7 +32,7 @@
     {
       "class": "history-title",
       "id": "codecite-pr188-title",
-      "rank": 8,
+      "rank": 9,
       "text": "docs: drop the cloud-session queue now that issues are worked locally",
       "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite-index/src/test_server.rs#L67-L74"
     },
@@ -74,7 +74,7 @@
     {
       "class": "history-title",
       "id": "codecite-pr167-title",
-      "rank": 6,
+      "rank": 3,
       "text": "feat(mcp): add a requirements tool that lists every rule governing a spec section",
       "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:docs/superpowers/specs/2026-10-17-identity-corpus-design.md#L21-L40"
     },
@@ -88,7 +88,7 @@
     {
       "class": "history-title",
       "id": "codecite-pr169-title",
-      "rank": 6,
+      "rank": 3,
       "text": "ci: bump blind-peer-review to v3.12.1",
       "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:.github/workflows/blind-peer-review.yml#L1-L60"
     },
@@ -116,7 +116,7 @@
     {
       "class": "history-issue",
       "id": "codecite-pr164-issue",
-      "rank": null,
+      "rank": 7,
       "text": "feat(index): stem spec text and drop query stopwords\n\nPart of #95. This is follow-up 1 of `docs/superpowers/specs/2026-10-23-hybrid-retrieval-design.md`.",
       "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:docs/superpowers/specs/2026-10-20-ab-eval-harness-design.md#L40-L49"
     },
@@ -125,21 +125,21 @@
       "id": "codecite-pr148-title",
       "rank": 1,
       "text": "fix(ralph): wait for the @claude review comment instead of the removed Merge Gate",
-      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:ralph/README.md#L1-L9"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:.github/workflows/claude.yml#L1-L60"
     },
     {
       "class": "history-issue",
       "id": "codecite-pr148-issue",
       "rank": 1,
       "text": "fix(ralph): wait for the @claude review comment instead of the removed Merge Gate\n\n#145 removes `.github/workflows/blind-peer-review.yml`. That deletes the OpenRouter lens jobs and their Merge Gate, and leaves `claude.yml` as the only PR review. Ralph still waits on the deleted workflow, in `ralph/wait-review.sh`, `ralph/phases/review.md`, `ralph/PROMPT.md` and `ralph/README.md`. So a restarted",
-      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:ralph/README.md#L1-L9"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:.github/workflows/claude.yml#L1-L60"
     },
     {
       "class": "history-title",
       "id": "codecite-pr151-title",
-      "rank": 3,
+      "rank": 1,
       "text": "fix(ci): make the @claude review wait for its lens agents before it posts",
-      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:ralph/README.md#L1-L9"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:.github/workflows/claude.yml#L1-L60"
     },
     {
       "class": "history-title",
@@ -165,14 +165,14 @@
     {
       "class": "history-title",
       "id": "codecite-pr141-title",
-      "rank": 7,
+      "rank": 4,
       "text": "feat(core): resolve spec citations with codecite cite",
       "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite-core/src/store/search.rs#L532-L535"
     },
     {
       "class": "history-issue",
       "id": "codecite-pr141-issue",
-      "rank": 10,
+      "rank": 6,
       "text": "feat(core): resolve spec citations with codecite cite\n\n`codecite cite <citation>` in `codecite-core` and the CLI: resolve a spec citation and report what it found.",
       "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite-bench/src/main.rs#L20-L36"
     },
@@ -188,7 +188,7 @@
       "id": "codecite-pr147-issue",
       "rank": null,
       "text": "feat(evals): add a spec-question task where the agent doesn't know the spec's wording\n\nEvery eval task so far is a code task that names its symbols, and there grep is already fast and precise (#93). codecite's case is spec retrieval: an agent that has to find and cite an OAuth/OIDC requirement without knowing the words the RFC uses.",
-      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:docs/superpowers/specs/2026-10-20-ab-eval-harness-design.md#L62-L112"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:evals/retrieval/queries.toml#L361-L420"
     },
     {
       "class": "history-title",
@@ -221,30 +221,30 @@
     {
       "class": "history-title",
       "id": "codecite-pr136-title",
-      "rank": 6,
+      "rank": 4,
       "text": "feat(evals): label spec questions in an agent's words with closed answers",
       "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite-index/src/manifest.rs#L333-L340"
     },
     {
       "class": "history-issue",
       "id": "codecite-pr136-issue",
-      "rank": 9,
+      "rank": 3,
       "text": "feat(evals): label spec questions in an agent's words with closed answers for the spec-question task\n\n#104's task needs at least 20 spec questions, asked the way an agent asks them, each with a closed-form answer and the spec sections that support it. The questions are data. They need no harness, so they can be labelled now while #111 and #104's task wait.",
       "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite-bench/src/answer.rs#L5-L24"
     },
     {
       "class": "history-title",
       "id": "codecite-pr137-title",
-      "rank": 5,
+      "rank": 6,
       "text": "feat(search): add an exact and regex grep over indexed chunks",
-      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:docs/superpowers/plans/2026-10-20-search-corpus.md#L1808-L1869"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite-core/migrations/0004_read.sql#L1-L11"
     },
     {
       "class": "history-issue",
       "id": "codecite-pr137-issue",
-      "rank": 4,
+      "rank": 1,
       "text": "feat(search): add an exact and regex grep over indexed chunks\n\nBM25 `search` is weak at literal strings: an exact claim name like `\"jti\"`, an error message, a header name, or a pattern such as `token_type_hint=\\w+`. Agents have `rg` for their own checkout, but not for the specs and pinned repositories codecite indexes, and `rg` gives no citations.",
-      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:docs/design.md#L304-L335"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite-core/src/store/read.rs#L599-L603"
     },
     {
       "class": "history-title",
@@ -298,7 +298,7 @@
     {
       "class": "history-title",
       "id": "codecite-pr126-title",
-      "rank": 8,
+      "rank": null,
       "text": "docs: describe running issues in Claude Code cloud sessions",
       "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:docs/design.md#L5-L9"
     },
@@ -326,16 +326,16 @@
     {
       "class": "history-title",
       "id": "codecite-pr120-title",
-      "rank": 3,
+      "rank": 4,
       "text": "docs: correct install, release and eval docs after the security and Inspect merges",
       "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:docs/superpowers/plans/2026-10-23-security-baseline.md#L298-L324"
     },
     {
       "class": "history-title",
       "id": "codecite-pr122-title",
-      "rank": 2,
+      "rank": 1,
       "text": "ci: check only vulnerabilities in dependency review, leaving licenses to cargo-deny",
-      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:docs/superpowers/plans/2026-10-23-security-baseline.md#L132-L179"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:.github/workflows/dependency-review.yml#L1-L41"
     }
   ]
 }
