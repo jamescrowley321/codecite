@@ -1,0 +1,21 @@
+{
+  "session_id": "00000000-0000-0000-0000-000000000000",
+  "transcript_path": "/home/u/.claude/projects/-home-u-app/00000000-0000-0000-0000-000000000000.jsonl",
+  "cwd": "/home/u/app",
+  "permission_mode": "default",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Grep",
+  "tool_input": {
+    "pattern": "logout.*token",
+    "path": "src",
+    "output_mode": "files_with_matches"
+  },
+  "tool_response": {
+    "mode": "files_with_matches",
+    "filenames": ["src/logout.py"],
+    "numFiles": 1,
+    "totalFiles": 1
+  },
+  "tool_use_id": "toolu_00000000000000000000000",
+  "duration_ms": 12
+}

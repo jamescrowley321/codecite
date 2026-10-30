@@ -253,3 +253,39 @@ fn the_budget_bounds_the_block() {
     let block = String::from_utf8(out.stdout).unwrap();
     assert!(block.len() <= 150, "{block}");
 }
+
+/// Runs assist on a PostToolUse payload Claude Code sent a hook, split the
+/// way the documented hook script splits it: `.tool_input` as `--input`,
+/// `.tool_response` as stdin.
+fn assist_on_payload(demo: &Demo, fixture: &str) -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/assist")
+        .join(fixture);
+    let payload: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+    let tool = match payload["tool_name"].as_str().unwrap() {
+        "Grep" => "grep",
+        "Glob" => "glob",
+        other => panic!("unexpected tool {other}"),
+    };
+    demo.assist(
+        tool,
+        &payload["tool_input"].to_string(),
+        &payload["tool_response"].to_string(),
+    )
+}
+
+#[test]
+fn a_claude_code_grep_payload_leaves_out_its_filenames() {
+    let demo = Demo::new();
+    let block = assist_on_payload(&demo, "claude-grep.json");
+    assert!(!block.contains("src/logout.py"), "{block}");
+    assert!(block.contains(":src/session.py#"), "{block}");
+}
+
+#[test]
+fn a_claude_code_glob_payload_prints_hits() {
+    let demo = Demo::new();
+    let block = assist_on_payload(&demo, "claude-glob.json");
+    assert!(block.contains(":src/session.py#"), "{block}");
+}
