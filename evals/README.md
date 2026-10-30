@@ -62,7 +62,9 @@ labels, so nobody can tune them toward one corpus.
   --locked -p codecite -p codecite-bench`, with ripgrep installed. It writes
   each engine's report, the cost report and `history/results/scorecard.md`.
   A repository whose cost step fails keeps its recall rows; the failure,
-  from `<repo>-cost-failed.txt`, is a row of the cost table.
+  from `<repo>.cost-failed.txt`, is a row of the cost table, and it leaves
+  the exit status alone. A cost report that measured no query (all were
+  skipped) shows as `no measured queries`.
 
 The rule from the general-purpose design: a ranking or indexing change that
 loses on any repository doesn't merge.

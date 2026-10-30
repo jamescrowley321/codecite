@@ -12,7 +12,8 @@
 # ripgrep (RG names the program, default `rg`).
 # A repository that fails is reported in the scorecard and the run goes on;
 # one whose cost step fails keeps its recall rows, with the failure under the
-# cost table. The script exits non-zero at the end if any failed.
+# cost table. The script exits non-zero at the end if any repository failed;
+# a failed cost step alone doesn't, since cost is a report, not a gate.
 set -uo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -35,14 +36,20 @@ fi
 failed=0
 for repo in "$@"; do
   dir="$here/$repo"
-  for kind in codecite.json grep.json popular.json cost.json index.txt failed.txt cost-failed.txt; do
+  for kind in codecite.json grep.json popular.json cost.json index.txt failed.txt; do
     rm -f "$results/$repo-$kind"
   done
-  # `fail <why> [cost-failed]`: the second form fails only the cost step.
+  # `.`, not `-`, so no repository's `<repo>-failed.txt` reads as another's.
+  rm -f "$results/$repo.cost-failed.txt"
   fail() {
-    printf '%s\n' "$1" | head -n 1 >"$results/$repo-${2:-failed}.txt"
+    printf '%s\n' "$1" | head -n 1 >"$results/$repo-failed.txt"
     echo "$repo: failed: $1" >&2
     failed=1
+  }
+  # Reported, but leaves the exit status alone.
+  cost_failed() {
+    printf '%s\n' "$1" | head -n 1 >"$results/$repo.cost-failed.txt"
+    echo "$repo: cost failed: $1" >&2
   }
   commit="$(sed -n 's/^commit = "\([0-9a-f]*\)"$/\1/p' "$dir/manifest.toml")"
   url="$(sed -n 's/^url = "\(.*\)"$/\1/p' "$dir/manifest.toml")"
@@ -74,9 +81,9 @@ for repo in "$@"; do
   # The cost report compares with rg over the pinned tree, extracted from
   # the clone so no work-tree state leaks in.
   mkdir -p "$checkout/$repo"
-  git -C "$clone" archive "$commit" | tar -x -C "$checkout/$repo" || { fail "cannot extract $commit" cost-failed; continue; }
+  git -C "$clone" archive "$commit" | tar -x -C "$checkout/$repo" || { cost_failed "cannot extract $commit"; continue; }
   report cost --codecite "$bin/codecite" --rg "${RG:-rg}" --cost "$checkout/$repo" ||
-    fail "codecite-bench failed for cost" cost-failed
+    cost_failed "codecite-bench failed for cost"
 done
 
 # A scorecard that can't be rebuilt is removed, not left standing as this
