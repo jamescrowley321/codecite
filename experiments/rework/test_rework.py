@@ -124,5 +124,79 @@ class ParseReview(unittest.TestCase):
         self.assertIsNone(rework.lens_name("Summary"))
 
 
+def lens(name, verdict="PASS", must=None, should=None, nit=None, total=None):
+    return LensResult(name, verdict, must, should, nit, total)
+
+
+EIGHT = list(rework.LENSES)
+
+
+class Rounds(unittest.TestCase):
+    def test_a_combined_block_then_pass_is_two_rounds(self):
+        reviews = [
+            ("2026-10-02T00:00:00Z", [lens("Cold Read"), lens("Red Team")]),
+            ("2026-10-01T00:00:00Z", [lens("Cold Read", "BLOCK", 1), lens("Red Team")]),
+        ]
+        rounds = rework.rounds(reviews)
+        self.assertEqual(len(rounds), 2)
+        self.assertEqual(rounds[0][0].verdict, "BLOCK")
+        self.assertEqual(rework.rounds_to_pass(rounds), 2)
+
+    def test_per_lens_comments_start_a_new_round_when_a_lens_repeats(self):
+        reviews = [
+            (f"2026-10-01T00:0{i}:00Z", [lens(name, "BLOCK" if i == 0 else "PASS")])
+            for i, name in enumerate(EIGHT)
+        ]
+        reviews.append(("2026-10-02T00:00:00Z", [lens("Cold Read")]))
+        rounds = rework.rounds(reviews)
+        self.assertEqual([len(r) for r in rounds], [8, 1])
+        self.assertEqual(rework.rounds_to_pass(rounds), 2)
+
+    def test_a_combined_comment_ends_a_per_lens_run(self):
+        reviews = [
+            ("2026-10-01T00:00:00Z", [lens("Cold Read", "BLOCK")]),
+            ("2026-10-02T00:00:00Z", [lens(rework.ALL)]),
+        ]
+        self.assertEqual(len(rework.rounds(reviews)), 2)
+
+    def test_only_block_rounds_never_pass(self):
+        reviews = [
+            ("2026-10-01T00:00:00Z", [lens(rework.ALL, "BLOCK")]),
+            ("2026-10-02T00:00:00Z", [lens(rework.ALL, "BLOCK")]),
+        ]
+        self.assertIsNone(rework.rounds_to_pass(rework.rounds(reviews)))
+
+    def test_no_reviews_is_no_rounds(self):
+        self.assertEqual(rework.rounds([]), [])
+        self.assertIsNone(rework.rounds_to_pass([]))
+
+
+class Violations(unittest.TestCase):
+    def test_spec_and_convention_sum_must_and_should_across_rounds(self):
+        rounds = [
+            [
+                lens("Acceptance Criteria", "BLOCK", 1, 2, 5),
+                lens("Policy & Provenance", "PASS", 0, 1, 3),
+                lens("Cold Read", "PASS", 0, 4, 9),
+            ],
+            [lens("Acceptance Criteria", "PASS", 0, 1, 0)],
+        ]
+        self.assertEqual(
+            rework.violations(rounds), {"spec": 4, "convention": 1, "all": 9}
+        )
+
+    def test_total_stands_in_when_no_severity_is_given(self):
+        rounds = [
+            [
+                lens("Acceptance Criteria", "BLOCK", total=3),
+                lens("Policy & Provenance", "BLOCK", must=1),
+                lens(rework.ALL, "BLOCK"),
+            ]
+        ]
+        self.assertEqual(
+            rework.violations(rounds), {"spec": 3, "convention": 1, "all": 4}
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

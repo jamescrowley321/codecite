@@ -191,3 +191,59 @@ def _listing(text):
                 )
             )
     return results
+
+
+SPEC = "Acceptance Criteria"
+CONVENTION = "Policy & Provenance"
+
+
+def rounds(reviews):
+    """Group `(createdAt, [LensResult])` reviews into rounds, oldest first.
+
+    A combined comment is a round of its own. Per-lens comments in a row form
+    one round, which ends when a lens repeats.
+    """
+    out = []
+    run = None  # the open per-lens round, if any
+    for _, results in sorted(reviews, key=lambda r: r[0]):
+        if not results:
+            continue
+        per_lens = len(results) == 1 and results[0].lens != ALL
+        if not per_lens:
+            out.append(list(results))
+            run = None
+        elif run is not None and results[0].lens not in {r.lens for r in run}:
+            run.append(results[0])
+        else:
+            run = [results[0]]
+            out.append(run)
+    return out
+
+
+def rounds_to_pass(rounds):
+    """The 1-based index of the first round where every lens passed, or None."""
+    for i, results in enumerate(rounds, 1):
+        if all(r.verdict == "PASS" for r in results):
+            return i
+    return None
+
+
+def _findings(result):
+    """MUST + SHOULD findings, or the lens's total when neither is given."""
+    if result.must is None and result.should is None:
+        return result.total or 0
+    return (result.must or 0) + (result.should or 0)
+
+
+def violations(rounds):
+    """Spec, convention and all MUST + SHOULD findings across every round."""
+    counts = {"spec": 0, "convention": 0, "all": 0}
+    for results in rounds:
+        for r in results:
+            n = _findings(r)
+            counts["all"] += n
+            if r.lens == SPEC:
+                counts["spec"] += n
+            elif r.lens == CONVENTION:
+                counts["convention"] += n
+    return counts
