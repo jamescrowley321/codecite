@@ -312,13 +312,10 @@ fn popular_rank(queries: &[Query], query: &Query, depth: u32) -> Vec<String> {
 /// would, rather than failing the run.
 fn search(codecite: &Path, corpus: &str, text: &str, limit: u32) -> anyhow::Result<Vec<String>> {
     let output = Command::new(codecite)
-        .args(["search", corpus, text, "--json", "--allow-stale", "--limit"])
-        .arg(limit.to_string())
+        .args(search_args(corpus, text, limit))
         .output()
         .with_context(|| format!("running {}", codecite.display()))?;
-    if !output.status.success()
-        && String::from_utf8_lossy(&output.stderr).contains("no words to search for")
-    {
+    if !output.status.success() && has_no_words(&output.stderr) {
         return Ok(Vec::new());
     }
     if !output.status.success() {
@@ -328,6 +325,30 @@ fn search(codecite: &Path, corpus: &str, text: &str, limit: u32) -> anyhow::Resu
         );
     }
     citations(&output.stdout).context("parsing codecite search --json")
+}
+
+/// `codecite search`'s arguments. A mined query can start with `--`, so it
+/// follows `--` and is never read as a flag.
+fn search_args(corpus: &str, text: &str, limit: u32) -> Vec<String> {
+    let limit = limit.to_string();
+    [
+        "search",
+        "--json",
+        "--allow-stale",
+        "--limit",
+        &limit,
+        "--",
+        corpus,
+        text,
+    ]
+    .map(str::to_owned)
+    .to_vec()
+}
+
+/// Whether `codecite search` failed because the query has no words. The
+/// message is codecite's own, pinned by `crates/codecite/tests/search.rs`.
+fn has_no_words(stderr: &[u8]) -> bool {
+    String::from_utf8_lossy(stderr).contains("no words to search for")
 }
 
 /// The citations in what `codecite search --json` prints,
@@ -383,6 +404,21 @@ mod tests {
                 "rfc9449@sha256:1a2b3c4d5e6f#section-4.3",
             ])
         );
+    }
+
+    #[test]
+    fn query_text_that_looks_like_a_flag_is_searched_as_text() {
+        let args = search_args("c", "--path=src fix the parser", 10);
+        let dashes = args.iter().position(|a| a == "--").unwrap();
+        assert_eq!(&args[dashes + 1..], ["c", "--path=src fix the parser"]);
+    }
+
+    #[test]
+    fn only_a_query_with_no_words_counts_as_no_results() {
+        assert!(has_no_words(
+            b"error: the query has no words to search for\n"
+        ));
+        assert!(!has_no_words(b"error: no corpus named c\n"));
     }
 
     #[test]

@@ -2,8 +2,8 @@
 # `codecite-history-mine` (evals/src/codecite_evals/history.py). Frozen:
 # never edit by hand; remining writes a new version.
 #
-# version: 2
-# commit: 27e8c8766b685f6f865324b088c6fffeffd391be
+# version: 3
+# commit: bacc362abbf527134278c1fc1f793ed59ea4712e
 # mined: 2026-10-29
 
 corpus = "history-identity-stack"
@@ -19,8 +19,15 @@ source = "https://github.com/jamescrowley321/identity-stack/pull/504"
 id = "identity-stack-pr486-title"
 class = "history-title"
 text = "fix: store Document.created_at as aware UTC and install CI deps from uv.lock"
-answers = [".github/workflows/ci.yml"]
+answers = [".github/workflows/ci.yml", "backend/app/models/document.py"]
 source = "https://github.com/jamescrowley321/identity-stack/pull/486"
+
+[[query]]
+id = "identity-stack-pr473-title"
+class = "history-title"
+text = "End-to-end Ory validation with a real provider-signed JWT, and canonical-model RBAC for providers without authorization claims"
+answers = [".github/workflows/ci.yml", ".github/workflows/codeql.yml", ".github/workflows/scorecard.yml", ".github/workflows/security.yml", "backend/.env.example", "backend/app/dependencies/rbac.py", "backend/tests/e2e/conftest.py", "backend/tests/integration/conftest.py", "backend/tests/unit/test_rbac_dependencies.py", "docker-compose.test.yml", "infra/ory/README.md"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/473"
 
 [[query]]
 id = "identity-stack-pr468-title"
@@ -54,7 +61,7 @@ source = "https://github.com/jamescrowley321/identity-stack/pull/463"
 id = "identity-stack-pr410-title"
 class = "history-title"
 text = "fix(infra): repair descope provider drift + mint TF-owned CI management key"
-answers = ["infra/access_key.tf", "infra/github.tf", "infra/variables.tf"]
+answers = ["backend/tests/e2e/helpers/auth.py", "infra/access_key.tf", "infra/github.tf", "infra/variables.tf"]
 source = "https://github.com/jamescrowley321/identity-stack/pull/410"
 
 [[query]]
@@ -250,8 +257,15 @@ source = "https://github.com/jamescrowley321/identity-stack/pull/431"
 id = "identity-stack-pr394-title"
 class = "history-title"
 text = "feat(backend): provider-aware logout with Ory RP-initiated path (ORY-5.1, FR-17)"
-answers = ["backend/app/routers/auth.py", "backend/tests/unit/test_auth_router.py", "frontend/src/components/layout/UserMenu.tsx"]
+answers = ["backend/.env.example", "backend/app/routers/auth.py", "backend/tests/unit/test_auth_router.py", "frontend/src/components/layout/UserMenu.tsx"]
 source = "https://github.com/jamescrowley321/identity-stack/pull/394"
+
+[[query]]
+id = "identity-stack-pr392-title"
+class = "history-title"
+text = "feat(frontend): source useRBAC/useTenants from canonical GET /api/identity (ORY-4.3, FR-16)"
+answers = ["frontend/src/components/layout/TenantSwitcher.tsx", "frontend/src/components/layout/__tests__/TenantSwitcher.test.tsx", "frontend/src/hooks/__tests__/useRBAC.test.ts", "frontend/src/hooks/__tests__/useTenants.test.ts", "frontend/src/hooks/useRBAC.ts", "frontend/src/hooks/useTenants.ts", "frontend/src/main.tsx"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/392"
 
 [[query]]
 id = "identity-stack-pr433-title"
@@ -275,11 +289,18 @@ answers = ["frontend/package.json"]
 source = "https://github.com/jamescrowley321/identity-stack/pull/444"
 
 [[query]]
-id = "identity-stack-pr425-title"
+id = "identity-stack-pr391-title"
 class = "history-title"
-text = "fix: repair the E2E gate, and the four Descope calls it was hiding"
-answers = ["backend/tests/e2e/test_identity_repository_ui.py"]
-source = "https://github.com/jamescrowley321/identity-stack/pull/425"
+text = "feat(frontend): provider-driven oidcConfig via VITE_OIDC_* with VITE_DESCOPE_* fallback (ORY-4.2)"
+answers = ["docs/environment-variables.md", "frontend/.env.example", "frontend/src/main.tsx", "frontend/src/vite-env.d.ts"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/391"
+
+[[query]]
+id = "identity-stack-pr388-title"
+class = "history-title"
+text = "chore(deps): land safe majors from #382 (jsdom 30 + jest-dom 7); defer TypeScript 7"
+answers = [".github/dependabot.yml", "frontend/package.json"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/388"
 
 [[query]]
 id = "identity-stack-pr379-title"
@@ -294,3 +315,17 @@ class = "history-issue"
 text = "security: rotate ORY_WORKSPACE_API_KEY (generated in-session during Epic 1 IaC)\n\nThe Ory Network workspace API key stored in the `ORY_WORKSPACE_API_KEY` GitHub secret was generated during an assistant session while bootstrapping the Epic 1 Ory IaC (PR #370). Per that PR's notes it must be **rotated**."
 answers = ["infra/ory/README.md"]
 source = "https://github.com/jamescrowley321/identity-stack/pull/379"
+
+[[query]]
+id = "identity-stack-pr372-title"
+class = "history-title"
+text = "Ory canonical wiring + JIT provisioning + /api/identity (Epic 3)"
+answers = ["backend/app/dependencies/identity.py", "backend/app/models/identity/tenant.py", "backend/app/routers/protected.py"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/372"
+
+[[query]]
+id = "identity-stack-pr371-title"
+class = "history-title"
+text = "Provider-driven backend token validation + Ory OIDC provider (Epic 2)"
+answers = ["backend/.env.example", "backend/app/middleware/auth.py", "backend/app/middleware/claims.py", "backend/app/middleware/factory.py", "backend/tests/unit/test_gateway_claims_middleware.py"]
+source = "https://github.com/jamescrowley321/identity-stack/pull/371"

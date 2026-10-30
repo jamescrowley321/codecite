@@ -2,11 +2,32 @@
 # `codecite-history-mine` (evals/src/codecite_evals/history.py). Frozen:
 # never edit by hand; remining writes a new version.
 #
-# version: 2
-# commit: f5ef938a1cdaea0ed49cf3630f0d28319db8863d
+# version: 3
+# commit: f7209b41a00bdb8e93ff280c10609278631c8624
 # mined: 2026-10-29
 
 corpus = "history-codecite"
+
+[[query]]
+id = "codecite-pr188-title"
+class = "history-title"
+text = "docs: drop the cloud-session queue now that issues are worked locally"
+answers = ["AGENTS.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/188"
+
+[[query]]
+id = "codecite-pr188-issue"
+class = "history-issue"
+text = "Cloud execution queue: the order to work cloud-ready issues\n\nThe order for Claude Code cloud sessions working the `cloud-ready` issues. Each session takes one issue and follows `AGENTS.md` (\"Working an issue end to end\"): open a PR against `main`, answer the CI and lens reviews, and add the `eval` label when the change touches indexing, search, ranking or CLI output. James merges."
+answers = ["AGENTS.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/188"
+
+[[query]]
+id = "codecite-pr173-title"
+class = "history-title"
+text = "feat(evals): run Claude Code on the subscription always, pi on OpenRouter behind a switch"
+answers = ["AGENTS.md"]
+source = "https://github.com/jamescrowley321/codecite/pull/173"
 
 [[query]]
 id = "codecite-pr165-title"
@@ -25,7 +46,7 @@ source = "https://github.com/jamescrowley321/codecite/pull/168"
 [[query]]
 id = "codecite-pr168-issue"
 class = "history-issue"
-text = "feat(mcp): diff a spec's pinned versions to show what changed in its rules\n\nProse rewording with no normative change is left out, or listed apart."
+text = "feat(mcp): diff a spec's pinned versions to show what changed in its rules\n\nIn the quick calibration of backchannel-logout, gpt-6.1-sol failed all 5 runs on one rule: Back-Channel Logout 1.0 errata set 1 made `exp` REQUIRED (§2.4), and the version before it didn't. Models learn from both versions. identity-model's own `validate_logout_token` follows the older one too. The corpus already pins both"
 answers = ["README.md", "crates/codecite-core/src/lib.rs", "crates/codecite-core/src/store.rs", "crates/codecite-core/src/store/read.rs", "crates/codecite-core/src/store/search.rs", "crates/codecite-index/src/index.rs", "crates/codecite-mcp/src/server.rs", "crates/codecite/src/main.rs", "crates/codecite/tests/mcp.rs", "docs/usage.md"]
 source = "https://github.com/jamescrowley321/codecite/pull/168"
 
@@ -39,7 +60,7 @@ source = "https://github.com/jamescrowley321/codecite/pull/167"
 [[query]]
 id = "codecite-pr167-issue"
 class = "history-issue"
-text = "feat(mcp): add a requirements tool that lists every rule governing a spec section\n\nThe agents didn't search and miss; they didn't know there was a rule to look for. A better search engine doesn't reach an agent that never searches. What would reach it is one call that lays out every rule that applies."
+text = "feat(mcp): add a requirements tool that lists every rule governing a spec section\n\nThe harder eval tasks fail because agents never look rules up, not because search ranks badly. In the quick calibrations, every failed backchannel-logout run missed a rule in Back-Channel Logout 1.0 §2.4: - gpt-6.1-sol never required `exp`. - Haiku never checked that the logout event's value is a JSON object."
 answers = ["README.md", "crates/codecite-core/Cargo.toml", "crates/codecite-core/src/citation/written.rs", "crates/codecite-core/src/error.rs", "crates/codecite-core/src/lib.rs", "crates/codecite-core/src/store.rs", "crates/codecite-core/src/store/read.rs", "crates/codecite-mcp/src/server.rs", "crates/codecite/src/main.rs", "crates/codecite/tests/mcp.rs", "docs/usage.md"]
 source = "https://github.com/jamescrowley321/codecite/pull/167"
 
@@ -88,7 +109,7 @@ source = "https://github.com/jamescrowley321/codecite/pull/148"
 [[query]]
 id = "codecite-pr148-issue"
 class = "history-issue"
-text = "fix(ralph): wait for the @claude review comment instead of the removed Merge Gate\n\n1. `wait-review.sh` waits for the newest comment starting `## Blind peer review` that was posted after the head commit. It prints `FOUND <PASS|BLOCK>` from that comment's `Verdict:` line and writes the comment to the out file. 2. The review phase asks for a re-review by commenting `@claude review this PR` after its"
+text = "fix(ralph): wait for the @claude review comment instead of the removed Merge Gate\n\n#145 removes `.github/workflows/blind-peer-review.yml`. That deletes the OpenRouter lens jobs and their Merge Gate, and leaves `claude.yml` as the only PR review. Ralph still waits on the deleted workflow, in `ralph/wait-review.sh`, `ralph/phases/review.md`, `ralph/PROMPT.md` and `ralph/README.md`. So a restarted"
 answers = [".github/workflows/ci.yml", ".github/workflows/claude.yml", "AGENTS.md", "ralph/PROMPT.md", "ralph/README.md", "ralph/phases/ci.md", "ralph/phases/pr.md", "ralph/phases/review-fix.md", "ralph/phases/review.md", "ralph/wait-ci.sh", "ralph/wait-review.sh"]
 source = "https://github.com/jamescrowley321/codecite/pull/148"
 
@@ -186,7 +207,7 @@ source = "https://github.com/jamescrowley321/codecite/pull/136"
 [[query]]
 id = "codecite-pr136-issue"
 class = "history-issue"
-text = "feat(evals): label spec questions in an agent's words with closed answers for the spec-question task\n\nThe questions should not share the spec's distinctive words. \"Can a public client skip authentication at the token endpoint?\" is a good one. \"What does RFC 6749 say about client_secret_basic?\" is not, since a keyword `grep` answers it. This is where codecite should beat a grep baseline, and where"
+text = "feat(evals): label spec questions in an agent's words with closed answers for the spec-question task\n\n#104's task needs at least 20 spec questions, asked the way an agent asks them, each with a closed-form answer and the spec sections that support it. The questions are data. They need no harness, so they can be labelled now while #111 and #104's task wait."
 answers = [".github/workflows/ci.yml", "evals/retrieval/queries.toml"]
 source = "https://github.com/jamescrowley321/codecite/pull/136"
 
@@ -285,26 +306,12 @@ source = "https://github.com/jamescrowley321/codecite/pull/116"
 id = "codecite-pr120-title"
 class = "history-title"
 text = "docs: correct install, release and eval docs after the security and Inspect merges"
-answers = ["AGENTS.md", "README.md"]
+answers = ["AGENTS.md", "README.md", "SECURITY.md"]
 source = "https://github.com/jamescrowley321/codecite/pull/120"
 
 [[query]]
-id = "codecite-pr114-title"
+id = "codecite-pr122-title"
 class = "history-title"
-text = "ci: gate PRs on security scans"
-answers = [".github/workflows/blind-peer-review.yml", ".github/workflows/ci.yml", ".github/workflows/claude.yml"]
-source = "https://github.com/jamescrowley321/codecite/pull/114"
-
-[[query]]
-id = "codecite-pr103-title"
-class = "history-title"
-text = "feat(search): rank specs and code apart so code doesn't bury spec sections"
-answers = ["crates/codecite-core/src/lib.rs", "crates/codecite-core/src/store.rs", "crates/codecite-core/src/store/search.rs", "crates/codecite-mcp/src/server.rs", "crates/codecite/src/main.rs", "docs/usage.md"]
-source = "https://github.com/jamescrowley321/codecite/pull/103"
-
-[[query]]
-id = "codecite-pr103-issue"
-class = "history-issue"
-text = "feat(search): stop code from burying spec sections in mixed corpora\n\nOn a corpus that holds both a library and the specs it implements, code buries the specs. The retrieval benchmark (#94) shows that 65 of 100 top hits are identity-model files. On spec-keyword queries such as `at_hash`, `invalid_grant`, `jwks_uri`, `token_type_hint` and `login_required`, the library code that uses the term"
-answers = ["crates/codecite-core/src/lib.rs", "crates/codecite-core/src/store.rs", "crates/codecite-core/src/store/search.rs", "crates/codecite-mcp/src/server.rs", "crates/codecite/src/main.rs", "docs/usage.md"]
-source = "https://github.com/jamescrowley321/codecite/pull/103"
+text = "ci: check only vulnerabilities in dependency review, leaving licenses to cargo-deny"
+answers = [".github/workflows/dependency-review.yml"]
+source = "https://github.com/jamescrowley321/codecite/pull/122"

@@ -110,11 +110,11 @@ def history_problems(root, evals_dir, base):
             continue
         if remined:
             continue
-        for name in ("manifest.toml", "queries.toml"):
-            path = mined / name
+        for filename in ("manifest.toml", "queries.toml"):
+            path = mined / filename
             current = path.read_text() if path.exists() else None
-            if current != show(root, base, f"{rel}/{name}"):
-                found.append(f"history {mined.name}: {rel}/{name} changed without a new version in queries.toml")
+            if current != show(root, base, f"{rel}/{filename}"):
+                found.append(f"history {name}: {rel}/{filename} changed without a new version in queries.toml")
     return found
 
 

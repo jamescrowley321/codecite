@@ -223,3 +223,40 @@ def test_a_path_holding_a_hash_is_no_answer():
     prs = [pr(1, Change("M", "docs/c#/notes.md"), Change("M", "src/a.py"))]
     _, mined = select_prs(prs, everything_exists, 40)
     assert mined[0].answers == ["src/a.py"]
+
+
+def test_a_heading_line_right_above_the_text_does_not_hide_it():
+    assert issue_text("T", "## Problem\nThe token endpoint fails.") == "T\n\nThe token endpoint fails."
+    assert issue_text("T", "<!-- template\nlines -->\n\n#123 broke login") == "T\n\n#123 broke login"
+
+
+def test_the_closing_issue_must_be_in_the_same_owner_and_repository():
+    from codecite_evals.history import closing_issue
+
+    def ref(number, owner, name):
+        return {"number": number, "repository": {"name": name, "owner": {"login": owner}}}
+
+    assert closing_issue([ref(4, "other", "r"), ref(5, "o", "r")], "o/r") == 5
+    assert closing_issue([ref(4, "other", "r")], "o/r") is None
+    assert closing_issue([], "o/r") is None
+
+
+def test_name_status_paths_are_read_raw_from_nul_separated_output():
+    from codecite_evals.history import parse_name_status
+
+    out = "M\0src/café.py\0R100\0old\tname.py\0new.py\0A\0x.py\0"
+    assert parse_name_status(out) == [
+        Change("M", "src/café.py"),
+        Change("R", "new.py", old_path="old\tname.py"),
+        Change("A", "x.py"),
+    ]
+
+
+def test_a_rebase_merged_pr_spans_all_its_commits():
+    from codecite_evals.history import merged_span
+
+    assert merged_span(2, "Merge pull request #7 from o/b", 7, lambda: 9) == 1
+    assert merged_span(1, "feat: add x (#7)", 7, lambda: 9) == 1
+    # A rebase merge: the merge commit is the PR's last commit of several.
+    assert merged_span(1, "feat: add x", 7, lambda: 3) == 3
+    assert merged_span(1, "feat: add x (#70)", 7, lambda: 1) == 1

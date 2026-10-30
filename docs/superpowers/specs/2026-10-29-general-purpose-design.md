@@ -92,9 +92,9 @@ by. It is free to run, so it runs on every PR.
   benchmark version.
 - **Repositories:** identity-model (Python), identity-stack (Python,
   TypeScript, Terraform), blind-peer-review (JavaScript),
-  terraform-provider-descope (Go) and codecite (Rust). agentic-ppp and
-  personal-blog have too few PRs (1 and 7) and are left out. landman joins as a
-  local run when the owner wants it, with nothing of it committed.
+  terraform-provider-descope (Go) and codecite (Rust). Two of the owner's
+  other repositories have too few PRs and are left out. Another project may be
+  run locally, with nothing of it committed.
 
 **The gate for agent evals**, once goal 6 exists: any correctness loss blocks;
 a median wall-time rise of more than 25% blocks; tokens are reported only. The

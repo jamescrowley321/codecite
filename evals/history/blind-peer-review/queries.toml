@@ -2,7 +2,7 @@
 # `codecite-history-mine` (evals/src/codecite_evals/history.py). Frozen:
 # never edit by hand; remining writes a new version.
 #
-# version: 2
+# version: 3
 # commit: 39e9e62aacec63b9df3416cb355ca40408a31dce
 # mined: 2026-10-29
 
@@ -88,7 +88,7 @@ source = "https://github.com/jamescrowley321/blind-peer-review/pull/126"
 [[query]]
 id = "blind-peer-review-pr126-issue"
 class = "history-issue"
-text = "Lenses instruct CI to read code outside the diff that its tools cannot reach"
+text = "Lenses instruct CI to read code outside the diff that its tools cannot reach\n\n`security`, `edge_case` and `red_team` tell the model to read surrounding code (auth stack, codebase). In CI the only tools are `get_pr_diff` and `get_issue_or_pr_thread`, and `shared_instructions.md` says the model cannot read files outside the diff. An instruction to verify what it cannot see invites invented"
 answers = ["agents/policy.md", "contracts/shared_review_contract.md", "evals/README.md", "evals/fixtures/cold_read_hardcoded_credential/expected.json", "evals/fixtures/owasp_llm_injection_sink/expected.json", "evals/fixtures/owasp_web_xss_headers/expected.json", "evals/fixtures/security_clean_refactor/diff.patch", "evals/lib/harness.mjs", "evals/lib/scorecard.mjs", "evals/validate-fixtures.mjs", "lenses/README.md", "lenses/cold_read.md", "lenses/edge_case.md", "lenses/manifest.json", "lenses/red_team.md", "lenses/security.md"]
 source = "https://github.com/jamescrowley321/blind-peer-review/pull/126"
 
@@ -109,7 +109,7 @@ source = "https://github.com/jamescrowley321/blind-peer-review/pull/123"
 [[query]]
 id = "blind-peer-review-pr123-issue"
 class = "history-issue"
-text = "Lens citations: pinned OWASP citation catalogue (web 2025, LLM 2026, ASI 2026)\n\nEach file records the source URL, retrieval date and source sha256."
+text = "Lens citations: pinned OWASP citation catalogue (web 2025, LLM 2026, ASI 2026)\n\nLens findings name OWASP categories but cite nothing a reader can check. The model cannot fetch sources, so any URL it writes is a guess. Citations must resolve against a pinned, versioned catalogue the project ships."
 answers = ["README.md", "agents/owasp_llm.md", "agents/owasp_web.md", "docs/security-hardening.md", "evals/fixtures/owasp_web_xss_headers/expected.json", "evals/fixtures/owasp_web_xss_headers/pr-body.md", "lenses/manifest.json", "lenses/owasp_llm.md", "lenses/owasp_web.md", "package.json", "scripts/parse-and-post.cjs"]
 source = "https://github.com/jamescrowley321/blind-peer-review/pull/123"
 

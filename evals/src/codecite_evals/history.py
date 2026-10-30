@@ -23,7 +23,7 @@ from typing import Callable
 
 # Bump when the mining rules change, so a remined file says it is new.
 # 2: release PRs and hub files left out.
-VERSION = 2
+VERSION = 3
 
 LOCKFILES = {"Cargo.lock", "uv.lock", "poetry.lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "go.sum"}
 BOTS = {"dependabot", "renovate", "github-actions"}
@@ -34,10 +34,15 @@ MAX_ANSWERS = 20
 # A file more than this share of the sampled PRs changed (a design doc, a
 # manifest) answers so many queries that naming it beats any search.
 MAX_ANSWER_SHARE = 0.25
-# release-please and similar: a version bump, not a change anyone asked for.
 # ... and at least this many, so a small sample's repeats aren't hubs.
 MIN_HUB_PRS = 3
+# release-please and similar: a version bump, not a change anyone asked for.
 RELEASE = re.compile(r"^chore(\([^)]*\))?!?: release\b", re.IGNORECASE)
+
+# A Markdown heading line (`## Problem`, not `#123`), and an HTML comment,
+# as issue templates leave them.
+HEADING = re.compile(r"^#+\s")
+COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 
 
 @dataclass
@@ -137,9 +142,11 @@ def issue_text(title: str, body: str) -> str:
     """An issue as asked: its title, a blank line, and the first paragraph of
     its body that isn't a heading or a comment, at most 400 characters and
     cut at a word."""
-    for paragraph in (body or "").replace("\r\n", "\n").split("\n\n"):
-        text = " ".join(paragraph.split())
-        if text and not text.startswith(("#", "<!--")):
+    body = COMMENT.sub("", (body or "").replace("\r\n", "\n"))
+    for paragraph in body.split("\n\n"):
+        lines = [line for line in paragraph.split("\n") if not HEADING.match(line)]
+        text = " ".join(" ".join(lines).split())
+        if text:
             break
     else:
         return title
@@ -215,19 +222,48 @@ def gh_json(*args: str):
     return json.loads(run("gh", *args).stdout)
 
 
-def changes(clone: Path, merge: str) -> tuple[str, list[Change]]:
-    """The merge commit's first parent and what it changed against it."""
-    parent = run("git", "rev-parse", f"{merge}^1", cwd=clone).stdout.strip()
+def parse_name_status(out: str) -> list[Change]:
+    """`git diff --name-status -z` output: NUL-separated, with raw paths, so
+    a tab, quote or non-ASCII byte in a path survives."""
+    fields = out.split("\0")
     found = []
-    out = run("git", "diff", "--name-status", "-M", parent, merge, cwd=clone).stdout
-    for line in out.splitlines():
-        parts = line.split("\t")
-        status = parts[0][0]
+    i = 0
+    while i < len(fields) and fields[i]:
+        status = fields[i][0]
         if status in "RC":
-            found.append(Change(status, parts[2], old_path=parts[1]))
+            found.append(Change(status, fields[i + 2], old_path=fields[i + 1]))
+            i += 3
         else:
-            found.append(Change(status, parts[1]))
-    return parent, found
+            found.append(Change(status, fields[i + 1]))
+            i += 2
+    return found
+
+
+def merged_span(parents: int, subject: str, number: int, commits) -> int:
+    """How many first-parent commits the PR spans on the base branch: one for
+    a true merge or a squash (whose subject GitHub ends with `(#<number>)`),
+    else, as a rebase merge, the PR's own commit count (`commits()`)."""
+    if parents > 1 or subject.rstrip().endswith(f"(#{number})"):
+        return 1
+    return commits()
+
+
+def closing_issue(refs: list[dict], repo: str) -> int | None:
+    """The first issue a PR closes in `repo` itself (owner and name)."""
+    owner, name = repo.split("/")
+    for ref in refs:
+        where = ref.get("repository") or {}
+        if where.get("name") == name and (where.get("owner") or {}).get("login") == owner:
+            return ref["number"]
+    return None
+
+
+def changes(clone: Path, merge: str, span: int = 1) -> tuple[str, list[Change]]:
+    """The base the PR's `span` commits sit on, and what they changed
+    against it."""
+    parent = run("git", "rev-parse", f"{merge}~{span}", cwd=clone).stdout.strip()
+    out = run("git", "-c", "core.quotePath=false", "diff", "--name-status", "-z", "-M", parent, merge, cwd=clone).stdout
+    return parent, parse_name_status(out)
 
 
 def mine(repo: str, clone: Path, max_prs: int) -> tuple[str, list[Mined]]:
@@ -249,14 +285,18 @@ def mine(repo: str, clone: Path, max_prs: int) -> tuple[str, list[Mined]]:
             continue
         if is_bot((p.get("author") or {}).get("login", "")):
             continue
-        parent, found = changes(clone, merge)
+        parents, subject = run("git", "log", "-1", "--format=%P%x00%s", merge, cwd=clone).stdout.strip().split("\0", 1)
+        span = merged_span(
+            len(parents.split()), subject, p["number"],
+            lambda: len(gh_json("pr", "view", str(p["number"]), "-R", repo, "--json", "commits")["commits"]),
+        )
+        parent, found = changes(clone, merge, span)
         issue = None
-        same_repo = [
-            i for i in p.get("closingIssuesReferences") or []
-            if (i.get("repository") or {}).get("name", repo.split("/")[1]) == repo.split("/")[1]
-        ]
-        if same_repo:
-            data = gh_json("issue", "view", str(same_repo[0]["number"]), "-R", repo, "--json", "title,body")
+        number = closing_issue(p.get("closingIssuesReferences") or [], repo)
+        viewed = number and run("gh", "issue", "view", str(number), "-R", repo, "--json", "title,body", check=False)
+        # A deleted or transferred issue leaves the PR with its title only.
+        if viewed and viewed.returncode == 0:
+            data = json.loads(viewed.stdout)
             issue = issue_text(data["title"], data.get("body") or "")
         prs.append(PullRequest(p["number"], p["title"], p["url"], (p.get("author") or {}).get("login", ""), parent, found, issue))
         # Enough to sample from: later PRs could only be older than the sample.

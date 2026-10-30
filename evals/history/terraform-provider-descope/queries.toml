@@ -2,8 +2,8 @@
 # `codecite-history-mine` (evals/src/codecite_evals/history.py). Frozen:
 # never edit by hand; remining writes a new version.
 #
-# version: 2
-# commit: 10e672b5be423bef1e888bd999a8f38ec51b7a44
+# version: 3
+# commit: ccebf75b4eb513db9681453ebbcdbcfe68a52fed
 # mined: 2026-10-29
 
 corpus = "history-terraform-provider-descope"
@@ -19,7 +19,7 @@ source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/235
 id = "terraform-provider-descope-pr227-title"
 class = "history-title"
 text = "build(deps): consolidate dependabot updates (github-actions group, go-uuid 1.0.4)"
-answers = ["go.mod"]
+answers = [".github/workflows/codeql.yml", ".github/workflows/scorecard.yml", ".github/workflows/security.yml", "go.mod"]
 source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/227"
 
 [[query]]
@@ -33,7 +33,7 @@ source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/221
 id = "terraform-provider-descope-pr210-title"
 class = "history-title"
 text = "chore(testcleanup): delete leftover testacc- tenants"
-answers = ["tools/testcleanup/main.go"]
+answers = [".github/workflows/codeql.yml", ".github/workflows/scorecard.yml", ".github/workflows/security.yml", "tools/testcleanup/main.go"]
 source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/210"
 
 [[query]]
@@ -224,3 +224,10 @@ class = "history-title"
 text = "docs: add missing docs and update index for v1.0.0"
 answers = ["docs/guides/quickstart.md", "docs/index.md"]
 source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/119"
+
+[[query]]
+id = "terraform-provider-descope-pr117-title"
+class = "history-title"
+text = "fix(release): remove SBOMs from checksums and drop broken Cosign step"
+answers = [".github/workflows/release.yml", ".goreleaser.yml", "release-please-config.json"]
+source = "https://github.com/jamescrowley321/terraform-provider-descope/pull/117"

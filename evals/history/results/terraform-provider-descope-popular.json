@@ -1,9 +1,9 @@
 {
   "all": {
-    "mrr": 0.4278673835125447,
-    "queries": 31,
-    "recall_at_1": 0.3225806451612903,
-    "recall_at_10": 0.7419354838709677
+    "mrr": 0.34939236111111105,
+    "queries": 32,
+    "recall_at_1": 0.125,
+    "recall_at_10": 0.78125
   },
   "classes": {
     "history-issue": {
@@ -13,35 +13,35 @@
       "recall_at_10": 0.0
     },
     "history-title": {
-      "mrr": 0.44212962962962954,
-      "queries": 30,
-      "recall_at_1": 0.3333333333333333,
-      "recall_at_10": 0.7666666666666667
+      "mrr": 0.3606630824372759,
+      "queries": 31,
+      "recall_at_1": 0.12903225806451613,
+      "recall_at_10": 0.8064516129032258
     }
   },
   "engine": "popular",
   "groups": {
     "history": {
-      "mrr": 0.4278673835125447,
-      "queries": 31,
-      "recall_at_1": 0.3225806451612903,
-      "recall_at_10": 0.7419354838709677
+      "mrr": 0.34939236111111105,
+      "queries": 32,
+      "recall_at_1": 0.125,
+      "recall_at_10": 0.78125
     }
   },
   "outcomes": [
     {
       "class": "history-title",
       "id": "terraform-provider-descope-pr235-title",
-      "rank": 1,
+      "rank": 2,
       "text": "fix(deps): bump Go to 1.26.10 and golang.org/x/net to v0.60.0",
-      "top": "popular@0:go.mod#L1"
+      "top": "popular@0:.github/workflows/release.yml#L1"
     },
     {
       "class": "history-title",
       "id": "terraform-provider-descope-pr227-title",
-      "rank": 1,
+      "rank": 2,
       "text": "build(deps): consolidate dependabot updates (github-actions group, go-uuid 1.0.4)",
-      "top": "popular@0:go.mod#L1"
+      "top": "popular@0:.github/workflows/release.yml#L1"
     },
     {
       "class": "history-title",
@@ -53,7 +53,7 @@
     {
       "class": "history-title",
       "id": "terraform-provider-descope-pr210-title",
-      "rank": null,
+      "rank": 3,
       "text": "chore(testcleanup): delete leftover testacc- tenants",
       "top": "popular@0:go.mod#L1"
     },
@@ -88,9 +88,9 @@
     {
       "class": "history-title",
       "id": "terraform-provider-descope-pr196-title",
-      "rank": 1,
+      "rank": 2,
       "text": "fix: bump Go toolchain to 1.26.6 to patch stdlib vulnerabilities",
-      "top": "popular@0:go.mod#L1"
+      "top": "popular@0:.github/workflows/release.yml#L1"
     },
     {
       "class": "history-title",
@@ -109,16 +109,16 @@
     {
       "class": "history-title",
       "id": "terraform-provider-descope-pr185-title",
-      "rank": 1,
+      "rank": 2,
       "text": "fix(deps): bump grpc to v1.82.1 (GO-2026-6061)",
-      "top": "popular@0:go.mod#L1"
+      "top": "popular@0:.github/workflows/release.yml#L1"
     },
     {
       "class": "history-title",
       "id": "terraform-provider-descope-pr181-title",
-      "rank": 1,
+      "rank": 2,
       "text": "chore: tpd CI/security maintenance — deps, govulncheck fix, remove Snyk + Sonar",
-      "top": "popular@0:go.mod#L1"
+      "top": "popular@0:.github/workflows/release.yml#L1"
     },
     {
       "class": "history-title",
@@ -179,14 +179,14 @@
     {
       "class": "history-title",
       "id": "terraform-provider-descope-pr140-title",
-      "rank": 1,
+      "rank": 2,
       "text": "chore: sync upstream and update Go dependencies",
-      "top": "popular@0:go.mod#L1"
+      "top": "popular@0:.github/workflows/release.yml#L1"
     },
     {
       "class": "history-title",
       "id": "terraform-provider-descope-pr139-title",
-      "rank": 4,
+      "rank": 3,
       "text": "chore(deps): bump actions/setup-go to v6.4.0 and github/codeql-action to v4.35.1",
       "top": "popular@0:go.mod#L1"
     },
@@ -244,6 +244,13 @@
       "id": "terraform-provider-descope-pr119-title",
       "rank": 9,
       "text": "docs: add missing docs and update index for v1.0.0",
+      "top": "popular@0:go.mod#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "terraform-provider-descope-pr117-title",
+      "rank": 2,
+      "text": "fix(release): remove SBOMs from checksums and drop broken Cosign step",
       "top": "popular@0:go.mod#L1"
     }
   ]

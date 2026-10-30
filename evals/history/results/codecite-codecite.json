@@ -1,334 +1,341 @@
 {
   "all": {
-    "mrr": 0.35083056478405306,
-    "queries": 43,
-    "recall_at_1": 0.2558139534883721,
-    "recall_at_10": 0.627906976744186
+    "mrr": 0.2739538239538239,
+    "queries": 44,
+    "recall_at_1": 0.18181818181818182,
+    "recall_at_10": 0.5681818181818182
   },
   "classes": {
     "history-issue": {
-      "mrr": 0.38333333333333336,
+      "mrr": 0.2371527777777778,
       "queries": 16,
-      "recall_at_1": 0.3125,
-      "recall_at_10": 0.5625
+      "recall_at_1": 0.1875,
+      "recall_at_10": 0.4375
     },
     "history-title": {
-      "mrr": 0.3315696649029982,
-      "queries": 27,
-      "recall_at_1": 0.2222222222222222,
-      "recall_at_10": 0.6666666666666666
+      "mrr": 0.2949829931972789,
+      "queries": 28,
+      "recall_at_1": 0.17857142857142858,
+      "recall_at_10": 0.6428571428571429
     }
   },
   "engine": "codecite",
   "groups": {
     "history": {
-      "mrr": 0.35083056478405306,
-      "queries": 43,
-      "recall_at_1": 0.2558139534883721,
-      "recall_at_10": 0.627906976744186
+      "mrr": 0.2739538239538239,
+      "queries": 44,
+      "recall_at_1": 0.18181818181818182,
+      "recall_at_10": 0.5681818181818182
     }
   },
   "outcomes": [
     {
       "class": "history-title",
+      "id": "codecite-pr188-title",
+      "rank": 8,
+      "text": "docs: drop the cloud-session queue now that issues are worked locally",
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite-index/src/test_server.rs#L67-L74"
+    },
+    {
+      "class": "history-issue",
+      "id": "codecite-pr188-issue",
+      "rank": null,
+      "text": "Cloud execution queue: the order to work cloud-ready issues\n\nThe order for Claude Code cloud sessions working the `cloud-ready` issues. Each session takes one issue and follows `AGENTS.md` (\"Working an issue end to end\"): open a PR against `main`, answer the CI and lens reviews, and add the `eval` label when the change touches indexing, search, ranking or CLI output. James merges.",
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite-bench/src/main.rs#L101-L202"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr173-title",
+      "rank": null,
+      "text": "feat(evals): run Claude Code on the subscription always, pi on OpenRouter behind a switch",
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:docs/superpowers/specs/2026-10-20-ab-eval-harness-design.md#L135-L151"
+    },
+    {
+      "class": "history-title",
       "id": "codecite-pr165-title",
       "rank": 3,
       "text": "feat: index house rules as a guidance source and push the ones that govern a file",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:crates/codecite-index/src/test_repo.rs#L68-L86"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite-index/src/test_repo.rs#L68-L86"
     },
     {
       "class": "history-title",
       "id": "codecite-pr168-title",
       "rank": 1,
       "text": "feat(mcp): diff a spec's pinned versions to show what changed in its rules",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:crates/codecite/src/main.rs#L208-L221"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite/src/main.rs#L231-L244"
     },
     {
       "class": "history-issue",
       "id": "codecite-pr168-issue",
-      "rank": 1,
-      "text": "feat(mcp): diff a spec's pinned versions to show what changed in its rules\n\nProse rewording with no normative change is left out, or listed apart.",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:crates/codecite-mcp/src/server.rs#L121-L135"
+      "rank": null,
+      "text": "feat(mcp): diff a spec's pinned versions to show what changed in its rules\n\nIn the quick calibration of backchannel-logout, gpt-6.1-sol failed all 5 runs on one rule: Back-Channel Logout 1.0 errata set 1 made `exp` REQUIRED (§2.4), and the version before it didn't. Models learn from both versions. identity-model's own `validate_logout_token` follows the older one too. The corpus already pins both",
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:evals/lib/judge.mjs#L131-L150"
     },
     {
       "class": "history-title",
       "id": "codecite-pr167-title",
       "rank": 6,
       "text": "feat(mcp): add a requirements tool that lists every rule governing a spec section",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:docs/superpowers/specs/2026-10-17-identity-corpus-design.md#L21-L40"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:docs/superpowers/specs/2026-10-17-identity-corpus-design.md#L21-L40"
     },
     {
       "class": "history-issue",
       "id": "codecite-pr167-issue",
-      "rank": 1,
-      "text": "feat(mcp): add a requirements tool that lists every rule governing a spec section\n\nThe agents didn't search and miss; they didn't know there was a rule to look for. A better search engine doesn't reach an agent that never searches. What would reach it is one call that lays out every rule that applies.",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:crates/codecite-mcp/src/server.rs#L439-L448"
+      "rank": null,
+      "text": "feat(mcp): add a requirements tool that lists every rule governing a spec section\n\nThe harder eval tasks fail because agents never look rules up, not because search ranks badly. In the quick calibrations, every failed backchannel-logout run missed a rule in Back-Channel Logout 1.0 §2.4: - gpt-6.1-sol never required `exp`. - Haiku never checked that the logout event's value is a JSON object.",
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:docs/superpowers/specs/2026-10-21-fast-eval-design.md#L56-L73"
     },
     {
       "class": "history-title",
       "id": "codecite-pr169-title",
-      "rank": 5,
+      "rank": 6,
       "text": "ci: bump blind-peer-review to v3.12.1",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:.github/workflows/blind-peer-review.yml#L1-L60"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:.github/workflows/blind-peer-review.yml#L1-L60"
     },
     {
       "class": "history-title",
       "id": "codecite-pr163-title",
       "rank": 1,
       "text": "feat(mcp): tell agents to search specs in the spec's own terms",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:crates/codecite/src/main.rs#L208-L221"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite/src/main.rs#L231-L244"
     },
     {
       "class": "history-issue",
       "id": "codecite-pr163-issue",
       "rank": null,
       "text": "feat(mcp): tell agents to search specs in the spec's own terms\n\nPart of #95. This is follow-up 2 of `docs/superpowers/specs/2026-10-23-hybrid-retrieval-design.md`, and arm B of its A/B arms.",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:docs/superpowers/specs/2026-10-20-ab-eval-harness-design.md#L153-L184"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:docs/superpowers/specs/2026-10-20-ab-eval-harness-design.md#L153-L184"
     },
     {
       "class": "history-title",
       "id": "codecite-pr164-title",
       "rank": 3,
       "text": "feat(index): stem spec text and drop query stopwords",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:crates/codecite-index/src/test_server.rs#L67-L74"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite-index/src/test_server.rs#L67-L74"
     },
     {
       "class": "history-issue",
       "id": "codecite-pr164-issue",
       "rank": null,
       "text": "feat(index): stem spec text and drop query stopwords\n\nPart of #95. This is follow-up 1 of `docs/superpowers/specs/2026-10-23-hybrid-retrieval-design.md`.",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:docs/superpowers/specs/2026-10-20-ab-eval-harness-design.md#L40-L49"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:docs/superpowers/specs/2026-10-20-ab-eval-harness-design.md#L40-L49"
     },
     {
       "class": "history-title",
       "id": "codecite-pr148-title",
       "rank": 1,
       "text": "fix(ralph): wait for the @claude review comment instead of the removed Merge Gate",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:ralph/README.md#L1-L9"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:ralph/README.md#L1-L9"
     },
     {
       "class": "history-issue",
       "id": "codecite-pr148-issue",
       "rank": 1,
-      "text": "fix(ralph): wait for the @claude review comment instead of the removed Merge Gate\n\n1. `wait-review.sh` waits for the newest comment starting `## Blind peer review` that was posted after the head commit. It prints `FOUND <PASS|BLOCK>` from that comment's `Verdict:` line and writes the comment to the out file. 2. The review phase asks for a re-review by commenting `@claude review this PR` after its",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:ralph/wait-review.sh#L1-L60"
+      "text": "fix(ralph): wait for the @claude review comment instead of the removed Merge Gate\n\n#145 removes `.github/workflows/blind-peer-review.yml`. That deletes the OpenRouter lens jobs and their Merge Gate, and leaves `claude.yml` as the only PR review. Ralph still waits on the deleted workflow, in `ralph/wait-review.sh`, `ralph/phases/review.md`, `ralph/PROMPT.md` and `ralph/README.md`. So a restarted",
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:ralph/README.md#L1-L9"
     },
     {
       "class": "history-title",
       "id": "codecite-pr151-title",
       "rank": 3,
       "text": "fix(ci): make the @claude review wait for its lens agents before it posts",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:ralph/README.md#L1-L9"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:ralph/README.md#L1-L9"
     },
     {
       "class": "history-title",
       "id": "codecite-pr145-title",
       "rank": null,
       "text": "ci: review PRs with the @claude workflow only and drop the OpenRouter lens jobs",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:.github/workflows/blind-peer-review.yml#L1-L60"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:.github/workflows/blind-peer-review.yml#L1-L60"
     },
     {
       "class": "history-title",
       "id": "codecite-pr142-title",
       "rank": null,
       "text": "feat(evals): calibrate new tasks on the baseline arm only and freeze them before their first A/B run",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:evals/lib/workspace.mjs#L206-L250"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:evals/lib/workspace.mjs#L206-L250"
     },
     {
       "class": "history-issue",
       "id": "codecite-pr142-issue",
       "rank": null,
       "text": "feat(evals): calibrate new tasks on the baseline arm only and freeze them before their first A/B run\n\nA new eval task should be hard enough that the arms can differ on correctness: in quick-2, every model but devstral passed `fastapi-middleware` 100% of the time in both arms (#92), so pass rate couldn't separate them. Getting a task to the right difficulty means running it and adjusting it. If we",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:docs/superpowers/specs/2026-10-21-fast-eval-design.md#L7-L24"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:docs/superpowers/specs/2026-10-21-fast-eval-design.md#L7-L24"
     },
     {
       "class": "history-title",
       "id": "codecite-pr141-title",
       "rank": 7,
       "text": "feat(core): resolve spec citations with codecite cite",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:crates/codecite-core/src/store/search.rs#L427-L430"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite-core/src/store/search.rs#L532-L535"
     },
     {
       "class": "history-issue",
       "id": "codecite-pr141-issue",
       "rank": 10,
       "text": "feat(core): resolve spec citations with codecite cite\n\n`codecite cite <citation>` in `codecite-core` and the CLI: resolve a spec citation and report what it found.",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:crates/codecite-bench/src/main.rs#L20-L36"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite-bench/src/main.rs#L20-L36"
     },
     {
       "class": "history-title",
       "id": "codecite-pr147-title",
       "rank": null,
       "text": "feat(evals): add a spec-question task where the agent doesn't know the spec's wording",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:evals/lib/sandbox.mjs#L122-L127"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:evals/lib/sandbox.mjs#L122-L127"
     },
     {
       "class": "history-issue",
       "id": "codecite-pr147-issue",
       "rank": null,
       "text": "feat(evals): add a spec-question task where the agent doesn't know the spec's wording\n\nEvery eval task so far is a code task that names its symbols, and there grep is already fast and precise (#93). codecite's case is spec retrieval: an agent that has to find and cite an OAuth/OIDC requirement without knowing the words the RFC uses.",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:docs/superpowers/specs/2026-10-20-ab-eval-harness-design.md#L62-L112"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:docs/superpowers/specs/2026-10-20-ab-eval-harness-design.md#L62-L112"
     },
     {
       "class": "history-title",
       "id": "codecite-pr140-title",
       "rank": null,
       "text": "feat: find definitions with codecite def and the definition tool",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:crates/codecite-index/src/chunk/code.rs#L274-L374"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite-index/src/chunk/code.rs#L274-L374"
     },
     {
       "class": "history-issue",
       "id": "codecite-pr140-issue",
       "rank": 3,
       "text": "feat: find definitions with codecite def and the definition tool\n\n`codecite def <symbol>` and the MCP `definition` tool, from the tree-sitter symbols written in M2.",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:crates/codecite-index/src/chunk/code.rs#L274-L374"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite-index/src/chunk/code.rs#L274-L374"
     },
     {
       "class": "history-title",
       "id": "codecite-pr139-title",
       "rank": 1,
       "text": "fix(index): index Go and Rust doc comments with the definition they document",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:crates/codecite-index/src/chunk/code.rs#L244-L256"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite-index/src/chunk/code.rs#L244-L256"
     },
     {
       "class": "history-issue",
       "id": "codecite-pr139-issue",
       "rank": 1,
       "text": "fix(index): index Go and Rust doc comments with the definition they document\n\nIn Go and Rust, a function's doc comment is indexed as a separate `window` chunk instead of with the function. For example, the doc comment of Go's `FetchConfiguration` in `go/pkg/discovery/discovery.go` is in the window at L87-L108, and the function's own chunk starts after it.",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:crates/codecite-index/src/chunk/code.rs#L244-L256"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite-index/src/chunk/code.rs#L244-L256"
     },
     {
       "class": "history-title",
       "id": "codecite-pr136-title",
       "rank": 6,
       "text": "feat(evals): label spec questions in an agent's words with closed answers",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:crates/codecite-index/src/manifest.rs#L333-L340"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite-index/src/manifest.rs#L333-L340"
     },
     {
       "class": "history-issue",
       "id": "codecite-pr136-issue",
-      "rank": 2,
-      "text": "feat(evals): label spec questions in an agent's words with closed answers for the spec-question task\n\nThe questions should not share the spec's distinctive words. \"Can a public client skip authentication at the token endpoint?\" is a good one. \"What does RFC 6749 say about client_secret_basic?\" is not, since a keyword `grep` answers it. This is where codecite should beat a grep baseline, and where",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:crates/codecite-core/src/keyword.rs#L8-L36"
+      "rank": 9,
+      "text": "feat(evals): label spec questions in an agent's words with closed answers for the spec-question task\n\n#104's task needs at least 20 spec questions, asked the way an agent asks them, each with a closed-form answer and the spec sections that support it. The questions are data. They need no harness, so they can be labelled now while #111 and #104's task wait.",
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite-bench/src/answer.rs#L5-L24"
     },
     {
       "class": "history-title",
       "id": "codecite-pr137-title",
       "rank": 5,
       "text": "feat(search): add an exact and regex grep over indexed chunks",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:docs/superpowers/plans/2026-10-20-search-corpus.md#L1808-L1869"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:docs/superpowers/plans/2026-10-20-search-corpus.md#L1808-L1869"
     },
     {
       "class": "history-issue",
       "id": "codecite-pr137-issue",
-      "rank": 5,
+      "rank": 4,
       "text": "feat(search): add an exact and regex grep over indexed chunks\n\nBM25 `search` is weak at literal strings: an exact claim name like `\"jti\"`, an error message, a header name, or a pattern such as `token_type_hint=\\w+`. Agents have `rg` for their own checkout, but not for the specs and pinned repositories codecite indexes, and `rg` gives no citations.",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:docs/superpowers/plans/2026-10-20-search-corpus.md#L1808-L1869"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:docs/design.md#L304-L335"
     },
     {
       "class": "history-title",
       "id": "codecite-pr135-title",
       "rank": null,
       "text": "feat(evals): add a back-channel logout task stated as behaviour",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:evals/retrieval/queries.toml#L603-L662"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:evals/retrieval/queries.toml#L603-L662"
     },
     {
       "class": "history-title",
       "id": "codecite-pr131-title",
       "rank": null,
       "text": "fix(evals): label sandbox failures apart from agent timeouts",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:crates/codecite-index/src/manifest.rs#L333-L340"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite-index/src/manifest.rs#L333-L340"
     },
     {
       "class": "history-issue",
       "id": "codecite-pr131-issue",
       "rank": null,
       "text": "fix(evals): label sandbox failures apart from agent timeouts\n\n`evals/inspect/task.py`'s `pi()` catches every exception from the agent's `sb.exec` (since ca62b9b, in #113) and records it as `timed_out`. That's deliberate: retrying infrastructure failures would keep only the runs that survive them and bias the scorecard, the same way retrying timeouts did.",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:evals/lib/score.mjs#L128-L284"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:evals/lib/score.mjs#L128-L284"
     },
     {
       "class": "history-title",
       "id": "codecite-pr132-title",
       "rank": 1,
       "text": "fix(mcp): cap result size in bytes, not only lines",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:crates/codecite-core/src/store/read.rs#L623-L628"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite-core/src/store/read.rs#L623-L628"
     },
     {
       "class": "history-issue",
       "id": "codecite-pr132-issue",
       "rank": 1,
       "text": "fix(mcp): cap result size in bytes, not only lines\n\n`max_lines` and `limit` bound lines and results, but a snippet or read keeps whole lines. One minified or generated file with a 1 MiB line comes back whole even with `max_lines=1`, and `search` can return several such snippets. That floods an agent's context.",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:crates/codecite-core/src/store/read.rs#L623-L628"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:crates/codecite-core/src/store/read.rs#L623-L628"
     },
     {
       "class": "history-title",
       "id": "codecite-pr133-title",
       "rank": null,
       "text": "feat(evals): run the A/B eval in CI as a quick tier on labelled PRs and a full tier on dispatch",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:evals/run.mjs#L172-L196"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:evals/run.mjs#L172-L196"
     },
     {
       "class": "history-issue",
       "id": "codecite-pr133-issue",
       "rank": null,
       "text": "feat(evals): run the A/B eval in CI as a quick tier on labelled PRs and a full tier on dispatch\n\nThe full A/B panel (9 models × 10 epochs × 2 arms, `evals/inspect/panel.sh`) takes one to two hours, so it can't be the loop we check a ranking or CLI change against. Split it into two tiers that share one task and one scorer, and **run both in GitHub Actions**. Issues are now worked by Claude Code",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:evals/run.mjs#L172-L196"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:evals/run.mjs#L172-L196"
     },
     {
       "class": "history-title",
       "id": "codecite-pr126-title",
-      "rank": 7,
+      "rank": 8,
       "text": "docs: describe running issues in Claude Code cloud sessions",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:docs/design.md#L5-L9"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:docs/design.md#L5-L9"
     },
     {
       "class": "history-title",
       "id": "codecite-pr124-title",
       "rank": null,
       "text": "chore: set codecite up for Claude Code cloud sessions",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:evals/agents/claude.mjs#L100-L108"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:evals/agents/claude.mjs#L100-L108"
     },
     {
       "class": "history-title",
       "id": "codecite-pr123-title",
       "rank": 3,
       "text": "fix(ralph): wait on every required workflow and read the lens Merge Gate",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:.github/workflows/blind-peer-review.yml#L61-L120"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:.github/workflows/blind-peer-review.yml#L61-L120"
     },
     {
       "class": "history-title",
       "id": "codecite-pr116-title",
       "rank": null,
       "text": "docs: design hybrid retrieval for spec corpora",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:docs/design.md#L474-L493"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:docs/design.md#L479-L498"
     },
     {
       "class": "history-title",
       "id": "codecite-pr120-title",
-      "rank": 10,
+      "rank": 3,
       "text": "docs: correct install, release and eval docs after the security and Inspect merges",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:docs/superpowers/plans/2026-10-20-crates-io-release.md#L1-L16"
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:docs/superpowers/plans/2026-10-23-security-baseline.md#L298-L324"
     },
     {
       "class": "history-title",
-      "id": "codecite-pr114-title",
-      "rank": 1,
-      "text": "ci: gate PRs on security scans",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:.github/workflows/blind-peer-review.yml#L1-L60"
-    },
-    {
-      "class": "history-title",
-      "id": "codecite-pr103-title",
+      "id": "codecite-pr122-title",
       "rank": 2,
-      "text": "feat(search): rank specs and code apart so code doesn't bury spec sections",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:crates/codecite-index/src/chunk/text.rs#L97-L153"
-    },
-    {
-      "class": "history-issue",
-      "id": "codecite-pr103-issue",
-      "rank": null,
-      "text": "feat(search): stop code from burying spec sections in mixed corpora\n\nOn a corpus that holds both a library and the specs it implements, code buries the specs. The retrieval benchmark (#94) shows that 65 of 100 top hits are identity-model files. On spec-keyword queries such as `at_hash`, `invalid_grant`, `jwks_uri`, `token_type_hint` and `login_required`, the library code that uses the term",
-      "top": "codecite@f5ef938a1cdaea0ed49cf3630f0d28319db8863d:evals/retrieval/queries.toml#L1-L59"
+      "text": "ci: check only vulnerabilities in dependency review, leaving licenses to cargo-deny",
+      "top": "codecite@f7209b41a00bdb8e93ff280c10609278631c8624:docs/superpowers/plans/2026-10-23-security-baseline.md#L132-L179"
     }
   ]
 }

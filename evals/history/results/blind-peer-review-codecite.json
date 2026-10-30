@@ -1,16 +1,16 @@
 {
   "all": {
-    "mrr": 0.4731040564373898,
+    "mrr": 0.4647707231040564,
     "queries": 36,
-    "recall_at_1": 0.3611111111111111,
-    "recall_at_10": 0.8611111111111112
+    "recall_at_1": 0.3333333333333333,
+    "recall_at_10": 0.8888888888888888
   },
   "classes": {
     "history-issue": {
-      "mrr": 0.75,
+      "mrr": 0.675,
       "queries": 4,
-      "recall_at_1": 0.75,
-      "recall_at_10": 0.75
+      "recall_at_1": 0.5,
+      "recall_at_10": 1.0
     },
     "history-title": {
       "mrr": 0.4384920634920635,
@@ -22,10 +22,10 @@
   "engine": "codecite",
   "groups": {
     "history": {
-      "mrr": 0.4731040564373898,
+      "mrr": 0.4647707231040564,
       "queries": 36,
-      "recall_at_1": 0.3611111111111111,
-      "recall_at_10": 0.8611111111111112
+      "recall_at_1": 0.3333333333333333,
+      "recall_at_10": 0.8888888888888888
     }
   },
   "outcomes": [
@@ -109,8 +109,8 @@
     {
       "class": "history-issue",
       "id": "blind-peer-review-pr126-issue",
-      "rank": null,
-      "text": "Lenses instruct CI to read code outside the diff that its tools cannot reach",
+      "rank": 5,
+      "text": "Lenses instruct CI to read code outside the diff that its tools cannot reach\n\n`security`, `edge_case` and `red_team` tell the model to read surrounding code (auth stack, codebase). In CI the only tools are `get_pr_diff` and `get_issue_or_pr_thread`, and `shared_instructions.md` says the model cannot read files outside the diff. An instruction to verify what it cannot see invites invented",
       "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:lenses/shared_instructions.md#L35-L52"
     },
     {
@@ -130,9 +130,9 @@
     {
       "class": "history-issue",
       "id": "blind-peer-review-pr123-issue",
-      "rank": 1,
-      "text": "Lens citations: pinned OWASP citation catalogue (web 2025, LLM 2026, ASI 2026)\n\nEach file records the source URL, retrieval date and source sha256.",
-      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:docs/security-hardening.md#L111-L117"
+      "rank": 2,
+      "text": "Lens citations: pinned OWASP citation catalogue (web 2025, LLM 2026, ASI 2026)\n\nLens findings name OWASP categories but cite nothing a reader can check. The model cannot fetch sources, so any URL it writes is a guess. Citations must resolve against a pinned, versioned catalogue the project ships.",
+      "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:scripts/compose-prompt.cjs#L158-L177"
     },
     {
       "class": "history-title",
