@@ -15,7 +15,23 @@ use codecite_index::{Clones, Fetcher, LicenseClass, Manifest, Source, WalkOption
 
 /// Command-line arguments.
 #[derive(Parser)]
-#[command(version, about, arg_required_else_help = true)]
+#[command(
+    version,
+    about,
+    long_about = "codecite indexes code and docs into one SQLite file per corpus and \
+prints cited results. A corpus is a named set of sources; a citation is a \
+stable pointer to exact text, such as `myrepo@9458d60:src/lib.rs#L10-L20`, \
+that `read` resolves back to that text.",
+    after_long_help = "\
+Start here:
+  codecite corpora                       what is indexed, and how fresh
+  codecite search <CORPUS> \"<words>\"     ranked hits, one line each, cited
+  codecite grep <CORPUS> '<regex>'       every matching line, cited
+  codecite def <CORPUS> <SYMBOL>         where a symbol is defined
+  codecite read <CORPUS> '<CITATION>'    the exact text a citation points at
+Add --json to any command for structured output. Quote citations as printed.",
+    arg_required_else_help = true
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -25,6 +41,10 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Index a corpus's sources into its corpus file.
+    #[command(after_long_help = "Examples:
+  codecite index myrepo
+  codecite index myrepo --manifest ~/m.toml
+  codecite index myrepo --print-hashes")]
     Index {
         /// The corpus to index, as named in its manifest.
         corpus: String,
@@ -38,11 +58,18 @@ enum Command {
         print_hashes: bool,
     },
     /// Search a corpus and print ranked, cited results.
+    #[command(after_long_help = "Examples:
+  codecite search myrepo \"retry backoff\"
+  codecite search myrepo \"parse error\" --language rust --limit 5
+  codecite search myrepo \"token\" --path \"src/auth/*\" --json
+Output: a header `N result(s)`, then one line per hit, best first:
+  <citation> · <kind>[ <symbol>] · <first snippet line>
+Pass a printed citation to `read` for the full text.")]
     Search {
         /// The corpus to search.
         corpus: String,
-        /// What to search for: words, identifiers or both. For a spec, the
-        /// terms the spec would use, not the asker's words.
+        /// What to search for: the words the code or docs would use
+        /// (identifiers, error text, headings), not the question's phrasing.
         query: String,
         /// Only files in this language, such as `rust` or `markdown`.
         #[arg(long)]
@@ -66,6 +93,12 @@ enum Command {
     },
     /// Print the lines of a corpus that match a regex or exact text, each
     /// cited, in index order.
+    #[command(after_long_help = "Examples:
+  codecite grep myrepo 'fn \\w+_handler'
+  codecite grep myrepo \"TODO(\" --fixed
+  codecite grep myrepo 'timeout' -i --language rust --limit 20
+Output: one line per match, in index order:
+  <citation>: <matched line>")]
     Grep {
         /// The corpus to grep.
         corpus: String,
@@ -98,6 +131,12 @@ enum Command {
         allow_stale: bool,
     },
     /// Print where a symbol is defined: every definition, cited.
+    #[command(after_long_help = "Examples:
+  codecite def myrepo parse_config
+  codecite def myrepo Client.connect
+  codecite def myrepo Config --json
+Output: a header `N definition(s) of <symbol>`, then one line each:
+  <citation> · <kind> <symbol> · <role> · <first snippet line>")]
     Def {
         /// The corpus to look in.
         corpus: String,
@@ -112,6 +151,11 @@ enum Command {
         allow_stale: bool,
     },
     /// Print the exact text a citation points at, with its pinned citation.
+    #[command(after_long_help = "Examples:
+  codecite read myrepo 'myrepo@9458d60:src/lib.rs#L10-L20'
+  codecite read myrepo 'myrepo@9458d60:src/lib.rs#L10-L20' --max-lines 20 --json
+Output: the pinned citation, a line saying what it is, a blank line, then the
+exact text.")]
     Read {
         /// The corpus to read from.
         corpus: String,
@@ -130,6 +174,9 @@ enum Command {
     },
     /// Check a spec citation: whether it resolves, what it points at, and
     /// findings for one that doesn't.
+    #[command(after_long_help = "Examples:
+  codecite cite identity \"RFC 9449 §4.3\"
+  codecite cite identity \"OIDC Core §3.1.3.7 step 13\" --json")]
     Cite {
         /// The corpus to check against.
         corpus: String,
@@ -146,6 +193,10 @@ enum Command {
     },
     /// Print the rules that govern a file: every guidance rule whose scope
     /// matches its path, language and imports, MUST first, each cited.
+    #[command(after_long_help = "Examples:
+  codecite context myrepo src/api/handlers.py
+  codecite context myrepo src/new.py --stdin < draft.py
+  codecite context myrepo lib/x.ts --root ~/repos/myrepo --json")]
     Context {
         /// The corpus whose guidance to apply.
         corpus: String,
@@ -169,6 +220,9 @@ enum Command {
     /// List the normative statements that differ between two pinned
     /// versions of a spec document: added, removed, changed, or changed in
     /// strength, with both versions' citations.
+    #[command(after_long_help = "Examples:
+  codecite diff identity \"Back-Channel Logout\"
+  codecite diff identity openid-connect-backchannel-1_0 --section 2.4 --json")]
     Diff {
         /// The corpus to look in.
         corpus: String,
@@ -197,6 +251,9 @@ enum Command {
     /// to it. Only uppercase BCP 14 keywords, REQUIRED and PROHIBITED rows
     /// and steps count, and references into other documents aren't
     /// followed, so `read` a section when you need all of it.
+    #[command(after_long_help = "Examples:
+  codecite requirements identity \"RFC 6749 §2.3\"
+  codecite requirements identity --document \"RFC 6749\" --topic \"client authentication\"")]
     Requirements {
         /// The corpus to look in.
         corpus: String,
@@ -222,8 +279,14 @@ enum Command {
     },
     /// List the corpora with their age, size, source count and staleness,
     /// as JSON.
+    #[command(after_long_help = "Examples:
+  codecite corpora
+Output: JSON, one entry per corpus with its age, size, source count and staleness.")]
     Corpora,
     /// Run the MCP server on stdin and stdout.
+    #[command(after_long_help = "Examples:
+  codecite mcp
+Add it to an agent's MCP config as the command `codecite` with the argument `mcp`.")]
     Mcp,
 }
 
@@ -1013,6 +1076,37 @@ fn project_dirs() -> anyhow::Result<directories::ProjectDirs> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_command_has_examples_in_its_help() {
+        use clap::CommandFactory as _;
+        for sub in Cli::command().get_subcommands() {
+            let help = sub
+                .get_after_long_help()
+                .map(ToString::to_string)
+                .unwrap_or_default();
+            assert!(
+                help.contains("Examples:"),
+                "`{}` has no examples",
+                sub.get_name()
+            );
+        }
+    }
+
+    #[test]
+    fn the_top_level_help_says_where_to_start() {
+        use clap::CommandFactory as _;
+        let help = Cli::command().render_long_help().to_string();
+        for line in [
+            "codecite corpora",
+            "codecite search",
+            "codecite read",
+            "--json",
+        ] {
+            assert!(help.contains(line), "{help}");
+        }
+        assert!(!help.contains("spec would use"), "{help}");
+    }
 
     fn open() -> anyhow::Result<()> {
         let err = codecite_core::Error::from(std::io::Error::other("disk on fire"));
