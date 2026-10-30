@@ -73,8 +73,10 @@ This is how an agent, local or in a Claude Code cloud session, takes one
 issue from open to a reviewed PR. Ralph (`ralph/`) runs the same steps in a
 loop.
 
-1. **Pick.** Take the next open issue labelled `cloud-ready`, in the order the
-   pinned queue issue gives. Read it and `docs/design.md`.
+1. **Pick.** Take the issue James names, or else the next open issue in the
+   earliest open milestone. A cloud session takes only an issue labelled
+   `cloud-ready`, as `scripts/cloud-launch.sh` checks. Read it and
+   `docs/design.md`.
 2. **Plan.** Follow Planning above. If the superpowers skills aren't
    installed, as in a cloud session, write the plan by hand in
    `docs/superpowers/plans/` and commit it with the PR.
@@ -95,8 +97,9 @@ loop.
    summarise what's left in a PR comment.
 6. **Ask for an eval.** If the PR changes indexing, search, ranking or the
    CLI's output, add the `eval` label. The eval workflow runs the quick A/B
-   eval on every push while the label is on and keeps its scorecard in one PR
-   comment. The quick tier is directional: a quick loss means run the full
+   eval once, on the Claude panel, and keeps its scorecard in one PR comment;
+   to rerun it on a new head, take the label off and put it back. OpenRouter
+   bills per token and is off unless James switches it on. The quick tier is directional: a quick loss means run the full
    eval (the workflow dispatched with `tier: full`), so say so on the PR.
    Never call it a pass.
 7. **Stop there.** James merges. Don't merge your own PR.
