@@ -17,7 +17,7 @@ pub use chunk::{
 };
 
 mod clone;
-pub use clone::{Checkout, CloneError, Clones};
+pub use clone::{Checkout, CloneError, Clones, remote_head};
 
 mod document;
 
