@@ -260,3 +260,40 @@ def test_a_rebase_merged_pr_spans_all_its_commits():
     # A rebase merge: the merge commit is the PR's last commit of several.
     assert merged_span(1, "feat: add x", 7, lambda: 3) == 3
     assert merged_span(1, "feat: add x (#70)", 7, lambda: 1) == 1
+
+
+def cost_report(queries, ours, lines, files):
+    def c(v):
+        return {"median_bytes": v[0], "median_ms": v[1], "p90_ms": v[2]}
+
+    return {"engine": "cost", "queries": queries, "codecite": c(ours), "rg_lines": c(lines), "rg_files": c(files)}
+
+
+def test_the_scorecard_shows_what_a_query_costs_next_to_rg():
+    from codecite_evals.history import scorecard
+
+    run = {
+        "codecite": bench("codecite", (0.5, 20), (0.25, 8)),
+        "cost": cost_report(28, (1200, 41.5, 60.2), (90000, 12.0, 30.0), (800, 11.0, 29.5)),
+    }
+    table = scorecard({"r": run, "s": {"codecite": bench("codecite", (0.5, 4), (0.5, 2))}})
+    assert "## Cost per query" in table
+    assert "| Repository | Queries | codecite bytes | codecite ms | rg -n bytes | rg -n ms | rg -l bytes | rg -l ms |" in table
+    assert "| r | 28 | 1200 | 41.5 (60.2) | 90000 | 12.0 (30.0) | 800 | 11.0 (29.5) |" in table
+    assert "| s |" not in table.split("## Cost per query")[1]
+
+
+def test_without_a_cost_report_the_scorecard_has_no_cost_table():
+    from codecite_evals.history import scorecard
+
+    assert "Cost per query" not in scorecard({"r": {"codecite": bench("codecite", (0.5, 20), (0.25, 8))}})
+
+
+def test_a_cost_report_is_read_from_the_results_directory(tmp_path):
+    import json
+    from codecite_evals.history import scorecard_main
+
+    (tmp_path / "a-codecite.json").write_text(json.dumps(bench("codecite", (0.5, 4), (0.5, 2))))
+    (tmp_path / "a-cost.json").write_text(json.dumps(cost_report(6, (10, 1.0, 2.0), (20, 3.0, 4.0), (5, 6.0, 7.0))))
+    scorecard_main([str(tmp_path)])
+    assert "| a | 6 | 10 | 1.0 (2.0) | 20 | 3.0 (4.0) | 5 | 6.0 (7.0) |" in (tmp_path / "scorecard.md").read_text()

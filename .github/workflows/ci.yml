@@ -144,6 +144,8 @@ jobs:
       # The history benchmark: codecite against git grep and the popular-files
       # floor on each mined repository (evals/README.md). A loss on any
       # repository is a finding.
+      - name: Install ripgrep
+        run: sudo apt-get install -y ripgrep
       - name: Run the history benchmark
         run: |
           status=0

@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Run the history benchmark: for each mined repository (all of them, or the
 # ones named), index its pinned corpus, score codecite, the git grep
-# baseline and the query-blind popular-files floor on its queries, and
-# rebuild results/scorecard.md.
+# baseline and the query-blind popular-files floor on its queries, measure
+# the output bytes and time of codecite and rg per query, and rebuild
+# results/scorecard.md.
 #
 #   evals/history/run.sh [repo ...]
 #
 # Needs release builds of codecite and codecite-bench
-# (`cargo build --release --locked -p codecite -p codecite-bench`) and uv.
+# (`cargo build --release --locked -p codecite -p codecite-bench`), uv and
+# ripgrep (RG names the program, default `rg`).
 # A repository that fails is reported in the scorecard and the run goes on;
 # the script exits non-zero at the end if any failed.
 set -uo pipefail
@@ -22,7 +24,8 @@ mkdir -p "$results"
 # scorecard describe a full build, not what changed since the last one.
 XDG_DATA_HOME="$(mktemp -d)"
 export XDG_DATA_HOME
-trap 'rm -rf "$XDG_DATA_HOME"' EXIT
+checkout="$(mktemp -d)"
+trap 'rm -rf "$XDG_DATA_HOME" "$checkout"' EXIT
 
 if [ "$#" -eq 0 ]; then
   set -- $(cd "$here" && ls -d */ | tr -d / | grep -v '^results$')
@@ -31,7 +34,7 @@ fi
 failed=0
 for repo in "$@"; do
   dir="$here/$repo"
-  for kind in codecite.json grep.json popular.json index.txt failed.txt; do
+  for kind in codecite.json grep.json popular.json cost.json index.txt failed.txt; do
     rm -f "$results/$repo-$kind"
   done
   fail() {
@@ -67,6 +70,11 @@ for repo in "$@"; do
   report codecite --codecite "$bin/codecite" || continue
   report grep --grep "$clone" --commit "$commit" || continue
   report popular --popular || continue
+  # The cost report compares with rg over the pinned tree, extracted from
+  # the clone so no work-tree state leaks in.
+  mkdir -p "$checkout/$repo"
+  git -C "$clone" archive "$commit" | tar -x -C "$checkout/$repo" || { fail "cannot extract $commit"; continue; }
+  report cost --codecite "$bin/codecite" --rg "${RG:-rg}" --cost "$checkout/$repo" || continue
 done
 
 # A scorecard that can't be rebuilt is removed, not left standing as this

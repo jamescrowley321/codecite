@@ -327,6 +327,8 @@ def main(argv=None):
 
 
 ENGINES = ("codecite", "grep", "popular")
+# Not an engine's ranking: what a query costs (`<repo>-cost.json`).
+COST = "cost"
 
 
 def scorecard(runs: dict) -> str:
@@ -362,7 +364,35 @@ def scorecard(runs: dict) -> str:
                 row(repo, "all", engine, s)
         if run.get("index"):
             notes.append(f"- {repo}: {run['index']}")
-    return "\n".join(lines + ([""] + notes if notes else [])) + "\n"
+    text = "\n".join(lines + ([""] + notes if notes else [])) + "\n"
+    return text + cost_table(runs)
+
+
+def cost_table(runs: dict) -> str:
+    """`## Cost per query`: a row per repository with a cost report, the
+    median output bytes and time of `codecite search` and of `rg -n` and
+    `rg -l`, with the 90th percentile of the time in parentheses. Empty
+    when no repository has one."""
+    rows = []
+    for repo in sorted(runs):
+        report = runs[repo].get(COST)
+        if not report:
+            continue
+        cells = [repo, str(report["queries"])]
+        for engine in ("codecite", "rg_lines", "rg_files"):
+            c = report[engine]
+            cells += [str(c["median_bytes"]), f"{c['median_ms']:.1f} ({c['p90_ms']:.1f})"]
+        rows.append("| " + " | ".join(cells) + " |")
+    if not rows:
+        return ""
+    header = [
+        "",
+        "## Cost per query",
+        "",
+        "| Repository | Queries | codecite bytes | codecite ms | rg -n bytes | rg -n ms | rg -l bytes | rg -l ms |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    return "\n".join(header + rows) + "\n"
 
 
 def scorecard_main(argv=None):
@@ -374,7 +404,7 @@ def scorecard_main(argv=None):
     runs: dict = {}
     for path in sorted(args.results.iterdir()):
         repo, _, kind = path.stem.rpartition("-")
-        if path.suffix == ".json" and kind in ENGINES:
+        if path.suffix == ".json" and kind in (*ENGINES, COST):
             # An empty or partial report is a failed run, which `failed`
             # explains; it must not hide the other repositories.
             try:

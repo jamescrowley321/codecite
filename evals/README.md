@@ -44,9 +44,18 @@ labels, so nobody can tune them toward one corpus.
   most. It is the floor both engines must beat. The scorecard pools each
   repository's classes in an `all` row, which is the one to judge by, since
   some classes hold only a few queries.
+- **Cost** (`codecite-bench --cost <checkout>`) is a second table in the
+  scorecard, `## Cost per query`. For each query with words in it, it runs
+  `codecite search` as an agent does (default limit, the human output) and
+  `rg -n` and `rg -l` over the pinned tree with the same words as whole
+  words in any case, three times each, and keeps the fastest run. The table
+  gives the median output bytes and median time per query, with the 90th
+  percentile of the time in parentheses. A query with no words is skipped
+  for both. A missing `rg` fails the repository (`--rg`, or `RG` for
+  `run.sh`, names the program).
 - **Run** with `history/run.sh [repo ...]`, after `cargo build --release
-  --locked -p codecite -p codecite-bench`. It writes each engine's report and
-  `history/results/scorecard.md`.
+  --locked -p codecite -p codecite-bench`, with ripgrep installed. It writes
+  each engine's report, the cost report and `history/results/scorecard.md`.
 
 The rule from the general-purpose design: a ranking or indexing change that
 loses on any repository doesn't merge.

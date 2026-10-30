@@ -2,6 +2,7 @@
 //! reports Recall@1, Recall@10 and MRR for each query class, with every miss.
 
 mod answer;
+mod cost;
 mod grep;
 
 use std::collections::{BTreeMap, HashSet};
@@ -45,6 +46,14 @@ struct Cli {
     /// most often. A query-blind floor that both engines must beat.
     #[arg(long, conflicts_with = "grep")]
     popular: bool,
+    /// Measure what a query costs instead of how well it ranks: output
+    /// bytes and time of `codecite search` and of `rg` over this checkout
+    /// of the corpus's tree.
+    #[arg(long, conflicts_with_all = ["grep", "popular"])]
+    cost: Option<PathBuf>,
+    /// The `rg` program `--cost` compares with.
+    #[arg(long, default_value = "rg")]
+    rg: PathBuf,
 }
 
 /// The queries file.
@@ -123,6 +132,21 @@ fn main() -> anyhow::Result<()> {
         None => std::env::current_exe()?
             .with_file_name(format!("codecite{}", std::env::consts::EXE_SUFFIX)),
     };
+
+    if let Some(checkout) = &cli.cost {
+        let queries: Vec<&Query> = file
+            .query
+            .iter()
+            .filter(|q| {
+                cli.class
+                    .as_ref()
+                    .is_none_or(|c| q.class.starts_with(c.as_str()))
+            })
+            .collect();
+        let report = cost::cost(&queries, &file.corpus, &codecite, &cli.rg, checkout)?;
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        return Ok(());
+    }
 
     let mut outcomes = Vec::new();
     for query in &file.query {
@@ -228,7 +252,9 @@ fn main() -> anyhow::Result<()> {
 /// The engine that ranked a run: `codecite`, the `git grep` baseline or the
 /// query-blind popular-files floor.
 fn engine(cli: &Cli) -> &'static str {
-    if cli.popular {
+    if cli.cost.is_some() {
+        "cost"
+    } else if cli.popular {
         "popular"
     } else if cli.grep.is_some() {
         "grep"
@@ -431,6 +457,7 @@ mod tests {
         assert_eq!(engine_of(&[]), "codecite");
         assert_eq!(engine_of(&["--grep", "r", "--commit", "abc1234"]), "grep");
         assert_eq!(engine_of(&["--popular"]), "popular");
+        assert_eq!(engine_of(&["--cost", "/c"]), "cost");
     }
 
     #[test]

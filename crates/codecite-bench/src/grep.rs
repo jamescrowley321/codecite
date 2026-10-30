@@ -18,7 +18,7 @@ const STOPWORDS: &[&str] = &[
 
 /// The query's words: lowercased runs of letters, digits and `_`, of at
 /// least 3 characters, without [`STOPWORDS`] or repeats, in order.
-fn terms(text: &str) -> Vec<String> {
+pub(crate) fn terms(text: &str) -> Vec<String> {
     let mut terms: Vec<String> = Vec::new();
     for word in text.split(|c: char| !(c.is_alphanumeric() || c == '_')) {
         let word = word.to_lowercase();
