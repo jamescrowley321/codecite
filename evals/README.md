@@ -51,11 +51,18 @@ labels, so nobody can tune them toward one corpus.
   words in any case, three times each, and keeps the fastest run. The table
   gives the median output bytes and median time per query, with the 90th
   percentile of the time in parentheses. A query with no words is skipped
-  for both. A missing `rg` fails the repository (`--rg`, or `RG` for
-  `run.sh`, names the program).
+  for both. The byte comparison is uneven by design: codecite prints its
+  default 5 hits, `rg -n` every matching line, uncapped, so `rg -l` is the
+  closer comparison. And they see different trees: `rg` searches the pinned
+  tree as `git archive` extracts it, with its defaults, so hidden files are
+  skipped and, outside a git checkout, no `.gitignore` applies; codecite
+  searches what the manifest indexed. A missing `rg` fails the cost step
+  (`--rg`, or `RG` for `run.sh`, names the program; `--rg` needs `--cost`).
 - **Run** with `history/run.sh [repo ...]`, after `cargo build --release
   --locked -p codecite -p codecite-bench`, with ripgrep installed. It writes
   each engine's report, the cost report and `history/results/scorecard.md`.
+  A repository whose cost step fails keeps its recall rows; the failure,
+  from `<repo>-cost-failed.txt`, is a row of the cost table.
 
 The rule from the general-purpose design: a ranking or indexing change that
 loses on any repository doesn't merge.

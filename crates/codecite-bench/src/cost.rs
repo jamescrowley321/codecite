@@ -211,7 +211,7 @@ mod tests {
     }
 
     #[test]
-    fn rg_runs_in_the_checkout_and_prints_relative_paths() {
+    fn a_command_given_a_directory_runs_in_it() {
         let dir = tempfile::tempdir().unwrap();
         let script = ["-c".to_owned(), "pwd -P; ls".to_owned()];
         let (bytes, _) = run_accepting(Path::new("sh"), &script, &[0], Some(dir.path())).unwrap();

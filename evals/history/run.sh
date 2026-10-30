@@ -11,7 +11,8 @@
 # (`cargo build --release --locked -p codecite -p codecite-bench`), uv and
 # ripgrep (RG names the program, default `rg`).
 # A repository that fails is reported in the scorecard and the run goes on;
-# the script exits non-zero at the end if any failed.
+# one whose cost step fails keeps its recall rows, with the failure under the
+# cost table. The script exits non-zero at the end if any failed.
 set -uo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -34,11 +35,12 @@ fi
 failed=0
 for repo in "$@"; do
   dir="$here/$repo"
-  for kind in codecite.json grep.json popular.json cost.json index.txt failed.txt; do
+  for kind in codecite.json grep.json popular.json cost.json index.txt failed.txt cost-failed.txt; do
     rm -f "$results/$repo-$kind"
   done
+  # `fail <why> [cost-failed]`: the second form fails only the cost step.
   fail() {
-    printf '%s\n' "$1" | head -n 1 >"$results/$repo-failed.txt"
+    printf '%s\n' "$1" | head -n 1 >"$results/$repo-${2:-failed}.txt"
     echo "$repo: failed: $1" >&2
     failed=1
   }
@@ -63,18 +65,18 @@ for repo in "$@"; do
       mv "$results/.$repo-$engine.json" "$results/$repo-$engine.json"
     else
       rm -f "$results/.$repo-$engine.json"
-      fail "codecite-bench failed for $engine"
       return 1
     fi
   }
-  report codecite --codecite "$bin/codecite" || continue
-  report grep --grep "$clone" --commit "$commit" || continue
-  report popular --popular || continue
+  report codecite --codecite "$bin/codecite" || { fail "codecite-bench failed for codecite"; continue; }
+  report grep --grep "$clone" --commit "$commit" || { fail "codecite-bench failed for grep"; continue; }
+  report popular --popular || { fail "codecite-bench failed for popular"; continue; }
   # The cost report compares with rg over the pinned tree, extracted from
   # the clone so no work-tree state leaks in.
   mkdir -p "$checkout/$repo"
-  git -C "$clone" archive "$commit" | tar -x -C "$checkout/$repo" || { fail "cannot extract $commit"; continue; }
-  report cost --codecite "$bin/codecite" --rg "${RG:-rg}" --cost "$checkout/$repo" || continue
+  git -C "$clone" archive "$commit" | tar -x -C "$checkout/$repo" || { fail "cannot extract $commit" cost-failed; continue; }
+  report cost --codecite "$bin/codecite" --rg "${RG:-rg}" --cost "$checkout/$repo" ||
+    fail "codecite-bench failed for cost" cost-failed
 done
 
 # A scorecard that can't be rebuilt is removed, not left standing as this

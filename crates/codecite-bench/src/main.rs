@@ -52,7 +52,7 @@ struct Cli {
     #[arg(long, conflicts_with_all = ["grep", "popular"])]
     cost: Option<PathBuf>,
     /// The `rg` program `--cost` compares with.
-    #[arg(long, default_value = "rg")]
+    #[arg(long, default_value = "rg", requires = "cost")]
     rg: PathBuf,
 }
 
@@ -458,6 +458,17 @@ mod tests {
         assert_eq!(engine_of(&["--grep", "r", "--commit", "abc1234"]), "grep");
         assert_eq!(engine_of(&["--popular"]), "popular");
         assert_eq!(engine_of(&["--cost", "/c"]), "cost");
+    }
+
+    #[test]
+    fn rg_is_only_taken_with_cost() {
+        let parse = |args: &[&str]| {
+            Cli::try_parse_from(std::iter::once("codecite-bench").chain(args.iter().copied()))
+        };
+        assert!(parse(&["--rg", "/bin/rg"]).is_err());
+        let cli = parse(&["--cost", "/c", "--rg", "/bin/rg"]).unwrap();
+        assert_eq!(cli.rg, Path::new("/bin/rg"));
+        assert_eq!(parse(&["--cost", "/c"]).unwrap().rg, Path::new("rg"));
     }
 
     #[test]

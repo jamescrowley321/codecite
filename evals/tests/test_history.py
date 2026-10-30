@@ -297,3 +297,69 @@ def test_a_cost_report_is_read_from_the_results_directory(tmp_path):
     (tmp_path / "a-cost.json").write_text(json.dumps(cost_report(6, (10, 1.0, 2.0), (20, 3.0, 4.0), (5, 6.0, 7.0))))
     scorecard_main([str(tmp_path)])
     assert "| a | 6 | 10 | 1.0 (2.0) | 20 | 3.0 (4.0) | 5 | 6.0 (7.0) |" in (tmp_path / "scorecard.md").read_text()
+
+
+def test_a_failed_cost_step_keeps_the_recall_rows():
+    from codecite_evals.history import scorecard
+
+    run = {"codecite": bench("codecite", (0.5, 20), (0.25, 8)), "cost_failed": "codecite-bench failed for cost"}
+    table = scorecard({"r": run})
+    recall, cost = table.split("## Cost per query")
+    assert "| r | history-title | codecite | 20 | 0.25 | 0.50 | 0.17 |" in recall
+    assert "failed" not in recall
+    assert "| r | failed: codecite-bench failed for cost |" in cost
+
+
+def test_a_cost_failure_is_read_from_the_results_directory(tmp_path):
+    import json
+    from codecite_evals.history import scorecard_main
+
+    (tmp_path / "a-codecite.json").write_text(json.dumps(bench("codecite", (0.5, 4), (0.5, 2))))
+    (tmp_path / "a-cost-failed.txt").write_text("cannot extract abc\n")
+    scorecard_main([str(tmp_path)])
+    text = (tmp_path / "scorecard.md").read_text()
+    assert "| a | history-title | codecite | 4 |" in text
+    assert "| a | failed: cannot extract abc |" in text.split("## Cost per query")[1]
+    assert "a-cost" not in text
+
+
+def test_run_sh_files_a_cost_failure_apart_from_the_recall_reports(tmp_path):
+    """run.sh against stub binaries whose cost step fails: the recall
+    reports stay, the failure lands in `<repo>-cost-failed.txt`, and a
+    stale one from an earlier run is cleared first."""
+    import os
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    here = tmp_path / "evals" / "history"
+    (here / "demo").mkdir(parents=True)
+    shutil.copy(Path(__file__).resolve().parents[1] / "history" / "run.sh", here / "run.sh")
+    clones, repo = tmp_path / "clones", tmp_path / "clones" / "demo"
+    repo.mkdir(parents=True)
+    git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    (repo / "a.py").write_text("x = 1\n")
+    subprocess.run([*git, "add", "."], check=True)
+    subprocess.run([*git, "commit", "-q", "-m", "init"], check=True)
+    commit = subprocess.run([*git, "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+    (here / "demo" / "manifest.toml").write_text(f'url = "{repo}"\ncommit = "{commit}"\n')
+    (here / "demo" / "queries.toml").write_text("")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "codecite").write_text("#!/bin/sh\nprintf 'chunks: 1 written\\nelapsed: 0.01s\\n'\n")
+    (bin_dir / "codecite-bench").write_text(
+        '#!/bin/sh\nfor a in "$@"; do [ "$a" = --cost ] && exit 1; done\necho "{}"\n'
+    )
+    for stub in bin_dir.iterdir():
+        stub.chmod(0o755)
+    results = here / "results"
+    results.mkdir()
+    (results / "demo-cost-failed.txt").write_text("stale\n")
+    env = {**os.environ, "CODECITE_BIN": str(bin_dir), "HISTORY_CLONES": str(clones)}
+    subprocess.run(["bash", str(here / "run.sh"), "demo"], env=env, capture_output=True)
+    for kind in ("codecite", "grep", "popular"):
+        assert (results / f"demo-{kind}.json").exists(), kind
+    assert not (results / "demo-cost.json").exists()
+    assert not (results / "demo-failed.txt").exists()
+    assert (results / "demo-cost-failed.txt").read_text() == "codecite-bench failed for cost\n"

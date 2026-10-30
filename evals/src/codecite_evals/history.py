@@ -327,8 +327,11 @@ def main(argv=None):
 
 
 ENGINES = ("codecite", "grep", "popular")
-# Not an engine's ranking: what a query costs (`<repo>-cost.json`).
+# Not an engine's ranking: what a query costs (`<repo>-cost.json`), or why
+# measuring it failed (`<repo>-cost-failed.txt`), which leaves the recall
+# rows standing.
 COST = "cost"
+COST_FAILED = "cost_failed"
 
 
 def scorecard(runs: dict) -> str:
@@ -371,10 +374,13 @@ def scorecard(runs: dict) -> str:
 def cost_table(runs: dict) -> str:
     """`## Cost per query`: a row per repository with a cost report, the
     median output bytes and time of `codecite search` and of `rg -n` and
-    `rg -l`, with the 90th percentile of the time in parentheses. Empty
-    when no repository has one."""
+    `rg -l`, with the 90th percentile of the time in parentheses, or why
+    its cost step failed. Empty when no repository has either."""
     rows = []
     for repo in sorted(runs):
+        if why := runs[repo].get(COST_FAILED):
+            rows.append(f"| {repo} | failed: {why} |")
+            continue
         report = runs[repo].get(COST)
         if not report:
             continue
@@ -397,14 +403,17 @@ def cost_table(runs: dict) -> str:
 
 def scorecard_main(argv=None):
     """`codecite-history-scorecard RESULTS_DIR`: rebuild scorecard.md from
-    `<repo>-<engine>.json`, `<repo>-index.txt` and `<repo>-failed.txt`."""
+    `<repo>-<engine>.json`, `<repo>-index.txt`, `<repo>-failed.txt` and
+    `<repo>-cost-failed.txt`."""
     parser = argparse.ArgumentParser(description="Rebuild the history benchmark's scorecard.")
     parser.add_argument("results", type=Path)
     args = parser.parse_args(argv)
     runs: dict = {}
     for path in sorted(args.results.iterdir()):
         repo, _, kind = path.stem.rpartition("-")
-        if path.suffix == ".json" and kind in (*ENGINES, COST):
+        if path.suffix == ".txt" and kind == "failed" and repo.endswith("-cost"):
+            runs.setdefault(repo.removesuffix("-cost"), {})[COST_FAILED] = path.read_text().strip()
+        elif path.suffix == ".json" and kind in (*ENGINES, COST):
             # An empty or partial report is a failed run, which `failed`
             # explains; it must not hide the other repositories.
             try:
