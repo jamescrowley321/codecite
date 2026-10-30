@@ -24,6 +24,7 @@ REVIEWS = [
     "per-lens-colon.md",
     "per-lens-json.md",
     "per-lens-bare.md",
+    "progress-rereview.md",
 ]
 
 
@@ -36,6 +37,11 @@ class IsReview(unittest.TestCase):
     def test_an_unrelated_comment_is_not(self):
         self.assertFalse(rework.is_review(fixture("unrelated.md")))
         self.assertFalse(rework.is_review("Ran the blind peer review again.\n"))
+
+    def test_a_heading_inside_backticks_is_not(self):
+        # request-review.sh names the heading inline, not on a line of its own.
+        request = "@claude review this PR. Head the review `### Blind peer review`.\n"
+        self.assertFalse(rework.is_review(request))
 
 
 class ParseReview(unittest.TestCase):
@@ -73,6 +79,31 @@ class ParseReview(unittest.TestCase):
         self.assertEqual(
             lenses["Cold Read"], LensResult("Cold Read", "PASS", 0, None, None, 1)
         )
+
+    def test_a_re_review_below_the_progress_line(self):
+        # claude[bot] edits its progress comment in place; the heading is lower.
+        lenses = self.by_lens("progress-rereview.md")
+        self.assertEqual(len(lenses), 8)
+        self.assertEqual(lenses["OWASP LLM Top 10"].verdict, "BLOCK")
+        self.assertEqual(lenses["OWASP LLM Top 10"].must, 1)
+        self.assertEqual(lenses["Cold Read"].verdict, "PASS")
+
+    def test_json_findings_that_are_not_objects_are_skipped(self):
+        body = (
+            "## Blind peer review — Cold Read\n\n"
+            '```json\n{"findings": ["x", 3, {"severity": "MUST FIX"}]}\n```\n'
+        )
+        self.assertEqual(
+            rework.parse_review(body),
+            [LensResult("Cold Read", "BLOCK", 1, 0, 0, 1)],
+        )
+
+    def test_a_long_run_of_spaces_parses_quickly(self):
+        import time
+
+        start = time.monotonic()
+        rework.parse_review("## Blind peer review\n\nA" + " " * 50_000 + "x\n")
+        self.assertLess(time.monotonic() - start, 1)
 
     def test_per_lens_dash_spelling(self):
         self.assertEqual(
@@ -240,6 +271,42 @@ class Plans(unittest.TestCase):
 
         self.assertIsNone(rework.plan_text("o/r", "plans/x.md", "abc", gh=gone))
 
+    def test_plan_text_raises_on_any_other_error(self):
+        def limited(args):
+            raise rework.GhError("gh: API rate limit exceeded (HTTP 403)")
+
+        with self.assertRaises(rework.GhError):
+            rework.plan_text("o/r", "plans/x.md", "abc", gh=limited)
+
+    def test_cached_plans_keep_404s_but_not_errors(self):
+        import tempfile
+
+        cache = Path(tempfile.mkdtemp())
+        replies = [rework.GhError("HTTP 403"), "# Plan\n", rework.GhError("HTTP 404")]
+
+        def gh(args):
+            reply = replies.pop(0)
+            if isinstance(reply, Exception):
+                raise reply
+            return reply
+
+        read = rework.cached_plans(cache, gh=gh)
+        with self.assertRaises(rework.GhError):
+            read("o/r", "plans/x.md", "abc")
+        self.assertEqual(read("o/r", "plans/x.md", "abc"), "# Plan\n")
+        self.assertIsNone(read("o/r", "plans/y.md", "abc"))
+        again = rework.cached_plans(cache, gh=None)
+        self.assertEqual(again("o/r", "plans/x.md", "abc"), "# Plan\n")
+        self.assertIsNone(again("o/r", "plans/y.md", "abc"))
+
+    def test_a_corrupt_plan_cache_reads_as_empty(self):
+        import tempfile
+
+        cache = Path(tempfile.mkdtemp())
+        (cache / "plans.json").write_text('{"truncated')
+        read = rework.cached_plans(cache, gh=lambda args: "# Plan\n")
+        self.assertEqual(read("o/r", "plans/x.md", "abc"), "# Plan\n")
+
     def test_plan_text_asks_for_the_raw_file_at_the_head(self):
         seen = []
 
@@ -254,13 +321,16 @@ class Plans(unittest.TestCase):
         self.assertIn("Accept: application/vnd.github.raw", seen[0])
 
 
+BOT = {"author": {"__typename": "Bot", "login": "claude"}, "authorAssociation": "NONE"}
+
+
 def pr(number, comments=(), reviews=(), files=(), head="abc"):
     return {
         "number": number,
         "headRefOid": head,
         "files": [{"path": f} for f in files],
-        "comments": [{"createdAt": t, "body": b} for t, b in comments],
-        "reviews": [{"submittedAt": t, "body": b} for t, b in reviews],
+        "comments": [{"createdAt": t, "body": b, **BOT} for t, b in comments],
+        "reviews": [{"submittedAt": t, "body": b, **BOT} for t, b in reviews],
     }
 
 
@@ -286,6 +356,36 @@ class PrRow(unittest.TestCase):
         self.assertTrue(row["reviewed"])
         self.assertEqual(row["rounds_to_pass"], 2)
         self.assertEqual(row["group"], rework.NO_PLAN)
+
+    def test_only_bots_and_the_repository_s_people_review(self):
+        def by(typename, association):
+            author = {"__typename": typename, "login": "someone"}
+            return {
+                "createdAt": "t",
+                "body": PASS,
+                "author": author,
+                "authorAssociation": association,
+            }
+
+        for comment, trusted in [
+            (by("Bot", "NONE"), True),
+            (by("User", "OWNER"), True),
+            (by("User", "MEMBER"), True),
+            (by("User", "COLLABORATOR"), True),
+            (by("User", "NONE"), False),
+            (by("User", "CONTRIBUTOR"), False),
+            ({"createdAt": "t", "body": PASS, "author": None}, False),
+        ]:
+            with self.subTest(comment=comment):
+                one = {"number": 1, "headRefOid": "abc", "comments": [comment]}
+                row = rework.pr_row("o/r", one, plans=None)
+                self.assertEqual(row["reviewed"], trusted)
+
+    def test_a_review_that_parses_to_nothing_is_counted(self):
+        did_not_run = "**Claude finished**\n\n### Blind peer review: did not run\n"
+        row = rework.pr_row("o/r", pr(1, comments=[("t", did_not_run)]), plans=None)
+        self.assertFalse(row["reviewed"])
+        self.assertEqual(row["unparsed"], 1)
 
     def test_a_pr_without_review_comments_is_unreviewed(self):
         row = rework.pr_row("o/r", pr(1, comments=[("t", "lgtm")]), plans=None)
@@ -361,9 +461,10 @@ class Report(unittest.TestCase):
 
 PAGE = """[{"data": {"repository": {"pullRequests": {
   "nodes": [{"number": 3, "title": "t", "headRefOid": "abc",
-             "files": {"nodes": [{"path": "a.md"}]},
-             "comments": {"nodes": []},
-             "reviews": {"nodes": [{"submittedAt": "t", "body": "b"}]}}],
+             "files": {"totalCount": 1, "nodes": [{"path": "a.md"}]},
+             "comments": {"totalCount": 101, "nodes": []},
+             "reviews": {"totalCount": 1,
+                         "nodes": [{"submittedAt": "t", "body": "b"}]}}],
   "pageInfo": {"hasNextPage": false, "endCursor": null}}}}}]"""
 PR3 = {
     "number": 3,
@@ -372,6 +473,7 @@ PR3 = {
     "files": [{"path": "a.md"}],
     "comments": [],
     "reviews": [{"submittedAt": "t", "body": "b"}],
+    "truncated": ["comments"],
 }
 
 
@@ -395,6 +497,24 @@ class Fetch(unittest.TestCase):
         self.assertIn("owner=o", calls[0])
         self.assertEqual(rework.fetch("o/r", self.cache, refresh=True, gh=gh), [PR3])
         self.assertEqual(len(calls), 2)
+
+    def test_a_corrupt_cache_is_refetched(self):
+        (self.cache / "o__r.json").write_text("[{")
+        self.assertEqual(rework.fetch("o/r", self.cache, gh=lambda args: PAGE), [PR3])
+
+    def test_the_query_asks_for_authors_and_totals(self):
+        self.assertIn("authorAssociation", rework.QUERY)
+        self.assertIn("totalCount", rework.QUERY)
+
+    def test_the_default_cache_is_per_user(self):
+        from unittest import mock
+
+        with mock.patch.dict("os.environ", {"XDG_CACHE_HOME": "/home/u/.c"}):
+            self.assertEqual(rework.default_cache(), Path("/home/u/.c/codecite-rework"))
+        with mock.patch.dict("os.environ", {"XDG_CACHE_HOME": ""}):
+            self.assertEqual(
+                rework.default_cache(), Path.home() / ".cache" / "codecite-rework"
+            )
 
     def test_retries_a_gateway_timeout(self):
         replies = [rework.GhError("HTTP 504: Gateway Timeout"), "[]"]

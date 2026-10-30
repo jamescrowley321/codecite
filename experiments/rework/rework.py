@@ -7,9 +7,11 @@ Stdlib only, so it runs with a bare `python3`.
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import NamedTuple
@@ -55,13 +57,19 @@ class LensResult(NamedTuple):
     total: int | None  # findings of every severity, when the comment says
 
 
-_HEADING = re.compile(r"\s*#{1,3}\s*blind peer review\b(?P<rest>.*)", re.IGNORECASE)
+# A heading on a line of its own. A review posted when the PR opens starts with
+# it; a re-review is claude[bot]'s progress comment, edited in place, with the
+# heading below the "Claude finished" line.
+_HEADING = re.compile(
+    r"^[ \t]*#{1,4}[ \t]*blind peer review\b(?P<rest>.*)$",
+    re.IGNORECASE | re.MULTILINE,
+)
 _VERDICT = re.compile(r"verdict\W*(PASS|BLOCK)\b", re.IGNORECASE)
 _PASS_OR_BLOCK = re.compile(r"\b(PASS|BLOCK)\b", re.IGNORECASE)
 _TOTAL = re.compile(r"(\d+) findings?(?:\(s\))?", re.IGNORECASE)
 _MUST = re.compile(r"(\d+) MUST FIX", re.IGNORECASE)
 _LISTING = re.compile(
-    r"^\s*(?P<lens>[A-Z][\w &]+?)\s{2,}(?P<verdict>PASS|BLOCK)\s+"
+    r"^[ \t]*(?P<lens>[A-Z][\w&]*(?: [\w&]+)*)[ \t]{2,}(?P<verdict>PASS|BLOCK)\s+"
     r"(?P<total>\d+) finding\(s\), (?P<must>\d+) MUST FIX",
     re.MULTILINE,
 )
@@ -75,16 +83,16 @@ def lens_name(text):
 
 
 def is_review(body):
-    """True when the comment's first line is a blind peer review heading."""
-    return _HEADING.match(body.lstrip().split("\n", 1)[0]) is not None
+    """True when a line of the comment is a blind peer review heading."""
+    return _HEADING.search(body) is not None
 
 
 def parse_review(body):
     """The lens results in one review comment: a list of LensResult."""
-    first, _, rest = body.lstrip().partition("\n")
-    heading = _HEADING.match(first)
+    heading = _HEADING.search(body)
     if heading is None:
         return []
+    rest = body[heading.end() :]
     lens = _heading_lens(heading["rest"])
     if lens is not None:
         result = _per_lens(lens, rest)
@@ -92,7 +100,7 @@ def parse_review(body):
     results = _table(rest) or _listing(rest)
     if results:
         return results
-    verdict = _VERDICT.search(body)
+    verdict = _VERDICT.search(body, heading.start())
     if verdict:
         return [LensResult(ALL, verdict[1].upper(), None, None, None, None)]
     return []
@@ -112,6 +120,7 @@ def _per_lens(lens, text):
         except json.JSONDecodeError:
             findings = None
         if isinstance(findings, list):
+            findings = [f for f in findings if isinstance(f, dict)]
             severities = [str(f.get("severity", "")).upper() for f in findings]
             must = sum("MUST" in s for s in severities)
             should = sum("SHOULD" in s for s in severities)
@@ -296,7 +305,11 @@ def run_gh(args):
 
 
 def plan_text(repo, path, ref, gh=run_gh):
-    """The plan's text at commit `ref`, or None when it can't be read there."""
+    """The plan's text at commit `ref`, or None when it isn't there (404).
+
+    Any other error, such as a rate limit, is raised: it says nothing about
+    the plan.
+    """
     try:
         return gh(
             [
@@ -306,13 +319,44 @@ def plan_text(repo, path, ref, gh=run_gh):
                 f"repos/{repo}/contents/{path}?ref={ref}",
             ]
         )
-    except GhError:
+    except GhError as err:
+        if re.search(r"\b404\b", str(err)):
+            return None
+        raise
+
+
+def _read_json(path):
+    """The JSON in `path`, or None when it is missing or cut short."""
+    try:
+        return json.loads(Path(path).read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
         return None
+
+
+def _write_json(path, value):
+    """Write `value` to `path` whole or not at all: a temp file, then rename."""
+    path = Path(path)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(value, f)
+        os.replace(tmp, path)
+    except BaseException:
+        os.unlink(tmp)
+        raise
+
+
+def default_cache():
+    """The per-user cache directory: $XDG_CACHE_HOME or ~/.cache."""
+    base = os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache"
+    return Path(base) / "codecite-rework"
 
 
 # Merged PRs, 25 a page: one `gh pr list` query for every PR's comments,
 # reviews and files times out on the larger repositories. Each connection
-# below takes its first 100 nodes, enough for every PR in these repositories.
+# below takes its first 100 nodes; totalCount says when a PR has more, and
+# main warns about it. Authors let pr_row drop comments from outsiders.
 QUERY = """
 query($owner: String!, $name: String!, $endCursor: String) {
   repository(owner: $owner, name: $name) {
@@ -321,9 +365,15 @@ query($owner: String!, $name: String!, $endCursor: String) {
         number
         title
         headRefOid
-        files(first: 100) { nodes { path } }
-        comments(first: 100) { nodes { createdAt body } }
-        reviews(first: 100) { nodes { submittedAt body } }
+        files(first: 100) { totalCount nodes { path } }
+        comments(first: 100) {
+          totalCount
+          nodes { createdAt body author { __typename login } authorAssociation }
+        }
+        reviews(first: 100) {
+          totalCount
+          nodes { submittedAt body author { __typename login } authorAssociation }
+        }
       }
       pageInfo { hasNextPage endCursor }
     }
@@ -333,12 +383,19 @@ query($owner: String!, $name: String!, $endCursor: String) {
 
 
 def _prs(pages):
-    """The PRs in `gh api graphql --paginate --slurp` output, nodes unwrapped."""
+    """The PRs in `gh api graphql --paginate --slurp` output, nodes unwrapped.
+
+    `truncated` names the connections that had more nodes than were fetched.
+    """
     prs = []
     for page in pages:
         for pr in page["data"]["repository"]["pullRequests"]["nodes"]:
+            pr["truncated"] = []
             for key in ("files", "comments", "reviews"):
-                pr[key] = (pr.get(key) or {}).get("nodes") or []
+                connection = pr.get(key) or {}
+                pr[key] = connection.get("nodes") or []
+                if connection.get("totalCount", 0) > len(pr[key]):
+                    pr["truncated"].append(key)
             prs.append(pr)
     return prs
 
@@ -350,8 +407,9 @@ def fetch(repo, cache, refresh=False, gh=run_gh, wait=10):
     twice. Any other error is raised and nothing is cached.
     """
     path = Path(cache) / (repo.replace("/", "__") + ".json")
-    if path.exists() and not refresh:
-        return json.loads(path.read_text())
+    cached = None if refresh else _read_json(path)
+    if cached is not None:
+        return cached
     owner, _, name = repo.partition("/")
     args = ["api", "graphql", "--paginate", "--slurp", "-f", f"query={QUERY}"]
     args += ["-F", f"owner={owner}", "-F", f"name={name}"]
@@ -364,8 +422,7 @@ def fetch(repo, cache, refresh=False, gh=run_gh, wait=10):
                 raise
             time.sleep(wait)
     prs = _prs(json.loads(out))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(prs))
+    _write_json(path, prs)
     return prs
 
 
@@ -375,20 +432,29 @@ NO_PLAN = "no plan"
 GROUPS = [CITED, UNCITED, NO_PLAN]
 
 
+# Anyone can comment on a public PR. A review counts only from a GitHub App
+# (the review bot) or from someone the repository itself trusts.
+TRUSTED = {"OWNER", "MEMBER", "COLLABORATOR"}
+
+
+def trusted(node):
+    """True when a comment or review comes from a bot or the repository's people."""
+    author = node.get("author") or {}
+    return author.get("__typename") == "Bot" or node.get("authorAssociation") in TRUSTED
+
+
 def pr_row(repo, pr, plans):
     """One PR's rework: its group, rounds to pass and violation counts.
 
     `plans(repo, path, ref)` reads a plan's text at the head, or None.
+    `unparsed` counts review headings that gave no result (a run that failed).
     """
+    nodes = [(c["createdAt"], c) for c in pr.get("comments") or []]
+    nodes += [(r["submittedAt"], r) for r in pr.get("reviews") or []]
     reviews = [
-        (c["createdAt"], parse_review(c["body"]))
-        for c in pr.get("comments") or []
-        if is_review(c["body"])
-    ]
-    reviews += [
-        (r["submittedAt"], parse_review(r["body"]))
-        for r in pr.get("reviews") or []
-        if is_review(r.get("body") or "")
+        (at, parse_review(n["body"]))
+        for at, n in nodes
+        if trusted(n) and is_review(n.get("body") or "")
     ]
     grouped = rounds(reviews)
     paths = plan_paths([f["path"] for f in pr.get("files") or []])
@@ -405,6 +471,7 @@ def pr_row(repo, pr, plans):
         "group": group,
         "reviewed": bool(grouped),
         "unreadable": sum(t is None for t in texts),
+        "unparsed": sum(not results for _, results in reviews),
         "rounds_to_pass": rounds_to_pass(grouped),
         **violations(grouped),
     }
@@ -452,16 +519,19 @@ def report(rows):
 
 
 def cached_plans(cache, gh=run_gh):
-    """A `plans(repo, path, ref)` reader that keeps every answer in `cache`."""
+    """A `plans(repo, path, ref)` reader that keeps every answer in `cache`.
+
+    A plan at a commit never changes, and plan_text raises on anything but a
+    404, so every cached answer, None included, stays right.
+    """
     path = Path(cache) / "plans.json"
-    known = json.loads(path.read_text()) if path.exists() else {}
+    known = _read_json(path) or {}
 
     def read(repo, plan, ref):
         key = f"{repo}@{ref}:{plan}"
         if key not in known:
             known[key] = plan_text(repo, plan, ref, gh=gh)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(known))
+            _write_json(path, known)
         return known[key]
 
     return read
@@ -470,7 +540,7 @@ def cached_plans(cache, gh=run_gh):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("repos", nargs="*", default=REPOS, metavar="owner/repo")
-    parser.add_argument("--cache", default="/var/tmp/codecite-rework")
+    parser.add_argument("--cache", default=default_cache())
     parser.add_argument("--refresh", action="store_true", help="refetch the PRs")
     args = parser.parse_args(argv)
     plans = cached_plans(args.cache)
@@ -478,12 +548,22 @@ def main(argv=None):
     for repo in args.repos:
         try:
             prs = fetch(repo, args.cache, refresh=args.refresh)
+            rows += [
+                pr_row(repo, pr, plans) for pr in sorted(prs, key=lambda p: p["number"])
+            ]
         except GhError as err:
             print(f"rework: {repo}: {err}", file=sys.stderr)
             return 1
-        rows += [
-            pr_row(repo, pr, plans) for pr in sorted(prs, key=lambda p: p["number"])
-        ]
+        for pr in prs:
+            if pr.get("truncated"):
+                cut = ", ".join(pr["truncated"])
+                print(
+                    f"rework: {repo}#{pr['number']}: only the first 100 {cut}",
+                    file=sys.stderr,
+                )
+    unparsed = sum(r["unparsed"] for r in rows)
+    if unparsed:
+        print(f"rework: {unparsed} review comments gave no result", file=sys.stderr)
     sys.stdout.write(report(rows))
     return 0
 

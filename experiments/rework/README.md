@@ -16,8 +16,14 @@ and how each was written, not from a random draw.
 The repositories are the history benchmark's five, all public and the owner's
 own.
 
-- **Review comment:** a PR comment or review body whose first heading is
-  `## Blind peer review`. Two formats exist. A *combined* comment covers every
+- **Review comment:** a PR comment or review body with a `## Blind peer
+  review` heading on a line of its own, from a bot or from the repository's
+  owner, members or collaborators (anyone can comment on a public PR). The
+  review posted when a PR opens starts with the heading; a re-review asked for
+  with `@claude review this PR` is claude[bot]'s progress comment, edited in
+  place, with the heading below its "Claude finished" line. A heading that
+  gives no result (a review that didn't run) is counted on stderr, not as a
+  round. Two formats exist. A *combined* comment covers every
   lens, with a lens table and one `Verdict:` line. A *per-lens* comment covers
   one lens (`## Blind peer review — <Lens>`), with its own verdict. Older
   comments use a few other layouts (a code-block listing, JSON, a bare
@@ -40,7 +46,8 @@ own.
   `name@sha256:<hex>#L1-L9` or `…#section-4.3`). Every PR is in one group:
   *cited plan*, *uncited plan* or *no plan*. A plan that can't be read at the
   head (a deleted branch, a force-pushed head) is counted under *unreadable
-  plans*.
+  plans*. Only a 404 counts: any other error from GitHub stops the run, so a
+  rate limit never moves a PR between groups.
 
 Each per-PR count is divided by the group's reviewed PRs, so a group's row
 reads "findings per reviewed PR".
@@ -54,8 +61,10 @@ reads "findings per reviewed PR".
 It needs only `python3` and an authenticated `gh`. It pages each repository's
 merged PRs through the GraphQL API, 25 at a time (larger pages time out on a
 busy repository), and caches the raw responses and plan texts in
-`/var/tmp/codecite-rework/` (`--cache` moves it), never in the repository. A
-full fetch takes about two minutes; a rerun from the cache is instant.
+`$XDG_CACHE_HOME/codecite-rework/` (`~/.cache/codecite-rework/` by default;
+`--cache` moves it), never in the repository. Each connection takes a PR's
+first 100 files, comments and reviews; a PR with more is named on stderr. A
+full fetch takes a few minutes; a rerun from the cache is instant.
 
 Tests: `python3 -m unittest experiments/rework/test_rework.py`.
 
@@ -66,33 +75,39 @@ Run on 2026-10-30, every merged PR to that day.
 | repository | group | PRs | reviewed | mean rounds to pass | never passed | spec / reviewed PR | convention / reviewed PR | all MUST+SHOULD / reviewed PR | unreadable plans |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | jamescrowley321/blind-peer-review | no plan | 134 | 0 | – | 0 | – | – | – | 0 |
-| jamescrowley321/codecite | cited plan | 11 | 10 | 1.00 | 3 | 0.20 | 0.10 | 2.80 | 0 |
-| jamescrowley321/codecite | uncited plan | 35 | 18 | 1.00 | 7 | 0.39 | 0.17 | 3.44 | 0 |
-| jamescrowley321/codecite | no plan | 45 | 19 | 1.00 | 7 | 0.16 | 0.32 | 3.79 | 0 |
-| jamescrowley321/identity-model | no plan | 452 | 43 | 1.00 | 24 | 0.05 | 0.81 | 1.26 | 0 |
+| jamescrowley321/codecite | cited plan | 11 | 10 | 1.30 | 0 | 0.20 | 0.20 | 3.40 | 0 |
+| jamescrowley321/codecite | uncited plan | 35 | 18 | 1.50 | 0 | 0.39 | 0.17 | 7.33 | 0 |
+| jamescrowley321/codecite | no plan | 45 | 21 | 1.25 | 5 | 0.24 | 0.29 | 5.10 | 0 |
+| jamescrowley321/identity-model | no plan | 452 | 52 | 1.00 | 33 | 0.10 | 1.29 | 2.27 | 0 |
 | jamescrowley321/identity-stack | no plan | 206 | 4 | – | 4 | 0.25 | 1.00 | 6.75 | 0 |
 | jamescrowley321/terraform-provider-descope | no plan | 121 | 3 | 1.00 | 2 | 0.00 | 0.67 | 1.00 | 0 |
-| **all** | cited plan | 11 | 10 | 1.00 | 3 | 0.20 | 0.10 | 2.80 | 0 |
-| **all** | uncited plan | 35 | 18 | 1.00 | 7 | 0.39 | 0.17 | 3.44 | 0 |
-| **all** | no plan | 958 | 69 | 1.00 | 37 | 0.09 | 0.68 | 2.26 | 0 |
+| **all** | cited plan | 11 | 10 | 1.30 | 0 | 0.20 | 0.20 | 3.40 | 0 |
+| **all** | uncited plan | 35 | 18 | 1.50 | 0 | 0.39 | 0.17 | 7.33 | 0 |
+| **all** | no plan | 958 | 80 | 1.11 | 44 | 0.14 | 0.99 | 3.19 | 0 |
 
 ## Reading
 
-Few PRs were reviewed at all: 97 of 1,004. blind-peer-review has no review
+Few PRs were reviewed at all: 108 of 1,004. blind-peer-review has no review
 comments, identity-stack and terraform-provider-descope only a handful, and
 only codecite has plans, so the cited and uncited groups are codecite alone,
 with 10 and 18 reviewed PRs. Groups this small show a direction at most.
 
-- Every PR that passed did so at round 1; the rest never passed on record.
-  So rounds to pass doesn't separate the groups. *Never passed* does a little:
-  3 of 10 reviewed cited-plan PRs against 7 of 18 uncited and 7 of 19 with no
-  plan.
-- Cited-plan PRs had the fewest findings: 2.80 MUST + SHOULD per reviewed PR,
-  against 3.44 uncited and 3.79 with no plan, and half the spec violations of
-  uncited plans (0.20 against 0.39).
+- Every reviewed codecite PR with a plan passed in the end. Cited-plan PRs took
+  1.30 rounds on average against 1.50 for uncited plans; codecite PRs with no
+  plan took 1.25, and 5 of their 21 never passed.
+- Cited-plan PRs had fewer than half the findings of uncited ones: 3.40 MUST +
+  SHOULD per reviewed PR against 7.33 (5.10 with no plan), and half the spec
+  violations (0.20 against 0.39). Convention violations were the same (0.20
+  against 0.17).
+- Most of identity-model's 33 never-passed PRs were blocked once, mostly by
+  the Policy & Provenance lens, and merged with no re-review on record. That
+  is how the repository worked, not something the parser missed.
 - The cited group overstates real citing. Several codecite plans (#45, #58,
   #59) are about the citation forms themselves and hold example citations with
   a placeholder hash, which the script counts as citations.
+- Four PRs outside codecite have more than 100 changed files, and only their
+  first 100 were read. None of those repositories has plans, so no PR's group
+  changes.
 
 Nothing here says codecite caused the difference. The table is a baseline to
 rerun as more PRs are planned with codecite and reviewed.
