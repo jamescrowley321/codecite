@@ -1,0 +1,17 @@
+[package]
+name = "codecite-spec"
+description = "The spec adapter for codecite: RFC and OpenID parsing, BCP 14, requirements and diff"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
+keywords = ["citations", "rfc", "openid", "bcp14", "specifications"]
+categories = ["development-tools", "parser-implementations", "text-processing"]
+
+[lints]
+workspace = true
+
+[dependencies]
+codecite-core.workspace = true

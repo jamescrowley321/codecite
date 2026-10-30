@@ -21,11 +21,12 @@ todo = "warn"
 
 [workspace.dependencies]
 # The internal crates' versions must match `workspace.package.version`: for
-# 0.0.x, Cargo treats "0.0.1" as exactly =0.0.1, so a bump changes all five.
+# 0.0.x, Cargo treats "0.0.1" as exactly =0.0.1, so a bump changes all six.
 codecite-core = { path = "crates/codecite-core", version = "0.0.1" }
 codecite-index = { path = "crates/codecite-index", version = "0.0.1" }
 codecite-lsp = { path = "crates/codecite-lsp", version = "0.0.1" }
 codecite-mcp = { path = "crates/codecite-mcp", version = "0.0.1" }
+codecite-spec = { path = "crates/codecite-spec", version = "0.0.1" }
 clap = { version = "4", features = ["derive"] }
 thiserror = "2"
 anyhow = "1"

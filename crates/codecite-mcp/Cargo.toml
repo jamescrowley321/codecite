@@ -15,6 +15,7 @@ workspace = true
 
 [dependencies]
 codecite-core.workspace = true
+codecite-spec.workspace = true
 rmcp.workspace = true
 schemars.workspace = true
 serde.workspace = true

@@ -261,6 +261,7 @@ dependencies = [
  "codecite-index",
  "codecite-lsp",
  "codecite-mcp",
+ "codecite-spec",
  "directories",
  "rusqlite",
  "serde_json",
@@ -299,6 +300,7 @@ name = "codecite-index"
 version = "0.0.1"
 dependencies = [
  "codecite-core",
+ "codecite-spec",
  "ego-tree",
  "globset",
  "pulldown-cmark",
@@ -334,6 +336,7 @@ name = "codecite-mcp"
 version = "0.0.1"
 dependencies = [
  "codecite-core",
+ "codecite-spec",
  "jsonschema",
  "rmcp",
  "rusqlite",
@@ -343,6 +346,13 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "codecite-spec"
+version = "0.0.1"
+dependencies = [
+ "codecite-core",
 ]
 
 [[package]]
