@@ -1,6 +1,6 @@
 //! Chunking: splits a file into the spans that search returns. Code in a
-//! supported language splits at definitions with tree-sitter, Markdown at
-//! headings, and everything else into 60-line windows.
+//! supported language splits at definitions with tree-sitter, Markdown and
+//! HTML at headings, and everything else into 60-line windows.
 
 mod code;
 mod text;
@@ -23,7 +23,7 @@ pub enum ChunkKind {
     Variable,
     /// A type alias.
     TypeAlias,
-    /// A Markdown heading and the text under it.
+    /// A Markdown or HTML heading and the text under it.
     Section,
     /// A run of at most [`WINDOW_LINES`] lines.
     Window,
@@ -154,6 +154,7 @@ impl Chunker {
         let lines = text::Lines::new(text);
         let mut chunks = match Language::detect(path, text) {
             Some(Language::Markdown) => text::sections(&lines),
+            Some(Language::Html) => text::html_sections(&lines),
             Some(language) => self.code.chunk(language, &lines),
             None => Vec::new(),
         };
@@ -213,6 +214,19 @@ mod tests {
         let want = expect(&[("window", 1, 60, ""), ("window", 61, 61, "")]);
         assert_eq!(outline("notes.md", &text), want);
         assert_eq!(outline("notes.txt", &text), want);
+    }
+
+    #[test]
+    fn html_splits_at_heading_tags_and_windows_the_head() {
+        let text = "<html>\n<head><title>Guide</title></head>\n<body>\n<h1>Guide</h1>\n<p>Text.</p>\n<h2>Use</h2>\n<p>Run it.</p>\n</body>\n</html>\n";
+        assert_eq!(
+            outline("docs/guide.html", text),
+            expect(&[
+                ("window", 1, 3, ""),
+                ("section", 4, 5, "Guide"),
+                ("section", 6, 9, "Use"),
+            ])
+        );
     }
 
     #[test]

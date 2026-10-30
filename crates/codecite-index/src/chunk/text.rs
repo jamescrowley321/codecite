@@ -1,7 +1,10 @@
-//! Line bookkeeping, 60-line windows, Markdown heading sections and their
-//! anchors.
+//! Line bookkeeping, 60-line windows, Markdown and HTML heading sections
+//! and their anchors.
 
 use std::collections::HashSet;
+use std::sync::LazyLock;
+
+use scraper::{Html, Selector};
 
 use super::{Chunk, ChunkKind, WINDOW_LINES};
 
@@ -118,6 +121,147 @@ pub(super) fn sections<'a>(lines: &Lines<'a>) -> Vec<Chunk<'a>> {
         });
     }
     out
+}
+
+/// One section per HTML heading tag (`<h1>` to `<h6>`), running to the
+/// line before the next one, like [`sections`] for Markdown. Tags inside
+/// `<pre>`, `<script>`, `<style>` or a comment don't count. The anchor is
+/// the tag's `id`, or else the title's slug.
+pub(super) fn html_sections<'a>(lines: &Lines<'a>) -> Vec<Chunk<'a>> {
+    let found = html_headings(lines);
+    let headings: Vec<Heading> = found.iter().map(|(h, _)| h.clone()).collect();
+    let mut slugs = Slugs::default();
+    let mut out = Vec::new();
+    for (i, (heading, id)) in found.into_iter().enumerate() {
+        let end = section_end(lines, &headings, i);
+        let anchor = id.unwrap_or_else(|| slugs.slug(&heading.title));
+        out.push(Chunk {
+            kind: ChunkKind::Section,
+            start_line: heading.line,
+            end_line: end,
+            text: lines.span(heading.line, end),
+            symbol: None,
+            title: Some(heading.title),
+            anchor: Some(anchor),
+        });
+    }
+    out
+}
+
+/// The most lines a heading element may span before its title is cut.
+const MAX_HEADING_LINES: u32 = 20;
+
+/// Elements whose contents are never headings, with their closing tags.
+const RAW_ELEMENTS: [(&str, &str); 3] = [
+    ("<pre", "</pre"),
+    ("<script", "</script"),
+    ("<style", "</style"),
+];
+
+/// Every heading tag outside comments and raw elements, in order, each with
+/// its `id` when it has one. Scans raw lines, so a heading's line is the
+/// line its tag opens on.
+fn html_headings(lines: &Lines<'_>) -> Vec<(Heading, Option<String>)> {
+    let mut out = Vec::new();
+    // The closing marker we're waiting for: `-->` or a raw element's tag.
+    let mut until: Option<&str> = None;
+    for n in 1..=lines.len() as u32 {
+        // ASCII lowercasing keeps byte offsets, so `lower` indexes `line`.
+        let lower = lines.line(n).to_ascii_lowercase();
+        let mut at = 0;
+        let mut heading = None;
+        while at < lower.len() {
+            let rest = &lower[at..];
+            if let Some(close) = until {
+                match rest.find(close) {
+                    Some(i) => {
+                        at += i + close.len();
+                        until = None;
+                    }
+                    None => break,
+                }
+                continue;
+            }
+            let Some(i) = rest.find('<') else { break };
+            let tag = &rest[i..];
+            at += i + 1;
+            if tag.starts_with("<!--") {
+                until = Some("-->");
+                at += 3;
+            } else if let Some((_, close)) = RAW_ELEMENTS.iter().find(|(open, _)| opens(tag, open))
+            {
+                until = Some(close);
+            } else if heading.is_none()
+                && let Some(level) = heading_level(tag)
+            {
+                heading = Some((at - 1, level));
+            }
+        }
+        if let Some((offset, level)) = heading {
+            out.push(html_heading(lines, n, offset, level));
+        }
+    }
+    out
+}
+
+/// True when `tag` opens the element `open` (`<pre`): the name is followed
+/// by `>`, whitespace or `/`, so `<pre` doesn't match `<prefix>`.
+fn opens(tag: &str, open: &str) -> bool {
+    tag.strip_prefix(open)
+        .and_then(|rest| rest.chars().next())
+        .is_some_and(|c| c == '>' || c == '/' || c.is_ascii_whitespace())
+}
+
+/// The level of the heading tag `tag` opens with (`<h2 ...`), lowercased.
+fn heading_level(tag: &str) -> Option<usize> {
+    let level = tag.strip_prefix("<h")?.chars().next()?.to_digit(10)?;
+    ((1..=6).contains(&level) && opens(tag, &tag[..3])).then_some(level as usize)
+}
+
+/// The level-`level` heading whose tag opens at byte `offset` of line `n`:
+/// its title is the element's text, tags stripped and whitespace collapsed,
+/// read from the lines up to its closing tag.
+fn html_heading(
+    lines: &Lines<'_>,
+    n: u32,
+    offset: usize,
+    level: usize,
+) -> (Heading, Option<String>) {
+    let first = &lines.line(n)[offset..];
+    let close = format!("</h{level}");
+    let last = (n..=lines.len() as u32)
+        .take(MAX_HEADING_LINES as usize)
+        .find(|&m| {
+            let line = if m == n { first } else { lines.line(m) };
+            line.to_ascii_lowercase().contains(&close)
+        })
+        .unwrap_or_else(|| (n + MAX_HEADING_LINES - 1).min(lines.len() as u32));
+    let mut source = first.to_string();
+    if last > n {
+        source.push('\n');
+        source.push_str(lines.span(n + 1, last));
+    }
+    static HEADING: LazyLock<Selector> =
+        LazyLock::new(|| Selector::parse("h1, h2, h3, h4, h5, h6").expect("valid selector"));
+    let fragment = Html::parse_fragment(&source);
+    let element = fragment.select(&HEADING).next();
+    let title = element
+        .map(|e| e.text().collect::<Vec<_>>().join(" "))
+        .unwrap_or_default()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let id = element
+        .and_then(|e| e.value().id())
+        .filter(|id| !id.is_empty())
+        .map(str::to_string);
+    let heading = Heading {
+        line: n,
+        level,
+        title,
+        end_line: n,
+    };
+    (heading, id)
 }
 
 /// GitHub-style heading anchors, with `-1`, `-2`, … on a repeated one.
@@ -345,6 +489,61 @@ mod tests {
         let text = "````\n```\n# inside\n````\n# Outside\n";
         let chunks = sections(&Lines::new(text));
         assert_eq!(spans(&chunks), [(5, 5)]);
+    }
+
+    /// Each section as (start, end, title, anchor).
+    fn html_outline(text: &str) -> Vec<(u32, u32, String, String)> {
+        html_sections(&Lines::new(text))
+            .into_iter()
+            .map(|c| {
+                assert_eq!(c.kind, ChunkKind::Section);
+                (
+                    c.start_line,
+                    c.end_line,
+                    c.title.unwrap(),
+                    c.anchor.unwrap(),
+                )
+            })
+            .collect()
+    }
+
+    fn row(start: u32, end: u32, title: &str, anchor: &str) -> (u32, u32, String, String) {
+        (start, end, title.to_string(), anchor.to_string())
+    }
+
+    #[test]
+    fn html_sections_start_at_heading_tags() {
+        let text = "<!doctype html>\n<p>Before.</p>\n<h1 id=\"intro\">Intro</h1>\n<p>One.</p>\n<p>Two.</p>\n<p>Three.</p>\n<p>Four.</p>\n<p>Five.</p>\n<H2 class=\"x\">Set <em>up</em></H2>\n<p>Run.</p>\n\n";
+        assert_eq!(
+            html_outline(text),
+            [row(3, 8, "Intro", "intro"), row(9, 10, "Set up", "set-up")]
+        );
+    }
+
+    #[test]
+    fn an_html_heading_split_across_lines_takes_its_whole_title() {
+        let text = "<h2>\n  Set\n  up\n</h2>\n<p>Run.</p>\n";
+        assert_eq!(html_outline(text), [row(1, 5, "Set up", "set-up")]);
+    }
+
+    #[test]
+    fn html_headings_in_pre_comments_and_scripts_do_not_count() {
+        let text = "<pre>\n<h1>Code</h1>\n</pre>\n<!--\n<h1>Gone</h1>\n-->\n<script>\nlet s = \"<h1>x</h1>\";\n</script>\n<!-- <h1>inline</h1> --><h2>Real</h2>\n<header>not a heading</header>\n<h3>Real</h3>\n";
+        assert_eq!(
+            html_outline(text),
+            [row(10, 11, "Real", "real"), row(12, 12, "Real", "real-1")]
+        );
+    }
+
+    #[test]
+    fn html_headings_keep_their_level_and_survive_a_missing_close() {
+        let text = "<h3>\nDeep\n</h3>\n<p>x</p>\n<h2>Open\n<p>never closed</p>\n";
+        let found = html_headings(&Lines::new(text));
+        let got: Vec<_> = found
+            .iter()
+            .map(|(h, _)| (h.line, h.level, h.title.as_str()))
+            .collect();
+        assert_eq!(got, [(1, 3, "Deep"), (5, 2, "Open never closed")]);
     }
 
     #[test]

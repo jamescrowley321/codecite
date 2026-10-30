@@ -20,11 +20,13 @@ pub enum Language {
     CSharp,
     /// Markdown (`.md`, `.markdown`).
     Markdown,
+    /// HTML (`.html`, `.htm`). Split at its heading tags; no grammar.
+    Html,
 }
 
 impl Language {
     /// Every language, in the order [`Language::name`] lists them.
-    pub const ALL: [Language; 8] = [
+    pub const ALL: [Language; 9] = [
         Self::Rust,
         Self::Python,
         Self::TypeScript,
@@ -33,6 +35,7 @@ impl Language {
         Self::Go,
         Self::CSharp,
         Self::Markdown,
+        Self::Html,
     ];
 
     /// The language stored as `name` (`python`, `tsx`), or `None` for any
@@ -58,6 +61,7 @@ impl Language {
             Self::Go => "go",
             Self::CSharp => "csharp",
             Self::Markdown => "markdown",
+            Self::Html => "html",
         }
     }
 
@@ -76,6 +80,7 @@ impl Language {
             "go" => Self::Go,
             "cs" => Self::CSharp,
             "md" | "markdown" => Self::Markdown,
+            "html" | "htm" => Self::Html,
             _ => return None,
         })
     }
@@ -120,6 +125,8 @@ mod tests {
             ("Client.cs", Language::CSharp),
             ("README.md", Language::Markdown),
             ("docs/Guide.MARKDOWN", Language::Markdown),
+            ("docs/index.html", Language::Html),
+            ("site/Old.HTM", Language::Html),
         ];
         for (path, language) in cases {
             assert_eq!(Language::detect(path, ""), Some(language), "{path}");
@@ -162,6 +169,12 @@ mod tests {
         for (text, language) in cases {
             assert_eq!(Language::detect("bin/tool", text), language, "{text:?}");
         }
+    }
+
+    #[test]
+    fn html_round_trips_through_its_name() {
+        assert_eq!(Language::from_name("html"), Some(Language::Html));
+        assert_eq!(Language::Html.name(), "html");
     }
 
     #[test]
