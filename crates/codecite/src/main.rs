@@ -672,8 +672,9 @@ fn write_matches(
 
 /// The short human form of grep matches, as [`human`]'s for search: a
 /// header with the license class and `indexed_at` when every match shares
-/// them, otherwise on each match's line. Per match: one line with its
-/// number and citation, then the line it matched, trimmed and cut.
+/// them, otherwise on each match's line. Per match, one line as `rg` prints
+/// `path:line:text`: the citation, any `dirty` mark and unshared
+/// provenance, a colon, then the line it matched, trimmed and cut.
 fn human_matches(matches: &[GrepMatch]) -> String {
     use std::fmt::Write as _;
 
@@ -695,12 +696,8 @@ fn human_matches(matches: &[GrepMatch]) -> String {
             escape_controls(&first.indexed_at)
         );
     }
-    for (rank, m) in (1..).zip(matches) {
-        let _ = write!(
-            out,
-            "{rank}. {}",
-            escape_controls(&abbreviate_commit(&m.citation))
-        );
+    for m in matches {
+        out.push_str(&escape_controls(&abbreviate_commit(&m.citation)));
         if m.dirty == Some(true) {
             out.push_str(" · dirty");
         }
@@ -714,7 +711,7 @@ fn human_matches(matches: &[GrepMatch]) -> String {
         }
         let _ = writeln!(
             out,
-            "\n   {}",
+            ": {}",
             escape_controls(&cut(m.text.trim(), HUMAN_SNIPPET_CHARS))
         );
     }
@@ -800,15 +797,22 @@ fn write_definitions(
     out.flush()
 }
 
-/// The short human form of definitions: a header with how many there are
-/// and whether the name is ambiguous, then per definition one line with its
-/// rank, citation, kind, symbol, role, license class and `indexed_at`, and
-/// its snippet's first non-blank line.
+/// The short human form of definitions: a header with how many there are,
+/// whether the name is ambiguous, and the license class and `indexed_at`
+/// when every definition shares them. Per definition, one line: citation,
+/// kind and symbol, role, any `dirty` mark, the license and `indexed_at` if
+/// not shared, and the snippet's first non-blank line.
 fn human_definitions(found: &Definitions) -> String {
     use std::fmt::Write as _;
 
     let mut out = String::new();
     let n = found.total;
+    let shared = found.results.first().filter(|first| {
+        found
+            .results
+            .iter()
+            .all(|d| d.license_class == first.license_class && d.indexed_at == first.indexed_at)
+    });
     // `write!` to a `String` can't fail.
     let _ = write!(
         out,
@@ -822,29 +826,43 @@ fn human_definitions(found: &Definitions) -> String {
     if found.ambiguous {
         out.push_str(" · ambiguous");
     }
-    out.push('\n');
-    for (rank, d) in (1..).zip(&found.results) {
+    if let Some(first) = shared {
         let _ = write!(
             out,
-            "{rank}. {} · {} {} · {} · {} · indexed {}",
+            " · {} · indexed {}",
+            escape_controls(&first.license_class),
+            escape_controls(&first.indexed_at)
+        );
+    }
+    out.push('\n');
+    for d in &found.results {
+        let _ = write!(
+            out,
+            "{} · {} {} · {}",
             escape_controls(&abbreviate_commit(&d.citation)),
             escape_controls(&d.kind),
             escape_controls(&d.symbol),
-            d.role,
-            escape_controls(&d.license_class),
-            escape_controls(&d.indexed_at)
+            d.role
         );
         if d.dirty {
             out.push_str(" · dirty");
         }
-        out.push('\n');
-        if let Some(line) = d.snippet.lines().map(str::trim).find(|l| !l.is_empty()) {
-            let _ = writeln!(
+        if shared.is_none() {
+            let _ = write!(
                 out,
-                "   {}",
+                " · {} · indexed {}",
+                escape_controls(&d.license_class),
+                escape_controls(&d.indexed_at)
+            );
+        }
+        if let Some(line) = d.snippet.lines().map(str::trim).find(|l| !l.is_empty()) {
+            let _ = write!(
+                out,
+                " · {}",
                 escape_controls(&cut(line, HUMAN_SNIPPET_CHARS))
             );
         }
+        out.push('\n');
     }
     out
 }
@@ -1348,11 +1366,24 @@ section · Checking\\u{1b}[2J · MUST · quote · indexed 2026-10-20T06:00:00Z
         };
         assert_eq!(
             human_definitions(&found),
-            "3 definitions of callback, the first 2 · ambiguous
-1. app@0123456789ab:src/a.rs#L1-L5 · method callback · source · adapt · indexed 2026-10-20T06:00:00Z
-   pub fn callback(&self) {
-2. app@0123456789ab:tests/a.rs#L1-L5 · method callback · test · adapt · indexed 2026-10-20T06:00:00Z · dirty
-   pub fn callback(&self) {
+            "3 definitions of callback, the first 2 · ambiguous · adapt · indexed 2026-10-20T06:00:00Z
+app@0123456789ab:src/a.rs#L1-L5 · method callback · source · pub fn callback(&self) {
+app@0123456789ab:tests/a.rs#L1-L5 · method callback · test · dirty · pub fn callback(&self) {
+"
+        );
+        let mut other = definition("src/b.rs", "source");
+        other.license_class = "quote".into();
+        let out = human_definitions(&Definitions {
+            symbol: "callback".into(),
+            ambiguous: true,
+            total: 2,
+            results: vec![definition("src/a.rs", "source"), other],
+        });
+        assert_eq!(
+            out,
+            "2 definitions of callback · ambiguous
+app@0123456789ab:src/a.rs#L1-L5 · method callback · source · adapt · indexed 2026-10-20T06:00:00Z · pub fn callback(&self) {
+app@0123456789ab:src/b.rs#L1-L5 · method callback · source · quote · indexed 2026-10-20T06:00:00Z · pub fn callback(&self) {
 "
         );
         let mut one = definition("src/a\u{1b}.rs", "source");
@@ -1365,7 +1396,7 @@ section · Checking\\u{1b}[2J · MUST · quote · indexed 2026-10-20T06:00:00Z
         };
         let out = human_definitions(&found);
         assert!(
-            out.starts_with("1 definition of Client.callback\\u{1b}\n"),
+            out.starts_with("1 definition of Client.callback\\u{1b} · adapt · indexed "),
             "{out}"
         );
         assert!(out.contains("src/a\\u{1b}.rs"), "{out}");
@@ -1665,10 +1696,8 @@ app@0123456789ab:b.rs#L1-L5 · function · quote · indexed 2026-10-20T06:00:00Z
         assert_eq!(
             human_matches(&[matched(&format!("app@{SHA}:src/a.rs#L3"), "jti"), dirty]),
             "2 matches · adapt · indexed 2026-10-20T06:00:00Z
-1. app@0123456789ab:src/a.rs#L3
-   jti
-2. app@0123456789ab:src/b.rs#L7 · dirty
-   let jti = x;\\u{1b}
+app@0123456789ab:src/a.rs#L3: jti
+app@0123456789ab:src/b.rs#L7 · dirty: let jti = x;\\u{1b}
 "
         );
         let mut spec = matched("rfc9449@sha256:0123456789ab#section-4.3/step-2", "The jti");
@@ -1677,10 +1706,8 @@ app@0123456789ab:b.rs#L1-L5 · function · quote · indexed 2026-10-20T06:00:00Z
         let out = human_matches(&[matched("app@0123456:a.rs#L1", "x"), spec]);
         assert_eq!(
             out,
-            "1. app@0123456:a.rs#L1 · adapt · indexed 2026-10-20T06:00:00Z
-   x
-2. rfc9449@sha256:0123456789ab#section-4.3/step-2 · quote · indexed 2026-10-20T06:00:00Z
-   The jti
+            "app@0123456:a.rs#L1 · adapt · indexed 2026-10-20T06:00:00Z: x
+rfc9449@sha256:0123456789ab#section-4.3/step-2 · quote · indexed 2026-10-20T06:00:00Z: The jti
 "
         );
         assert_eq!(human_matches(&[]), "no matches\n");

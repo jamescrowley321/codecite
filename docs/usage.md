@@ -258,7 +258,7 @@ matched against one line at a time, so `^` and `$` are a line's ends.
 case. `--language`, `--path`, `--only` and `--limit` work as they do for
 `search`.
 
-Each match is one line: a code line cites itself (`repo@sha:path#L12`), and a
+Each match is one line, `citation: text` as `rg` prints `path:line:text`: a code line cites itself (`repo@sha:path#L12`), and a
 spec line cites the step or section that holds it, so `read` turns any match
 back into its text. Matches come in index order, unscored: each source in
 the manifest's order, its files by path, then lines. So a grep over code and
@@ -267,12 +267,9 @@ specs lists code first when the manifest does; `--only spec` keeps specs.
 ```text
 $ codecite grep identity invalid_dpop_proof -i --only spec --limit 3
 3 matches · quote · indexed 2026-10-20T22:56:30Z
-1. rfc9449@sha256:2d8657f07291#section-5
-   The DPoP HTTP header field MUST contain a valid DPoP proof JWT. If the DPoP proof is invalid, the authorization server i…
-2. rfc9449@sha256:2d8657f07291#section-7.1
-   - An error parameter ([RFC6750], Section 3) SHOULD be included to indicate the reason why the request was declined, if t…
-3. rfc9449@sha256:2d8657f07291#section-12.2
-   invalid_dpop_proof
+rfc9449@sha256:2d8657f07291#section-5: The DPoP HTTP header field MUST contain a valid DPoP proof JWT. If the DPoP proof is invalid, the authorization server i…
+rfc9449@sha256:2d8657f07291#section-7.1: - An error parameter ([RFC6750], Section 3) SHOULD be included to indicate the reason why the request was declined, if t…
+rfc9449@sha256:2d8657f07291#section-12.2: invalid_dpop_proof
 ```
 
 An invalid regex is an error that says what is wrong with it, and so is an
@@ -520,16 +517,15 @@ all, never one guess, and says it is ambiguous: source files first, then docs,
 examples and tests, each in citation order, at most 50.
 
 ```text
-3 definitions of callback · ambiguous
-1. app@0123456789ab:src/client.rs#L4-L6 · method callback · source · adapt · indexed 2026-10-20T22:56:30Z
-   pub fn callback(&self) -> bool {
-2. app@0123456789ab:src/server.rs#L4 · method callback · source · adapt · indexed 2026-10-20T22:56:30Z
-   pub fn callback(&self) {}
-3. app@0123456789ab:tests/callback.rs#L1-L3 · function callback · test · adapt · indexed 2026-10-20T22:56:30Z
-   fn callback() {
+3 definitions of callback · ambiguous · adapt · indexed 2026-10-20T22:56:30Z
+app@0123456789ab:src/client.rs#L4-L6 · method callback · source · pub fn callback(&self) -> bool {
+app@0123456789ab:src/server.rs#L4 · method callback · source · pub fn callback(&self) {}
+app@0123456789ab:tests/callback.rs#L1-L3 · function callback · test · fn callback() {
 ```
 
-`read` a definition's citation for its whole text. `--json` prints
+One line per definition: its citation, kind, symbol and role, then the first
+line of its text. A header gives the license class and index time once when
+the definitions share them. `read` a definition's citation for its whole text. `--json` prints
 `{"symbol", "ambiguous", "total", "results"}`; each result also carries
 `providers` and `confidence`. A name nothing defines is an error that lists
 the names differing from it only in case, `_` or `-`:

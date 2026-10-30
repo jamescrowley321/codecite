@@ -263,9 +263,11 @@ fn grep_prints_cited_lines() {
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(text.starts_with("2 matches · adapt · indexed "), "{text}");
     assert!(
-        text.contains(":src/lib.rs#L1 · dirty\n   pub fn validate("),
+        text.contains(":src/lib.rs#L1 · dirty: pub fn validate("),
         "{text}"
     );
+    let all = grep(&demo, &["validate"]);
+    assert_eq!(text.lines().count(), 1 + all.len(), "{text}");
 }
 
 #[test]
