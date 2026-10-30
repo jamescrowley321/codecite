@@ -543,6 +543,10 @@ codecite earns its place only if agents using it do no worse than agents without
 - `codecite-bench` runs each query through a `codecite` binary and prints Recall@1, Recall@10 and MRR per class, with every query whose answer isn't first. A spec result counts when it is the labelled section or a step in it; a code result when its lines hold the labelled line. CI runs it on every PR and posts the table to the job summary.
 - Recall@10 and MRR for BM25 alone, BM25 plus vectors, and BM25 plus graph boosts.
 
+**Rework**
+
+- The general-purpose design's measure of success is less rework. `experiments/rework/` counts it, observationally and never as a gate: over the history benchmark's repositories, each merged PR's spec and convention findings from its blind peer review comments and the rounds before it passed, split by whether its plan carries codecite citations (#179).
+
 **Success criteria**
 
 - No loss on any of correctness, tokens or time, for any agent/model pair. Each measure is a difference between the arms: pass rate in points (codecite minus baseline), and median total tokens and median wall time relative to baseline's median (codecite / baseline - 1). Each gets a 95% percentile bootstrap interval over the usable runs (each arm resampled on its own, 10 000 times, with a fixed seed, so a scorecard is reproducible). A loss is an interval past the margin at its favourable end: the pass rate's upper bound more than 5 points below 0, or the tokens' or time's lower bound more than 5% above 0. This replaces the harness design's plain comparison of the numbers, which at 20 runs per arm stops on noise most of the time (the owner's decision). Any loss stops feature work until it is understood. A pair short of the planned usable runs in an arm, or with an unknown measure, is incomplete, not a pass. A pair whose codecite arm called codecite in fewer than half its usable runs is `not measured`, never `no loss` or a loss: an arm that doesn't use codecite says nothing about it.
