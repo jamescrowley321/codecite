@@ -1,5 +1,7 @@
 //! The `codecite` command-line tool.
 
+mod assist;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
