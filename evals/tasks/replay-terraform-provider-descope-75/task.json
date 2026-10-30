@@ -1,5 +1,6 @@
 {
   "id": "replay-terraform-provider-descope-75",
+  "frozen_at": "bd5a89d620bfa665fc23a65541463117d1423f76",
   "kind": "replay",
   "gate": "replay",
   "repo": "jamescrowley321/terraform-provider-descope",
