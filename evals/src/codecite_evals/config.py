@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 
 EVALS_DIR = Path(os.environ.get("CODECITE_EVALS_DIR") or Path(__file__).resolve().parents[2])
+ROOT = EVALS_DIR.parent
 COMPOSE = EVALS_DIR / "inspect" / "compose.yaml"
 COMPOSE_OFFLINE = EVALS_DIR / "inspect" / "compose-offline.yaml"
 LOGS = EVALS_DIR / "inspect" / "logs"

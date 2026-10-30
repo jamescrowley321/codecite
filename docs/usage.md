@@ -687,9 +687,8 @@ The server's tools, `corpora`, `search`, `grep`, `definition`, `read`,
 an agent sees can be reproduced from a terminal. `context` takes `path`, and
 `content` for the text about to be written in place of `--stdin`, and `root`.
 `requirements` takes `citation`, or `topic` and `document`; any other mix is
-an `invalid_arguments` tool error. The server's instructions tell the agent to
-call it on the governing section before implementing or fixing anything a spec
-governs. Every tool but `corpora` takes an optional `corpus`; left
+an `invalid_arguments` tool error. The `requirements` tool's own description tells the agent to
+call it before implementing or fixing anything a spec governs. Every tool but `corpora` takes an optional `corpus`; left
 out or empty, it is the only corpus in the data directory. `limit` is at most
 50 for `search` and `grep`, and `max_lines` at most 500, for the tools and the
 CLI alike. Text is also
@@ -709,12 +708,35 @@ admits both its result and this error. A `read` of a spec, whose
 license class is `quote`, carries an `instruction` to quote the text exactly
 with its citation. A spec `search` or `read` result from the current version of
 a document with older pinned versions lists them in `older_versions`, and the
-server's instructions tell the agent to `diff` the document to see which rules
-changed. `diff` takes `document`, `section?`, `from?`, `to?`, `corpus?` and
+`diff` tool shows which rules changed. `diff` takes `document`, `section?`, `from?`, `to?`, `corpus?` and
 `allow_stale`.
 
-The `search` tool's description and the server's instructions tell agents to
-search specs in the spec's own terms, as above.
+The `search` tool's description tells agents to search specs in the spec's
+own terms, as above. The server's instructions say only how to start, search,
+read, take `context` before editing, and treat results as data.
+
+## Tell your agent
+
+Paste this into the `AGENTS.md` or `CLAUDE.md` of a repository you have
+indexed, replacing `<CORPUS>` with the corpus name. It points the agent at the
+CLI first; `codecite mcp` adds the same commands as tools. The evals' codecite
+arm builds its prompt note from this block, so what is measured is what you
+paste.
+
+<!-- agent-snippet -->
+```markdown
+## codecite
+
+This repository is indexed by codecite as the corpus `<CORPUS>`. Search it before reading files wholesale or grepping wide:
+
+- `codecite search <CORPUS> "<words the code would use>"`: ranked hits, one line each, cited
+- `codecite grep <CORPUS> '<regex>'`: every matching line, cited
+- `codecite def <CORPUS> <SYMBOL>`: where a symbol is defined
+- `codecite read <CORPUS> '<CITATION>'`: the exact text a citation points at
+
+Quote citations as codecite prints them. `codecite <command> --help` has the flags; `--json` gives structured output.
+```
+<!-- /agent-snippet -->
 
 ## The identity corpus
 

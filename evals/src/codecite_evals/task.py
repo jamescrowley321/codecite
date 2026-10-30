@@ -24,6 +24,7 @@ difficulty without watching codecite's (evals/README.md).
 
 import json
 import os
+import re
 from pathlib import Path
 from time import monotonic
 
@@ -61,19 +62,26 @@ MCP_CONFIG = {
 AGENT_TIMEOUT = 600
 
 
+def snippet(corpus: str) -> str:
+    """The AGENTS.md snippet from docs/usage.md, for `corpus`, without its
+    heading's fence. Fails loudly if the markers or the fence are missing."""
+    text = (config.ROOT / "docs" / "usage.md").read_text()
+    m = re.search(r"<!-- agent-snippet -->\s*```markdown\n(.*?)```\s*<!-- /agent-snippet -->", text, re.S)
+    if not m:
+        raise ValueError("docs/usage.md has no <!-- agent-snippet --> block holding a markdown fence")
+    return m.group(1).strip().replace("<CORPUS>", corpus)
+
+
 def codecite_note(task_dir: Path) -> str:
     """The codecite arm's note, naming what the task's `eval` corpus indexes."""
     corpus = json.loads((task_dir / "task.json").read_text())["corpus"]
     indexes = f"the identity-model source at `{IDENTITY_MODEL}`"
     if corpus.get("documents"):
         indexes += " and the OAuth 2.0, OpenID Connect and FAPI specifications it implements"
+    mcp = ", ".join(f"`{tool}`" for tool in CODECITE_TOOLS)
     return (
-        f"codecite indexes {indexes} as its corpus `eval`. Its tools `mcp__codecite__search` (ranked "
-        "results with citations) and `mcp__codecite__read` (the text a citation points at) search and "
-        "read it, and `mcp__codecite__requirements` lists the normative statements governing a spec section, each "
-        "with its citation: use it before implementing or fixing anything a spec governs. The `codecite` command on "
-        'your PATH does the same: `codecite search eval "<query>"`, `codecite read eval "<citation>"` and '
-        '`codecite requirements eval "<citation>"`.'
+        f"codecite indexes {indexes} as its corpus `eval`.\n\n{snippet('eval')}\n\n"
+        f"The same commands are the MCP tools {mcp}."
     )
 
 

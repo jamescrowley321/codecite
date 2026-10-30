@@ -225,3 +225,16 @@ def test_every_task_takes_the_arms(name):
 def test_unknown_arms_are_refused():
     with pytest.raises(ValueError, match="arms must be one of"):
         task.fastapi_middleware(arms="abc")
+
+
+def test_the_snippet_comes_from_usage_md():
+    text = (config.ROOT / "docs" / "usage.md").read_text()
+    s = task.snippet("eval")
+    assert "<CORPUS>" not in s and 'codecite search eval "' in s
+    assert s.replace("eval", "<CORPUS>") in text
+
+
+def test_the_note_is_cli_first():
+    note = task.codecite_note(config.task_dir("fastapi-middleware"))
+    assert note.index("codecite search eval") < note.index("mcp__codecite__search")
+    assert all(tool in note for tool in task.CODECITE_TOOLS)
