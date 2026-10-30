@@ -1,0 +1,30 @@
+{
+  "id": "replay-identity-model-814",
+  "kind": "replay",
+  "gate": "replay",
+  "repo": "jamescrowley321/identity-model",
+  "url": "https://github.com/jamescrowley321/identity-model",
+  "base": "773b5dcebf7b73af7b210d117334a3b6acd18c0a",
+  "merge": "28343afcfe346b8b04ac408aeb05243f90c1e7b3",
+  "pr": 814,
+  "issue": 802,
+  "language": "node",
+  "hidden": [
+    "infra/node-oidc-provider/vectors.test.js"
+  ],
+  "test": [
+    "npm",
+    "test",
+    "--",
+    "{hidden}"
+  ],
+  "setup": [
+    "npm",
+    "ci"
+  ],
+  "workdir": "infra/node-oidc-provider",
+  "epochs": {
+    "quick": 5,
+    "full": 10
+  }
+}

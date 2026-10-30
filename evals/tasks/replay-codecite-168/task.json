@@ -1,0 +1,36 @@
+{
+  "id": "replay-codecite-168",
+  "kind": "replay",
+  "gate": "replay",
+  "repo": "jamescrowley321/codecite",
+  "url": "https://github.com/jamescrowley321/codecite",
+  "base": "26db6176e12f9b238abda0ced0b53e9038f14f05",
+  "merge": "e9e83fba57eaa908fcce33a593250f1d823f6e58",
+  "pr": 168,
+  "issue": 158,
+  "language": "rust",
+  "hidden": [
+    "crates/codecite/tests/diff.rs",
+    "crates/codecite/tests/mcp.rs"
+  ],
+  "test": [
+    "cargo",
+    "test",
+    "--locked",
+    "--offline",
+    "--test",
+    "diff",
+    "--test",
+    "mcp"
+  ],
+  "setup": [
+    "cargo",
+    "fetch",
+    "--locked"
+  ],
+  "workdir": ".",
+  "epochs": {
+    "quick": 5,
+    "full": 10
+  }
+}

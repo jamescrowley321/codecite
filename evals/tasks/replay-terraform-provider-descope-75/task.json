@@ -1,0 +1,31 @@
+{
+  "id": "replay-terraform-provider-descope-75",
+  "kind": "replay",
+  "gate": "replay",
+  "repo": "jamescrowley321/terraform-provider-descope",
+  "url": "https://github.com/jamescrowley321/terraform-provider-descope",
+  "base": "6479400821d292fe69db6125832a113794c44eeb",
+  "merge": "3c74794eb2f5ab99924950314a6e1bef7cfb55ae",
+  "pr": 75,
+  "issue": 73,
+  "language": "go",
+  "hidden": [
+    "internal/infra/retry_test.go"
+  ],
+  "test": [
+    "go",
+    "test",
+    "-count=1",
+    "./internal/infra"
+  ],
+  "setup": [
+    "go",
+    "mod",
+    "download"
+  ],
+  "workdir": ".",
+  "epochs": {
+    "quick": 5,
+    "full": 10
+  }
+}

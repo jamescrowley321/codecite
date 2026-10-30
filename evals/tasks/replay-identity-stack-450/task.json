@@ -1,0 +1,35 @@
+{
+  "id": "replay-identity-stack-450",
+  "kind": "replay",
+  "gate": "replay",
+  "repo": "jamescrowley321/identity-stack",
+  "url": "https://github.com/jamescrowley321/identity-stack",
+  "base": "11842e857b2dc3c6353da50029e389f3237e3a6b",
+  "merge": "0c76cbd9311069b9f1351b9d8dd307619af49f7e",
+  "pr": 450,
+  "issue": 438,
+  "language": "python",
+  "hidden": [
+    "backend/tests/unit/test_accesskeys_router.py"
+  ],
+  "test": [
+    "uv",
+    "run",
+    "--with",
+    "pytest==9.1.1",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "{hidden}"
+  ],
+  "setup": [
+    "uv",
+    "sync"
+  ],
+  "workdir": "backend",
+  "epochs": {
+    "quick": 5,
+    "full": 10
+  }
+}

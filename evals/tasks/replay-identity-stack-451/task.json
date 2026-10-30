@@ -1,0 +1,35 @@
+{
+  "id": "replay-identity-stack-451",
+  "kind": "replay",
+  "gate": "replay",
+  "repo": "jamescrowley321/identity-stack",
+  "url": "https://github.com/jamescrowley321/identity-stack",
+  "base": "11842e857b2dc3c6353da50029e389f3237e3a6b",
+  "merge": "322d824de7c62d018f155dc845fab63030aff471",
+  "pr": 451,
+  "issue": 441,
+  "language": "python",
+  "hidden": [
+    "backend/tests/unit/test_idp_links_router.py"
+  ],
+  "test": [
+    "uv",
+    "run",
+    "--with",
+    "pytest==9.1.1",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "{hidden}"
+  ],
+  "setup": [
+    "uv",
+    "sync"
+  ],
+  "workdir": "backend",
+  "epochs": {
+    "quick": 5,
+    "full": 10
+  }
+}

@@ -1,0 +1,271 @@
+diff --git a/internal/infra/client.go b/internal/infra/client.go
+index 90f13a6..2af302a 100644
+--- a/internal/infra/client.go
++++ b/internal/infra/client.go
+@@ -6,19 +6,11 @@ import (
+ 	"fmt"
+ 	"os"
+ 	"sync"
+-	"time"
+ 
+-	"github.com/descope/go-sdk/descope"
+ 	"github.com/descope/go-sdk/descope/api"
+ 	"github.com/hashicorp/terraform-plugin-log/tflog"
+ )
+ 
+-const (
+-	maxRetries       = 3
+-	defaultRetryWait = 10 * time.Second
+-	maxRetryWait     = 60 * time.Second
+-)
+-
+ const (
+ 	NoProjectID  = ""
+ 	infraAPIPath = "/v1/mgmt/infra"
+@@ -55,7 +47,7 @@ func (c *Client) Create(ctx context.Context, projectID, entity string, data map[
+ 	}
+ 
+ 	tflog.Info(ctx, "Starting CREATE request", map[string]any{"body": debugRequest(httpBody)})
+-	httpRes, err := retryOnRateLimit(ctx, func() (*api.HTTPResponse, error) {
++	httpRes, err := RetryOnRateLimit(ctx, func() (*api.HTTPResponse, error) {
+ 		return c.getAPIClient(projectID).DoPostRequest(ctx, infraAPIPath, httpBody, nil, c.managementKey)
+ 	})
+ 	if err != nil {
+@@ -78,7 +70,7 @@ func (c *Client) Read(ctx context.Context, projectID, entity, entityID string) (
+ 	}
+ 
+ 	tflog.Info(ctx, "Starting READ request", map[string]any{"query": debugRequest(httpQuery)})
+-	httpRes, err := retryOnRateLimit(ctx, func() (*api.HTTPResponse, error) {
++	httpRes, err := RetryOnRateLimit(ctx, func() (*api.HTTPResponse, error) {
+ 		return c.getAPIClient(projectID).DoGetRequest(ctx, infraAPIPath, &api.HTTPRequest{QueryParams: httpQuery}, c.managementKey)
+ 	})
+ 	if err != nil {
+@@ -102,7 +94,7 @@ func (c *Client) Update(ctx context.Context, projectID, entity, entityID string,
+ 	}
+ 
+ 	tflog.Info(ctx, "Starting UPDATE request", map[string]any{"body": debugRequest(httpBody)})
+-	httpRes, err := retryOnRateLimit(ctx, func() (*api.HTTPResponse, error) {
++	httpRes, err := RetryOnRateLimit(ctx, func() (*api.HTTPResponse, error) {
+ 		return c.getAPIClient(projectID).DoPutRequest(ctx, infraAPIPath, httpBody, nil, c.managementKey)
+ 	})
+ 	if err != nil {
+@@ -125,7 +117,7 @@ func (c *Client) Delete(ctx context.Context, projectID, entity, entityID string)
+ 	}
+ 
+ 	tflog.Info(ctx, "Starting DELETE request", map[string]any{"query": debugRequest(httpQuery)})
+-	httpRes, err := retryOnRateLimit(ctx, func() (*api.HTTPResponse, error) {
++	httpRes, err := RetryOnRateLimit(ctx, func() (*api.HTTPResponse, error) {
+ 		return c.getAPIClient(projectID).DoDeleteRequest(ctx, infraAPIPath, &api.HTTPRequest{QueryParams: httpQuery}, c.managementKey)
+ 	})
+ 	if err != nil {
+@@ -174,39 +166,3 @@ func makeUserAgent(version string) string {
+ 	}
+ 	return fmt.Sprintf("terraform-provider-descope/%s", version)
+ }
+-
+-func retryOnRateLimit(ctx context.Context, fn func() (*api.HTTPResponse, error)) (*api.HTTPResponse, error) {
+-	for attempt := range maxRetries {
+-		res, err := fn()
+-		if err == nil {
+-			return res, nil
+-		}
+-
+-		de := descope.AsError(err, descope.ErrRateLimitExceeded.Code)
+-		if de == nil {
+-			return nil, err
+-		}
+-
+-		wait := defaultRetryWait
+-		if retryAfter, ok := de.Info[descope.ErrorInfoKeys.RateLimitExceededRetryAfter].(int); ok && retryAfter > 0 {
+-			wait = time.Duration(retryAfter) * time.Second
+-		}
+-		if wait > maxRetryWait {
+-			wait = maxRetryWait
+-		}
+-
+-		tflog.Warn(ctx, "Rate limited by Descope API, retrying", map[string]any{
+-			"attempt": attempt + 1,
+-			"max":     maxRetries,
+-			"wait":    wait.String(),
+-		})
+-
+-		select {
+-		case <-time.After(wait):
+-		case <-ctx.Done():
+-			return nil, ctx.Err()
+-		}
+-	}
+-
+-	return fn()
+-}
+diff --git a/internal/infra/retry.go b/internal/infra/retry.go
+index 8e4936f..374c9fa 100644
+--- a/internal/infra/retry.go
++++ b/internal/infra/retry.go
+@@ -2,39 +2,42 @@ package infra
+ 
+ import (
+ 	"context"
++	"net/http"
+ 	"time"
+ 
+ 	"github.com/descope/go-sdk/descope"
+ 	"github.com/hashicorp/terraform-plugin-log/tflog"
+ )
+ 
+-// RetryOnRateLimit wraps an SDK call with rate-limit retry logic.
+-// It retries up to maxRetries times when the Descope SDK returns a rate
+-// limit error, respecting the Retry-After duration from the error info.
++const (
++	maxRetries             = 3
++	defaultRetryWait       = 10 * time.Second
++	maxRetryWait           = 60 * time.Second
++	transientRetryBaseWait = 2 * time.Second
++)
++
++// RetryOnRateLimit wraps an SDK call with retry logic for transient errors.
++// It retries up to maxRetries times when the Descope SDK returns a rate limit
++// error or a server error (5xx), using appropriate backoff for each case.
+ func RetryOnRateLimit[T any](ctx context.Context, fn func() (T, error)) (T, error) {
+-	for attempt := range maxRetries {
++	for attempt := range uint(maxRetries) {
+ 		result, err := fn()
+ 		if err == nil {
+ 			return result, nil
+ 		}
+ 
+-		de := descope.AsError(err, descope.ErrRateLimitExceeded.Code)
+-		if de == nil {
++		de, retryable := isRetryableError(err)
++		if !retryable {
+ 			return result, err
+ 		}
+ 
+-		wait := defaultRetryWait
+-		if retryAfter, ok := de.Info[descope.ErrorInfoKeys.RateLimitExceededRetryAfter].(int); ok && retryAfter > 0 {
+-			wait = time.Duration(retryAfter) * time.Second
+-		}
+-		if wait > maxRetryWait {
+-			wait = maxRetryWait
+-		}
++		wait := retryWaitDuration(de, attempt)
+ 
+-		tflog.Warn(ctx, "Rate limited by Descope API, retrying", map[string]any{
++		tflog.Warn(ctx, "Transient Descope API error, retrying", map[string]any{
+ 			"attempt": attempt + 1,
+ 			"max":     maxRetries,
+ 			"wait":    wait.String(),
++			"code":    de.Code,
+ 		})
+ 
+ 		select {
+@@ -55,3 +58,44 @@ func RetryOnRateLimitNoResult(ctx context.Context, fn func() error) error {
+ 	})
+ 	return err
+ }
++
++// isRetryableError checks if an error is a transient Descope API error that
++// should be retried. Returns the Descope error and true for rate limit errors
++// and server errors (5xx status codes).
++func isRetryableError(err error) (*descope.Error, bool) {
++	de := descope.AsError(err)
++	if de == nil {
++		return nil, false
++	}
++	if de.Code == descope.ErrRateLimitExceeded.Code {
++		return de, true
++	}
++	if statusCode, ok := de.Info[descope.ErrorInfoKeys.HTTPResponseStatusCode].(int); ok {
++		if statusCode >= http.StatusInternalServerError && statusCode < 600 {
++			return de, true
++		}
++	}
++	return nil, false
++}
++
++// retryWaitDuration returns the appropriate wait duration for a retryable error.
++// Rate limit errors use the Retry-After header if available, falling back to
++// defaultRetryWait. Server errors use exponential backoff starting at 2 seconds.
++func retryWaitDuration(de *descope.Error, attempt uint) time.Duration {
++	if de.Code == descope.ErrRateLimitExceeded.Code {
++		if retryAfter, ok := de.Info[descope.ErrorInfoKeys.RateLimitExceededRetryAfter].(int); ok && retryAfter > 0 {
++			wait := time.Duration(retryAfter) * time.Second
++			if wait > maxRetryWait {
++				return maxRetryWait
++			}
++			return wait
++		}
++		return defaultRetryWait
++	}
++	// Exponential backoff for server errors: 2s, 4s, 8s, ...
++	wait := transientRetryBaseWait << attempt
++	if wait > maxRetryWait {
++		return maxRetryWait
++	}
++	return wait
++}
+diff --git a/tests/integration/harness.go b/tests/integration/harness.go
+index 9876fdc..27b030a 100644
+--- a/tests/integration/harness.go
++++ b/tests/integration/harness.go
+@@ -21,6 +21,11 @@ import (
+ 	"github.com/stretchr/testify/require"
+ )
+ 
++const (
++	destroyMaxRetries = 2
++	destroyRetryWait  = 5 * time.Second
++)
++
+ var (
+ 	buildOnce     sync.Once
+ 	binaryPath    string
+@@ -106,14 +111,15 @@ func (h *Harness) Plan(vars ...string) string {
+ }
+ 
+ // Destroy runs terraform destroy -auto-approve and returns stdout.
+-// If the harness created any projects, it waits for Descope to finish
+-// deleting them asynchronously before returning.
++// It retries up to destroyMaxRetries times on failure to handle transient
++// API errors. If the harness created any projects, it waits for Descope
++// to finish deleting them asynchronously before returning.
+ func (h *Harness) Destroy(vars ...string) string {
+ 	h.t.Helper()
+ 	h.lastVars = vars
+ 	args := []string{"destroy", "-auto-approve", "-no-color", "-input=false"}
+ 	args = append(args, varArgs(vars)...)
+-	out := h.terraform(args...)
++	out := h.terraformRetry(destroyMaxRetries, args...)
+ 	if len(h.projectIDs) > 0 {
+ 		h.waitForProjectDeletion()
+ 		h.projectIDs = nil
+@@ -351,6 +357,29 @@ func (h *Harness) terraform(args ...string) string {
+ 	return stdout.String()
+ }
+ 
++// terraformRetry runs a terraform command with retries on failure. It is used
++// for operations like destroy where transient API errors may cause the command
++// to fail even after provider-level retries.
++func (h *Harness) terraformRetry(maxRetries int, args ...string) string {
++	h.t.Helper()
++	for attempt := range maxRetries {
++		cmd := exec.Command(terraformPath, args...)
++		cmd.Dir = h.workDir
++		cmd.Env = h.env
++		var stdout, stderr bytes.Buffer
++		cmd.Stdout = &stdout
++		cmd.Stderr = &stderr
++		if err := cmd.Run(); err != nil {
++			h.t.Logf("terraform %s failed (attempt %d/%d), retrying in %v:\nstderr: %s",
++				strings.Join(args, " "), attempt+1, maxRetries+1, destroyRetryWait, stderr.String())
++			time.Sleep(destroyRetryWait)
++			continue
++		}
++		return stdout.String()
++	}
++	return h.terraform(args...)
++}
++
+ func (h *Harness) copyTestdata(src, dst string) {
+ 	h.t.Helper()
+ 	data, err := os.ReadFile(testdataPath(src))
