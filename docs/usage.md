@@ -10,7 +10,9 @@ explains why codecite works the way it does; this guide covers what to type.
 - **Manifest:** the committed TOML file, `corpora/<corpus>.toml`, that lists a
   corpus's sources, each pinned to a commit or a sha256, with its license class.
 - **Citation:** the string that names one span. Every result carries one, and
-  `read` turns one back into the exact text.
+  `read` turns one back into the exact text. Code and documents are cited by
+  lines (`repo@sha:path#L10-L42`, `notes@sha256:1a2b3c4d5e6f#L3-L9`), specs by
+  section (`rfc9449@sha256:2d8657f07291#section-4.3`).
 - **License class:** how an agent may use a source: `adapt` (adapt the code
   with attribution), `approach_only` (describe the approach, never copy),
   `quote` (normative spec text: quote exactly) or `excluded` (not indexed).
@@ -87,6 +89,14 @@ imports = ["requests", "httpx"]
 | `obsoleted_by`, `updated_by` | `document` | Hand-written relations to later documents |
 
 Unknown keys are errors, and every error names the source and the field.
+
+A `document` source can be any page. One in a spec layout (an RFC on
+rfc-editor.org, an OpenID spec) is split into numbered sections and steps and
+cited by section. Any other page is split at its own headings and cited by
+lines of its text, `name@sha256:<12 hex>#L3-L9`: HTML is rendered to text
+first, a URL ending `.md` or `.markdown` is read as Markdown, and anything
+else is plain text in 60-line windows. A repository's Markdown and HTML files
+split at their headings too.
 
 To pin a new or changed document, leave a placeholder hash and print the
 hash each URL serves now:
@@ -226,7 +236,9 @@ rfc9449@sha256:2d8657f07291#section-4.3/step-2 · step · Check that the jti has
 
 A header says how many results there are, or `no results`. Then one line
 per result: its citation, then its kind (`function`, `class`, `section`,
-`step` or `window`) and symbol, then the first line of its text. Results come
+`step` or `window`) and symbol, or a heading's title, then the first line of
+its text. `--json` adds a heading section's `title` and `anchor`, which `read`
+takes in place of the lines. Results come
 best first; `--json` adds each one's score. When the results share a license
 class and index time, the header gives them once; otherwise each line carries
 its own, before the text:
@@ -267,7 +279,7 @@ case. `--language`, `--path`, `--only` and `--limit` work as they do for
 
 A header says how many matches there are, or `no matches`, with the license
 class and index time when every match shares them, as search's does. Each
-match is then one line, `citation: text` as `rg` prints `path:line:text`: a code line cites itself (`repo@sha:path#L12`), and a
+match is then one line, `citation: text` as `rg` prints `path:line:text`: a code or document line cites itself (`repo@sha:path#L12`, `notes@sha256:1a2b3c4d5e6f#L12`), and a
 spec line cites the step or section that holds it, so `read` turns any match
 back into its text. Matches come in index order, unscored: each source in
 the manifest's order, its files by path, then lines. So a grep over code and
@@ -307,6 +319,25 @@ It accepts:
 | Written forms, with the manifest's aliases | `RFC 9449 §4.3`, `RFC9449 Section 4.3`, `OIDC Core §3.1.3.7 step 13`, `Core 3.1.3.7(13)` |
 | A bare section, when only one current document has it | `§3.1.3.7 step 11` |
 | A spec URL with its anchor | `https://www.rfc-editor.org/rfc/rfc9449.html#section-4.3` |
+| Lines of a fetched document | `notes@sha256:71aef1acbd81#L5-L7` |
+| A heading, by its anchor, in a file or a fetched document | `myservice@9458d60:README.md#install-linux`, `notes@sha256:71aef1acbd81#usage` |
+
+A heading's anchor is its GitHub anchor (lowercase, punctuation dropped,
+spaces as `-`, `-1` on a repeat) or an HTML heading's `id`. `read` answers
+with the heading's lines, so the citation it prints is the canonical one:
+
+```text
+$ codecite read mywork "notes@sha256:71aef1acbd81#usage"
+notes@sha256:71aef1acbd81#L5-L7
+section · Usage · #usage · quote · indexed 2026-10-30T06:00:23Z
+
+## Usage
+
+Run it.
+```
+
+An anchor the file or document doesn't have is an error naming the closest
+ones it does.
 
 Text from the current version of a document with an older version pinned ends
 with a line naming it, `older version pinned: <pinned version> (codecite diff
@@ -322,8 +353,9 @@ Error: §4.3 names no document and is not in exactly one current document; name 
 
 ## Check a citation
 
-`cite` checks a spec citation: whether it names exactly one section or step in
-the corpus, what that text is, and why not when it doesn't.
+`cite` checks a citation: whether it names exactly one span in the corpus,
+what that text is, and why not when it doesn't. Its findings are about specs;
+a code or document citation either resolves or is an error, as with `read`.
 
 ```sh
 codecite cite identity "OIDC Core §3.1.3.7 step 13"
@@ -331,7 +363,7 @@ codecite cite identity "§4.3" --json
 codecite cite identity "[OIDC Core §3.1.3.6](https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation)"
 ```
 
-It accepts every spec form `read` does, and one more:
+It accepts every form `read` does, and one more:
 
 | Form | Example |
 | --- | --- |
@@ -373,8 +405,8 @@ The findings are `no_such_section`, `no_such_step`, `anchor_label_mismatch`
 (a link whose anchor is another section than its text) and
 `ambiguous_document` (a bare § that is not in exactly one current document).
 Anything else wrong is an error that exits non-zero, as `read`'s are: text that
-is no citation, a malformed one, an unknown document or version, a stale index,
-and a code citation, which `read` reads instead.
+is no citation, a malformed one, an unknown document, version, file or
+anchor, lines past the end, and a stale index.
 
 ## List a section's requirements
 

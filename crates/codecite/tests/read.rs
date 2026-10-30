@@ -181,7 +181,7 @@ fn errors_name_the_problem() {
     let cases = [
         (
             vec!["read", "demo", past_end.as_str()],
-            "runs past the end of the file, which has 5 lines".to_owned(),
+            "runs past the end of its text, which has 5 lines".to_owned(),
         ),
         (
             vec!["read", "demo", "hello world"],

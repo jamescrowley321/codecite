@@ -1,6 +1,6 @@
 # codecite
 
-A local index of code and specs that answers AI agents with cited results.
+A local index of code, specs and documents that answers AI agents with cited results.
 
 codecite is a single Rust binary. It indexes source repositories and reference
 specs into one SQLite file per corpus, and answers through a CLI and an MCP
@@ -19,10 +19,10 @@ flowchart LR
 
 | Command | What you get |
 | --- | --- |
-| `codecite index <corpus>` | Indexes the local checkouts, git repositories (at pinned commits) and spec documents (pinned by sha256) that `corpora/<corpus>.toml` lists. Code splits at definitions with tree-sitter (Rust, Python, TypeScript, JavaScript, Go, C#); RFC and OpenID HTML splits into numbered sections and steps. Later runs work offline and rewrite only what changed |
+| `codecite index <corpus>` | Indexes the local checkouts, git repositories (at pinned commits) and documents (pinned by sha256) that `corpora/<corpus>.toml` lists. Code splits at definitions with tree-sitter (Rust, Python, TypeScript, JavaScript, Go, C#); RFC and OpenID HTML splits into numbered sections and steps; any other Markdown, HTML or text splits at its headings and is cited by lines. Later runs work offline and rewrite only what changed |
 | `codecite search <corpus> "<query>"` | Ranked results, each with its citation, license class and when it was indexed. Identifiers match however they are written (`validate token` finds `validateToken`) |
-| `codecite grep <corpus> <pattern>` | Lines matching a regex, or exact text with `--fixed`, across the indexed code and specs, each with its citation: a code line, or the spec step or section that holds it. For the literal strings ranking is weak at: a claim name, an error message, `token_type_hint=\w+` |
-| `codecite read <corpus> <citation>` | The exact text a citation points at, under its pinned citation. Accepts the canonical forms search prints and the ones people write: `RFC 9449 §4.3`, `OIDC Core §3.1.3.7 step 13`, a spec URL |
+| `codecite grep <corpus> <pattern>` | Lines matching a regex, or exact text with `--fixed`, across the indexed code, documents and specs, each with its citation: a code or document line, or the spec step or section that holds it. For the literal strings ranking is weak at: a claim name, an error message, `token_type_hint=\w+` |
+| `codecite read <corpus> <citation>` | The exact text a citation points at, under its pinned citation. Accepts the canonical forms search prints and the ones people write: `RFC 9449 §4.3`, `OIDC Core §3.1.3.7 step 13`, a spec URL, a heading's anchor (`repo@sha:README.md#install`) |
 | `codecite def <corpus> <symbol>` | Every definition of a symbol, by its exact name (`callback`) or dotted (`Client.callback`), source first. Several matches are all listed and marked ambiguous, never one guess |
 | `codecite requirements <corpus> <citation>` | The normative statements codecite finds governing a spec section, each cited: its MUST and SHOULD sentences, the REQUIRED and PROHIBITED rows of its claim and parameter lists, and its steps, with those of its subsections and of the sections it names or that name it, grouped by section, MUSTs first. Run it before implementing anything a spec governs; it doesn't follow other documents or catch rules without uppercase keywords, so `read` a section when you need all of it |
 | `codecite diff <corpus> <document>` | The rules that differ between two pinned versions of a spec, such as before and after its errata: normative statements added, removed, changed or changed in strength (OPTIONAL → REQUIRED), each with both versions' citations, and rewording listed apart |

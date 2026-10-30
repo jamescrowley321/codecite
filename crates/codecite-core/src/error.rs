@@ -95,7 +95,7 @@ pub enum Error {
 
     /// The text matches none of the citation forms `read` accepts.
     #[error(
-        "{text:?} is not a citation; write repo@sha:path#L10-L42, doc@sha256:<hash>#section-4.3, a spec URL, or a form like RFC 9449 §4.3"
+        "{text:?} is not a citation; write repo@sha:path#L10-L42, doc@sha256:<hash>#L3-L9, either of those pinned with #<anchor> for a heading, doc@sha256:<hash>#section-4.3, a spec URL, or a form like RFC 9449 §4.3"
     )]
     NotACitation {
         /// The text as given.
@@ -248,8 +248,8 @@ pub enum Error {
         topic: String,
     },
 
-    /// A code citation runs past the end of its file.
-    #[error("{citation} runs past the end of the file, which has {lines} lines")]
+    /// A line citation runs past the end of its file or fetched document.
+    #[error("{citation} runs past the end of its text, which has {lines} lines")]
     LinesPastEnd {
         /// The citation, with the source's full commit.
         citation: String,
@@ -453,6 +453,30 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "no corpus has been indexed yet; run codecite index"
+        );
+    }
+
+    #[test]
+    fn not_a_citation_names_every_document_form() {
+        let message = Error::NotACitation {
+            text: "hello".into(),
+        }
+        .to_string();
+        for form in [
+            "repo@sha:path#L10-L42",
+            "doc@sha256:<hash>#L3-L9",
+            "#<anchor>",
+            "doc@sha256:<hash>#section-4.3",
+        ] {
+            assert!(message.contains(form), "{message} lacks {form}");
+        }
+        let err = Error::LinesPastEnd {
+            citation: "notes@sha256:1a2b3c4d5e6f#L4-L9".into(),
+            lines: 5,
+        };
+        assert_eq!(
+            err.to_string(),
+            "notes@sha256:1a2b3c4d5e6f#L4-L9 runs past the end of its text, which has 5 lines"
         );
     }
 
