@@ -11,6 +11,9 @@
 //! each document into spec sections and steps, and writes the result into
 //! its store.
 
+mod add;
+pub use add::{Added, add_sources};
+
 mod chunk;
 pub use chunk::{
     Chunk, ChunkKind, Chunker, ChunkerError, Language, Symbol, SymbolKind, WINDOW_LINES,
