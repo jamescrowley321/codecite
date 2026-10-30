@@ -3,10 +3,11 @@
 Once code, prose and specs share one score order (#183), two weights apply to
 every chunk: the `Docs` role weight (how much a match in prose counts against
 one in code) and `NAME_BOOST` (the factor on a chunk whose symbol is named by
-the query). `sweep.sh` moves one knob at a time from today's values (Docs 1.0,
-NAME_BOOST 3.0), rebuilds release, indexes every history repository afresh and
-runs the codecite arm of the history benchmark. Each run's pooled `all` rows
-are in `results/`.
+the query). `sweep.sh` moved one knob at a time from the values before this
+change (Docs 1.0, NAME_BOOST 3.0). Docs 0.8 was adopted, so the code now holds
+Docs 0.8 and NAME_BOOST 3.0, and a rerun patches from those. It rebuilds
+release, indexes every history repository afresh and runs the codecite arm of
+the history benchmark. Each run's pooled `all` rows are in `results/`.
 
 A value is adopted only if no repository is lower on Recall@1, Recall@10 or
 MRR and at least one is higher.

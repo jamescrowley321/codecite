@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # Sweep the two ranking weights that apply to every chunk, one knob at a
-# time from today's values, on the history benchmark (#183):
+# time, on the history benchmark (#183):
 #
-#   docs        the `Docs` role weight in role.rs (today 1.0): prose
+#   docs        the `Docs` role weight in role.rs (today 0.8, adopted from
+#               this sweep; its base row was measured at 1.0): prose
 #               against code
 #   name-boost  NAME_BOOST in store/search.rs (today 3.0)
 #
 #   experiments/one-ranking/sweep.sh [knob=value ...]
 #
-# For each value it patches the constant (the constants stay `const`; the
-# patch is undone on exit), rebuilds release, indexes every history
+# For each value it patches the constant (the constants stay `const`; both
+# files are copied aside first and put back after each run and on exit, so
+# uncommitted edits to them survive), rebuilds release, indexes every history
 # repository afresh, runs the codecite arm only and writes the pooled `all`
 # rows to results/<knob>-<value>.md. The grep, popular and cost arms don't
 # depend on ranking, so their committed reports are reused for the scorecard.
@@ -21,8 +23,11 @@ history="$root/evals/history"
 clones="${HISTORY_CLONES:-$HOME/.cache/codecite/history}"
 role="$root/crates/codecite-core/src/role.rs"
 search="$root/crates/codecite-core/src/store/search.rs"
-restore() { git -C "$root" checkout -q -- "$role" "$search"; }
-trap restore EXIT
+saved="$(mktemp -d)"
+cp "$role" "$saved/role.rs"
+cp "$search" "$saved/search.rs"
+restore() { cp "$saved/role.rs" "$role"; cp "$saved/search.rs" "$search"; }
+trap 'restore; rm -rf "$saved"' EXIT
 
 if [ "$#" -eq 0 ]; then
   set -- docs=0.6 docs=0.8 docs=1.2 name-boost=2.0 name-boost=5.0
@@ -34,13 +39,14 @@ for run in "$@"; do
   restore
   case "$knob" in
     docs)
-      # Docs leaves the shared 1.0 arm and gets its own.
-      sed -i 's/Role::Source | Role::Docs | Role::Spec => 1.0,/Role::Source | Role::Spec => 1.0,\n            Role::Docs => '"$value"',/' "$role"
-      grep -q "Role::Docs => $value," "$role"
+      sed -i -E 's/(Role::Docs => )[0-9.]+,/\1'"$value"',/' "$role"
+      grep -q "Role::Docs => $value," "$role" ||
+        { echo "could not set the Docs weight in $role" >&2; exit 1; }
       ;;
     name-boost)
-      sed -i 's/^const NAME_BOOST: f64 = 3.0;/const NAME_BOOST: f64 = '"$value"';/' "$search"
-      grep -q "^const NAME_BOOST: f64 = $value;" "$search"
+      sed -i -E 's/^(const NAME_BOOST: f64 = )[0-9.]+;/\1'"$value"';/' "$search"
+      grep -q "^const NAME_BOOST: f64 = $value;" "$search" ||
+        { echo "could not set NAME_BOOST in $search" >&2; exit 1; }
       ;;
     *) echo "unknown knob: $knob" >&2; exit 2 ;;
   esac
