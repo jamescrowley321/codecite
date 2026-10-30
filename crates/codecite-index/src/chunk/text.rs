@@ -1,4 +1,7 @@
-//! Line bookkeeping, 60-line windows and Markdown heading sections.
+//! Line bookkeeping, 60-line windows, Markdown heading sections and their
+//! anchors.
+
+use std::collections::HashSet;
 
 use super::{Chunk, ChunkKind, WINDOW_LINES};
 
@@ -88,6 +91,7 @@ pub(super) fn windows<'a>(lines: &Lines<'a>, covered: &[bool]) -> Vec<Chunk<'a>>
             text: lines.span(n, end),
             symbol: None,
             title: None,
+            anchor: None,
         });
         n = next;
     }
@@ -99,6 +103,7 @@ pub(super) fn windows<'a>(lines: &Lines<'a>, covered: &[bool]) -> Vec<Chunk<'a>>
 /// Trailing blank lines are dropped from each section.
 pub(super) fn sections<'a>(lines: &Lines<'a>) -> Vec<Chunk<'a>> {
     let headings = headings(lines);
+    let mut slugs = Slugs::default();
     let mut out = Vec::new();
     for (i, heading) in headings.iter().enumerate() {
         let end = section_end(lines, &headings, i);
@@ -109,9 +114,39 @@ pub(super) fn sections<'a>(lines: &Lines<'a>) -> Vec<Chunk<'a>> {
             text: lines.span(heading.line, end),
             symbol: None,
             title: Some(heading.title.clone()),
+            anchor: Some(slugs.slug(&heading.title)),
         });
     }
     out
+}
+
+/// GitHub-style heading anchors, with `-1`, `-2`, … on a repeated one.
+#[derive(Default)]
+pub(crate) struct Slugs {
+    seen: HashSet<String>,
+}
+
+impl Slugs {
+    /// The anchor for a heading with `title`: lowercase, letters, digits,
+    /// `-` and `_` kept, spaces as `-`, anything else dropped.
+    pub(crate) fn slug(&mut self, title: &str) -> String {
+        let base: String = title
+            .chars()
+            .filter_map(|c| match c {
+                ' ' => Some('-'),
+                c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
+                _ => None,
+            })
+            .flat_map(char::to_lowercase)
+            .collect();
+        let mut slug = base.clone();
+        let mut n = 0;
+        while !self.seen.insert(slug.clone()) {
+            n += 1;
+            slug = format!("{base}-{n}");
+        }
+        slug
+    }
 }
 
 /// One ATX heading of a Markdown file.
@@ -269,6 +304,20 @@ mod tests {
         assert_eq!(got, [(3, 5, "Title"), (7, 13, "Install"), (14, 15, "Use")]);
         assert!(chunks.iter().all(|c| c.kind == ChunkKind::Section));
         assert_eq!(chunks[2].text, "### Use\nRun it.");
+    }
+
+    #[test]
+    fn markdown_sections_carry_github_anchors() {
+        let text = "# Getting Started\n\n## Install (Linux)\n\n## Install (Linux)\n";
+        let chunks = sections(&Lines::new(text));
+        let anchors: Vec<_> = chunks
+            .iter()
+            .map(|c| c.anchor.as_deref().unwrap())
+            .collect();
+        assert_eq!(
+            anchors,
+            ["getting-started", "install-linux", "install-linux-1"]
+        );
     }
 
     #[test]

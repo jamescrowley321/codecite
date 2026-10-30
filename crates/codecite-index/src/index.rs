@@ -400,7 +400,7 @@ fn index_tree(
                     end_line: c.end_line,
                     text: c.text,
                     number: None,
-                    anchor: None,
+                    anchor: c.anchor.as_deref(),
                     title: c.title.as_deref(),
                     parent: None,
                     strength: &[],
@@ -1216,6 +1216,37 @@ mod tests {
             .try_index(&manifest(vec![Source::Guidance(missing)]))
             .unwrap_err();
         assert!(matches!(err, Error::ReadFile { .. }), "{err:?}");
+    }
+
+    #[test]
+    fn markdown_sections_store_their_title_and_anchor() {
+        let repo = Repo::new();
+        repo.write(
+            "README.md",
+            "# Getting Started\n\nRun it.\n\n## Install (Linux)\n\napt install app\n",
+        );
+        repo.commit_all(&["README.md"]);
+        let corpus = Corpus::new();
+        corpus.index(&manifest(vec![local(&repo, Some("app"))]));
+
+        let conn = corpus.sql();
+        let mut stmt = conn
+            .prepare("SELECT start_line, end_line, title, anchor FROM chunk ORDER BY start_line")
+            .unwrap();
+        let rows: Vec<(u32, u32, String, String)> = stmt
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(
+            rows,
+            [
+                (1, 3, "Getting Started".into(), "getting-started".into()),
+                (5, 7, "Install (Linux)".into(), "install-linux".into()),
+            ]
+        );
     }
 
     #[test]

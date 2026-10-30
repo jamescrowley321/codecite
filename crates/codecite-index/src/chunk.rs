@@ -7,7 +7,7 @@ mod text;
 
 pub use code::ChunkerError;
 pub use codecite_core::Language;
-pub(crate) use text::{Heading, markdown_headings};
+pub(crate) use text::{Heading, Slugs, markdown_headings};
 
 /// The longest window, in lines.
 pub const WINDOW_LINES: u32 = 60;
@@ -128,6 +128,8 @@ pub struct Chunk<'a> {
     pub symbol: Option<Symbol>,
     /// The heading text, for a section chunk.
     pub title: Option<String>,
+    /// The heading's GitHub-style anchor, for a section chunk.
+    pub anchor: Option<String>,
 }
 
 /// Splits files into chunks. Holds a parser and the compiled queries, so
