@@ -10,7 +10,7 @@ use serde::Serialize;
 
 use super::Store;
 use super::read::{byte_prefix, file_lines};
-use super::search::{MAX_SNIPPET_BYTES, Scope, code_citation, spec_citation};
+use super::search::{MAX_SNIPPET_BYTES, Scope, code_citation, document_citation, spec_citation};
 use crate::{Error, Result, Role, SectionNumber};
 
 /// A grep: the pattern, how to read it, the filters and how many matches to
@@ -49,11 +49,14 @@ pub struct GrepResults {
 /// One matching line, cited.
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct GrepMatch {
-    /// Where the line is: `repo@sha:path#L12` for code; for a spec, the
-    /// step or section that holds it, `doc@sha256:<12 hex>#section-4.3[/step-2]`.
+    /// Where the line is: `repo@sha:path#L12` for code,
+    /// `doc@sha256:<12 hex>#L12` for a fetched document that is not a spec;
+    /// for a spec, the step or section that holds it,
+    /// `doc@sha256:<12 hex>#section-4.3[/step-2]`.
     pub citation: String,
-    /// `code` for a line of a file, `section` or `step` for a spec, as
-    /// `read` names them.
+    /// `code` for a line of a file, `document` for a line of a generic
+    /// fetched document, `section` or `step` for a spec, as `read` names
+    /// them.
     pub kind: String,
     /// What the line's document is for: `source`, `test`, `example`,
     /// `docs` or `spec`.
@@ -63,7 +66,7 @@ pub struct GrepMatch {
     /// When the line's source was last indexed.
     pub indexed_at: String,
     /// For code, whether the file differed from the cited commit when it
-    /// was indexed. Spec matches have none.
+    /// was indexed. Fetched documents have none.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dirty: Option<bool>,
     /// The line, at most 4 KiB of it (`MAX_SNIPPET_BYTES`, a snippet's
@@ -85,20 +88,27 @@ struct DocRow {
     revision: String,
     license_class: String,
     indexed_at: String,
+    /// Whether the document is stored with its text: every file, and a
+    /// fetched document that is not a spec.
+    has_text: bool,
 }
 
 impl DocRow {
+    /// A fetched document: a spec, or a generic page with its text.
+    fn is_fetched(&self) -> bool {
+        self.source_kind == "document"
+    }
+
     /// A match on this document's line, cited as `citation`.
     fn matched(&self, citation: String, kind: &str, line: &str) -> GrepMatch {
-        let is_spec = self.source_kind == "document";
         let (text, truncated) = byte_prefix(line, MAX_SNIPPET_BYTES);
         GrepMatch {
             citation,
             kind: kind.into(),
-            role: Role::of(&self.path, &self.source_kind).as_str(),
+            role: Role::of_stored(&self.path, &self.source_kind, self.has_text).as_str(),
             license_class: self.license_class.clone(),
             indexed_at: self.indexed_at.clone(),
-            dirty: (!is_spec).then_some(self.dirty),
+            dirty: (!self.is_fetched()).then_some(self.dirty),
             text: text.to_owned(),
             truncated,
         }
@@ -118,7 +128,8 @@ impl Store {
     /// documents by path, then lines. Nothing is scored.
     ///
     /// A code file's stored text, which `read` cites, is matched line by
-    /// line, and each match cites its one line. A spec has no file text, so
+    /// line, and each match cites its one line; so is a fetched document
+    /// that is not a spec, cited by its lines. A spec has no stored text, so
     /// its sections are matched instead; a line inside one of a section's
     /// steps cites the step, any other line the section. A section whose
     /// number has no canonical citation, like an appendix's, is skipped.
@@ -141,12 +152,12 @@ impl Store {
         // file before the first one is scanned.
         let mut docs = self.conn.prepare_cached(
             "SELECT d.id, d.path, d.dirty, s.name, s.kind, s.revision,
-               s.license_class, s.indexed_at
+               s.license_class, s.indexed_at, d.text IS NOT NULL
              FROM document d JOIN source s ON s.id = d.source_id
              WHERE s.is_current
                AND (?1 IS NULL OR d.language = ?1)
                AND (?2 IS NULL OR d.path GLOB ?2)
-               AND (?3 IS NULL OR (s.kind = 'document') = ?3)
+               AND (?3 IS NULL OR (s.kind = 'document' AND d.text IS NULL) = ?3)
              ORDER BY s.id, d.path",
         )?;
         let mut rows = docs.query(params![query.language, query.path, only_spec])?;
@@ -160,8 +171,9 @@ impl Store {
                 revision: row.get(5)?,
                 license_class: row.get(6)?,
                 indexed_at: row.get(7)?,
+                has_text: row.get(8)?,
             };
-            if doc.source_kind == "document" {
+            if doc.is_fetched() && !doc.has_text {
                 self.grep_spec(&doc, &re, limit, &mut matches)?;
             } else {
                 self.grep_code(&doc, &re, limit, &mut matches)?;
@@ -173,7 +185,8 @@ impl Store {
         Ok(matches)
     }
 
-    /// Adds the matching lines of a code file to `matches`, up to `limit`.
+    /// Adds the matching lines of a code file, or of a generic fetched
+    /// document, to `matches`, up to `limit`.
     fn grep_code(
         &self,
         doc: &DocRow,
@@ -194,8 +207,18 @@ impl Store {
                 break;
             }
             if re.is_match(line) {
-                let citation = code_citation(&doc.source, &doc.revision, &doc.path, n, n);
-                matches.push(doc.matched(citation, "code", line));
+                let (citation, kind) = if doc.is_fetched() {
+                    (
+                        document_citation(&doc.source, &doc.revision, n, n),
+                        "document",
+                    )
+                } else {
+                    (
+                        code_citation(&doc.source, &doc.revision, &doc.path, n, n),
+                        "code",
+                    )
+                };
+                matches.push(doc.matched(citation, kind, line));
             }
         }
         Ok(())
@@ -666,6 +689,48 @@ mod tests {
             .is_empty()
         );
         assert!(f.grep(&query("nothing matches this")).is_empty());
+    }
+
+    #[test]
+    fn a_generic_document_line_cites_its_line() {
+        let f = fixture();
+        let mut store = Store::open_read_write(&f.dir.path().join("demo.db")).unwrap();
+        let notes = store
+            .upsert_source(&source("notes", "document", SHA256, true))
+            .unwrap();
+        let text = "# Notes\n\nEvery jti is logged.\n";
+        let page = DocumentRecord {
+            path: "notes",
+            language: Some("markdown"),
+            text: Some(text),
+            chunks: vec![chunk("section", (1, 3), text, None, &[])],
+            ..code("notes", "markdown", false, text)
+        };
+        store.write_document(notes, &page).unwrap();
+        drop(store);
+        let matches = f.grep(&query("Every jti"));
+        assert_eq!(matches.len(), 1, "{matches:?}");
+        let line = &matches[0];
+        assert_eq!(line.citation, "notes@sha256:1a2b3c4d5e6f#L3");
+        assert!(matches!(line.citation.parse(), Ok(Citation::Document(_))));
+        assert_eq!(line.kind, "document");
+        assert_eq!(line.role, "docs");
+        assert_eq!(line.dirty, None);
+        // Not a spec: `only = spec` leaves it out, `only = code` keeps it.
+        let only = |scope| {
+            f.citations(&GrepQuery {
+                only: Some(scope),
+                ..query("Every jti")
+            })
+        };
+        assert!(only(Scope::Spec).is_empty());
+        assert_eq!(only(Scope::Code), ["notes@sha256:1a2b3c4d5e6f#L3"]);
+        // A spec still greps by section and step.
+        let spec = f.citations(&GrepQuery {
+            only: Some(Scope::Spec),
+            ..query("jti MUST be")
+        });
+        assert_eq!(spec, ["rfc9449@sha256:1a2b3c4d5e6f#section-4.3/step-2"]);
     }
 
     #[test]

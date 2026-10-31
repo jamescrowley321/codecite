@@ -5,7 +5,7 @@
 //! and passes the HTML in.
 
 mod relations;
-mod render;
+pub(crate) mod render;
 
 use std::collections::HashSet;
 
@@ -152,7 +152,7 @@ pub enum SpecError {
 pub fn split_spec(html: &str) -> Result<SpecDocument, SpecError> {
     let html = Html::parse_document(html);
     let format = render::detect(&html).ok_or(SpecError::UnknownFormat)?;
-    let rendered = render::render(&html, format);
+    let rendered = render::render(&html, render::Layout::Spec(format));
     let mut doc = split(format, rendered);
     doc.relations = relations::relations(&html, format);
     Ok(doc)
@@ -345,7 +345,7 @@ fn steps(lines: &[String], spans: Vec<StepSpan>) -> Vec<SpecStep> {
 
 /// A line count as the `u32` that chunks store. A page under the 16 MiB
 /// fetch limit can't have more than `u32::MAX` lines.
-fn line_number(n: usize) -> u32 {
+pub(crate) fn line_number(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
 }
 

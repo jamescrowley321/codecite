@@ -19,6 +19,8 @@ pub use chunk::{
 mod clone;
 pub use clone::{Checkout, CloneError, Clones};
 
+mod document;
+
 mod error;
 pub use error::{Error, Result};
 

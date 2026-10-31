@@ -181,7 +181,7 @@ fn errors_name_the_problem() {
     let cases = [
         (
             vec!["read", "demo", past_end.as_str()],
-            "runs past the end of the file, which has 5 lines".to_owned(),
+            "runs past the end of its text, which has 5 lines".to_owned(),
         ),
         (
             vec!["read", "demo", "hello world"],
@@ -288,4 +288,36 @@ fn a_cut_falls_on_a_character_boundary() {
     let matched = grep["matches"][0]["text"].as_str().unwrap();
     assert_eq!(matched.len(), MAX_SNIPPET_BYTES - 1);
     assert!(line.starts_with(matched));
+}
+
+#[test]
+fn a_heading_reads_by_its_anchor() {
+    let readme = "# App\n\nIntro.\n\n## Getting started\n\nRun it.\n";
+    let demo = Demo::with(&[("README.md", readme)]);
+    let results = demo.json(&["search", "demo", "Run it", "--json"]);
+    let citation = results["results"][0]["citation"].as_str().unwrap();
+    let (file, _) = citation.split_once('#').unwrap();
+    assert!(file.ends_with(":README.md"), "{citation}");
+
+    let read = demo.json(&["read", "demo", &format!("{file}#getting-started"), "--json"]);
+    assert_eq!(read["citation"], format!("{file}#L5-L7"));
+    assert_eq!(read["kind"], "section");
+    assert_eq!(read["title"], "Getting started");
+    assert_eq!(read["anchor"], "getting-started");
+    assert_eq!(read["text"], "## Getting started\n\nRun it.");
+    // The lines it names read back the same.
+    assert_eq!(
+        demo.json(&["read", "demo", &format!("{file}#L5-L7"), "--json"]),
+        read
+    );
+
+    let output = demo.run(&["read", "demo", &format!("{file}#getting-startd")]);
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains(&format!(
+            "has no heading #getting-startd; nearest: {file}#getting-started"
+        )),
+        "{}",
+        stderr(&output)
+    );
 }

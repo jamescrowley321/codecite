@@ -17,6 +17,7 @@ const CORE: &str = "c0de00000000000000000000000000000000000000000000000000000000
 const RFC2616: &str = "2616000000000000000000000000000000000000000000000000000000002616";
 const PINNED: &str = "rfc9449@sha256:1a2b3c4d5e6f";
 const CORE_PINNED: &str = "openid-connect-core-1_0@sha256:c0de00000000";
+const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
 
 fn document<'a>(name: &'a str, revision: &'a str) -> SourceRecord<'a> {
     SourceRecord {
@@ -58,6 +59,15 @@ fn step<'a>(number: &'a str, parent: usize, text: &'a str) -> ChunkRecord<'a> {
     }
 }
 
+fn heading<'a>(anchor: &'a str, title: &'a str, lines: (u32, u32)) -> ChunkRecord<'a> {
+    ChunkRecord {
+        start_line: lines.0,
+        end_line: lines.1,
+        number: None,
+        ..section("", anchor, title)
+    }
+}
+
 fn spec<'a>(path: &'a str, chunks: Vec<ChunkRecord<'a>>) -> DocumentRecord<'a> {
     DocumentRecord {
         path,
@@ -70,14 +80,33 @@ fn spec<'a>(path: &'a str, chunks: Vec<ChunkRecord<'a>>) -> DocumentRecord<'a> {
     }
 }
 
-/// A data home holding the corpus `demo`: RFC 9449 at two versions, OIDC
-/// Core, and RFC 2616, obsoleted by RFC 9110, which is not in it. RFC 9449
-/// and Core both have a §4.3.
+/// A data home holding the corpus `demo`: a repository `app` with a
+/// README, RFC 9449 at two versions, OIDC Core, and RFC 2616, obsoleted by
+/// RFC 9110, which is not in it. RFC 9449 and Core both have a §4.3.
 fn data_home() -> tempfile::TempDir {
     let home = tempfile::tempdir().unwrap();
     let dir = home.path().join("codecite");
     std::fs::create_dir_all(&dir).unwrap();
     let mut store = Store::open_read_write(&dir.join("demo.db")).unwrap();
+    let app = store
+        .upsert_source(&SourceRecord {
+            kind: "local",
+            license_class: "adapt",
+            ..document("app", HEAD)
+        })
+        .unwrap();
+    let readme = DocumentRecord {
+        language: Some("markdown"),
+        text: Some("# App\nIntro.\n## Install\nRun it.\n"),
+        ..spec(
+            "README.md",
+            vec![
+                heading("app", "App", (1, 2)),
+                heading("install", "Install", (3, 4)),
+            ],
+        )
+    };
+    store.write_document(app, &readme).unwrap();
     let rfc = store.upsert_source(&document("rfc9449", RFC9449)).unwrap();
     let chunks = vec![
         section("4.3", "section-4.3", "Checking DPoP Proofs"),
@@ -170,6 +199,26 @@ fn a_clean_citation_resolves_with_no_findings() {
 }
 
 #[test]
+fn a_repository_file_resolves_by_lines_or_anchor() {
+    let home = data_home();
+    let r = cite(home.path(), "app@0123456:README.md#L2");
+    assert_eq!(r["resolved"], true);
+    assert_eq!(r["citation"], format!("app@{HEAD}:README.md#L2"));
+    assert_eq!(r["kind"], "code");
+    assert_eq!(r["text"], "Intro.");
+    assert!(r.get("anchor").is_none() && r.get("title").is_none());
+    let r = cite(home.path(), "app@0123456:README.md#install");
+    assert_eq!(r["citation"], format!("app@{HEAD}:README.md#L3-L4"));
+    assert_eq!(r["kind"], "section");
+    assert_eq!(
+        (&r["title"], &r["anchor"]),
+        (&json!("Install"), &json!("install"))
+    );
+    assert_eq!(r["text"], "## Install\nRun it.");
+    assert_eq!(r["findings"], json!([]));
+}
+
+#[test]
 fn findings_are_a_successful_check() {
     let home = data_home();
     let url = "https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation";
@@ -251,9 +300,11 @@ candidates:
 #[test]
 fn errors_exit_non_zero() {
     let home = data_home();
-    let code = "app@0123456789abcdef0123456789abcdef01234567:src/lib.rs#L1";
     for (args, want) in [
-        (vec!["cite", "demo", code], "is a code citation"),
+        (
+            vec!["cite", "demo", "app@0123456:README.md#instal"],
+            "README.md has no heading #instal; nearest:",
+        ),
         (vec!["cite", "demo", "hello world"], "is not a citation"),
         (
             vec!["cite", "demo", "RFC 9999 §1"],

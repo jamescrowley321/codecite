@@ -51,13 +51,14 @@ const MAX_NAME_DEFINITIONS: u32 = 3;
 /// results when the query names a symbol and code fills the rest.
 const SPEC_SLOTS: usize = 3;
 
-/// Which sources a search covers: specs (document sources) or code.
+/// Which sources a search covers: specs, or everything else.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Scope {
     /// Only spec sections and steps.
     Spec,
-    /// Only code: repositories and local directories.
+    /// Only code and generic documents: repositories, local directories
+    /// and fetched pages that are not specs.
     Code,
 }
 
@@ -92,8 +93,9 @@ pub struct SearchResults {
 /// server returns.
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct SearchResult {
-    /// Where the chunk is: `repo@sha:path#L10-L42`, or
-    /// `doc@sha256:<12 hex>#section-4.3[/step-2]` for a spec.
+    /// Where the chunk is: `repo@sha:path#L10-L42`,
+    /// `doc@sha256:<12 hex>#L3-L9` for a fetched document that is not a
+    /// spec, or `doc@sha256:<12 hex>#section-4.3[/step-2]` for a spec.
     pub citation: String,
     /// `function`, `class`, `variable`, `type_alias`, `section`, `step` or
     /// `window`.
@@ -101,6 +103,14 @@ pub struct SearchResult {
     /// The name of the definition the chunk holds, if any.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub symbol: Option<String>,
+    /// For a section of a file or generic document, its heading's text.
+    /// Spec results have none: their citation names the section.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// For a section of a file or generic document, its heading's anchor,
+    /// which `read <source>@<pin>[:<path>]#<anchor>` reads.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor: Option<String>,
     /// What the chunk's document is for: `source`, `test`, `example`,
     /// `docs` or `spec`.
     pub role: &'static str,
@@ -114,7 +124,7 @@ pub struct SearchResult {
     /// When the chunk's source was last indexed.
     pub indexed_at: String,
     /// For code, whether the file differed from the cited commit when it
-    /// was indexed. Spec results have none.
+    /// was indexed. Fetched documents have none.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dirty: Option<bool>,
     /// The chunk's first 40 lines (`MAX_SNIPPET_LINES`), and at most 4 KiB
@@ -242,7 +252,8 @@ impl Store {
 
     /// The best `query.limit` spec chunks, or code chunks, that the
     /// full-text `table` matches for `fts`, best first. `chunk_fts` holds
-    /// every chunk, `spec_fts` only specs.
+    /// every chunk, `spec_fts` only specs. A fetched document stored with
+    /// its text is a generic page, ranked with code.
     fn ranked(
         &self,
         table: &str,
@@ -256,9 +267,10 @@ impl Store {
             "SELECT c.kind, c.start_line, c.end_line, c.number, p.number, c.text, d.path, d.dirty,
                s.name, s.kind, s.revision, s.license_class, s.indexed_at, sym.display_name,
                -bm25({table}, ?3, ?4, ?5)
-                 * codecite_role_weight(d.path, s.kind)
+                 * codecite_role_weight(d.path, s.kind, d.text IS NOT NULL)
                  * CASE WHEN instr(?2, char(31) || codecite_name_key(sym.display_name) || char(31)) > 0
-                        THEN ?9 ELSE 1.0 END AS score
+                        THEN ?9 ELSE 1.0 END AS score,
+               d.text IS NOT NULL, c.title, c.anchor
              FROM {table}
              JOIN chunk c ON c.id = {table}.rowid
              JOIN document d ON d.id = c.document_id
@@ -268,7 +280,7 @@ impl Store {
              WHERE {table} MATCH ?1 AND s.is_current
                AND (?6 IS NULL OR d.language = ?6)
                AND (?7 IS NULL OR d.path GLOB ?7)
-               AND (s.kind = 'document') = ?10
+               AND (s.kind = 'document' AND d.text IS NULL) = ?10
              ORDER BY score DESC, c.id
              LIMIT ?8"
         ))?;
@@ -297,23 +309,33 @@ impl Store {
                 let source: String = row.get(8)?;
                 let source_kind: String = row.get(9)?;
                 let revision: String = row.get(10)?;
-                let is_spec = source_kind == "document";
+                let has_text: bool = row.get(15)?;
+                let fetched = source_kind == "document";
+                let is_spec = fetched && !has_text;
                 let (snippet, snippet_truncated) = snippet(&text);
-                let role = Role::of(&path, &source_kind).as_str();
+                let role = Role::of_stored(&path, &source_kind, has_text).as_str();
                 let citation = if is_spec {
                     spec_citation(&source, &revision, &kind, number, parent_number)
+                } else if fetched {
+                    document_citation(&source, &revision, start, end)
                 } else {
                     code_citation(&source, &revision, &path, start, end)
+                };
+                // A spec's citation already names its section.
+                let heading = |i| -> rusqlite::Result<Option<String>> {
+                    Ok(if is_spec { None } else { row.get(i)? })
                 };
                 Ok(SearchResult {
                     citation,
                     kind,
                     symbol: row.get(13)?,
+                    title: heading(16)?,
+                    anchor: heading(17)?,
                     role,
                     score: row.get(14)?,
                     license_class: row.get(11)?,
                     indexed_at: row.get(12)?,
-                    dirty: (!is_spec).then_some(dirty),
+                    dirty: (!fetched).then_some(dirty),
                     snippet,
                     snippet_truncated,
                     older_versions: None,
@@ -382,17 +404,18 @@ impl Store {
 }
 
 /// Registers the SQL functions [`Store::search`] ranks with, once per
-/// connection: `codecite_role_weight(path, source_kind)` and
+/// connection: `codecite_role_weight(path, source_kind, has_text)` and
 /// `codecite_name_key(name)`.
 pub(super) fn register_functions(conn: &Connection) -> rusqlite::Result<()> {
     conn.create_scalar_function(
         "codecite_role_weight",
-        2,
+        3,
         FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
         |ctx| {
             let path: String = ctx.get(0)?;
             let source_kind: String = ctx.get(1)?;
-            Ok(Role::of(&path, &source_kind).weight())
+            let has_text: bool = ctx.get(2)?;
+            Ok(Role::of_stored(&path, &source_kind, has_text).weight())
         },
     )?;
     conn.create_scalar_function(
@@ -574,6 +597,17 @@ pub(super) fn code_citation(
         format!("{source}@{revision}:{path}#L{start}")
     } else {
         format!("{source}@{revision}:{path}#L{start}-L{end}")
+    }
+}
+
+/// `doc@sha256:<12 hex>#L3-L9`, or `#L3` for one line: lines of a fetched
+/// document that is not a spec.
+pub(super) fn document_citation(doc: &str, sha256: &str, start: u32, end: u32) -> String {
+    let hash = sha256.get(..12).unwrap_or(sha256);
+    if start == end {
+        format!("{doc}@sha256:{hash}#L{start}")
+    } else {
+        format!("{doc}@sha256:{hash}#L{start}-L{end}")
     }
 }
 
@@ -1155,6 +1189,136 @@ mod tests {
         assert_eq!(store.boosted_names("app create").unwrap(), ["create"]);
     }
 
+    /// A corpus with a repository README split at its headings and a
+    /// fetched page that is not a spec, stored with its text, next to the
+    /// spec fixture.
+    fn documents() -> (tempfile::TempDir, Store) {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open_read_write(&dir.path().join("demo.db")).unwrap();
+        let app = store.upsert_source(&code_source("app")).unwrap();
+        let readme = ChunkRecord {
+            anchor: Some("install"),
+            title: Some("Install"),
+            ..chunk(
+                "section",
+                (4, 7),
+                "## Install\nRun cargo install widget.",
+                None,
+            )
+        };
+        store
+            .write_document(app, &file("README.md", "markdown", false, vec![readme]))
+            .unwrap();
+        let page_text = "# Notes\n\n## Rollout\nShip the widget behind a flag.\n";
+        let rollout = ChunkRecord {
+            anchor: Some("rollout"),
+            title: Some("Rollout"),
+            ..chunk(
+                "section",
+                (3, 4),
+                "## Rollout\nShip the widget behind a flag.",
+                None,
+            )
+        };
+        let notes = store
+            .upsert_source(&SourceRecord {
+                name: "notes",
+                ..spec_source(SHA256, true)
+            })
+            .unwrap();
+        let page = DocumentRecord {
+            path: "notes",
+            language: Some("markdown"),
+            text: Some(page_text),
+            ..file("notes", "markdown", false, vec![rollout])
+        };
+        store.write_document(notes, &page).unwrap();
+        let rfc = store
+            .upsert_source(&spec_source(&"b".repeat(64), true))
+            .unwrap();
+        store
+            .write_document(rfc, &spec("The widget MUST be unique."))
+            .unwrap();
+        store.set_indexed_at(30).unwrap();
+        drop(store);
+        let store = Store::open_read_only(&dir.path().join("demo.db")).unwrap();
+        (dir, store)
+    }
+
+    #[test]
+    fn a_repository_heading_hit_carries_its_title_and_anchor() {
+        let (_dir, store) = documents();
+        let results = store.search(&query("install")).unwrap();
+        let readme = &results[0];
+        assert_eq!(readme.citation, format!("app@{HEAD}:README.md#L4-L7"));
+        assert_eq!(readme.kind, "section");
+        assert_eq!(readme.title.as_deref(), Some("Install"));
+        assert_eq!(readme.anchor.as_deref(), Some("install"));
+        let json = serde_json::to_value(readme).unwrap();
+        assert_eq!(
+            (&json["title"], &json["anchor"]),
+            (&"Install".into(), &"install".into())
+        );
+    }
+
+    #[test]
+    fn a_generic_document_hit_is_cited_by_its_lines() {
+        let (_dir, store) = documents();
+        let results = store.search(&query("rollout flag")).unwrap();
+        let page = results
+            .iter()
+            .find(|r| r.citation.starts_with("notes@"))
+            .expect("the page is searched");
+        assert_eq!(page.citation, "notes@sha256:1a2b3c4d5e6f#L3-L4");
+        assert!(matches!(page.citation.parse(), Ok(Citation::Document(_))));
+        assert_eq!(page.kind, "section");
+        assert_eq!(page.role, "docs");
+        assert_eq!(page.title.as_deref(), Some("Rollout"));
+        assert_eq!(page.anchor.as_deref(), Some("rollout"));
+        assert_eq!(page.dirty, None);
+        // The page is not a spec, so `only = spec` leaves it out and
+        // `only = code` keeps it with the repository's documents.
+        let only = |scope| {
+            let q = SearchQuery {
+                only: Some(scope),
+                ..query("widget")
+            };
+            store
+                .search(&q)
+                .unwrap()
+                .into_iter()
+                .map(|r| r.citation)
+                .collect::<Vec<_>>()
+        };
+        let specs = only(Scope::Spec);
+        assert_eq!(
+            specs,
+            [format!(
+                "rfc9449@sha256:{}#section-4.3/step-2",
+                "b".repeat(12)
+            )]
+        );
+        let rest = only(Scope::Code);
+        assert!(rest.iter().any(|c| c.starts_with("notes@")), "{rest:?}");
+        assert!(!rest.iter().any(|c| c.starts_with("rfc9449@")), "{rest:?}");
+    }
+
+    #[test]
+    fn a_spec_hit_carries_no_title_or_anchor() {
+        let (_dir, store) = documents();
+        let q = SearchQuery {
+            only: Some(Scope::Spec),
+            ..query("widget")
+        };
+        let spec = &store.search(&q).unwrap()[0];
+        assert_eq!(
+            (spec.title.as_deref(), spec.anchor.as_deref()),
+            (None, None)
+        );
+        let json = serde_json::to_value(spec).unwrap();
+        assert!(json.get("title").is_none() && json.get("anchor").is_none());
+    }
+
     #[test]
     fn query_syntax_is_searched_as_words() {
         let f = fixture();
@@ -1294,7 +1458,7 @@ mod tests {
             .prepare(
                 "SELECT s.name, s.revision, d.path, c.start_line, c.end_line,
                    -bm25(chunk_fts, ?3, ?4, ?5)
-                     * codecite_role_weight(d.path, s.kind)
+                     * codecite_role_weight(d.path, s.kind, d.text IS NOT NULL)
                      * CASE WHEN instr(?2, char(31) || codecite_name_key(sym.display_name) || char(31)) > 0
                             THEN ?6 ELSE 1.0 END AS score
                  FROM chunk_fts

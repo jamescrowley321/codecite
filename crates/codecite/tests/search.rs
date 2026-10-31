@@ -49,6 +49,11 @@ impl Demo {
             "export function checkToken(token) {\n  return validate(token);\n}\n",
         )
         .unwrap();
+        fs::write(
+            repo.join("README.md"),
+            "# Widget\n\nA small widget.\n\n## Install\n\nRun cargo install widget.\n",
+        )
+        .unwrap();
         git(&repo, &["add", "."]);
         git(&repo, &["commit", "-q", "-m", "init"]);
         // An uncommitted edit: results from this file carry `dirty`.
@@ -130,6 +135,32 @@ fn search_prints_cited_results_as_json() {
     assert!(citation.starts_with("app@"), "{citation}");
     assert!(citation.ends_with(":src/lib.rs#L1-L3"), "{citation}");
     assert_eq!(results[1]["dirty"], false);
+}
+
+#[test]
+fn a_heading_hit_carries_its_title_and_anchor() {
+    let demo = Demo::new();
+    let results = demo.json(&["cargo install"]);
+    let top = &results[0];
+    assert!(
+        top["citation"]
+            .as_str()
+            .unwrap()
+            .ends_with(":README.md#L5-L7"),
+        "{results:#?}"
+    );
+    assert_eq!(top["kind"], "section");
+    assert_eq!(top["title"], "Install");
+    assert_eq!(top["anchor"], "install");
+    assert_eq!(top["role"], "docs");
+    let output = demo.run(&["search", "demo", "cargo install"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let text = String::from_utf8(output.stdout).unwrap();
+    let line = text.lines().nth(1).unwrap();
+    assert!(
+        line.ends_with(":README.md#L5-L7 · section Install · ## Install"),
+        "{text}"
+    );
 }
 
 #[test]

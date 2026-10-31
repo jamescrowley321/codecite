@@ -55,6 +55,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0004_read.sql"),
     include_str!("../migrations/0005_spec_fts.sql"),
     include_str!("../migrations/0006_guidance.sql"),
+    include_str!("../migrations/0007_heading_anchors.sql"),
 ];
 
 /// Version 5's data step: writes a `spec_fts` row for every stored spec
@@ -832,6 +833,44 @@ mod tests {
             ids("SELECT count(*) FROM document WHERE content_hash = x''"),
             [0]
         );
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn version_7_makes_markdown_documents_split_again() {
+        let dir = scratch("v6");
+        let path = dir.join("corpus.db");
+        // A version 6 corpus with a Markdown file, a Rust file and a
+        // guidance document, which keeps no text.
+        raw(&path)
+            .execute_batch(&format!(
+                "{}
+                 INSERT INTO meta (key, value) VALUES ('schema_version', '6');
+                 INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
+                   VALUES (1, 'app', 'local', '/src/app', 'abc', 'adapt', 'then'),
+                          (2, 'rules', 'document', 'https://x', 'def', 'quote', 'then');
+                 INSERT INTO document (id, source_id, path, language, content_hash, text)
+                   VALUES (1, 1, 'README.md', 'markdown', x'01', '# App'),
+                          (2, 1, 'src/lib.rs', 'rust', x'02', 'fn a() {{}}'),
+                          (3, 2, 'rules', 'markdown', x'03', NULL);",
+                MIGRATIONS[..6].join("\n")
+            ))
+            .unwrap();
+
+        let store = Store::open_read_write(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+        let mut stmt = store
+            .conn
+            .prepare("SELECT path FROM document WHERE content_hash = x'' ORDER BY id")
+            .unwrap();
+        let cleared: Vec<String> = stmt
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(cleared, ["README.md"]);
+        drop(stmt);
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }

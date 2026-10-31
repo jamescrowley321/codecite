@@ -95,17 +95,17 @@ pub enum Error {
 
     /// The text matches none of the citation forms `read` accepts.
     #[error(
-        "{text:?} is not a citation; write repo@sha:path#L10-L42, doc@sha256:<hash>#section-4.3, a spec URL, or a form like RFC 9449 §4.3"
+        "{text:?} is not a citation; write repo@sha:path#L10-L42, doc@sha256:<hash>#L3-L9, either of those pinned with #<anchor> for a heading, doc@sha256:<hash>#section-4.3, a spec URL, or a form like RFC 9449 §4.3"
     )]
     NotACitation {
         /// The text as given.
         text: String,
     },
 
-    /// `cite` and `requirements` take spec citations, and the text is a
-    /// code citation.
+    /// `requirements` takes spec citations, and the text names lines of a
+    /// file or fetched document.
     #[error(
-        "{text:?} is a code citation; cite and requirements take spec citations, and read reads code citations"
+        "{text:?} is not a spec citation; requirements takes spec citations, and read and cite take any citation"
     )]
     NotASpecCitation {
         /// The text as given.
@@ -170,6 +170,23 @@ pub enum Error {
         candidates: Vec<String>,
     },
 
+    /// The file or fetched document has no heading with this anchor.
+    #[error(
+        "{} has no heading #{anchor}; {}",
+        escape_controls(document),
+        list_of("nearest", candidates)
+    )]
+    NoSuchAnchor {
+        /// The pinned file or document: `app@<sha>:README.md` or
+        /// `notes@sha256:1a2b3c4d5e6f`.
+        document: String,
+        /// The anchor asked for, without `#`.
+        anchor: String,
+        /// The anchors that share the longest start with it, as pinned
+        /// citations.
+        candidates: Vec<String>,
+    },
+
     /// The section exists, but its number, like an appendix's `A.1`, has no
     /// canonical citation form, so no citation could read it back.
     #[error("{document} section {section} has no canonical citation form yet")]
@@ -231,8 +248,8 @@ pub enum Error {
         topic: String,
     },
 
-    /// A code citation runs past the end of its file.
-    #[error("{citation} runs past the end of the file, which has {lines} lines")]
+    /// A line citation runs past the end of its file or fetched document.
+    #[error("{citation} runs past the end of its text, which has {lines} lines")]
     LinesPastEnd {
         /// The citation, with the source's full commit.
         citation: String,
@@ -263,6 +280,7 @@ impl Error {
             Error::UnknownVersion { .. } => "unknown_version",
             Error::AmbiguousDocument { .. } => "ambiguous_document",
             Error::NoSuchSection { .. } => "no_such_section",
+            Error::NoSuchAnchor { .. } => "no_such_anchor",
             Error::UncitableSection { .. } => "uncitable_section",
             Error::NoSuchStep { .. } => "no_such_step",
             Error::NoSuchFile { .. } => "no_such_file",
@@ -283,6 +301,7 @@ impl Error {
             | Error::UnknownVersion { known, .. } => known,
             Error::AmbiguousDocument { candidates, .. }
             | Error::NoSuchSection { candidates, .. }
+            | Error::NoSuchAnchor { candidates, .. }
             | Error::NoSuchStep { candidates, .. }
             | Error::NoSuchFile { candidates, .. }
             | Error::NoSuchSymbol { candidates, .. } => candidates,
@@ -438,6 +457,30 @@ mod tests {
     }
 
     #[test]
+    fn not_a_citation_names_every_document_form() {
+        let message = Error::NotACitation {
+            text: "hello".into(),
+        }
+        .to_string();
+        for form in [
+            "repo@sha:path#L10-L42",
+            "doc@sha256:<hash>#L3-L9",
+            "#<anchor>",
+            "doc@sha256:<hash>#section-4.3",
+        ] {
+            assert!(message.contains(form), "{message} lacks {form}");
+        }
+        let err = Error::LinesPastEnd {
+            citation: "notes@sha256:1a2b3c4d5e6f#L4-L9".into(),
+            lines: 5,
+        };
+        assert_eq!(
+            err.to_string(),
+            "notes@sha256:1a2b3c4d5e6f#L4-L9 runs past the end of its text, which has 5 lines"
+        );
+    }
+
+    #[test]
     fn each_error_has_a_kind_and_its_candidates() {
         let err = Error::NoSuchSection {
             document: "rfc9449@sha256:1a2b3c4d5e6f".into(),
@@ -500,6 +543,16 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "rfc9449@sha256:1a2b3c4d5e6f#section-4.3 has no step 14; nearest: rfc9449@sha256:1a2b3c4d5e6f#section-4.3/step-12"
+        );
+        let err = Error::NoSuchAnchor {
+            document: "app@0123abc:README.md".into(),
+            anchor: "instal".into(),
+            candidates: vec!["app@0123abc:README.md#install".into()],
+        };
+        assert_eq!(err.kind(), "no_such_anchor");
+        assert_eq!(
+            err.to_string(),
+            "app@0123abc:README.md has no heading #instal; nearest: app@0123abc:README.md#install"
         );
         let err = Error::NoSuchFile {
             repo: "app@0123abc".into(),

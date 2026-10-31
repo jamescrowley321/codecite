@@ -106,15 +106,6 @@ pub enum Error {
         /// The rule number as the manifest writes it.
         number: String,
     },
-
-    /// A document source is not a spec page in a layout codecite reads.
-    #[error("document `{name}` can't be split into sections")]
-    Spec {
-        /// The document's name.
-        name: String,
-        /// Why splitting failed.
-        source: crate::SpecError,
-    },
 }
 
 /// `Result` with [`Error`] as the default error type.

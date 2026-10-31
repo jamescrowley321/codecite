@@ -63,7 +63,7 @@ enum Command {
         after_help = "\
 Output: a header `N result(s)` (or `no results`), with ` · <license> · indexed <at>`
 when every hit shares them, then one line per hit, best first:
-  <citation> · <kind>[ <symbol>] · <first snippet line>
+  <citation> · <kind>[ <symbol or section title>] · <first snippet line>
 Pass a printed citation to `read` for the full text.",
         after_long_help = "Examples:
   codecite search myrepo \"retry backoff\"
@@ -71,7 +71,7 @@ Pass a printed citation to `read` for the full text.",
   codecite search myrepo \"token\" --path \"src/auth/*\" --json
 Output: a header `N result(s)` (or `no results`), with ` · <license> · indexed <at>`
 when every hit shares them, then one line per hit, best first:
-  <citation> · <kind>[ <symbol>] · <first snippet line>
+  <citation> · <kind>[ <symbol or section title>] · <first snippet line>
 Pass a printed citation to `read` for the full text."
     )]
     Search {
@@ -86,7 +86,8 @@ Pass a printed citation to `read` for the full text."
         /// Only files whose path matches this glob; `*` matches `/` too.
         #[arg(long)]
         path: Option<String>,
-        /// Only spec sections or only code. Without it, both.
+        /// Only spec sections, or only code and the documents that are not
+        /// specs. Without it, both.
         #[arg(long, value_enum)]
         only: Option<Only>,
         /// The most results to print, at most 50.
@@ -132,7 +133,8 @@ when every match shares them, then one line per match, in index order:
         /// Only files whose path matches this glob; `*` matches `/` too.
         #[arg(long)]
         path: Option<String>,
-        /// Only spec sections or only code. Without it, both.
+        /// Only spec sections, or only code and the documents that are not
+        /// specs. Without it, both.
         #[arg(long, value_enum)]
         only: Option<Only>,
         /// The most matches to print, at most 50.
@@ -200,16 +202,17 @@ exact text."
         #[arg(long)]
         allow_stale: bool,
     },
-    /// Check a spec citation: whether it resolves, what it points at, and
-    /// findings for one that doesn't.
+    /// Check a citation: whether it resolves, what it points at, and, for
+    /// a spec, findings for one that doesn't.
     #[command(after_long_help = "Examples:
   codecite cite identity \"RFC 9449 §4.3\"
+  codecite cite app \"app@0123456:README.md#install\"
   codecite cite identity \"OIDC Core §3.1.3.7 step 13\" --json")]
     Cite {
         /// The corpus to check against.
         corpus: String,
-        /// A spec citation, as `read` takes it, or a Markdown link whose
-        /// text is a citation and whose target is a spec URL with an
+        /// Any citation `read` takes, or a Markdown link whose text is a
+        /// spec citation and whose target is a spec URL with an
         /// anchor: `[OIDC Core §3.1.3.6](https://openid.net/specs/…#IDTokenValidation)`.
         citation: String,
         /// Print the result as JSON.
@@ -327,7 +330,8 @@ Add it to an agent's MCP config as the command `codecite` with the argument `mcp
 enum Only {
     /// Spec sections and steps.
     Spec,
-    /// Code from repositories and local directories.
+    /// Code and documents from repositories and local directories, and
+    /// fetched documents that are not specs.
     Code,
 }
 
@@ -973,7 +977,8 @@ const HUMAN_COMMIT_CHARS: usize = 12;
 
 /// The short human form of the results. A header says how many there are
 /// and carries the license class and `indexed_at` when every result shares
-/// them; otherwise each result's line does. Per result, one line: citation, kind and symbol, then any
+/// them; otherwise each result's line does. Per result, one line: citation, kind and symbol (or a
+/// section's title), then any
 /// `dirty` and `older version pinned` marks, the license and `indexed_at`
 /// if not shared, and the snippet's first non-blank line. No rank and no
 /// score, which `--json` keeps.
@@ -1006,8 +1011,9 @@ fn human(results: &[SearchResult]) -> String {
             escape_controls(&abbreviate_commit(&r.citation)),
             escape_controls(&r.kind)
         );
-        if let Some(symbol) = &r.symbol {
-            let _ = write!(out, " {}", escape_controls(symbol));
+        // A section names its heading where a definition names its symbol.
+        if let Some(name) = r.symbol.as_ref().or(r.title.as_ref()) {
+            let _ = write!(out, " {}", escape_controls(name));
         }
         if r.dirty == Some(true) {
             out.push_str(" · dirty");
@@ -1631,6 +1637,7 @@ app@0123456789ab:src/b.rs#L1-L5 · method callback · source · quote · indexed
             citation: "app@0123456:a.md#L1-L2".into(),
             kind: "code".into(),
             title: None,
+            anchor: None,
             strength: None,
             license_class: "adapt".into(),
             indexed_at: "2026-10-20T06:00:00Z".into(),
@@ -1662,6 +1669,8 @@ code · adapt · indexed 2026-10-20T06:00:00Z
             citation: format!("app@{SHA}:{path}#L1-L5"),
             kind: "function".into(),
             symbol: symbol.map(Into::into),
+            title: None,
+            anchor: None,
             role: "source",
             score: 2.46,
             license_class: "adapt".into(),
@@ -1679,6 +1688,8 @@ code · adapt · indexed 2026-10-20T06:00:00Z
             citation: citation.into(),
             kind: "function".into(),
             symbol: Some("a".into()),
+            title: None,
+            anchor: None,
             role: "source",
             score: 1.0,
             license_class: "MIT".into(),
@@ -1764,11 +1775,36 @@ app@0123456789ab:b.rs#L1-L5 · function · quote · indexed 2026-10-20T06:00:00Z
     }
 
     #[test]
+    fn a_section_hit_shows_its_title_where_code_shows_its_symbol() {
+        let mut r = result("app@0123456789abcdef0123456789abcdef01234567:README.md#L4-L7");
+        r.kind = "section".into();
+        r.symbol = None;
+        r.title = Some("Install".into());
+        r.anchor = Some("install".into());
+        r.snippet = "## Install\nRun it.".into();
+        assert_eq!(
+            human(&[r]).lines().nth(1),
+            Some("app@0123456789ab:README.md#L4-L7 · section Install · ## Install")
+        );
+        let mut page = result("notes@sha256:1a2b3c4d5e6f#L3-L4");
+        page.kind = "section".into();
+        page.symbol = None;
+        page.title = Some("Rollout".into());
+        page.snippet = "## Rollout".into();
+        assert_eq!(
+            human(&[page]).lines().nth(1),
+            Some("notes@sha256:1a2b3c4d5e6f#L3-L4 · section Rollout · ## Rollout")
+        );
+    }
+
+    #[test]
     fn the_human_form_keeps_spec_and_other_citations_whole() {
         let spec = SearchResult {
             citation: "rfc9449@sha256:0123456789ab#section-4.3/step-2".into(),
             kind: "step".into(),
             symbol: None,
+            title: None,
+            anchor: None,
             role: "spec",
             score: 12.34,
             license_class: "quote".into(),
@@ -1965,7 +2001,9 @@ rfc9449@sha256:0123456789ab#section-4.3/step-2 · quote · indexed 2026-10-20T06
         let result = SearchResult {
             citation: format!("app@{SHA}:a\u{1b}.md#L1-L1"),
             kind: "section".into(),
-            symbol: Some("Title\u{7}".into()),
+            symbol: None,
+            title: Some("Title\u{7}".into()),
+            anchor: Some("title".into()),
             role: "docs",
             score: 1.0,
             license_class: "adapt".into(),
