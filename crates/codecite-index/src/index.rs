@@ -973,9 +973,7 @@ mod tests {
                 ),
                 fts: rows(
                     "SELECT (SELECT count(*) FROM chunk_fts_docsize),
-                            (SELECT count(*) FROM spec_fts_docsize),
-                            (SELECT block FROM chunk_fts_data WHERE id = 1),
-                            (SELECT block FROM spec_fts_data WHERE id = 1)",
+                            (SELECT block FROM chunk_fts_data WHERE id = 1)",
                 ),
             }
         }
@@ -1018,8 +1016,8 @@ mod tests {
         documents: Vec<Vec<rusqlite::types::Value>>,
         chunks: Vec<Vec<rusqlite::types::Value>>,
         symbols: Vec<Vec<rusqlite::types::Value>>,
-        /// Row counts and the averages records BM25 reads, for `chunk_fts`
-        /// and `spec_fts`.
+        /// The row count and the averages record BM25 reads, for
+        /// `chunk_fts`.
         fts: Vec<Vec<rusqlite::types::Value>>,
     }
 
@@ -1970,12 +1968,8 @@ mod tests {
                     && number.is_none()),
             "{chunks:?}"
         );
-        // Only spec chunks, which have numbers, are in the stemmed index.
-        let spec_rows: i64 = corpus
-            .sql()
-            .query_row("SELECT count(*) FROM spec_fts", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(spec_rows, 0);
+        // Its chunks are in the one full-text table search ranks.
+        assert!(corpus.matches("release") > 0);
 
         // The same pin again is stored already.
         let again = corpus.index(&manifest);

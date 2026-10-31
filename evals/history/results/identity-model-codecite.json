@@ -1,31 +1,31 @@
 {
   "all": {
-    "mrr": 0.3608713624338624,
+    "mrr": 0.41130125661375655,
     "queries": 48,
-    "recall_at_1": 0.1875,
-    "recall_at_10": 0.7291666666666666
+    "recall_at_1": 0.2708333333333333,
+    "recall_at_10": 0.7708333333333334
   },
   "classes": {
     "history-issue": {
-      "mrr": 0.2878787878787879,
+      "mrr": 0.31843434343434346,
       "queries": 11,
       "recall_at_1": 0.18181818181818182,
-      "recall_at_10": 0.5454545454545454
+      "recall_at_10": 0.7272727272727273
     },
     "history-title": {
-      "mrr": 0.3825718575718575,
+      "mrr": 0.4389103389103389,
       "queries": 37,
-      "recall_at_1": 0.1891891891891892,
+      "recall_at_1": 0.2972972972972973,
       "recall_at_10": 0.7837837837837838
     }
   },
   "engine": "codecite",
   "groups": {
     "history": {
-      "mrr": 0.3608713624338624,
+      "mrr": 0.41130125661375655,
       "queries": 48,
-      "recall_at_1": 0.1875,
-      "recall_at_10": 0.7291666666666666
+      "recall_at_1": 0.2708333333333333,
+      "recall_at_10": 0.7708333333333334
     }
   },
   "outcomes": [
@@ -46,21 +46,21 @@
     {
       "class": "history-title",
       "id": "identity-model-pr919-title",
-      "rank": 10,
+      "rank": null,
       "text": "docs: close 5.0 documentation gaps",
       "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:go/pkg/dpop/transport.go#L171"
     },
     {
       "class": "history-title",
       "id": "identity-model-pr918-title",
-      "rank": 3,
+      "rank": 1,
       "text": "ci: stamp pre-release wheels with the pre-release version",
-      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:CLAUDE.md#L347-L355"
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:.github/workflows/publish-prerelease.yml#L1-L59"
     },
     {
       "class": "history-title",
       "id": "identity-model-pr910-title",
-      "rank": 8,
+      "rank": 4,
       "text": "docs: 4.x to 5.0 upgrade guide; require py-identity-model 5 in fastapi",
       "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:docs/pre-release-guide.md#L118-L141"
     },
@@ -88,23 +88,23 @@
     {
       "class": "history-title",
       "id": "identity-model-pr897-title",
-      "rank": 2,
+      "rank": 6,
       "text": "docs(spec): replace the config spec, vectors and fixtures with one plain page",
-      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/test-fixtures/config/README.md#L1-L8"
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/vectors/userinfo.json#L362-L369"
     },
     {
       "class": "history-title",
       "id": "identity-model-pr893-title",
-      "rank": 2,
+      "rank": 4,
       "text": "feat(py): optional config helpers — config_from_env, config_from_mapping",
       "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:py/src/py_identity_model/core/config.py#L358-L385"
     },
     {
       "class": "history-title",
       "id": "identity-model-pr892-title",
-      "rank": 9,
+      "rank": 7,
       "text": "refactor(py)!: make Config a plain typed value with defaults",
-      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/config.md#L45-L57"
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/vectors/config.json#L62-L120"
     },
     {
       "class": "history-title",
@@ -123,7 +123,7 @@
     {
       "class": "history-title",
       "id": "identity-model-pr884-title",
-      "rank": 5,
+      "rank": 4,
       "text": "fix(py): reject a UserInfo response with no sub claim",
       "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:py/src/py_identity_model/core/userinfo_logic.py#L82-L126"
     },
@@ -186,14 +186,14 @@
     {
       "class": "history-title",
       "id": "identity-model-pr826-title",
-      "rank": 3,
+      "rank": 2,
       "text": "test(spec): authorization-code vectors on the shared runners, plus pure-logic runners",
       "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:go/pkg/token/token.go#L138-L170"
     },
     {
       "class": "history-issue",
       "id": "identity-model-pr826-issue",
-      "rank": 4,
+      "rank": 3,
       "text": "spec vectors: re-land authorization-code vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used).",
       "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:go/pkg/token/token.go#L138-L170"
     },
@@ -207,28 +207,28 @@
     {
       "class": "history-issue",
       "id": "identity-model-pr825-issue",
-      "rank": 6,
+      "rank": null,
       "text": "spec vectors: re-land client-credentials vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used).",
       "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:rust/src/token/mod.rs#L180-L205"
     },
     {
       "class": "history-title",
       "id": "identity-model-pr735-title",
-      "rank": 2,
+      "rank": 1,
       "text": "ci: lint the workflow files with actionlint and shellcheck",
-      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:CLAUDE.md#L20-L47"
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:.pre-commit-config.yaml#L1-L55"
     },
     {
       "class": "history-title",
       "id": "identity-model-pr823-title",
-      "rank": 10,
+      "rank": 6,
       "text": "test(spec): token-exchange vectors on the shared HTTP vector runners",
       "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:rust/src/token/mod.rs#L256-L411"
     },
     {
       "class": "history-issue",
       "id": "identity-model-pr823-issue",
-      "rank": null,
+      "rank": 8,
       "text": "spec vectors: re-land token-exchange vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used).",
       "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:rust/src/token/mod.rs#L256-L411"
     },
@@ -249,16 +249,16 @@
     {
       "class": "history-title",
       "id": "identity-model-pr821-title",
-      "rank": 5,
+      "rank": 4,
       "text": "test(spec): discovery vectors on the shared HTTP vector runners",
-      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/README.md#L21-L44"
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/vectors/revocation.json#L242-L265"
     },
     {
       "class": "history-issue",
       "id": "identity-model-pr821-issue",
       "rank": null,
       "text": "spec vectors: re-land discovery vectors on the shared runners\n\nPart of identity-model#801. Needs identity-model#803, #804, #805 (and #806 where live vectors are used).",
-      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/README.md#L14-L19"
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:rust/tests/revocation.rs#L112-L123"
     },
     {
       "class": "history-title",
@@ -272,19 +272,19 @@
       "id": "identity-model-pr838-title",
       "rank": null,
       "text": "test(infra): validate canned vector contracts and scalar form fields",
-      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/README.md#L95-L117"
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/vectors/revocation.json#L242-L265"
     },
     {
       "class": "history-title",
       "id": "identity-model-pr736-title",
-      "rank": null,
+      "rank": 9,
       "text": "test(tools): read the release commands instead of scanning their text",
       "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:tools/mutation_security_native.py#L1098-L1099"
     },
     {
       "class": "history-issue",
       "id": "identity-model-pr736-issue",
-      "rank": null,
+      "rank": 10,
       "text": "test(tools): the GitPython pin regex truncates at whitespace, so a second constraint silently vanishes from both sides of the parity check\n\nFound by a retrospective blind-peer-review sweep of PR #666 (`test(tools): compare the whole GitPython bound, and stop enforcing shell comments`), which merged 2026-09-14 with 0 reviews.",
       "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:tools/publish_parity.py#L168-L231"
     },
@@ -300,14 +300,14 @@
       "id": "identity-model-pr830-title",
       "rank": null,
       "text": "fix: require patched PyJWT and AnyIO versions",
-      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:SECURITY.md#L25-L32"
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:rust/src/jwt/claims_validation.rs#L687-L701"
     },
     {
       "class": "history-title",
       "id": "identity-model-pr816-title",
       "rank": null,
       "text": "test(spec): one Go runner for HTTP vectors, served by the node-oidc fixture",
-      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:go/README.md#L46-L62"
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/vectors/jwks.json#L551"
     },
     {
       "class": "history-issue",
@@ -319,21 +319,21 @@
     {
       "class": "history-title",
       "id": "identity-model-pr827-title",
-      "rank": 2,
+      "rank": 1,
       "text": "test(spec): dpop vectors on the shared runners",
-      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:go/CHANGELOG.md#L78-L86"
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/vectors/dpop.json#L62-L76"
     },
     {
       "class": "history-title",
       "id": "identity-model-pr815-title",
-      "rank": 2,
+      "rank": 1,
       "text": "test(spec): one Python runner for HTTP vectors, served by the node-oidc fixture",
-      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:go/README.md#L46-L62"
+      "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/vectors/jwks.json#L551"
     },
     {
       "class": "history-issue",
       "id": "identity-model-pr815-issue",
-      "rank": null,
+      "rank": 9,
       "text": "spec vectors: generic Python HTTP vector runner (revocation, userinfo, jwks)\n\nPart of identity-model#801. Needs identity-model#802.",
       "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/README.md#L68-L93"
     },
@@ -347,7 +347,7 @@
     {
       "class": "history-issue",
       "id": "identity-model-pr814-issue",
-      "rank": 4,
+      "rank": 3,
       "text": "spec vectors: serve canned HTTP vectors from the node-oidc fixture\n\nPart of identity-model#801.",
       "top": "identity-model@f1456691dd86029efaa4424d6080508b93d940df:spec/vectors/userinfo.json#L362-L369"
     },

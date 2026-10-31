@@ -1,8 +1,8 @@
 {
   "all": {
-    "mrr": 0.5461309523809523,
+    "mrr": 0.578422619047619,
     "queries": 32,
-    "recall_at_1": 0.375,
+    "recall_at_1": 0.40625,
     "recall_at_10": 0.84375
   },
   "classes": {
@@ -13,18 +13,18 @@
       "recall_at_10": 1.0
     },
     "history-title": {
-      "mrr": 0.5314900153609831,
+      "mrr": 0.5648233486943164,
       "queries": 31,
-      "recall_at_1": 0.3548387096774194,
+      "recall_at_1": 0.3870967741935484,
       "recall_at_10": 0.8387096774193549
     }
   },
   "engine": "codecite",
   "groups": {
     "history": {
-      "mrr": 0.5461309523809523,
+      "mrr": 0.578422619047619,
       "queries": 32,
-      "recall_at_1": 0.375,
+      "recall_at_1": 0.40625,
       "recall_at_10": 0.84375
     }
   },
@@ -48,7 +48,7 @@
       "id": "terraform-provider-descope-pr221-title",
       "rank": null,
       "text": "ci(claude): scope the review workflow's tool grant and pin the lens plugin",
-      "top": "terraform-provider-descope@ccebf75b4eb513db9681453ebbcdbcfe68a52fed:CONTRIBUTING.md#L90-L96"
+      "top": "terraform-provider-descope@ccebf75b4eb513db9681453ebbcdbcfe68a52fed:Makefile#L61-L118"
     },
     {
       "class": "history-title",
@@ -88,7 +88,7 @@
     {
       "class": "history-title",
       "id": "terraform-provider-descope-pr196-title",
-      "rank": 4,
+      "rank": 2,
       "text": "fix: bump Go toolchain to 1.26.6 to patch stdlib vulnerabilities",
       "top": "terraform-provider-descope@ccebf75b4eb513db9681453ebbcdbcfe68a52fed:release-please-config.json#L2-L24"
     },
@@ -123,16 +123,16 @@
     {
       "class": "history-title",
       "id": "terraform-provider-descope-pr178-title",
-      "rank": 3,
+      "rank": 2,
       "text": "chore(deps): consolidate go-sdk + actions bumps, fix govulncheck (crypto/tls GO-2026-5856)",
       "top": "terraform-provider-descope@ccebf75b4eb513db9681453ebbcdbcfe68a52fed:.github/dependabot.yml#L1-L24"
     },
     {
       "class": "history-title",
       "id": "terraform-provider-descope-pr171-title",
-      "rank": 7,
+      "rank": 5,
       "text": "chore(deps): consolidate dependency updates (go-sdk v1.26 + GitHub Actions)",
-      "top": "terraform-provider-descope@ccebf75b4eb513db9681453ebbcdbcfe68a52fed:docs/testing.md#L317-L324"
+      "top": "terraform-provider-descope@ccebf75b4eb513db9681453ebbcdbcfe68a52fed:.github/dependabot.yml#L1-L24"
     },
     {
       "class": "history-title",
@@ -165,16 +165,16 @@
     {
       "class": "history-title",
       "id": "terraform-provider-descope-pr142-title",
-      "rank": 4,
+      "rank": 3,
       "text": "ci: consolidate dependabot into grouped daily PRs + auto-merge",
       "top": "terraform-provider-descope@ccebf75b4eb513db9681453ebbcdbcfe68a52fed:docs/testing.md#L317-L324"
     },
     {
       "class": "history-title",
       "id": "terraform-provider-descope-pr141-title",
-      "rank": 4,
+      "rank": 3,
       "text": "chore: sync upstream (CI action bumps)",
-      "top": "terraform-provider-descope@ccebf75b4eb513db9681453ebbcdbcfe68a52fed:SECURITY.md#L48-L50"
+      "top": "terraform-provider-descope@ccebf75b4eb513db9681453ebbcdbcfe68a52fed:.github/actions/ci/lint/action.yml#L1-L15"
     },
     {
       "class": "history-title",
@@ -195,7 +195,7 @@
       "id": "terraform-provider-descope-pr136-title",
       "rank": 3,
       "text": "fix: add ralph/claude runtime state to gitignore",
-      "top": "terraform-provider-descope@ccebf75b4eb513db9681453ebbcdbcfe68a52fed:CLAUDE.md#L3-L11"
+      "top": "terraform-provider-descope@ccebf75b4eb513db9681453ebbcdbcfe68a52fed:internal/models/helpers/references.go#L40-L47"
     },
     {
       "class": "history-title",
@@ -221,9 +221,9 @@
     {
       "class": "history-title",
       "id": "terraform-provider-descope-pr124-title",
-      "rank": 2,
+      "rank": 1,
       "text": "fix(ci): use tag ref for SLSA provenance generator",
-      "top": "terraform-provider-descope@ccebf75b4eb513db9681453ebbcdbcfe68a52fed:docs/testing.md#L277-L287"
+      "top": "terraform-provider-descope@ccebf75b4eb513db9681453ebbcdbcfe68a52fed:.github/workflows/release.yml#L61-L80"
     },
     {
       "class": "history-title",
@@ -242,7 +242,7 @@
     {
       "class": "history-title",
       "id": "terraform-provider-descope-pr119-title",
-      "rank": 4,
+      "rank": 7,
       "text": "docs: add missing docs and update index for v1.0.0",
       "top": "terraform-provider-descope@ccebf75b4eb513db9681453ebbcdbcfe68a52fed:internal/models/helpers/handler.go#L46-L50"
     },
