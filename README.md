@@ -19,16 +19,19 @@ flowchart LR
 
 | Command | What you get |
 | --- | --- |
+| `codecite add <corpus> <url>...` | Adds git repositories to `corpora/<corpus>.toml`, pinned at their current commit, with their license detected (SPDX) and a license class proposed. One corpus can span many repositories |
 | `codecite index <corpus>` | Indexes the local checkouts, git repositories (at pinned commits) and documents (pinned by sha256) that `corpora/<corpus>.toml` lists. Code splits at definitions with tree-sitter (Rust, Python, TypeScript, JavaScript, Go, C#); RFC and OpenID HTML splits into numbered sections and steps; any other Markdown, HTML or text splits at its headings and is cited by lines. Later runs work offline and rewrite only what changed |
 | `codecite search <corpus> "<query>"` | Ranked results, each with its citation, license class and when it was indexed. Identifiers match however they are written (`validate token` finds `validateToken`) |
 | `codecite grep <corpus> <pattern>` | Lines matching a regex, or exact text with `--fixed`, across the indexed code, documents and specs, each with its citation: a code or document line, or the spec step or section that holds it. For the literal strings ranking is weak at: a claim name, an error message, `token_type_hint=\w+` |
 | `codecite read <corpus> <citation>` | The exact text a citation points at, under its pinned citation. Accepts the canonical forms search prints and the ones people write: `RFC 9449 §4.3`, `OIDC Core §3.1.3.7 step 13`, a spec URL, a heading's anchor (`repo@sha:README.md#install`) |
 | `codecite def <corpus> <symbol>` | Every definition of a symbol, by its exact name (`callback`) or dotted (`Client.callback`), source first. Several matches are all listed and marked ambiguous, never one guess |
+| `codecite cite <corpus> <citation>` | Checks a citation: whether it resolves to exactly one span, what it points at, and, for a spec, findings for one that doesn't, such as a superseded document |
+| `codecite context <corpus> <path>` | The guidance rules, from house-rules documents the manifest lists, that govern a file by its path, language and imports, MUST first, each cited |
 | `codecite requirements <corpus> <citation>` | The normative statements codecite finds governing a spec section, each cited: its MUST and SHOULD sentences, the REQUIRED and PROHIBITED rows of its claim and parameter lists, and its steps, with those of its subsections and of the sections it names or that name it, grouped by section, MUSTs first. Run it before implementing anything a spec governs; it doesn't follow other documents or catch rules without uppercase keywords, so `read` a section when you need all of it |
 | `codecite diff <corpus> <document>` | The rules that differ between two pinned versions of a spec, such as before and after its errata: normative statements added, removed, changed or changed in strength (OPTIONAL → REQUIRED), each with both versions' citations, and rewording listed apart |
 | `codecite assist <corpus> --tool grep\|glob\|bash --input <json>` | For a hook on an agent's own searches, through its grep and glob tools or a grep, rg or find in its shell: what the corpus knows about the call that its result does not show, as cited lines under a 2 KB budget. Never fails, so a hook can't break the agent's search ([recipes](docs/usage.md)) |
 | `codecite corpora` | The indexed corpora as JSON, with each one's age, size, source count and staleness |
-| `codecite mcp` | An MCP server over stdio. Its tools `corpora`, `search`, `grep`, `definition`, `read`, `requirements` and `diff` return the same JSON as the commands `corpora`, `search`, `grep`, `def`, `read`, `requirements` and `diff` (with `--json` for all but `corpora`), byte for byte, and an error is a tool error with its kind and candidates |
+| `codecite mcp` | An MCP server over stdio. Its tools `corpora`, `search`, `grep`, `definition`, `read`, `context`, `requirements` and `diff` return the same JSON as the commands `corpora`, `search`, `grep`, `def`, `read`, `context`, `requirements` and `diff` (with `--json` for all but `corpora`), byte for byte, and an error is a tool error with its kind and candidates |
 
 A citation that doesn't resolve to exactly one span is an error listing the
 candidates, never a guess, and an index older than its manifest's
@@ -69,11 +72,9 @@ cites each one:
 
 ```console
 $ codecite search identity "validate DPoP proof jti" --limit 2
-2 results · adapt · indexed 2026-10-20T20:34:15Z
-1. identity-model@9458d60f4f2f:rust/src/dpop/proof.rs#L207-L212 · function new_jti · 32.7
-   fn new_jti() -> Result<String> {
-2. identity-model@9458d60f4f2f:go/internal/conformance/dpop_test.go#L23-L87 · function runDPoPVector · 32.2
-   func runDPoPVector(t *testing.T, label, base string, v HTTPVector) {
+2 results · adapt · indexed 2026-10-31T17:38:46Z
+identity-model@2fee67deb27f:go/pkg/dpop/proof.go#L55-L108 · function Proof · // Proof builds and signs a DPoP proof JWT for an HTTP request with the given
+identity-model@2fee67deb27f:go/pkg/dpop/verify.go#L31-L46 · class Proof · // Proof is a verified DPoP proof (RFC 9449 §4.2): its header parameters, payload
 ```
 
 `codecite read` prints the text a citation points at, for the citations
@@ -116,8 +117,10 @@ claude mcp add codecite -- codecite mcp
 - A code graph — definitions, references, callers, callees, impact — merged from
   tree-sitter, SCIP, LSP, CodeGraph and Graphify, with every edge tagged by the
   provider that produced it and how far to trust it.
-- License detection (SPDX) checked against each manifest's license class, so
-  agents know what they may adapt and what they may only learn from.
+- License classes enforced: `codecite add` already detects each repository's
+  license (SPDX); checking it against the manifest's license class at index
+  time is next, so agents know what they may adapt and what they may only
+  learn from.
 - Fully local: no server process, no telemetry, no network access beyond
   fetching pinned sources.
 
