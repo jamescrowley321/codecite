@@ -600,3 +600,36 @@ def test_a_task_without_a_task_json_takes_the_default_gate():
 
 def test_a_task_run_by_id_is_named_by_its_id(monkeypatch, tmp_path):
     assert scorecard([gated("replay-x", monkeypatch, tmp_path, "replay")]).startswith("**Task: `replay-x`**")
+
+
+def assist_run(arm, epoch, blocks, calls=4, nbytes=800):
+    """A Claude Code sample of the assist arm: its hook's measures in the store."""
+    s = claude_run(arm, epoch, 0)
+    if arm == "assist":
+        s.store |= {"assist_calls": calls, "assist_blocks": blocks, "assist_bytes": nbytes}
+    return s
+
+
+def test_an_assist_run_used_codecite_when_the_hook_added_a_block():
+    runs = [assist_run("baseline", e, 0) for e in range(1, EPOCHS + 1)]
+    runs += [assist_run("assist", e, 2 if e <= 2 else 0) for e in range(1, EPOCHS + 1)]
+    out = scorecard([log("claude-code/claude-sonnet-5-5", runs, arms="assist")])
+    _, rows = table(out, 0)
+    assert rows[("claude-code/claude-sonnet-5-5", "assist")]["used codecite"] == f"2/{EPOCHS}"
+    assert rows[("claude-code/claude-sonnet-5-5", "assist")]["verdict"].startswith("no loss")
+
+
+def test_the_assist_arm_shows_its_blocks_and_estimated_tokens():
+    runs = [assist_run("baseline", e, 0) for e in range(1, EPOCHS + 1)]
+    runs += [assist_run("assist", e, 3, calls=5, nbytes=1200) for e in range(1, EPOCHS + 1)]
+    out = scorecard([log("claude-code/claude-sonnet-5-5", runs, arms="assist")])
+    header, rows = table(out, 3)
+    assert header == ["model", "arm", "searches", "blocks", "bytes", "tokens added (est.)"]
+    row = rows[("claude-code/claude-sonnet-5-5", "assist")]
+    assert (row["searches"], row["blocks"], row["bytes"], row["tokens added (est.)"]) == ("5", "3", "1,200", "300")
+    assert "bytes / 4" in out
+
+
+def test_an_ab_scorecard_has_no_assist_table():
+    out = scorecard(PANEL)
+    assert "tokens added" not in out and len(tables(out)) == 3

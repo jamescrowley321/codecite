@@ -27,9 +27,9 @@ on:
         type: string
         default: fastapi-middleware
       arms:
-        description: ab (baseline against codecite), aa (an A/A round, two baseline arms, to measure noise) or baseline (calibrate the task on the quick tier, no verdict)
+        description: ab (baseline against codecite), aa (an A/A round, two baseline arms, to measure noise), baseline (calibrate the task on the quick tier, no verdict) or assist (baseline against codecite only through the hook on the agent's searches, through grep, glob or the shell)
         type: choice
-        options: [ab, aa, baseline]
+        options: [ab, aa, baseline, assist]
         default: ab
       epochs:
         description: Epochs per arm, if not the tier's own (quick 5, full 10)
@@ -88,8 +88,8 @@ jobs:
       EPOCHS: ${{ inputs.epochs }}
       OPENROUTER: ${{ (inputs.openrouter || vars.EVALS_OPENROUTER == 'true') && '1' || '0' }}
       # Where panel.sh logs, under inspect/logs/: the tier, the tier's A/A
-      # round, or calibration.
-      RUN_NAME: ${{ inputs.arms == 'baseline' && 'calibration' || format('{0}{1}', inputs.tier || 'quick', inputs.arms == 'aa' && '-aa' || '') }}
+      # round, the assist arm's round, or calibration.
+      RUN_NAME: ${{ inputs.arms == 'baseline' && 'calibration' || format('{0}{1}', inputs.tier || 'quick', inputs.arms == 'aa' && '-aa' || inputs.arms == 'assist' && '-assist' || '') }}
       # Each sandbox is one Docker network; the daemon below gets 256 of
       # them. The runner's 4 vCPU set the limit: at 20 sandboxes, samples
       # spent three quarters of their wall time waiting, which skews the

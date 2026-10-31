@@ -22,6 +22,8 @@ ARMS = {
     "aa": (("baseline-a", "baseline"), ("baseline-b", "baseline")),
     # A calibration: the baseline arm alone, reported with no verdict.
     "baseline": (("baseline", "baseline"),),
+    # codecite only through the hook on the agent's own searches (assist.py).
+    "assist": (("baseline", "baseline"), ("assist", "assist")),
 }
 
 QUERIES = EVALS_DIR / "retrieval" / "queries.toml"

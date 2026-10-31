@@ -30,7 +30,9 @@
 # {"quick": 1}): spec-questions has a sample per question, so one epoch is
 # already a run per question. ARMS picks the arms: ab (baseline against
 # codecite, the default), aa (an A/A round, two baseline arms, logged to
-# inspect/logs/<tier>-aa/<task>/), or baseline (a calibration,
+# inspect/logs/<tier>-aa/<task>/), assist (baseline against codecite only
+# through the grep and glob hook, logged to inspect/logs/<tier>-assist/<task>/),
+# or baseline (a calibration,
 # evals/README.md: quick tier only, logged to inspect/logs/calibration/<task>/
 # and reported with no verdict).
 set -euo pipefail
@@ -111,12 +113,13 @@ ARMS="${ARMS:-ab}"
 case "$ARMS" in
   ab) LOG_DIR="inspect/logs/$TIER/$TASK_ID" ;;
   aa) LOG_DIR="inspect/logs/$TIER-aa/$TASK_ID" ;;
+  assist) LOG_DIR="inspect/logs/$TIER-assist/$TASK_ID" ;;
   baseline)
     [[ "$TIER" == quick ]] || { echo "calibrate (ARMS=baseline) on the quick tier" >&2; exit 2; }
     LOG_DIR="inspect/logs/calibration/$TASK_ID"
     ;;
   *)
-    echo "ARMS must be ab, aa or baseline, not '$ARMS'" >&2
+    echo "ARMS must be ab, aa, baseline or assist, not '$ARMS'" >&2
     exit 2
     ;;
 esac

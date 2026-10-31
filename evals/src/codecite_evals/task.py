@@ -37,7 +37,7 @@ from inspect_ai.scorer import Score, Target, accuracy, scorer, stderr
 from inspect_ai.solver import Generate, TaskState, solver
 from inspect_ai.util import OutputLimitExceededError, sandbox, store
 
-from codecite_evals import claude_code, config, scrub
+from codecite_evals import assist, claude_code, config, scrub
 
 ARMS = {"both": ("baseline", "codecite"), "baseline": ("baseline",)}
 PROJECT = "/work/project"
@@ -131,9 +131,11 @@ def ab_task(task_id: str, arms: str = "ab") -> Task:
 def pi_command(condition: str, prompt: str) -> list[str]:
     """pi's command line for an arm. --no-extensions drops the built-in
     extensions too, so the codecite arm loads only the MCP one back, and only
-    it lists codecite's tools."""
+    it lists codecite's tools; the assist arm loads only its hook's."""
     if condition == "codecite":
         flags, tools = [*PI_FLAGS, "-e", "builtin:mcp"], [*PI_TOOLS, *CODECITE_TOOLS]
+    elif condition == "assist":
+        flags, tools = [*PI_FLAGS, "--no-mcp", "-e", assist.PI_EXTENSION_PATH], PI_TOOLS
     else:
         flags, tools = [*PI_FLAGS, "--no-mcp"], PI_TOOLS
     return ["pi", "-p", "--mode", "json", "--provider", "inspect", "--model", "inspect", *flags, "--tools", ",".join(tools), "--", prompt]
@@ -186,14 +188,31 @@ def coding_agent() -> Agent:
 
 
 async def prepare_arm(sb, condition: str, mcp_path: str, mcp_config: dict) -> dict[str, str]:
-    """Take codecite out of the baseline arm's sandbox, or give the codecite
-    arm the agent's MCP config, and return the arm's base env."""
+    """Take codecite out of the baseline arm's sandbox, give the assist arm
+    its hook (codecite kept, but off PATH), or give the codecite arm the
+    agent's MCP config, and return the arm's base env."""
     if condition == "baseline":
         await sb.exec(["rm", "-rf", "/opt/codecite"])
+    elif condition == "assist":
+        for path, text in assist.files().items():
+            await sb.write_file(path, text)
     else:
         await sb.write_file(mcp_path, json.dumps(mcp_config, indent=2))
     path = ("/opt/codecite/bin:" if condition == "codecite" else "") + "/usr/local/bin:/usr/bin:/bin"
     return {"PATH": path, "HOME": "/root"}
+
+
+async def keep_assist_measures(sb, condition: str) -> None:
+    """The assist arm's hook measures, from its log, into the store; none
+    logged is none made."""
+    if condition != "assist":
+        return
+    try:
+        log = await sb.read_file(assist.LOG)
+    except Exception:
+        log = ""
+    for key, value in assist.measures(log).items():
+        store().set(key, value)
 
 
 async def run_agent(sb, cmd: list[str], env: dict[str, str], timeout: int):
@@ -227,6 +246,7 @@ def pi() -> Agent:
         env = await prepare_arm(sb, condition, PI_MCP, MCP_CONFIG)
         async with sandbox_agent_bridge(state) as bridge:
             result = await run_agent(sb, pi_command(condition, state.messages[0].text), env, AGENT_TIMEOUT)
+            await keep_assist_measures(sb, condition)
             if result is None:
                 return bridge.state
             if not result.success:
@@ -259,6 +279,8 @@ def claude(model: str) -> Agent:
             stdout = ""
         for key, value in claude_code.measures(stdout).items():
             store().set(key, value)
+        store().set("tool_calls", claude_code.tool_calls(stdout))
+        await keep_assist_measures(sb, condition)
         if result is None:
             return state
         if result.returncode == 124 or (result.returncode == 137 and ran >= AGENT_TIMEOUT):
