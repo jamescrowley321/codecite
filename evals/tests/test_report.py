@@ -624,9 +624,9 @@ def test_the_assist_arm_shows_its_blocks_and_estimated_tokens():
     runs += [assist_run("assist", e, 3, calls=5, nbytes=1200) for e in range(1, EPOCHS + 1)]
     out = scorecard([log("claude-code/claude-sonnet-5-5", runs, arms="assist")])
     header, rows = table(out, 3)
-    assert header == ["model", "arm", "grep and glob calls", "blocks", "bytes", "tokens added (est.)"]
+    assert header == ["model", "arm", "searches", "blocks", "bytes", "tokens added (est.)"]
     row = rows[("claude-code/claude-sonnet-5-5", "assist")]
-    assert (row["grep and glob calls"], row["blocks"], row["bytes"], row["tokens added (est.)"]) == ("5", "3", "1,200", "300")
+    assert (row["searches"], row["blocks"], row["bytes"], row["tokens added (est.)"]) == ("5", "3", "1,200", "300")
     assert "bytes / 4" in out
 
 

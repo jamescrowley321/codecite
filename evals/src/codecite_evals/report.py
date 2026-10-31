@@ -162,7 +162,7 @@ class Run:
     used: bool = False
     # Assistant messages: the turns of a sample whose log kept no model events.
     replies: int = 0
-    # The assist arm's hook (assist.py): the grep and glob calls it saw, the
+    # The assist arm's hook (assist.py): the searches it saw, the
     # blocks it added and their bytes. None outside that arm.
     assist_calls: int | None = None
     assist_blocks: int | None = None
@@ -570,7 +570,7 @@ ASSISTED = [
     "",
     "What the assist hook added, medians per run (tokens are bytes / 4, an estimate):",
     "",
-    "| model | arm | grep and glob calls | blocks | bytes | tokens added (est.) |",
+    "| model | arm | searches | blocks | bytes | tokens added (est.) |",
     "|---|---|---|---|---|---|",
 ]
 

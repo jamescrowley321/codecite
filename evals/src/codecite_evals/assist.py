@@ -39,7 +39,7 @@ SETTINGS = {
 # Never fails: a call it can't read, or codecite failing or timing out, adds
 # nothing to the result. A call it could read is logged even with no block.
 HOOK = (
-    '''"""codecite's hook on the agent's grep and glob calls, for the eval's assist arm."""
+    '''"""codecite's hook on the agent's searches, for the eval's assist arm."""
 import json
 import re
 import subprocess
