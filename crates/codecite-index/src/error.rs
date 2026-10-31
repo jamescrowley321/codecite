@@ -98,6 +98,17 @@ pub enum Error {
         actual: String,
     },
 
+    /// A manifest names another corpus than the one asked for.
+    #[error("manifest {} is for corpus `{found}`, not `{expected}`", path.display())]
+    WrongCorpus {
+        /// The manifest.
+        path: std::path::PathBuf,
+        /// The corpus asked for.
+        expected: String,
+        /// The corpus the manifest names.
+        found: String,
+    },
+
     /// A guidance source's `rules` names a rule its document doesn't have.
     #[error("guidance `{name}`: `rules.\"{number}\"` names no rule in the document")]
     UnknownRule {

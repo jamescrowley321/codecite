@@ -104,6 +104,12 @@ impl Remote {
         Remote { repo }
     }
 
+    /// Points the remote's `HEAD`, its default branch, at `branch`.
+    pub(crate) fn set_head(&self, branch: &str) {
+        self.repo
+            .git(&["symbolic-ref", "HEAD", &format!("refs/heads/{branch}")]);
+    }
+
     /// The remote's `file://` URL.
     pub(crate) fn url(&self) -> String {
         format!("file://{}", self.repo.path().display())

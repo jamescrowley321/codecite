@@ -33,6 +33,7 @@ streaming-iterator.workspace = true
 scraper.workspace = true
 pulldown-cmark.workspace = true
 ego-tree.workspace = true
+spdx.workspace = true
 
 [dev-dependencies]
 rusqlite.workspace = true

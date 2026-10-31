@@ -11,13 +11,16 @@
 //! each document into spec sections and steps, and writes the result into
 //! its store.
 
+mod add;
+pub use add::{Added, add_sources};
+
 mod chunk;
 pub use chunk::{
     Chunk, ChunkKind, Chunker, ChunkerError, Language, Symbol, SymbolKind, WINDOW_LINES,
 };
 
 mod clone;
-pub use clone::{Checkout, CloneError, Clones};
+pub use clone::{Checkout, CloneError, Clones, remote_head};
 
 mod document;
 
@@ -32,6 +35,9 @@ pub use guidance::{GuidanceError, GuidanceRule, split_guidance};
 
 mod index;
 pub use index::{IndexSummary, index_corpus};
+
+mod license;
+pub use license::{DetectedLicense, detect_license};
 
 mod manifest;
 pub use manifest::{
