@@ -8,6 +8,8 @@ use clap::ValueEnum;
 use codecite_core::{ContextQuery, ContextTarget, Error, SearchQuery, Store};
 use serde_json::Value;
 
+mod shell;
+
 /// How many hits a block shows at most.
 const MAX_HITS: usize = 5;
 
@@ -21,6 +23,10 @@ pub enum Tool {
     Grep,
     /// A file-name search: Claude Code's `Glob`, pi's `find`.
     Glob,
+    /// A shell command: Claude Code's `Bash`, pi's `bash`. The `grep`,
+    /// `rg`, `git grep`, `find` or `fd` it runs is read as the grep or glob
+    /// call it amounts to; a command that runs none looks up nothing.
+    Bash,
 }
 
 /// The parts of the tool's input that assist reads.
@@ -33,7 +39,24 @@ pub struct ToolInput {
 }
 
 impl ToolInput {
-    /// Reads the tool's input JSON. `pattern` must be a string; `path` is
+    /// Reads the input JSON of a call to `tool`, as the grep or glob call
+    /// it amounts to: a bash call's `command` is read for the search it
+    /// runs (an error when it runs none).
+    pub fn read(tool: Tool, json: &str) -> anyhow::Result<(Tool, ToolInput)> {
+        if tool != Tool::Bash {
+            return Ok((tool, ToolInput::parse(json)?));
+        }
+        let value: Value = serde_json::from_str(json).context("reading the tool input as JSON")?;
+        let Some(command) = value.get("command").and_then(Value::as_str) else {
+            bail!("the tool input has no string `command`");
+        };
+        match shell::search(command) {
+            Some(found) => Ok(found),
+            None => bail!("the command runs no search assist can read"),
+        }
+    }
+
+    /// Reads a grep or glob call's input JSON. `pattern` must be a string; `path` is
     /// kept when it is one.
     pub fn parse(json: &str) -> anyhow::Result<ToolInput> {
         let value: Value = serde_json::from_str(json).context("reading the tool input as JSON")?;
@@ -79,6 +102,8 @@ pub fn lookup(tool: Tool, input: &ToolInput) -> Lookup {
                 .collect();
             words(&stems.join(" "))
         }
+        // `read` turns a bash call into the grep or glob it runs.
+        Tool::Bash => Lookup::Nothing,
     }
 }
 
@@ -183,10 +208,14 @@ fn cited_path(citation: &str) -> Option<&str> {
 fn already_matched(output: &str, path: &str) -> bool {
     let starts = |c: char| c == '/' || c == '\\' || c == '"' || c == '\'' || c.is_whitespace();
     let ends = |c: char| c == '"' || c == '\'' || c == ':' || c == ',' || c.is_whitespace();
+    // A JSON-serialized result puts `\n` or `\t` between lines and fields:
+    // an escape before the path, or a backslash after it, is a boundary too.
+    let escaped = |before: &str| ["\\n", "\\r", "\\t"].iter().any(|e| before.ends_with(e));
     output.match_indices(path).any(|(at, _)| {
         let before = output[..at].chars().next_back();
         let after = output[at + path.len()..].chars().next();
-        before.is_none_or(starts) && after.is_none_or(ends)
+        (before.is_none_or(starts) || escaped(&output[..at]))
+            && after.is_none_or(|c| ends(c) || c == '\\')
     })
 }
 
@@ -353,6 +382,40 @@ mod tests {
         assert!(!already_matched("src/ab.rs\n", "src/a.rs"));
         assert!(!already_matched("lib/xsrc/a.rs\n", "src/a.rs"));
         assert!(!already_matched("", "src/a.rs"));
+    }
+
+    #[test]
+    fn what_a_serialized_result_found_is_matched_on_every_line() {
+        // Claude Code's Bash and content-mode Grep results, as a hook
+        // passes them on: JSON, with the lines joined by `\n` escapes.
+        let bash = r#"{"stdout":"src/x.py:1:a\nsrc/a.rs:12:fn f() {}\n","stderr":""}"#;
+        assert!(already_matched(bash, "src/a.rs"));
+        assert!(already_matched(bash, "src/x.py"));
+        assert!(already_matched(r#"{"stdout":"./src/a.rs\n"}"#, "src/a.rs"));
+        assert!(!already_matched(
+            r#"{"stdout":"x\nsrc/ab.rs\n"}"#,
+            "src/a.rs"
+        ));
+        assert!(!already_matched(r#"{"stdout":"xsrc/a.rs\n"}"#, "src/a.rs"));
+    }
+
+    #[test]
+    fn a_bash_call_reads_the_search_it_runs() {
+        let (tool, input) = ToolInput::read(
+            Tool::Bash,
+            r#"{"command": "cd /w && grep -rn sid app | head"}"#,
+        )
+        .unwrap();
+        assert_eq!(tool, Tool::Grep);
+        assert_eq!(input.pattern, "sid");
+        assert_eq!(input.path.as_deref(), Some("app"));
+        let (tool, input) =
+            ToolInput::read(Tool::Bash, r#"{"command": "find . -name '*logout*'"}"#).unwrap();
+        assert_eq!((tool, input.pattern.as_str()), (Tool::Glob, "*logout*"));
+        assert!(ToolInput::read(Tool::Bash, r#"{"command": "cat app/main.py"}"#).is_err());
+        assert!(ToolInput::read(Tool::Bash, r#"{"pattern": "sid"}"#).is_err());
+        let (tool, _) = ToolInput::read(Tool::Grep, r#"{"pattern": "sid"}"#).unwrap();
+        assert_eq!(tool, Tool::Grep);
     }
 
     #[test]

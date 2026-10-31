@@ -239,3 +239,21 @@ def test_the_assist_arm_keeps_its_hooks_measures(monkeypatch):
 def test_other_arms_keep_no_assist_measures(monkeypatch):
     _, store, _ = run_claude(monkeypatch, finished(stream(DONE)))
     assert "assist_calls" not in store
+
+
+def test_tool_calls_lists_every_call_in_order_with_its_input_cut():
+    long = "x" * 1000
+    stdout = "\n".join(
+        json.dumps(e)
+        for e in [
+            {"type": "system", "subtype": "init"},
+            {"type": "assistant", "message": {"id": "m1", "content": [{"type": "text", "text": "hi"}, {"type": "tool_use", "name": "Bash", "input": {"command": "grep -rn sid app"}}]}},
+            {"type": "user", "message": {"content": [{"type": "tool_result", "content": "app/a.py:1:sid"}]}},
+            {"type": "assistant", "message": {"id": "m2", "content": [{"type": "tool_use", "name": "Read", "input": {"file_path": long}}]}},
+        ]
+    ) + "\nnot json"
+    calls = claude_code.tool_calls(stdout)
+    assert [c["name"] for c in calls] == ["Bash", "Read"]
+    assert json.loads(calls[0]["input"]) == {"command": "grep -rn sid app"}
+    assert len(calls[1]["input"]) == claude_code.MAX_CALL_CHARS
+    assert claude_code.tool_calls("") == []

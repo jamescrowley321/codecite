@@ -289,3 +289,35 @@ fn a_claude_code_glob_payload_prints_hits() {
     let block = assist_on_payload(&demo, "claude-glob.json");
     assert!(block.contains(":src/session.py#"), "{block}");
 }
+
+#[test]
+fn a_bash_grep_prints_what_its_output_does_not_show() {
+    let demo = Demo::new();
+    let input = r#"{"command": "cd /work/app && grep -rn 'logout.*token' src | head -20"}"#;
+    // Claude Code's Bash result as a hook passes it on: JSON, the lines
+    // joined by `\n` escapes, the matched file on the second line.
+    let found = r#"{"stdout":"src/other.py:1:x\nsrc/logout.py:2:    \"\"\"Check a back-channel logout token's claims.\"\"\"\n","stderr":"","interrupted":false}"#;
+    let block = demo.assist("bash", input, found);
+    assert!(!block.contains("src/logout.py"), "{block}");
+    assert!(block.contains(":src/session.py#"), "{block}");
+}
+
+#[test]
+fn a_bash_find_prints_hits() {
+    let demo = Demo::new();
+    let block = demo.assist("bash", r#"{"command": "find . -name '*session*'"}"#, "");
+    assert!(block.contains(":src/session.py#"), "{block}");
+}
+
+#[test]
+fn a_bash_command_that_searches_nothing_prints_nothing() {
+    let demo = Demo::new();
+    for command in [
+        "cat src/logout.py",
+        "find . -type f | grep -v .git",
+        "uv run pytest",
+    ] {
+        let input = serde_json::json!({ "command": command }).to_string();
+        assert_eq!(demo.assist("bash", &input, ""), "", "{command}");
+    }
+}

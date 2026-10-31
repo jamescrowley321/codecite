@@ -279,6 +279,7 @@ def claude(model: str) -> Agent:
             stdout = ""
         for key, value in claude_code.measures(stdout).items():
             store().set(key, value)
+        store().set("tool_calls", claude_code.tool_calls(stdout))
         await keep_assist_measures(sb, condition)
         if result is None:
             return state

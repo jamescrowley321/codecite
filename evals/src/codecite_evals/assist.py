@@ -1,14 +1,18 @@
 """The assist arm: codecite reaches the agent only through a hook on its own
-grep and glob calls (`codecite assist`, docs/usage.md), with no MCP, no note
-in the prompt and the binary off PATH.
+searches (`codecite assist`, docs/usage.md): its grep and glob calls, and the
+grep, rg or find it runs through its shell, with no MCP, no note in the
+prompt and the binary off PATH. Agents search through the shell at least as
+often as through their search tools, so a hook on the tools alone sees
+little (#162's first quick run saw no calls at all).
 
 One Python script is the hook for both agents, since the sandbox has python3
 but no jq. Claude Code runs it as a PostToolUse hook from SETTINGS, passed
 with --settings; pi's extension hands it the same payload, Claude Code's
 shape, and appends what it returns to the result. Each run of the hook adds
 a line to LOG, `{"tool", "bytes"}`, which the agent reads after the run into
-the sample's store (measures): the calls the hook saw, the blocks it added
-and their bytes.
+the sample's store (measures): the searches the hook saw, the blocks it
+added and their bytes. A shell command that names no search program is not
+passed on or counted.
 """
 
 import json
@@ -25,7 +29,7 @@ SETTINGS = {
     "hooks": {
         "PostToolUse": [
             {
-                "matcher": "Grep|Glob",
+                "matcher": "Grep|Glob|Bash",
                 "hooks": [{"type": "command", "command": f"python3 -I {HOOK_PATH}", "timeout": 10}],
             }
         ]
@@ -37,12 +41,15 @@ SETTINGS = {
 HOOK = (
     '''"""codecite's hook on the agent's grep and glob calls, for the eval's assist arm."""
 import json
+import re
 import subprocess
 import sys
 
 CODECITE = "@CODECITE@"
 LOG = "@LOG@"
-TOOLS = {"Grep": "grep", "Glob": "glob", "grep": "grep", "find": "glob"}
+TOOLS = {"Grep": "grep", "Glob": "glob", "Bash": "bash", "grep": "grep", "find": "glob", "bash": "bash"}
+# A shell command reaches codecite only when it names a search program.
+SEARCH = re.compile(r"(?<![\\w.-])(grep|egrep|fgrep|rg|ag|ack|find|fd|fdfind)(?![\\w.-])")
 HEADER = @HEADER@
 
 
@@ -53,6 +60,8 @@ def main():
         response = call.get("tool_response")
         output = response if isinstance(response, str) else json.dumps(response)
         tool_input = json.dumps(call["tool_input"])
+        if tool == "bash" and not SEARCH.search(str(call["tool_input"].get("command", ""))):
+            return
     except Exception:
         return
     try:
@@ -85,7 +94,7 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const HOOK = "@HOOK_PATH@";
-const TOOLS: Record<string, string> = { grep: "grep", find: "find" };
+const TOOLS: Record<string, string> = { grep: "grep", find: "find", bash: "bash" };
 
 export default function (pi: ExtensionAPI) {
   pi.on("tool_result", async (event, ctx) => {
@@ -121,7 +130,7 @@ def files() -> dict[str, str]:
 
 
 def measures(log: str) -> dict[str, int]:
-    """The hook's calls, the blocks it added (non-empty) and their bytes, from
+    """The searches the hook saw, the blocks it added (non-empty) and their bytes, from
     its log. A line it can't read is skipped."""
     calls = blocks = size = 0
     for line in log.splitlines():

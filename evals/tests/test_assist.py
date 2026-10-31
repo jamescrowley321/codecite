@@ -1,5 +1,5 @@
-"""The assist arm: codecite reaches the agent only through its grep and glob
-hook. The hook runs here as the sandbox runs it, against a stand-in codecite."""
+"""The assist arm: codecite reaches the agent only through its hook on the
+agent's searches. The hook runs here as the sandbox runs it, against a stand-in codecite."""
 
 import asyncio
 import json
@@ -56,9 +56,9 @@ def test_the_hook_passes_the_call_to_assist_and_returns_its_block(hook, tmp_path
     assert assist.measures((tmp_path / "log.jsonl").read_text()) == {"assist_calls": 1, "assist_blocks": 1, "assist_bytes": 85}
 
 
-@pytest.mark.parametrize("name, tool", [("Grep", "grep"), ("Glob", "glob"), ("grep", "grep"), ("find", "glob")])
+@pytest.mark.parametrize("name, tool", [("Grep", "grep"), ("Glob", "glob"), ("grep", "grep"), ("find", "glob"), ("Bash", "bash"), ("bash", "bash")])
 def test_the_hook_maps_both_agents_tools(hook, tmp_path, name, tool):
-    hook({**GREP, "tool_name": name})
+    hook({**GREP, "tool_name": name, "tool_input": {**GREP["tool_input"], "command": "grep -rn sid app"}})
     assert (tmp_path / "args").read_text().splitlines()[3] == tool
 
 
@@ -113,15 +113,16 @@ def test_claude_code_gets_the_hook_settings_and_no_mcp():
     assert [a for a in cmd if a not in ("--settings", assist.SETTINGS_PATH)] == base
 
 
-def test_the_settings_run_the_hook_on_grep_and_glob():
+def test_the_settings_run_the_hook_on_grep_glob_and_the_shell():
     (entry,) = assist.SETTINGS["hooks"]["PostToolUse"]
-    assert entry["matcher"] == "Grep|Glob"
+    assert entry["matcher"] == "Grep|Glob|Bash"
     assert entry["hooks"] == [{"type": "command", "command": f"python3 -I {assist.HOOK_PATH}", "timeout": 10}]
 
 
 def test_the_extension_runs_the_same_hook():
     assert assist.HOOK_PATH in assist.PI_EXTENSION and assist.LOG not in assist.PI_EXTENSION
     assert 'grep: "grep"' in assist.PI_EXTENSION and 'find: "find"' in assist.PI_EXTENSION
+    assert 'bash: "bash"' in assist.PI_EXTENSION
 
 
 class Sandbox:
@@ -145,3 +146,33 @@ def test_prepare_arm_keeps_codecite_off_path_and_writes_the_hook():
     assert sb.files[assist.PI_EXTENSION_PATH] == assist.PI_EXTENSION
     # The hook calls codecite where the image put it.
     assert assist.CODECITE == task.CODECITE
+
+
+BASH = {
+    "tool_name": "Bash",
+    "tool_input": {"command": "cd /work/project && grep -rn logout_token app | head"},
+    "tool_response": {"stdout": "app/logout.py:3:def f(logout_token):\n", "stderr": "", "interrupted": False},
+}
+
+
+def test_a_shell_search_goes_to_assist_as_bash(hook, tmp_path):
+    out = hook(BASH, block="codecite (eval) also found, not in this result:\nx.py#L1-L2 · function f · def f():\n")
+    args = (tmp_path / "args").read_text().splitlines()
+    assert args[:5] == ["assist", assist.CORPUS, "--tool", "bash", "--input"]
+    assert json.loads(args[5]) == BASH["tool_input"]
+    assert json.loads((tmp_path / "stdin").read_text()) == BASH["tool_response"]
+    assert "def f():" in json.loads(out.stdout)["hookSpecificOutput"]["additionalContext"]
+
+
+@pytest.mark.parametrize("command", ["cat app/main.py", "uv run pytest -q", "ls -la", "echo findings", "git log --oneline"])
+def test_a_shell_command_that_names_no_search_is_neither_passed_on_nor_counted(hook, tmp_path, command):
+    out = hook({**BASH, "tool_input": {"command": command}}, block="x")
+    assert (out.returncode, out.stdout) == (0, "")
+    assert not (tmp_path / "args").exists()
+    assert not (tmp_path / "log.jsonl").exists()
+
+
+@pytest.mark.parametrize("command", ["rg sid", "find . -name '*.py'", "/usr/bin/grep -r sid .", "fd logout"])
+def test_a_shell_command_that_names_a_search_is_passed_on(hook, tmp_path, command):
+    hook({**BASH, "tool_input": {"command": command}})
+    assert (tmp_path / "args").read_text().splitlines()[3] == "bash"

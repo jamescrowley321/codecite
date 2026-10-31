@@ -27,7 +27,7 @@ on:
         type: string
         default: fastapi-middleware
       arms:
-        description: ab (baseline against codecite), aa (an A/A round, two baseline arms, to measure noise), baseline (calibrate the task on the quick tier, no verdict) or assist (baseline against codecite only through the hook on the agent's grep and glob)
+        description: ab (baseline against codecite), aa (an A/A round, two baseline arms, to measure noise), baseline (calibrate the task on the quick tier, no verdict) or assist (baseline against codecite only through the hook on the agent's searches: grep, glob and the shell)
         type: choice
         options: [ab, aa, baseline, assist]
         default: ab

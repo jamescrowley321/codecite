@@ -726,8 +726,9 @@ in the extensions directory, where pi loads it on start.
 
 ## Add codecite to the agent's own searches
 
-An agent with its own grep and glob reaches for those first and may never
-call codecite. `assist` meets it there: given one grep or glob call, it
+An agent with its own grep and glob, or a shell, reaches for those first
+and may never call codecite. `assist` meets it there: given one grep or glob
+call, or a shell command that runs `grep`, `rg` or `find`, it
 prints what the corpus knows about it that the call's result does not show,
 for a hook to attach to that result.
 
@@ -735,6 +736,7 @@ for a hook to attach to that result.
 codecite assist mywork --tool grep --input '{"pattern": "validate_logout_token"}' < /dev/null
 rg -l 'logout_token.*(sid|sub)' | codecite assist mywork --tool grep --input '{"pattern": "logout_token.*(sid|sub)"}'
 codecite assist mywork --tool glob --input '{"pattern": "**/*logout*.py"}' < /dev/null
+codecite assist mywork --tool bash --input '{"command": "grep -rn validate_logout_token src | head"}' < /dev/null
 ```
 
 ```text
@@ -755,7 +757,16 @@ openid-connect-backchannel-1_0@sha256:3b5c933d5269#section-2.6 · section · 2.6
 - a glob → a search for the words in its literal parts (`**/*logout*.py`
   → `logout`); a glob of wildcards and extensions only looks up nothing;
 - a `path` that is a file → also the guidance rules for it, as `context`
-  gives them, one line each.
+  gives them, one line each;
+- a bash call (`--tool bash`, `{"command": …}`) → the search the command
+  runs, read as the grep or glob call it amounts to. A content search
+  (`grep`, `egrep`, `fgrep`, `rg`, `ag`, `ack`, `git grep`) gives the pattern
+  (its `-e` value or first operand) and path (the next operand); without one,
+  `find … -name`, `-iname` or `-path`, or `fd`, gives a glob and path. Quotes,
+  escapes, pipes, `&&`, `;` and wrappers (`xargs`, `timeout`, `sudo`, `env`)
+  are understood; an inverted `grep -v`, a `find` with no name test and any
+  other command look up nothing. `assist` only reads the command, never
+  runs it.
 
 Stdin, when it is not a terminal, is the call's output as the agent saw it,
 in any shape: a hit in a file it names is left out, so the block holds only
@@ -770,7 +781,7 @@ nothing and exit 0. `CODECITE_ASSIST_DEBUG=1` prints the reason on stderr.
 Hooks run it with the agent; codecite never changes an agent's config.
 Each recipe adds a block to the result and never changes or blocks the call.
 
-**Claude Code.** A PostToolUse hook on `Grep` and `Glob` passes
+**Claude Code.** A PostToolUse hook on `Grep`, `Glob` and `Bash` passes
 `.tool_input` as `--input` and `.tool_response` as stdin, and returns the
 block as `additionalContext`, which Claude Code adds to Claude's context
 next to the result. It needs `jq`, and calls `codecite` by an absolute path
@@ -784,6 +795,7 @@ input=$(cat)
 case $(printf '%s' "$input" | jq -r '.tool_name') in
   Grep) tool=grep ;;
   Glob) tool=glob ;;
+  Bash) tool=bash ;;
   *) exit 0 ;;
 esac
 block=$(printf '%s' "$input" | jq -c '.tool_response' \
@@ -799,7 +811,7 @@ jq -n --arg block "$block" \
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Grep|Glob",
+        "matcher": "Grep|Glob|Bash",
         "hooks": [{ "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/codecite-assist.sh" }]
       }
     ]
@@ -809,10 +821,13 @@ jq -n --arg block "$block" \
 
 Claude Code's `Grep` result names its files in `filenames` (or in the
 matched lines' text, in `content` mode) relative to its working directory;
-`Glob`'s in `filenames`. `assist` reads paths out of either, so the hook
-passes the response whole.
+`Glob`'s in `filenames`, and `Bash`'s output is in `stdout`. `assist` reads
+paths out of any of them, JSON escapes included, so the hook passes the
+response whole. A Bash call that runs no search costs one `assist` start and
+prints nothing; to skip even that, the hook can first check the command
+names a search program, as the eval's hook does.
 
-**pi.** An extension on `tool_result` for `grep` and `find` appends the
+**pi.** An extension on `tool_result` for `grep`, `find` and `bash` appends the
 block to the result's content, as the `context` extension does for edits.
 
 ```typescript
@@ -820,7 +835,7 @@ block to the result's content, as the `context` extension does for edits.
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const CORPUS = "mywork";
-const TOOLS: Record<string, string> = { grep: "grep", find: "glob" };
+const TOOLS: Record<string, string> = { grep: "grep", find: "glob", bash: "bash" };
 
 export default function (pi: ExtensionAPI) {
   pi.on("tool_result", async (event, ctx) => {

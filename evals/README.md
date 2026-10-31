@@ -294,14 +294,16 @@ noise alone pushed past the 5% margin.
 ## The assist arm
 
 `-T arms=assist` runs baseline against an `assist` arm, where codecite reaches
-the agent only through `codecite assist` on its own grep and glob calls (#162,
+the agent only through `codecite assist` on its own searches (#162,
 `docs/usage.md`): the binary stays in the sandbox at `/opt/codecite` but off
 `PATH`, with no MCP config and no note in the prompt, so the prompt is
 baseline's. `src/codecite_evals/assist.py` holds the hook, one Python script
 for both agents since the sandbox has no `jq`: Claude Code runs it as a
-PostToolUse hook on `Grep|Glob` from settings passed with `--settings`, and
-pi's extension, loaded alone with `-e`, hands it the same payload for `grep`
-and `find`. Each call appends `{"tool", "bytes"}` to
+PostToolUse hook on `Grep|Glob|Bash` from settings passed with `--settings`, and
+pi's extension, loaded alone with `-e`, hands it the same payload for `grep`,
+`find` and `bash`. A shell command reaches `codecite assist` only when it
+names a search program (`grep`, `rg`, `find`, `fd`, …), and `assist` reads the
+search out of it. Each search appends `{"tool", "bytes"}` to
 `/tmp/codecite-assist.jsonl`, which the agent reads after the run into the
 sample's store. A run counts as having used codecite when the hook added at
 least one block, and the scorecard adds a table of the hook's calls, blocks

@@ -268,13 +268,15 @@ exact text."
         #[arg(long)]
         allow_stale: bool,
     },
-    /// Print what the corpus knows about an agent's own grep or glob call
-    /// that the call's result does not show, for a hook to attach to it.
+    /// Print what the corpus knows about an agent's own grep or glob call,
+    /// or the grep or find in its shell command, that the call's result
+    /// does not show, for a hook to attach to it.
     /// Never fails: on any error it prints nothing and exits 0.
     #[command(after_long_help = "Examples:
   codecite assist myrepo --tool grep --input '{\"pattern\": \"validate_token\"}'
   rg -l 'logout.*token' | codecite assist myrepo --tool grep --input '{\"pattern\": \"logout.*token\"}'
   codecite assist myrepo --tool glob --input '{\"pattern\": \"**/*logout*.py\"}' < /dev/null
+  codecite assist myrepo --tool bash --input '{\"command\": \"grep -rn validate_token src\"}' < /dev/null
 Stdin, when it is not a terminal, is the tool's output: hits in files it names are left out.
 Set CODECITE_ASSIST_DEBUG=1 to see on stderr why nothing was printed.")]
     Assist {
@@ -283,7 +285,8 @@ Set CODECITE_ASSIST_DEBUG=1 to see on stderr why nothing was printed.")]
         /// The agent tool that was called.
         #[arg(long, value_enum)]
         tool: assist::Tool,
-        /// The tool call's input as JSON: `pattern`, and optionally `path`.
+        /// The tool call's input as JSON: `pattern`, and optionally `path`;
+        /// for bash, `command`, read for the grep, rg or find it runs.
         #[arg(long)]
         input: String,
         /// The most bytes to print; lines that don't fit are left out whole.
@@ -695,7 +698,7 @@ fn assist(corpus: &str, tool: assist::Tool, input: &str, max_bytes: usize) {
     use std::io::{IsTerminal as _, Read as _, Write as _};
 
     let block = (|| -> anyhow::Result<String> {
-        let input = assist::ToolInput::parse(input)?;
+        let (tool, input) = assist::ToolInput::read(tool, input)?;
         // A terminal on stdin means no tool output was piped in; reading it
         // would wait for the user.
         let mut output = String::new();

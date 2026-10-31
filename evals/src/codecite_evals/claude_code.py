@@ -98,6 +98,27 @@ def events(stdout: str):
             yield event
 
 
+# The most characters of one tool call's input kept in the store.
+MAX_CALL_CHARS = 300
+
+
+def tool_calls(stdout: str) -> list[dict]:
+    """Every tool call in Claude Code's stream-json, in order, as {"name",
+    "input"} with the input as JSON cut at MAX_CALL_CHARS. Inspect cuts a
+    sandbox read's output at 10,000 characters in the log, so this is what
+    shows which tools a run searched with."""
+    calls = []
+    for event in events(stdout):
+        message = event.get("message") if event.get("type") == "assistant" else None
+        if not isinstance(message, dict):
+            continue
+        for block in message.get("content") or []:
+            if isinstance(block, dict) and block.get("type") == "tool_use":
+                text = json.dumps(block.get("input"), ensure_ascii=False)
+                calls.append({"name": str(block.get("name")), "input": text[:MAX_CALL_CHARS]})
+    return calls
+
+
 def measures(stdout: str) -> dict:
     """Turns, tokens, model time and codecite calls from Claude Code's
     stream-json output, which may stop short when it timed out. A turn is
