@@ -5,7 +5,7 @@ Evaluation plan):
 
 - **A/B agent eval** (`inspect/`): the same coding agent does the same task
   twice, in a **baseline** arm and in a **codecite** arm with codecite's
-  `search` and `read` as native tools, the `codecite` CLI on `PATH` and a
+  `search`, `read` and `requirements` as native tools, the `codecite` CLI on `PATH` and a
   prebuilt corpus. Hidden tests and deterministic checks
   score both. Runs on [Inspect AI](https://inspect.aisi.org.uk/).
 - **History benchmark** (`history/`): queries mined from merged PRs in the
@@ -80,7 +80,7 @@ p95 guardrail of 150 ms.
 
 | Path | What |
 | --- | --- |
-| `src/codecite_evals/` | The `codecite-evals` package that `uv sync` installs: `task.py` (the code tasks: one sample per arm, the agent in a Docker sandbox, the scorer), `claude_code.py` (Claude Code as the agent, for `claude-code/` models; any other model runs pi), `scrub.py` (deletes logs holding the Claude token before CI uploads them), `spec_task.py` (the spec-question task: one sample per question per arm, on the same agents), `report.py` (the scorecard, or the calibration table), `frozen.py` (the frozen-task check) and `config.py` (where every file below is found) |
+| `src/codecite_evals/` | The `codecite-evals` package that `uv sync` installs: `task.py` (the code tasks: one sample per arm, the agent in a Docker sandbox, the scorer), `claude_code.py` (Claude Code as the agent, for `claude-code/` models; any other model runs pi), `scrub.py` (deletes logs holding the Claude token before CI uploads them), `spec_task.py` (the spec-question task: one sample per question per arm, on the same agents), `report.py` (the scorecard, or the calibration table), `frozen.py` (the frozen-task check), `assist.py` (the assist arm's hook on the agent's searches), `replay.py` (mines past issues into replay tasks), `history.py` (mines merged PRs into the history benchmark's queries), `_registry.py` (registers the tasks with Inspect) and `config.py` (where every file below is found) |
 | `tests/` | Unit tests for the task's agent, the scorecard, the frozen-task check and the config; no model key or Docker needed |
 | `inspect/prepare.sh` | Stage the sandbox image's build context in `inspect/build/` for one task (`prepare.sh <task-id>`, default `fastapi-middleware`) |
 | `inspect/Dockerfile`, `inspect/compose.yaml` | The sandbox image and the IdP beside it, on a network with no route out but the proxy |
@@ -92,6 +92,8 @@ p95 guardrail of 150 ms.
 | `tasks/spec-questions/` | The spec-question task: `questions.toml` (labelled questions with closed answers, checked against the index by `src/codecite_evals/spec_questions.py`), `prompt.md`, the in-sandbox scorer `score.py`, and `check.sh`/`planted.py` to prove the scorer sound |
 | `fixtures/node-oidc/` | The IdP the fastapi-middleware hidden tests take tokens from |
 | `retrieval/` | The retrieval benchmark's queries and corpus manifest |
+| `history/` | The history benchmark: queries mined from merged PRs, one directory per repository, `run.sh`, and `results/` |
+| `tasks/_replay/` | `check.sh`, which proves a replay task sound |
 
 ## Tasks
 
@@ -362,7 +364,7 @@ uv run --locked codecite-eval-report --tier quick
 
 The package registers its tasks with Inspect through the `inspect_ai` entry
 point, so Inspect runs them by name from any directory: `codecite_evals/ab`
-takes the task's id (`-T task_id=<id>`) and its arms (`-T arms=ab|aa|baseline`),
+takes the task's id (`-T task_id=<id>`) and its arms (`-T arms=ab|aa|baseline|assist`),
 and each registered task also runs by its own name.
 `codecite-eval-report` is the scorecard's command. Both find `tasks/`,
 `inspect/compose.yaml` and `inspect/logs/` through

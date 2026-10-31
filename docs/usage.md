@@ -240,9 +240,10 @@ codecite search identity "token_type_hint" --only spec
 ```
 
 A query matches identifiers however they are written: `validate token` finds
-`validateToken`, `validate_token` and `validate-token`. A chunk whose symbol is
-exactly the query comes first; the rest rank by BM25, weighting symbol names
-over paths over body text. Spec results come from each document's current
+`validateToken`, `validate_token` and `validate-token`. Results rank by BM25,
+weighting symbol names over paths over body text, and a chunk's score triples
+when a word of the query, or the whole query, is its symbol's name (when at
+most 3 symbols share that name). Spec results come from each document's current
 version; one whose document also has an older version pinned carries
 `· older version pinned` on its line, and its JSON lists them in `older_versions` (see
 [Diff a spec's versions](#diff-a-specs-versions)).
@@ -258,8 +259,8 @@ rfc9449@sha256:2d8657f07291#section-4.3/step-2 · step · Check that the jti has
 ```
 
 A header says how many results there are, or `no results`. Then one line
-per result: its citation, then its kind (`function`, `class`, `section`,
-`step` or `window`) and symbol, or a heading's title, then the first line of
+per result: its citation, then its kind (`function`, `class`, `variable`,
+`type_alias`, `section`, `step` or `window`) and symbol, or a heading's title, then the first line of
 its text. `--json` adds a heading section's `title` and `anchor`, which `read`
 takes in place of the lines. Results come
 best first; `--json` adds each one's score. When the results share a license
@@ -746,8 +747,8 @@ openid-connect-backchannel-1_0@sha256:3b5c933d5269#section-2.6/step-5 · step ·
 openid-connect-backchannel-1_0@sha256:3b5c933d5269#section-2.6 · section · 2.6. Logout Token Validation
 ```
 
-`--input` is the call's input as JSON: `pattern`, and optionally `path` and
-`glob`. What it looks up follows the pattern:
+`--input` is the call's input as JSON: `pattern`, and optionally `path`
+(other fields, such as Grep's `glob`, are ignored). What it looks up follows the pattern:
 
 - a grep pattern that is one identifier (`\bvalidate_token\b`, or the last
   segment of `Store::open` or `client.send`) → its definitions, as `def`
@@ -772,7 +773,8 @@ Stdin, when it is not a terminal, is the call's output as the agent saw it,
 in any shape: a hit in a file it names is left out, so the block holds only
 what grep missed. One line per hit, cut at 120 characters, under
 `--max-bytes` (default 2048): lines that don't fit are left out whole and a
-last line says how many, with the `codecite search` that finds them.
+last line says how many, with the command that finds them: `codecite def`
+for an identifier, `codecite search` for anything else.
 
 `assist` never fails, because a hook runs it on every call: an unknown
 corpus, a stale index, input it can't read or nothing left to say all print
