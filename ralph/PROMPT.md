@@ -18,7 +18,7 @@ Repo `jamescrowley321/codecite`: a Rust workspace (`crates/*`). Read `~/repos/co
 
 GitHub issues are the only queue and the only status. No status words in files.
 
-1. Scope: open issues in the `General purpose` milestone, taken in this order: `ORDER = 182 186 183 184 185 179 162`. List them with `gh issue list --state open --milestone "General purpose" --limit 200 --json number,title,body,milestone,labels`. An issue in the milestone but not in `ORDER` is out of scope until the owner adds it here.
+1. Scope: open issues in the `General purpose` milestone, taken in this order: `ORDER = 182 191 186 183 184 185 179 162`. List them with `gh issue list --state open --milestone "General purpose" --limit 200 --json number,title,body,milestone,labels`. An issue in the milestone but not in `ORDER` is out of scope until the owner adds it here.
 2. A candidate is an in-scope issue without the `blocked` label, not in the stack ledger and not in the parked list, whose every `Depends on #N` (from its body) is closed or in the ledger. Take the first candidate in `ORDER`. An issue that depends on a parked issue is never a candidate.
 3. No candidate → output `<promise>CODECITE_QUEUE_EMPTY</promise>`. There is no cap on the stack's depth.
 
