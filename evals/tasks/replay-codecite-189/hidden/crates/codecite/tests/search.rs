@@ -1,0 +1,344 @@
+//! `codecite search` and `codecite grep` end to end: a corpus indexed from a real git checkout
+//! under a temporary `XDG_DATA_HOME`, then searched. Linux only, since other
+//! platforms ignore `XDG_DATA_HOME`.
+#![cfg(target_os = "linux")]
+
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
+
+fn git(dir: &Path, args: &[&str]) {
+    let status = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args([
+            "-c",
+            "user.name=codecite",
+            "-c",
+            "user.email=codecite@example.com",
+        ])
+        .args(["-c", "commit.gpgsign=false"])
+        .args(args)
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .status()
+        .unwrap();
+    assert!(status.success(), "git {args:?}");
+}
+
+/// A corpus `demo` indexed from a two-file checkout, one file dirty.
+struct Demo {
+    tmp: tempfile::TempDir,
+}
+
+impl Demo {
+    fn new() -> Self {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("app");
+        fs::create_dir_all(repo.join("src")).unwrap();
+        fs::create_dir_all(repo.join("web")).unwrap();
+        git(&repo, &["init", "-q"]);
+        fs::write(
+            repo.join("src/lib.rs"),
+            "pub fn validate(token: &str) -> bool {\n    !token.is_empty()\n}\n",
+        )
+        .unwrap();
+        fs::write(
+            repo.join("web/check.ts"),
+            "export function checkToken(token) {\n  return validate(token);\n}\n",
+        )
+        .unwrap();
+        git(&repo, &["add", "."]);
+        git(&repo, &["commit", "-q", "-m", "init"]);
+        // An uncommitted edit: results from this file carry `dirty`.
+        fs::write(
+            repo.join("src/lib.rs"),
+            "pub fn validate(token: &str) -> bool {\n    token.len() > 8\n}\n",
+        )
+        .unwrap();
+
+        let work = tmp.path().join("work");
+        fs::create_dir_all(work.join("corpora")).unwrap();
+        fs::write(
+            work.join("corpora/demo.toml"),
+            format!(
+                "name = \"demo\"\nmax_age_days = 7\n\n[[source]]\nkind = \"local\"\npath = {:?}\nuse = \"adapt\"\n",
+                repo.to_str().unwrap()
+            ),
+        )
+        .unwrap();
+        let demo = Demo { tmp };
+        let indexed = demo.run(&["index", "demo"]);
+        assert!(indexed.status.success(), "{}", stderr(&indexed));
+        demo
+    }
+
+    /// Runs the binary with its data directory in the scratch directory.
+    fn run(&self, args: &[&str]) -> Output {
+        Command::new(env!("CARGO_BIN_EXE_codecite"))
+            .current_dir(self.tmp.path().join("work"))
+            .env("HOME", self.tmp.path())
+            .env("XDG_DATA_HOME", self.tmp.path().join("data"))
+            .env("XDG_CACHE_HOME", self.tmp.path().join("cache"))
+            .args(args)
+            .output()
+            .unwrap()
+    }
+
+    /// Runs `codecite search demo <args> --json` and returns the results it
+    /// prints, `{"results": [...]}`.
+    fn json(&self, args: &[&str]) -> Vec<serde_json::Value> {
+        let mut all = vec!["search", "demo"];
+        all.extend(args);
+        all.push("--json");
+        let output = self.run(&all);
+        assert!(output.status.success(), "{}", stderr(&output));
+        let mut printed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        serde_json::from_value(printed["results"].take()).unwrap()
+    }
+
+    fn db(&self) -> PathBuf {
+        self.tmp.path().join("data/codecite/demo.db")
+    }
+}
+
+fn stderr(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+fn citations(results: &[serde_json::Value]) -> Vec<&str> {
+    results
+        .iter()
+        .map(|r| r["citation"].as_str().unwrap())
+        .collect()
+}
+
+#[test]
+fn search_prints_cited_results_as_json() {
+    let demo = Demo::new();
+    let results = demo.json(&["validate"]);
+    assert_eq!(results.len(), 2, "{results:#?}");
+    let top = &results[0];
+    assert_eq!(top["symbol"], "validate");
+    assert_eq!(top["kind"], "function");
+    assert_eq!(top["license_class"], "adapt");
+    assert_eq!(top["dirty"], true);
+    assert!(top["indexed_at"].as_str().unwrap().ends_with('Z'));
+    assert!(top["snippet"].as_str().unwrap().contains("token.len() > 8"));
+    let citation = top["citation"].as_str().unwrap();
+    assert!(citation.starts_with("app@"), "{citation}");
+    assert!(citation.ends_with(":src/lib.rs#L1-L3"), "{citation}");
+    assert_eq!(results[1]["dirty"], false);
+}
+
+#[test]
+fn filters_narrow_the_results() {
+    let demo = Demo::new();
+    let ts = demo.json(&["validate", "--language", "typescript"]);
+    assert_eq!(citations(&ts).len(), 1);
+    assert!(citations(&ts)[0].contains(":web/check.ts#"));
+    let src = demo.json(&["validate", "--path", "src/*"]);
+    assert_eq!(citations(&src).len(), 1);
+    assert!(citations(&src)[0].contains(":src/lib.rs#"));
+    assert_eq!(demo.json(&["validate", "--limit", "1"]).len(), 1);
+    assert!(demo.json(&["nothing-matches-this"]).is_empty());
+}
+
+#[test]
+fn the_human_form_is_short() {
+    let demo = Demo::new();
+    let output = demo.run(&["search", "demo", "check token"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let text = String::from_utf8(output.stdout).unwrap();
+    let lines: Vec<&str> = text.lines().collect();
+    // One header, since every result shares its license and index time.
+    assert!(lines[0].contains(" · adapt · indexed "), "{text}");
+    assert!(lines[0].contains(" result"), "{text}");
+    // The commit is abbreviated to 12 characters, and a hit is one line.
+    let (citation, rest) = lines[1].split_once(" · ").unwrap();
+    assert!(citation.starts_with("app@"), "{text}");
+    assert!(citation.ends_with(":web/check.ts#L1-L3"), "{text}");
+    let commit = &citation["app@".len()..citation.find(':').unwrap()];
+    assert_eq!(commit.len(), 12, "{text}");
+    assert!(lines[1].contains("function checkToken · "), "{text}");
+    assert!(!rest.contains("indexed"), "{text}");
+    assert!(
+        lines[1].ends_with("export function checkToken(token) {"),
+        "{text}"
+    );
+    let json = demo.json(&["check token"]);
+    assert_eq!(lines.len(), 1 + json.len(), "{text}");
+    assert!(lines.iter().all(|l| l.chars().count() <= 300), "{text}");
+}
+
+#[test]
+fn the_human_form_counts_hits_whose_provenance_differs() {
+    let demo = Demo::new();
+    // A second source with another license class, so no header can carry
+    // one license for every hit.
+    let notes = demo.tmp.path().join("notes");
+    fs::create_dir_all(&notes).unwrap();
+    git(&notes, &["init", "-q"]);
+    fs::write(
+        notes.join("token.md"),
+        "# Check token\n\nCheck the token.\n",
+    )
+    .unwrap();
+    git(&notes, &["add", "."]);
+    git(&notes, &["commit", "-q", "-m", "init"]);
+    let manifest = demo.tmp.path().join("work/corpora/demo.toml");
+    let mut text = fs::read_to_string(&manifest).unwrap();
+    text.push_str(&format!(
+        "\n[[source]]\nkind = \"local\"\npath = {:?}\nuse = \"quote\"\n",
+        notes.to_str().unwrap()
+    ));
+    fs::write(&manifest, text).unwrap();
+    let indexed = demo.run(&["index", "demo"]);
+    assert!(indexed.status.success(), "{}", stderr(&indexed));
+
+    let json = demo.json(&["check token", "--limit", "2"]);
+    let classes: Vec<&str> = json
+        .iter()
+        .map(|r| r["license_class"].as_str().unwrap())
+        .collect();
+    assert!(
+        classes.contains(&"adapt") && classes.contains(&"quote"),
+        "{json:#?}"
+    );
+    let output = demo.run(&["search", "demo", "check token", "--limit", "2"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let text = String::from_utf8(output.stdout).unwrap();
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines[0], "2 results", "{text}");
+    assert_eq!(lines.len(), 1 + json.len(), "{text}");
+    assert!(
+        lines[1..].iter().all(|l| l.contains(" · indexed ")),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_stale_index_is_refused_unless_allowed() {
+    let demo = Demo::new();
+    rusqlite::Connection::open(demo.db())
+        .unwrap()
+        .execute(
+            "UPDATE meta SET value = '2026-01-01T00:00:00Z' WHERE key = 'indexed_at'",
+            [],
+        )
+        .unwrap();
+    let output = demo.run(&["search", "demo", "validate"]);
+    assert!(!output.status.success());
+    let err = stderr(&output);
+    assert!(
+        err.contains("corpus `demo` was indexed at 2026-01-01T00:00:00Z, more than 7 days ago"),
+        "{err}"
+    );
+    assert_eq!(demo.json(&["validate", "--allow-stale"]).len(), 2);
+}
+
+#[test]
+fn errors_name_the_problem() {
+    let demo = Demo::new();
+    let cases = [
+        (
+            vec!["search", "dmeo", "validate"],
+            "unknown corpus `dmeo`; known corpora: demo",
+        ),
+        (vec!["search", "../demo", "x"], "invalid corpus name"),
+        (
+            vec!["search", "demo", "  !! "],
+            "the query has no words to search for",
+        ),
+    ];
+    for (args, want) in cases {
+        let output = demo.run(&args);
+        assert!(!output.status.success(), "{args:?}");
+        assert!(
+            stderr(&output).contains(want),
+            "{args:?}: {}",
+            stderr(&output)
+        );
+    }
+}
+
+/// Runs `codecite grep demo <args> --json` and returns the matches it
+/// prints, `{"matches": [...]}`.
+fn grep(demo: &Demo, args: &[&str]) -> Vec<serde_json::Value> {
+    let mut all = vec!["grep", "demo"];
+    all.extend(args);
+    all.push("--json");
+    let output = demo.run(&all);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let mut printed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    serde_json::from_value(printed["matches"].take()).unwrap()
+}
+
+#[test]
+fn grep_prints_cited_lines() {
+    let demo = Demo::new();
+    let matches = grep(&demo, &[r"token\.\w+\(\)"]);
+    assert_eq!(matches.len(), 1, "{matches:#?}");
+    let m = &matches[0];
+    // The working tree's text, as indexed, on its own line number.
+    assert_eq!(m["text"], "    token.len() > 8");
+    assert_eq!(m["kind"], "code");
+    assert_eq!(m["dirty"], true);
+    let citation = m["citation"].as_str().unwrap();
+    assert!(citation.ends_with(":src/lib.rs#L2"), "{citation}");
+    // The citation reads back the same line.
+    let read = demo.run(&["read", "demo", citation, "--json"]);
+    let read: serde_json::Value = serde_json::from_slice(&read.stdout).unwrap();
+    assert_eq!(read["text"], m["text"]);
+
+    let fixed = grep(&demo, &["validate(token", "--fixed"]);
+    assert_eq!(citations(&fixed).len(), 2, "{fixed:#?}");
+    assert!(grep(&demo, &["VALIDATE(", "-F"]).is_empty());
+    assert_eq!(grep(&demo, &["VALIDATE(", "-F", "-i"]).len(), 2);
+    let ts = grep(
+        &demo,
+        &["token", "--language", "typescript", "--limit", "1"],
+    );
+    assert_eq!(ts.len(), 1, "{ts:#?}");
+    assert!(citations(&ts)[0].ends_with(":web/check.ts#L1"), "{ts:#?}");
+
+    let output = demo.run(&["grep", "demo", "validate"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.starts_with("2 matches · adapt · indexed "), "{text}");
+    assert!(
+        text.contains(":src/lib.rs#L1 · dirty: pub fn validate("),
+        "{text}"
+    );
+    let all = grep(&demo, &["validate"]);
+    assert_eq!(text.lines().count(), 1 + all.len(), "{text}");
+}
+
+#[test]
+fn grep_errors_name_the_problem() {
+    let demo = Demo::new();
+    for (args, want) in [
+        (
+            vec!["grep", "demo", "validate("],
+            "invalid pattern \"validate(\": ",
+        ),
+        (
+            vec!["grep", "demo", ""],
+            "invalid pattern \"\": it is empty",
+        ),
+        (
+            vec!["grep", "demo", r"jti\n"],
+            "it holds a newline, and grep matches one line at a time",
+        ),
+        (vec!["grep", "dmeo", "x"], "unknown corpus `dmeo`"),
+    ] {
+        let output = demo.run(&args);
+        assert!(!output.status.success(), "{args:?}");
+        assert!(
+            stderr(&output).contains(want),
+            "{args:?}: {}",
+            stderr(&output)
+        );
+    }
+}

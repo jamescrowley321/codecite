@@ -24,6 +24,7 @@ difficulty without watching codecite's (evals/README.md).
 
 import json
 import os
+import posixpath
 import re
 from pathlib import Path
 from time import monotonic
@@ -60,6 +61,14 @@ MCP_CONFIG = {
     "autoEnableCodemode": False,
 }
 AGENT_TIMEOUT = 600
+# What keeps a replay task's tests off the network, per language: the
+# sandbox's dependencies were fetched when its image was built.
+OFFLINE = {
+    "python": {"UV_OFFLINE": "1"},
+    "go": {"GOPROXY": "off", "GOFLAGS": "-mod=mod"},
+    "rust": {"CARGO_NET_OFFLINE": "true"},
+    "node": {"npm_config_offline": "true"},
+}
 
 
 def snippet(corpus: str, what: str) -> str:
@@ -77,10 +86,13 @@ def codecite_note(task_dir: Path) -> str:
     """The codecite arm's note: the snippet, naming what the task's `eval`
     corpus indexes, then spec advice when the corpus has specs, then which
     MCP tools mirror which commands."""
-    corpus = json.loads((task_dir / "task.json").read_text())["corpus"]
-    indexes = f"the identity-model source at `{IDENTITY_MODEL}`"
+    meta = json.loads((task_dir / "task.json").read_text())
+    if meta.get("kind") == "replay":
+        indexes = f"the {meta['repo']} source at `{PROJECT}`"
+    else:
+        indexes = f"the identity-model source at `{IDENTITY_MODEL}`"
     note = []
-    if corpus.get("documents"):
+    if meta.get("corpus", {}).get("documents"):
         indexes += " and the OAuth 2.0, OpenID Connect and FAPI specifications it implements"
         note.append(
             "Before implementing or fixing anything a spec governs, list its rules with "
@@ -306,15 +318,61 @@ def why_stopped(stopped: str | None, sandbox_error: str | None) -> str:
     }.get(stopped, "")
 
 
+def offline_env(language: str) -> dict[str, str]:
+    """The env a replay task's tests run in. No bytecode cache, as in
+    check.sh: a fix the size of the line it replaced, made within a second
+    of an earlier run, would leave stale .pyc files looking fresh."""
+    return {**OFFLINE[language], "PYTHONDONTWRITEBYTECODE": "1"}
+
+
+def replay_command(meta: dict) -> list[str]:
+    """A replay task's test command, `{hidden}` expanded to the hidden
+    paths named from its workdir, where it runs."""
+    hidden = [posixpath.relpath(h, meta["workdir"]) for h in meta["hidden"]]
+    return [h for arg in meta["test"] for h in (hidden if arg == "{hidden}" else [arg])]
+
+
+async def run_hidden(sb, cmd: list[str], cwd: str, env: dict[str, str]) -> tuple[bool, str]:
+    """Whether the hidden tests passed, and the tail of their output. They
+    run the agent's code, so a hang is the agent's failure, scored like any
+    other; letting the timeout raise would retry the sample."""
+    try:
+        tests = await sb.exec(cmd, cwd=cwd, env=env, timeout=300)
+        return tests.success, tests.stdout[-1500:]
+    except TimeoutError:
+        return False, "hidden tests timed out"
+
+
+async def score_replay(sb, task_dir: Path, meta: dict) -> tuple[bool, str, list]:
+    """Overlay the PR's test files on the agent's project at their repo
+    paths, then run them. A replay task has no checks."""
+    for path in meta["hidden"]:
+        await sb.write_file(f"{PROJECT}/{path}", (task_dir / "hidden" / path).read_bytes())
+    cwd = posixpath.normpath(posixpath.join(PROJECT, meta["workdir"]))
+    passed, tail = await run_hidden(sb, replay_command(meta), cwd, offline_env(meta["language"]))
+    return passed, tail, []
+
+
 @scorer(metrics=[accuracy(), stderr()])
 def hidden_tests_and_checks(task_id: str):
     """Correct when the hidden tests and every deterministic check pass. The
     tests and checks reach the sandbox only now, after the agent has exited.
-    Takes the task's id, not its path, so the eval log records the id."""
+    Takes the task's id, not its path, so the eval log records the id. A
+    replay task (task.json kind "replay") is scored by its PR's tests alone."""
     task_dir = config.task_dir(task_id)
+    meta = json.loads((task_dir / "task.json").read_text())
 
     async def score(state: TaskState, target: Target) -> Score:
         sb = sandbox()
+        stopped, sandbox_error = store().get("stopped"), store().get("sandbox_error")
+        why = why_stopped(stopped, sandbox_error)
+        if meta.get("kind") == "replay":
+            tests_passed, tests_tail, results = await score_replay(sb, task_dir, meta)
+            return Score(
+                value=1 if tests_passed and not stopped else 0,
+                explanation=f"{why}hidden tests {'passed' if tests_passed else 'failed'}",
+                metadata={"stopped": stopped, "sandbox_error": sandbox_error, "tests_passed": tests_passed, "tests_tail": tests_tail, "checks": results},
+            )
         for f in (task_dir / "hidden").glob("*.py"):
             await sb.write_file(f"/score/hidden/{f.name}", f.read_text())
         await sb.write_file("/score/checks.py", (task_dir / "checks.py").read_text())
@@ -324,27 +382,20 @@ def hidden_tests_and_checks(task_id: str):
                 text = f.read_text().replace("@IDENTITY_MODEL@", IDENTITY_MODEL)
                 await sb.write_file(f"/score/start/{f.relative_to(start)}", text)
 
-        # Both run the agent's code, so a hang is the agent's failure, scored
-        # like any other; letting the timeout raise would retry the sample.
-        try:
-            tests = await sb.exec(
-                ["uv", "run", "--with", "pytest==9.1.1", "--with", "httpx==0.28.1", "pytest", "-q", "-p", "no:cacheprovider", "/score/hidden"],
-                cwd=PROJECT,
-                env={"UV_OFFLINE": "1"},
-                timeout=300,
-            )
-            tests_passed, tests_tail = tests.success, tests.stdout[-1500:]
-        except TimeoutError:
-            tests_passed, tests_tail = False, "hidden tests timed out"
+        # The checks run the agent's code too: a hang fails them, as in run_hidden.
+        tests_passed, tests_tail = await run_hidden(
+            sb,
+            ["uv", "run", "--with", "pytest==9.1.1", "--with", "httpx==0.28.1", "pytest", "-q", "-p", "no:cacheprovider", "/score/hidden"],
+            PROJECT,
+            {"UV_OFFLINE": "1"},
+        )
         try:
             checks = await sb.exec(["python3", "-I", "/score/checks.py", "/score/start", PROJECT], timeout=60)
             results = json.loads(checks.stdout)["checks"] if checks.success else []
         except (TimeoutError, ValueError, KeyError, TypeError):
             results = []
         failed = [c["name"] for c in results if not c["passed"]] if results else ["checks-crashed"]
-        stopped, sandbox_error = store().get("stopped"), store().get("sandbox_error")
         passed = tests_passed and not failed and not stopped
-        why = why_stopped(stopped, sandbox_error)
         return Score(
             value=1 if passed else 0,
             explanation=f"{why}hidden tests {'passed' if tests_passed else 'failed'}; failed checks: {', '.join(failed) or 'none'}",

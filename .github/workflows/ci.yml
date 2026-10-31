@@ -162,7 +162,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        task: [backchannel-logout, spec-questions]
+        # Replay tasks only in Python and Go, the runner's own toolchains.
+        task:
+          - backchannel-logout
+          - spec-questions
+          - replay-identity-model-908
+          - replay-identity-stack-449
+          - replay-terraform-provider-descope-75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -174,11 +180,19 @@ jobs:
       - name: Fetch identity-model at the task's pinned commit
         env:
           TASK: ${{ matrix.task }}
+        # A replay task's check.sh needs its own repository at its base
+        # instead; the runner's Go and uv run its tests.
         run: |
-          commit="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["corpus"]["commit"])' "evals/tasks/$TASK/task.json")"
+          task="evals/tasks/$TASK/task.json"
+          if [[ "$(jq -r '.kind // ""' "$task")" == replay ]]; then
+            git init -q "$RUNNER_TEMP/replay"
+            git -C "$RUNNER_TEMP/replay" fetch -q --depth 1 "$(jq -r .url "$task")" "$(jq -r .base "$task")"
+            exit 0
+          fi
+          commit="$(jq -r .corpus.commit "$task")"
           git init -q "$RUNNER_TEMP/identity-model"
           git -C "$RUNNER_TEMP/identity-model" fetch -q --depth 1 https://github.com/jamescrowley321/identity-model "$commit"
       - name: Check the task
         env:
           TASK: ${{ matrix.task }}
-        run: IDENTITY_MODEL_REPO="$RUNNER_TEMP/identity-model" "evals/tasks/$TASK/check.sh"
+        run: IDENTITY_MODEL_REPO="$RUNNER_TEMP/identity-model" REPLAY_REPO="$RUNNER_TEMP/replay" "evals/tasks/$TASK/check.sh"

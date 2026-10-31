@@ -20,10 +20,28 @@ regexes = ['''^[0-9a-f]{64}$''']
 # `"access_token":"2YotnFZFEjr1zCsicMWpAA"`) in its pinned page, kept unmodified
 # as a test fixture. A path, not commit fingerprints, so it holds after the squash
 # merge; the page can't change unnoticed, since the requirements tests index it
-# against its pinned sha256 and fail on any other bytes.
+# against its pinned sha256 and fail on any other bytes. The replay task of
+# #167 carried the same examples in its reference fix, which added the page;
+# calibration dropped that task, but gitleaks scans each commit in the PR.
 [[rules.allowlists]]
 description = "RFC 6749's example credentials in its pinned page"
 condition = "AND"
-paths = ['''^crates/codecite-index/tests/fixtures/spec/rfc6749\.html$''']
+paths = [
+  '''^crates/codecite-index/tests/fixtures/spec/rfc6749\.html$''',
+  '''^evals/tasks/replay-codecite-167/reference/fix\.patch$''',
+]
 regexTarget = "secret"
 regexes = ['''^(7Fjfp0ZBr1KtDRbnfVdmIw|2YotnFZFEjr1zCsicMWpAA|tGzv3JOkF0XG5Qx2TlKWIA)$''']
+
+# identity-model's DPoP test vectors (`spec/vectors/dpop.json`): JWTs signed
+# with throwaway test keys, carried in the reference fix of the replay task
+# of identity-model #826. Calibration dropped that task; the path stays
+# because gitleaks scans each commit in the PR.
+[[rules]]
+id = "jwt"
+[[rules.allowlists]]
+description = "identity-model's DPoP test vectors in a replay task's reference fix"
+condition = "AND"
+paths = ['''^evals/tasks/replay-identity-model-826/reference/fix\.patch$''']
+regexTarget = "secret"
+regexes = ['''^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*\.?[A-Za-z0-9_-]*$''']

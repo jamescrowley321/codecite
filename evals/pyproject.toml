@@ -12,6 +12,7 @@ codecite-eval-report = "codecite_evals.report:main"
 codecite-eval-frozen = "codecite_evals.frozen:main"
 codecite-history-mine = "codecite_evals.history:main"
 codecite-history-scorecard = "codecite_evals.history:scorecard_main"
+codecite-replay-mine = "codecite_evals.replay:main"
 
 # Inspect finds the tasks here: `inspect eval codecite_evals/fastapi_middleware`.
 [project.entry-points.inspect_ai]
