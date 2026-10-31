@@ -65,6 +65,9 @@ pub struct IndexSummary {
 /// the two commits. Sources marked `excluded` are reported in
 /// [`IndexSummary::skipped_sources`]. Every source the run did not index, a document version no
 /// longer pinned included, is then deleted from the store.
+///
+/// A reindex leaves `store` as a fresh index of the same pins would: the
+/// same rows and the same full-text totals, so search ranks alike.
 pub fn index_corpus(
     store: &mut Store,
     manifest: &Manifest,
@@ -941,6 +944,61 @@ mod tests {
             ids
         }
 
+        /// Everything a reindex must leave as a fresh index would, without
+        /// the row IDs, which record when a row was written.
+        fn contents(&self) -> Contents {
+            let conn = self.sql();
+            let rows = |sql: &str| -> Vec<Vec<rusqlite::types::Value>> {
+                let mut stmt = conn.prepare(sql).unwrap();
+                let width = stmt.column_count();
+                stmt.query_map([], |row| (0..width).map(|i| row.get(i)).collect())
+                    .unwrap()
+                    .collect::<rusqlite::Result<_>>()
+                    .unwrap()
+            };
+            Contents {
+                documents: rows(
+                    "SELECT path, language, hex(content_hash), size_bytes, dirty, text
+                     FROM document ORDER BY path",
+                ),
+                chunks: rows(
+                    "SELECT d.path, c.start_line, c.end_line, c.kind, c.symbol_id, c.number,
+                            c.anchor, c.title, c.strength, c.text, c.terms
+                     FROM chunk c JOIN document d ON d.id = c.document_id
+                     ORDER BY d.path, c.start_line, c.end_line, c.kind",
+                ),
+                symbols: rows(
+                    "SELECT s.id, s.display_name, s.kind, d.path, s.start_line, s.end_line
+                     FROM symbol s LEFT JOIN document d ON d.id = s.document_id ORDER BY s.id",
+                ),
+                fts: rows(
+                    "SELECT (SELECT count(*) FROM chunk_fts_docsize),
+                            (SELECT count(*) FROM spec_fts_docsize),
+                            (SELECT block FROM chunk_fts_data WHERE id = 1),
+                            (SELECT block FROM spec_fts_data WHERE id = 1)",
+                ),
+            }
+        }
+
+        /// The citations and scores `search` ranks for `text`.
+        fn search(&self, text: &str) -> Vec<(String, f64)> {
+            let store = Store::open_read_only(&self.path()).unwrap();
+            let query = codecite_core::SearchQuery {
+                text,
+                language: None,
+                path: None,
+                only: None,
+                limit: 20,
+                allow_stale: true,
+            };
+            store
+                .search(&query)
+                .unwrap()
+                .into_iter()
+                .map(|r| (r.citation, r.score))
+                .collect()
+        }
+
         fn matches(&self, query: &str) -> i64 {
             self.sql()
                 .query_row(
@@ -950,6 +1008,19 @@ mod tests {
                 )
                 .unwrap()
         }
+    }
+
+    /// A store's rows as [`Corpus::contents`] reads them. Deriving
+    /// `PartialEq` and `Debug` lets one `assert_eq!` compare two whole
+    /// stores and print where they differ.
+    #[derive(PartialEq, Debug)]
+    struct Contents {
+        documents: Vec<Vec<rusqlite::types::Value>>,
+        chunks: Vec<Vec<rusqlite::types::Value>>,
+        symbols: Vec<Vec<rusqlite::types::Value>>,
+        /// Row counts and the averages records BM25 reads, for `chunk_fts`
+        /// and `spec_fts`.
+        fts: Vec<Vec<rusqlite::types::Value>>,
     }
 
     /// A guidance document: a title, a scoped rule with a subsection, a
@@ -1544,6 +1615,74 @@ mod tests {
             (summary.written, summary.unchanged, summary.removed),
             (2, 1, 0)
         );
+    }
+
+    #[test]
+    fn reindexing_at_a_new_commit_matches_a_fresh_index() {
+        let repo = fixture();
+        repo.write(
+            "src/session.rs",
+            "pub fn open_session() {}\n\npub fn refresh_session() {}\n\n\
+             pub fn close_session() {}\n\npub fn expire_session() {}\n",
+        );
+        repo.write(
+            "docs/guide.md",
+            "# Guide\n\n## Tokens\n\nValidate each token.\n\n## Sessions\n\n\
+             Refresh the session hourly.\n\n## Logging\n\nLog every refresh.\n",
+        );
+        repo.commit_all(&["src/session.rs", "docs/guide.md"]);
+        let remote = Remote::new();
+        let first = repo.push(&remote, "main");
+
+        repo.write(
+            "src/lib.rs",
+            "pub fn validate_token() {}\n\npub fn refresh_token() {}\n",
+        );
+        repo.git(&["rm", "-q", "notes.txt"]);
+        repo.write(
+            "src/session.rs",
+            "pub fn open_session() {}\n\npub fn refresh_session() {}\n\n\
+             pub fn expire_session() {}\n",
+        );
+        repo.write("src/audit.rs", "pub fn log_refresh() {}\n");
+        repo.commit_all(&["src/lib.rs", "src/session.rs", "src/audit.rs"]);
+        let second = repo.push(&remote, "main");
+
+        let reindexed = Corpus::new();
+        reindexed.index(&manifest(vec![git(&remote, &first)]));
+        reindexed.index(&manifest(vec![git(&remote, &second)]));
+        let fresh = Corpus::new();
+        fresh.index(&manifest(vec![git(&remote, &second)]));
+
+        assert_eq!(reindexed.contents(), fresh.contents());
+        for text in ["validate token", "refresh session", "hourly", "log refresh"] {
+            assert_eq!(reindexed.search(text), fresh.search(text), "{text}");
+        }
+    }
+
+    #[test]
+    fn equal_scores_rank_in_citation_order_whatever_was_indexed_first() {
+        let repo = Repo::new();
+        repo.write("b.rs", "pub fn tied() {}\n");
+        repo.commit_all(&["b.rs"]);
+        let reindexed = Corpus::new();
+        let manifest = manifest(vec![local(&repo, Some("app"))]);
+        reindexed.index(&manifest);
+        // `a.rs` is written second, so its chunk has the higher ID.
+        repo.write("a.rs", "pub fn tied() {}\n");
+        repo.commit_all(&["a.rs"]);
+        reindexed.index(&manifest);
+        let fresh = Corpus::new();
+        fresh.index(&manifest);
+
+        let results = reindexed.search("tied");
+        let paths: Vec<_> = results
+            .iter()
+            .map(|(c, _)| c.split_once(':').unwrap().1)
+            .collect();
+        assert_eq!(paths, ["a.rs#L1", "b.rs#L1"]);
+        assert_eq!(results[0].1, results[1].1);
+        assert_eq!(results, fresh.search("tied"));
     }
 
     #[test]
