@@ -64,12 +64,12 @@ $ codecite index identity
 indexed corpus `identity` into ~/.local/share/codecite/identity.db
 documents: 865 written, 0 unchanged, 0 removed
 chunks: 12187 written
-fetched: 0 downloaded, 39 from the cache
+fetched: 0 downloaded, 47 from the cache
 skipped: 39 ignored, 7 deny-listed, 4 symlink, 1 binary
 elapsed: 6.16s
 ```
 
-The first run downloads the 39 pinned specs (`fetched: 39 downloaded`); later
+The first run downloads the 47 pinned specs (`fetched: 47 downloaded`); later
 runs read them from the cache. `codecite search` ranks chunks by BM25 and
 cites each one:
 

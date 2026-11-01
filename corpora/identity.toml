@@ -128,6 +128,86 @@ use = "quote"
 current = true
 aliases = ["FAPI 2.0 Message Signing", "FAPI Message Signing 2.0"]
 
+[[source]]
+kind = "document"
+name = "fapi-attacker-model-2_0"
+url = "https://openid.net/specs/fapi-attacker-model-2_0-final.html"
+sha256 = "0de77b6f449ec5f80cab8d51d24f46cfeb02159dd08288fded6aee0588b2ff18"
+license = "OpenID Foundation"
+use = "quote"
+current = true
+aliases = ["FAPI 2.0 Attacker Model", "FAPI Attacker Model"]
+
+[[source]]
+kind = "document"
+name = "openid-financial-api-part-1-1_0"
+url = "https://openid.net/specs/openid-financial-api-part-1-1_0.html"
+sha256 = "2c5da4e50fae5157c397f4e2a522dc4007a71207d1715064ca305bd5985b1a32"
+license = "OpenID Foundation"
+use = "quote"
+current = true
+aliases = ["FAPI 1.0 Baseline", "FAPI 1.0 Part 1", "FAPI Baseline"]
+
+[[source]]
+kind = "document"
+name = "openid-financial-api-part-2-1_0"
+url = "https://openid.net/specs/openid-financial-api-part-2-1_0.html"
+sha256 = "72e559bee9e8841f3819df26400b72164a38577ed75badbde605b1592ce90fe7"
+license = "OpenID Foundation"
+use = "quote"
+current = true
+aliases = ["FAPI 1.0 Advanced", "FAPI 1.0 Part 2", "FAPI Advanced"]
+
+[[source]]
+kind = "document"
+name = "openid-client-initiated-backchannel-authentication-core-1_0"
+url = "https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html"
+sha256 = "870ed5d15125840bd877a5e6e9e3216a39e83ba65ae5f663a7d39a4c32cabd8a"
+license = "OpenID Foundation"
+use = "quote"
+current = true
+aliases = ["CIBA", "CIBA Core", "CIBA Core 1.0"]
+
+[[source]]
+kind = "document"
+name = "oauth-v2-jarm"
+url = "https://openid.net/specs/oauth-v2-jarm-final.html"
+sha256 = "8d08881daa7c749abb101c0698b5a6ddedad40391e2aaf09f7e453790af86cfc"
+license = "OpenID Foundation"
+use = "quote"
+current = true
+aliases = ["JARM"]
+
+[[source]]
+kind = "document"
+name = "openid-connect-4-identity-assurance-1_0"
+url = "https://openid.net/specs/openid-connect-4-identity-assurance-1_0-final.html"
+sha256 = "9f6af0e3b0c76ee43405896853a5df896c77396a33fce33e4bef1da3258aedf2"
+license = "OpenID Foundation"
+use = "quote"
+current = true
+aliases = ["OIDC4IDA", "IDA", "OpenID Connect for Identity Assurance", "OpenID Connect for Identity Assurance 1.0"]
+
+[[source]]
+kind = "document"
+name = "openid-ida-verified-claims-1_0"
+url = "https://openid.net/specs/openid-ida-verified-claims-1_0-final.html"
+sha256 = "3be80a7328ce595b0e1da4f085231387b00799d8e388c4fb19e3ca39014cbd27"
+license = "OpenID Foundation"
+use = "quote"
+current = true
+aliases = ["IDA Schema", "Identity Assurance Schema", "OpenID Identity Assurance Schema Definition"]
+
+[[source]]
+kind = "document"
+name = "openid-connect-4-ida-claims-1_0"
+url = "https://openid.net/specs/openid-connect-4-ida-claims-1_0-final.html"
+sha256 = "35a546534dba2760317bf00f97487c925e5a6cd02d66c91d9e0b0cc2c0f9bc24"
+license = "OpenID Foundation"
+use = "quote"
+current = true
+aliases = ["IDA Claims", "Identity Assurance Claims Registration"]
+
 # IETF RFCs, from rfc-editor.org. RFC 2119 and RFC 8174 define the requirement keywords.
 
 [[source]]

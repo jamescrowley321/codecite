@@ -68,7 +68,9 @@ pub(crate) fn detect(html: &Html) -> Option<SpecFormat> {
     };
     if has("section > :is(h1, h2, h3, h4, h5, h6) > a.section-number") {
         Some(SpecFormat::RfcV3)
-    } else if has("a[name^=\"rfc.section.\"]") {
+    } else if has("a[name^=\"rfc.section.\"]")
+        || has(":is(h1, h2, h3, h4, h5, h6)[id^=\"rfc.section.\"]")
+    {
         Some(SpecFormat::OpenId)
     } else if has("pre span a.selflink") {
         Some(SpecFormat::RfcText)
@@ -337,6 +339,9 @@ fn heading(layout: Layout, el: ElementRef, slugs: &mut Slugs) -> Option<Option<N
         }
         // <a name="IDTokenValidation"></a><br /><hr />
         // <a name="rfc.section.3.1.3.7"></a><h3>3.1.3.7.&nbsp;ID Token Validation</h3>
+        // or, as CIBA is published:
+        // <h1 id="rfc.section.7.1"><a href="#rfc.section.7.1">7.1.</a>
+        //   <a href="#auth_request" id="auth_request">Authentication Request</a></h1>
         SpecFormat::OpenId if is_h => Some(openid_heading(el)),
         _ => None,
     }
@@ -399,6 +404,9 @@ fn rfc_text_heading(el: ElementRef) -> Option<Numbered> {
 }
 
 fn openid_heading(el: ElementRef) -> Option<Numbered> {
+    if let Some(id) = el.value().id() {
+        return openid_id_heading(el, id);
+    }
     let mut before = el.prev_siblings().filter_map(ElementRef::wrap);
     let marker = before.next()?;
     let number = marker.value().attr("name")?.strip_prefix("rfc.section.")?;
@@ -418,6 +426,29 @@ fn openid_heading(el: ElementRef) -> Option<Numbered> {
         number: number.to_owned(),
         title: title_after(el, number),
         anchor,
+    })
+}
+
+/// A heading that carries its own `rfc.section.N` or `rfc.appendix.A` id.
+/// The author's anchor is the id of a link inside it; a heading without
+/// one keeps its `rfc.` id. Other ids (`rfc.references`, `rfc.authors`)
+/// are unnumbered headings.
+fn openid_id_heading(el: ElementRef, id: &str) -> Option<Numbered> {
+    let number = id
+        .strip_prefix("rfc.section.")
+        .or_else(|| id.strip_prefix("rfc.appendix."))?;
+    if !is_section_number(number) {
+        return None;
+    }
+    let anchor = el
+        .child_elements()
+        .filter_map(|c| c.value().id())
+        .find(|a| !a.starts_with("rfc."))
+        .unwrap_or(id);
+    Some(Numbered {
+        number: number.to_owned(),
+        title: title_after(el, number),
+        anchor: anchor.to_owned(),
     })
 }
 
