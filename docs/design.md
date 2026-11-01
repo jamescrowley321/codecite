@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-10-28
+last_verified: 2026-10-31
 ---
 
 # codecite — design
@@ -10,13 +10,17 @@ Ported on 2026-10-17 from the original Claude Doc design (written 2026-10-11), w
 
 ## Summary
 
-codecite is a single-binary Rust tool that indexes code, specs and other documents into one SQLite file per corpus and answers AI agents with cited results (`repo@sha:path#L10-L42`) through a CLI and an MCP server.
+codecite is a single-binary Rust tool that indexes the code and prose a team works from (its repositories, READMEs and design docs, house rules, the specs it implements) into one SQLite file per corpus, and answers AI agents with cited results (`repo@sha:path#L10-L42`) through a CLI and an MCP server.
 
-Its core idea is reference coding: before an agent writes something non-trivial, it looks up how proven implementations and the governing specs already handle it, and builds on that instead of guessing from memory.
+Its core idea: before an agent writes something non-trivial, it looks up how the code and documents it works from already handle it, and builds on cited text instead of guessing from memory or spending tokens on wide searches. Agents reach for the CLI first (`search`, `grep`, `def`, `read`, `cite`) while planning and while executing; the MCP server answers most of the same commands (all but `cite`, `def` as `definition`) with the same JSON.
+
+Every source is handled the same way. Code splits at its definitions, any document splits at its own headings, both are cited by path, anchor and lines, and one ranking orders them together. Specs are one adapter among the sources, not the core: an RFC or OpenID page keeps its extra structure (numbered sections and steps, normative statements, pinned versions) and the commands built on it (`requirements`, `diff`, spec citation forms), and #191 moves that layer behind `adapter = "spec"` in the manifest.
 
 **Goals**
 
-- Agents retrieve real implementations and spec text, never paraphrased memory, with every result citing repo, commit, path and line range.
+- Agents retrieve real code and document text, never paraphrased memory, with every result citing repo, commit, path and line range.
+- Any repository and any prose kept with it work without tuning to one corpus: one ranking over code and prose, judged on a benchmark across many unrelated repositories.
+- Adding sources is a few commands: `codecite add` pins git repositories, and one corpus can span many.
 - A first-class code graph (definitions, references, callers, callees, impact, paths) merged from several providers: tree-sitter, SCIP, LSP, CodeGraph and Graphify.
 - Every graph edge records which provider produced it and how much to trust it, so agents can demand exact edges for impact analysis.
 - Fully local: no server process required, no telemetry, no network access beyond fetching pinned sources.
@@ -25,11 +29,13 @@ Its core idea is reference coding: before an agent writes something non-trivial,
 **Non-goals**
 
 - An Elasticsearch-compatible API, clustering or multi-tenant hosting.
+- A hosted service, or embedding in a hosted product in v1.
+- A search server (Milvus, Algolia). SQLite stays.
 - Indexing PHI, customer data or secrets.
-- General-purpose document search or log analytics.
-- Embedding in a hosted product in v1.
+- Log analytics.
+- Features shaped to one document family or one naming convention outside an adapter.
 
-**First users:** Claude Code working on the identity-model ports (TypeScript, Go, Rust), and the startup's engineers working against internal repos and FHIR and HIPAA references.
+**First users:** Claude Code working in the repositories of the history benchmark (identity-model, identity-stack, blind-peer-review, terraform-provider-descope and codecite itself), and engineers working against their own repositories, documents and references.
 
 ## Background and prior art
 
@@ -41,7 +47,7 @@ codecite takes XERJ's best ideas without its weight or its unknowns, and treats 
 | [CodeGraph](https://github.com/colbymchenry/codegraph) | Local SQLite symbol and call graph with an MCP server and Claude Code hooks | Provider: import its graph |
 | [Graphify](https://github.com/Graphify-Labs/Graphify) | Knowledge graph over code, docs and images with confidence-tagged edges | Provider: import `graph.json`, keep its confidence tags |
 
-**Borrowed from XERJ:** reference coding as a workflow, pinned corpus manifests with license classes, citations on every result, refusing stale indexes, content sniffing instead of trusting file extensions, and a with/without benchmark that reports losses.
+**Borrowed from XERJ:** reference coding as a workflow (looking up proven work before writing, which codecite widens to any code and prose), pinned corpus manifests with license classes, citations on every result, refusing stale indexes, content sniffing instead of trusting file extensions, and a with/without benchmark that reports losses.
 
 **Skipped:** the Elasticsearch API, clustering, a custom storage engine, the web console, share tunnels and anything resembling its enterprise feature list.
 
@@ -553,7 +559,7 @@ codecite earns its place only if agents using it do no worse than agents without
 
 ## Milestones
 
-Ten milestones in order, each shippable on its own (GitHub also holds General purpose, the work that makes codecite useful beyond specs, Spec adapter (later), where the spec layer moves behind an adapter in #191, and Parked); the first four make codecite useful, the rest make it precise. Each is a GitHub milestone, named with its number (`M1 Skeleton and CI`), and its issues are the work.
+Ten milestones in order, each shippable on its own (GitHub also holds General purpose, the work that makes codecite useful on any code and prose, Spec adapter (later), where the spec layer moves behind an adapter in #191, and Parked); the first four make codecite useful, the rest make it precise. Each is a GitHub milestone, named with its number (`M1 Skeleton and CI`), and its issues are the work.
 
 1. **Skeleton and CI:** Cargo workspace, `fmt`, `clippy -D warnings`, tests, `cargo-deny`, pinned toolchain.
    - Learn: workspace layout, lint discipline, error enums with `thiserror`.
