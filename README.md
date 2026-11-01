@@ -1,16 +1,19 @@
 # codecite
 
-A local index of code, specs and documents that answers AI agents with cited results.
+A local index of the code and prose a team works from that answers AI agents
+with cited results.
 
-codecite is a single Rust binary. It indexes source repositories and reference
-specs into one SQLite file per corpus, and answers through a CLI and an MCP
-server. Every result cites where it came from — `repo@sha:path#L10-L42` — so an
-agent builds on real implementations and spec text instead of recalling them
-from memory.
+codecite is a single Rust binary. It indexes repositories and the documents
+kept with them (READMEs, design docs, house rules, specs) into one SQLite file
+per corpus, and answers through a CLI and an MCP server. Every result cites
+where it came from — `repo@sha:path#L10-L42` — so an agent builds on real code
+and text instead of recalling them from memory. Specs are one kind of source
+among them, with extra structure (sections, steps, normative statements,
+pinned versions) for the commands that use it.
 
 ```mermaid
 flowchart LR
-  M["corpus manifest<br/>code + specs, pinned"] -->|codecite index| DB[("one SQLite file<br/>per corpus")]
+  M["corpus manifest<br/>code + documents, pinned"] -->|codecite index| DB[("one SQLite file<br/>per corpus")]
   DB -->|search · read · corpora| CLI["terminal"]
   DB -->|codecite mcp| A["AI agent"]
 ```
