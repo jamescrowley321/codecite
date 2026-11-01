@@ -1,5 +1,5 @@
 """Per task and model, one arm against another: pass rate, median tokens,
-median time, and the no-loss verdict from docs/design.md (Evaluation plan).
+median time, and the verdict from docs/design.md (Success criteria).
 
 A log holds the arms its `arms` task argument names (config.ARMS): baseline
 and codecite (`ab`, the default), two baseline arms labelled apart from an A/A
@@ -7,16 +7,15 @@ round (`aa`), or the baseline arm alone, a calibration (`baseline`). In a
 pair, the first arm is the reference. Each measure is a difference between
 the arms: pass rate in points (second minus first), median tokens and median
 time relative to the first arm's median (second / first - 1). Each gets a 95%
-percentile bootstrap interval, each arm resampled on its own. codecite loses
-when an interval is past the margin at its favourable end: pass rate's upper
-bound more than 5 points below 0, or tokens' or time's lower bound more than
-5% above 0. A task's task.json can name another gate (GATES): a replay task
-loses on pass rate when its upper bound is below 0 and on time when its lower
-bound is more than 25% above 0, and never on tokens, which are only reported. A model short of the planned runs in either arm is incomplete,
-not a pass. A model's planned runs per arm are the arm's samples times
-epochs: one sample for a code task, one per question for spec-questions. An
-A/A round gets no verdict: it reports which intervals noise alone pushes past
-the margin.
+percentile bootstrap interval, each arm resampled on its own. One gate (GATE)
+judges every task: codecite loses on correctness when the pass rate's upper
+bound is below 0, any sure drop, and on time when the median time's lower
+bound is more than 25% above 0. Tokens get an interval and never lose. A
+model short of the planned runs in either arm is incomplete, not a pass. A
+model's planned runs per arm are the arm's samples times epochs: one sample
+for a code task, one per question for spec-questions. An A/A round gets no
+verdict: it reports which intervals noise alone pushes past
+their margins, where the gate would have called a difference.
 
 Each task gets its own tables, headed by its name, so one task's runs never
 pool with another's.
@@ -59,12 +58,12 @@ a pass.
 The default logs are the tier's, inspect/logs/<tier>/, else inspect/logs/
 (both under evals/, see config.py).
 Given a directory, it reads one log per task and model: the newest finished
-one, else the newest. The tier heads the scorecard: a quick verdict is directional, and
-a quick loss means run the full tier.
+one, else the newest. The tier heads the scorecard: quick is the gate run, at 5
+epochs per arm, and a pair that loses there is rerun on the full tier, at 10,
+before it blocks.
 """
 
 import argparse
-import json
 import random
 import re
 import sys
@@ -79,15 +78,13 @@ from inspect_ai.model import ChatMessageAssistant
 
 from codecite_evals import config
 
+# The margin that stars the measures outside the gate in the intervals table.
 MARGIN = 0.05
-# Each gate's margins for the verdict's three measures; a task's task.json
-# picks one by name ("gate", default "default"). None means reported, never a
-# loss. A replay task (replay.py) loses on any sure drop in pass rate and on
-# time past a quarter more, and spends whatever tokens it needs.
-GATES = {
-    "default": {"pass": MARGIN, "tokens": MARGIN, "time": MARGIN},
-    "replay": {"pass": 0.0, "tokens": None, "time": 0.25},
-}
+# The gate's margin for each of the verdict's three measures, the same for
+# every task: any sure drop in pass rate loses, and time past a quarter more.
+# Tokens have none (None): reported, never a loss, whatever they cost. A
+# task.json's old "gate" key is ignored.
+GATE = {"pass": 0.0, "tokens": None, "time": 0.25}
 # A pair is measured when its codecite arm used codecite in at least this
 # share of its usable runs.
 ADOPTION = 0.5
@@ -108,9 +105,19 @@ CALIBRATION = (
 )
 AA = "**A/A round**: both arms are baseline, with the same prompt and sandbox, so every difference is noise."
 TIERS = {
-    "quick": "**Quick tier** (directional, never the gate): a loss here means run the full tier.",
-    "full": "**Full tier**: the no-loss gate in docs/design.md (Evaluation plan).",
+    "quick": (
+        "**Quick tier** (the gate run, 5 epochs per arm): a losing pair is rerun on the full tier before it blocks."
+        " The gate is Claude Code's panel; pi's models are reported beside it."
+    ),
+    "full": (
+        "**Full tier** (the rerun, 10 epochs per arm): a loss here blocks."
+        " The gate is Claude Code's panel; pi's models are reported beside it."
+    ),
 }
+GATE_LINE = (
+    "Gate: any sure drop in pass rate, or time more than 25% up, is a loss; tokens are reported, never a loss "
+    "(docs/design.md, Success criteria)."
+)
 
 
 def logs(paths: list[Path], tier=None):
@@ -287,16 +294,23 @@ def fits(lo, hi, margin=MARGIN):
     return margin is None or (-margin <= lo and hi <= margin)
 
 
-def gate(log):
-    """The name of the gate the log's task is judged by, from its task.json
-    (the task's name with `-` for `_`). A task with no task.json here takes
-    the default."""
-    task_id = task_name(log).replace("_", "-")
-    path = config.EVALS_DIR / "tasks" / task_id / "task.json"
-    name = json.loads(path.read_text()).get("gate", "default") if path.is_file() else "default"
-    if name not in GATES:
-        raise ValueError(f"{path} names gate {name!r}; the gates are {', '.join(GATES)}")
-    return name
+def past(measure, lo, hi):
+    """Whether an interval is starred: for the gate's measures, wholly past
+    the gate's margin on either side of 0, where the gate sees a sure
+    difference (a loss on the high side for time, the low side for pass); for
+    the rest, outside MARGIN. Tokens, with no margin, never are."""
+    if measure not in GATE:
+        return not fits(lo, hi)
+    margin = GATE[measure]
+    return margin is not None and (lo > margin or hi < -margin)
+
+
+def losses(found):
+    """The gate's measures this pair loses on: pass when its upper bound is
+    below the margin under 0, time when its lower bound is past the margin
+    over 0. Tokens never lose."""
+    (_, pass_hi), (time_lo, _) = found["pass"], found["time"]
+    return [m for m, lost in (("pass", pass_hi < -GATE["pass"]), ("time", time_lo > GATE["time"])) if lost]
 
 
 def span(lo, hi, kind):
@@ -363,12 +377,10 @@ def scorecard(logs, tier=None):
     errors = defaultdict(list)  # task -> [(model, arm, question, epoch, sandbox error)]
     planned = {}  # (task, model, arm) -> runs
     arms = {}  # (task, model) -> ((label, condition), ...)
-    gates = {}  # task -> gate name
     for log in logs:
         name, model = task_name(log), log.eval.model
         pair = config.ARMS.get((log.eval.task_args or {}).get("arms", "ab"), config.ARMS["ab"])
         arms[(name, model)] = pair
-        gates[name] = gate(log)
         for label, _ in pair:
             planned[(name, model, label)] = per_arm(log, label, len(pair)) * (log.eval.config.epochs or 1)
         for s in log.samples or []:
@@ -418,7 +430,7 @@ def scorecard(logs, tier=None):
         if kinds == {True}:
             out += calibration(name, runs, planned)
         else:
-            out += table(rng, name, runs, planned, arms, gates[name])
+            out += table(rng, name, runs, planned, arms)
         out += listed_errors(errors[name])
     return "\n".join(out)
 
@@ -474,19 +486,10 @@ def calibration(name, runs, planned):
     return out
 
 
-def table(rng, name, runs, planned, arms, gate_name="default"):
+def table(rng, name, runs, planned, arms):
     """One task's tables: per model, both arms and the verdict; the
-    transcript medians; and every measure's interval. The gate sets the
-    margins of pass, tokens and time; every other measure keeps MARGIN."""
-    margins = {m: GATES[gate_name].get(m, MARGIN) for m, _, _ in MEASURES}
-    out = [f"**Task: `{name}`**", ""]
-    if gate_name != "default":
-        shown = ", ".join(
-            f"{m} {'reported, never a loss' if v is None else span(-v, v, kind).split('..')[1]}"
-            for m, _, kind in MEASURES[:3]
-            for v in [margins[m]]
-        )
-        out += [f"Gate: {gate_name} (margins: {shown}).", ""]
+    transcript medians; and every measure's interval."""
+    out = [f"**Task: `{name}`**", "", GATE_LINE, ""]
     out += [
         "| model | arm | runs | used codecite | pass | fails | timeouts | sandbox errors | median tokens | median time | verdict |",
         "|---|---|---|---|---|---|---|---|---|---|---|",
@@ -500,9 +503,8 @@ def table(rng, name, runs, planned, arms, gate_name="default"):
     ]
     spans = [
         "",
-        f"95% intervals, second arm against the first (* past the {MARGIN:.0%} margin on either side of 0"
-        + (", or the gate's margin" if gate_name != "default" else "")
-        + "):",
+        "95% intervals, second arm against the first (* wholly past the gate's margin on either side of 0"
+        f" for pass and time, outside {MARGIN:.0%} either side for the rest; tokens are never starred):",
         "",
         "| model | arms | " + " | ".join(measure for measure, _, _ in MEASURES) + " |",
         "|---|---|" + "---|" * len(MEASURES),
@@ -531,7 +533,7 @@ def table(rng, name, runs, planned, arms, gate_name="default"):
                 b = [v for v in map(value, second) if v is not None]
                 found[measure] = interval(rng, a, b, pass_diff if kind == "points" else median_ratio) if a and b else None
             cells = [
-                "-" if found[m] is None else span(*found[m], kind) + ("" if fits(*found[m], margins[m]) else " *")
+                "-" if found[m] is None else span(*found[m], kind) + (" *" if past(m, *found[m]) else "")
                 for m, _, kind in MEASURES
             ]
             spans.append(f"| {label} | {b_label} vs {a_label} | " + " | ".join(cells) + " |")
@@ -540,14 +542,13 @@ def table(rng, name, runs, planned, arms, gate_name="default"):
             if aa:
                 # Noise alone made these differences: no verdict, only which
                 # intervals it pushed past the margin.
-                wide = [m for m, _, _ in MEASURES if found[m] is not None and not fits(*found[m], margins[m])]
+                wide = [m for m, _, _ in MEASURES if found[m] is not None and past(m, *found[m])]
                 verdict = ("noise past the margin on " + ", ".join(wide) if wide else "noise inside the margin") + ranges
             elif (used := sum(x.used for x in second)) < ADOPTION * len(second):
                 verdict = f"not measured (codecite used in {used} of {len(second)} runs)"
             else:
-                lost = {"pass": lambda m: p[1] < -m, "tokens": lambda m: t[0] > m, "time": lambda m: s[0] > m}
-                losses = [n for n, past in lost.items() if margins[n] is not None and past(margins[n])]
-                verdict = ("loses on " + ", ".join(losses) if losses else "no loss") + ranges
+                lost = losses(found)
+                verdict = ("loses on " + ", ".join(lost) if lost else "no loss") + ranges
         crashed = [sum(x.stopped == "sandbox_error" for x in r) for r in (first, second)]
         if any(crashed):
             verdict += f", with sandbox errors ({a_label} {crashed[0]}, {b_label} {crashed[1]})"

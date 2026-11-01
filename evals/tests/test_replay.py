@@ -253,7 +253,6 @@ def test_task_json_round_trips(clone, tmp_path):
     assert data == {
         "id": "replay-r-7",
         "kind": "replay",
-        "gate": "replay",
         "repo": "o/r",
         "url": "https://github.com/o/r",
         "base": base,

@@ -3,12 +3,15 @@
 #
 #   inspect/panel.sh quick|full [inspect eval options...]
 #
-# quick: directional, for PRs.  full: the gate in docs/design.md.
+# Both tiers run the gating panel, Claude Code on haiku, sonnet and opus
+# (docs/design.md, Success criteria). quick: the gate run, 5 epochs per arm.
+# full: the rerun of a pair that lost on quick, 10 epochs per arm; a loss
+# there blocks.
 #
 # Every tier runs Claude Code on Claude models (claude_code.py), billed to
 # the Claude subscription CLAUDE_CODE_OAUTH_TOKEN belongs to. OPENROUTER=1
 # adds pi on the tier's OpenRouter panel, billed per token to
-# OPENROUTER_API_KEY; OpenRouter picks the host within the account's privacy
+# OPENROUTER_API_KEY, reported beside the gate and never part of it; OpenRouter picks the host within the account's privacy
 # settings (ZDR, allowed providers). It is off unless set.
 #
 # Each agent's panel runs in its own Inspect process, the two sharing
@@ -42,7 +45,7 @@ shift || true
 case "$TIER" in
   quick)
     TIER_EPOCHS=5
-    CLAUDE_PANEL=(claude-haiku-5-5 claude-sonnet-5-5)
+    CLAUDE_PANEL=(claude-haiku-5-5 claude-sonnet-5-5 claude-opus-5-5)
     # The Anthropic pair and the fastest pi model by round one's medians
     # (docs/superpowers/specs/2026-10-21-fast-eval-design.md).
     OPENROUTER_PANEL=(
@@ -53,7 +56,7 @@ case "$TIER" in
     ;;
   full)
     TIER_EPOCHS=10
-    CLAUDE_PANEL=(claude-haiku-5-5 claude-sonnet-5-5)
+    CLAUDE_PANEL=(claude-haiku-5-5 claude-sonnet-5-5 claude-opus-5-5)
     # The models blind-peer-review measured in its latest round
     # (evals/results/2026-10-14-ceiling-32000).
     OPENROUTER_PANEL=(
@@ -95,14 +98,11 @@ TASK_ID="${TASK_ID:-fastapi-middleware}"
 [[ -f "tasks/$TASK_ID/task.json" ]] || { echo "no task $TASK_ID under tasks/" >&2; exit 2; }
 # A replay task (task.json "kind": "replay", replay.py) is registered under
 # no name of its own, so it runs as codecite_evals/ab -T task_id=<id>. Its
-# panel is Claude Code alone, on haiku, sonnet and opus at both tiers:
-# OpenRouter is skipped even when OPENROUTER=1.
+# panel is Claude Code alone: OpenRouter is skipped even when OPENROUTER=1.
 TASK_KIND="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("kind", ""))' "tasks/$TASK_ID/task.json")"
 TASK=("codecite_evals/${TASK_ID//-/_}")
 if [[ "$TASK_KIND" == replay ]]; then
   TASK=(codecite_evals/ab -T task_id="$TASK_ID")
-  CLAUDE_PANEL=(claude-haiku-5-5 claude-sonnet-5-5 claude-opus-5-5)
-  CLAUDE_MODELS=("${CLAUDE_PANEL[@]/#/claude-code/}")
   ((${#OPENROUTER_MODELS[@]} == 0)) || echo "$TASK_ID is a replay task: Claude Code only, OpenRouter skipped" >&2
   OPENROUTER_MODELS=()
 fi

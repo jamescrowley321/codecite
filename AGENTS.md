@@ -97,11 +97,12 @@ loop.
    summarise what's left in a PR comment.
 6. **Ask for an eval.** If the PR changes indexing, search, ranking or the
    CLI's output, add the `eval` label. The eval workflow runs the quick A/B
-   eval once, on the Claude panel, and keeps its scorecard in one PR comment;
+   eval, the gate run, once, on the gating panel (Claude Code on Haiku, Sonnet
+   and Opus), and keeps its scorecard in one PR comment;
    to rerun it on a new head, take the label off and put it back. OpenRouter
-   bills per token and is off unless James switches it on. The quick tier is directional: a quick loss means run the full
-   eval (the workflow dispatched with `tier: full`), so say so on the PR.
-   Never call it a pass.
+   bills per token and is off unless James switches it on. A quick loss is rerun at 10 epochs before it blocks (the
+   workflow dispatched with `tier: full` on the losing task), so say so on the
+   PR. Tokens are reported and never decide the verdict.
 7. **Stop there.** James merges. Don't merge your own PR.
 
 ## Repository settings
