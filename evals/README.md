@@ -339,7 +339,8 @@ on CI, dispatch with `arms: assist`.
 One gate judges every task (`docs/design.md`, Success criteria), and the
 scorecard states it above each task's tables: pass rate loses when its
 interval's upper bound is below 0, any sure drop; wall time loses when its
-lower bound is above +25%; tokens get an interval but never lose. The `"gate"`
+lower bound is above +25%; tokens get an interval but never lose. A pi
+model's verdict ends `reported, not gated`. The `"gate"`
 key that older replay tasks' `task.json` carry is ignored. Logs whose samples kept no model events leave the
 transcript measures blank.
 

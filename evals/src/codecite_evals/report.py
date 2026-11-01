@@ -106,18 +106,27 @@ CALIBRATION = (
 AA = "**A/A round**: both arms are baseline, with the same prompt and sandbox, so every difference is noise."
 TIERS = {
     "quick": (
-        "**Quick tier** (the gate run, 5 epochs per arm): a losing pair is rerun on the full tier before it blocks."
+        "**Quick tier** (the gate run): a losing pair is rerun on the full tier, at more epochs, before it blocks."
         " The gate is Claude Code's panel; pi's models are reported beside it."
     ),
     "full": (
-        "**Full tier** (the rerun, 10 epochs per arm): a loss here blocks."
+        "**Full tier** (the rerun): a loss here blocks."
         " The gate is Claude Code's panel; pi's models are reported beside it."
     ),
 }
-GATE_LINE = (
-    "Gate: any sure drop in pass rate, or time more than 25% up, is a loss; tokens are reported, never a loss "
-    "(docs/design.md, Success criteria)."
-)
+# Models outside the gating panel: pi's, on OpenRouter. Their verdicts are
+# reported and never gate.
+UNGATED = "openrouter/"
+
+
+def gate_line():
+    """The gate as the scorecard states it, from GATE."""
+    drop = GATE["pass"]
+    pass_rule = "any sure drop in pass rate" if not drop else f"a sure drop in pass rate of more than {drop * 100:.0f} points"
+    return (
+        f"Gate: {pass_rule}, or time more than {GATE['time']:.0%} up, is a loss; tokens are reported, never a loss"
+        " (docs/design.md, Success criteria)."
+    )
 
 
 def logs(paths: list[Path], tier=None):
@@ -489,7 +498,7 @@ def calibration(name, runs, planned):
 def table(rng, name, runs, planned, arms):
     """One task's tables: per model, both arms and the verdict; the
     transcript medians; and every measure's interval."""
-    out = [f"**Task: `{name}`**", "", GATE_LINE, ""]
+    out = [f"**Task: `{name}`**", "", gate_line(), ""]
     out += [
         "| model | arm | runs | used codecite | pass | fails | timeouts | sandbox errors | median tokens | median time | verdict |",
         "|---|---|---|---|---|---|---|---|---|---|---|",
@@ -503,8 +512,10 @@ def table(rng, name, runs, planned, arms):
     ]
     spans = [
         "",
-        "95% intervals, second arm against the first (* wholly past the gate's margin on either side of 0"
-        f" for pass and time, outside {MARGIN:.0%} either side for the rest; tokens are never starred):",
+        (
+            "95% intervals, second arm against the first (* wholly past the gate's margin on either side of 0"
+            f" for pass and time, outside {MARGIN:.0%} either side for the rest; tokens are never starred):"
+        ),
         "",
         "| model | arms | " + " | ".join(measure for measure, _, _ in MEASURES) + " |",
         "|---|---|" + "---|" * len(MEASURES),
@@ -549,6 +560,8 @@ def table(rng, name, runs, planned, arms):
             else:
                 lost = losses(found)
                 verdict = ("loses on " + ", ".join(lost) if lost else "no loss") + ranges
+                if model.startswith(UNGATED):
+                    verdict += ", reported, not gated"
         crashed = [sum(x.stopped == "sandbox_error" for x in r) for r in (first, second)]
         if any(crashed):
             verdict += f", with sandbox errors ({a_label} {crashed[0]}, {b_label} {crashed[1]})"

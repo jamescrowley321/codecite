@@ -12,7 +12,7 @@ from inspect_ai.model import ChatMessageAssistant, ChatMessageUser, GenerateConf
 from inspect_ai.scorer import Score
 from inspect_ai.tool import ToolCall
 
-from codecite_evals import config
+from codecite_evals import config, report
 from codecite_evals.report import codecite_calls, logs, scorecard
 
 EPOCHS = 4
@@ -154,7 +154,7 @@ def test_old_logs_read_timed_out_as_timeouts():
 
 
 def test_tier_heads_the_scorecard():
-    assert scorecard(PANEL, "quick").startswith("**Quick tier** (the gate run, 5 epochs per arm)")
+    assert scorecard(PANEL, "quick").startswith("**Quick tier** (the gate run)")
     assert scorecard(PANEL).startswith("**Task: `fastapi_middleware`**\n\nGate: ")
 
 
@@ -608,6 +608,27 @@ def test_tokens_never_add_to_a_loss(monkeypatch, tmp_path):
 def test_every_task_names_the_one_gate(monkeypatch, tmp_path):
     out = scorecard([gated("plain", monkeypatch, tmp_path)])
     assert "Gate: any sure drop in pass rate, or time more than 25% up, is a loss; tokens are reported, never a loss" in out
+
+
+def test_the_gate_line_follows_the_gate(monkeypatch, tmp_path):
+    monkeypatch.setitem(report.GATE, "pass", 0.05)
+    monkeypatch.setitem(report.GATE, "time", 0.5)
+    out = scorecard([gated("plain", monkeypatch, tmp_path)])
+    assert "Gate: a sure drop in pass rate of more than 5 points, or time more than 50% up, is a loss" in out
+
+
+def test_a_pi_pair_is_reported_not_gated(monkeypatch, tmp_path):
+    # gated() logs an OpenRouter model: pi, beside the gating panel.
+    assert verdict(gated("plain", monkeypatch, tmp_path, seconds=78.0)).startswith("loses on time (")
+    assert verdict(gated("other", monkeypatch, tmp_path, seconds=78.0)).endswith(", reported, not gated")
+
+
+def test_a_claude_code_pair_is_gated(monkeypatch, tmp_path):
+    l = gated("plain", monkeypatch, tmp_path, seconds=78.0)
+    l.eval.model = "claude-code/claude-haiku-5-5"
+    _, rows = table(scorecard([l]))
+    v = rows[("claude-code/claude-haiku-5-5", "codecite")]["verdict"]
+    assert v.startswith("loses on time (") and "not gated" not in v
 
 
 def test_a_task_without_a_task_json_takes_the_gate():
