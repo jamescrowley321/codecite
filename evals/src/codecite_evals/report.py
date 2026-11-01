@@ -58,9 +58,9 @@ a pass.
 The default logs are the tier's, inspect/logs/<tier>/, else inspect/logs/
 (both under evals/, see config.py).
 Given a directory, it reads one log per task and model: the newest finished
-one, else the newest. The tier heads the scorecard: quick is the gate run, at 5
-epochs per arm, and a pair that loses there is rerun on the full tier, at 10,
-before it blocks.
+one, else the newest. The tier heads the scorecard: quick is the gate run, and
+a pair that loses there is rerun on the full tier, at its epochs (10 by
+default, or what the task's task.json sets), before it blocks.
 """
 
 import argparse
@@ -560,11 +560,13 @@ def table(rng, name, runs, planned, arms):
             else:
                 lost = losses(found)
                 verdict = ("loses on " + ", ".join(lost) if lost else "no loss") + ranges
-                if model.startswith(UNGATED):
-                    verdict += ", reported, not gated"
         crashed = [sum(x.stopped == "sandbox_error" for x in r) for r in (first, second)]
         if any(crashed):
             verdict += f", with sandbox errors ({a_label} {crashed[0]}, {b_label} {crashed[1]})"
+        if model.startswith(UNGATED) and not aa:
+            # Every verdict of a model outside the gating panel, incomplete
+            # and not measured too.
+            verdict += ", reported, not gated"
         for i, (arm, r) in enumerate(((a_label, first), (b_label, second))):
             # An arm with no usable runs still gets a row, so the verdict
             # (incomplete) always shows.

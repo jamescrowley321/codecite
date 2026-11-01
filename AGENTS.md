@@ -100,7 +100,7 @@ loop.
    eval, the gate run, once, on the gating panel (Claude Code on Haiku, Sonnet
    and Opus), and keeps its scorecard in one PR comment;
    to rerun it on a new head, take the label off and put it back. OpenRouter
-   bills per token and is off unless James switches it on. A quick loss is rerun at 10 epochs before it blocks (the
+   bills per token and is off unless James switches it on. A quick loss is rerun at the full tier's epochs (10 by default) before it blocks (the
    workflow dispatched with `tier: full` on the losing task), so say so on the
    PR. Tokens are reported and never decide the verdict.
 7. **Stop there.** James merges. Don't merge your own PR.

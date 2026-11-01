@@ -213,7 +213,7 @@ def test_half_adoption_is_measured():
 
 def test_below_half_adoption_is_not_measured():
     _, rows = table(scorecard([adoption(EPOCHS // 2 - 1)]))
-    assert rows[("used-1", "codecite")]["verdict"] == "not measured (codecite used in 1 of 4 runs)"
+    assert rows[("used-1", "codecite")]["verdict"] == "not measured (codecite used in 1 of 4 runs), reported, not gated"
 
 
 def test_adoption_counts_usable_runs():
@@ -294,7 +294,7 @@ def test_a_calibration_never_reads_as_a_pass():
 def test_an_ab_run_that_lost_its_codecite_samples_is_incomplete_not_a_calibration():
     (only_baseline,) = [log("openrouter/m", [sample("baseline", e, passed=True) for e in range(1, EPOCHS + 1)])]
     _, rows = table(scorecard([only_baseline]))
-    assert rows[("m", "codecite")]["verdict"] == f"incomplete (4/0 of {EPOCHS} runs)"
+    assert rows[("m", "codecite")]["verdict"] == f"incomplete (4/0 of {EPOCHS} runs), reported, not gated"
 
 
 def test_calibration_and_ab_logs_are_not_mixed():
@@ -341,7 +341,7 @@ def test_each_task_gets_its_own_table():
 def test_planned_runs_are_questions_times_epochs():
     # 3 questions x 2 epochs = 6 runs per arm, not 2.
     short = task_tables(scorecard([spec_log("openrouter/m", spec_runs("baseline", skip=1) + spec_runs("codecite"))]))
-    assert short["spec_questions"][("m", "codecite")]["verdict"] == "incomplete (5/6 of 6 runs)"
+    assert short["spec_questions"][("m", "codecite")]["verdict"] == "incomplete (5/6 of 6 runs), reported, not gated"
     full = task_tables(scorecard([spec_log("openrouter/m", spec_runs("baseline") + spec_runs("codecite"))]))
     assert full["spec_questions"][("m", "codecite")]["verdict"].startswith("no loss")
 
@@ -529,34 +529,38 @@ def test_a_claude_code_log_reads_its_measures_from_the_store(tmp_path):
     assert (r["turns"], r["output tokens"], r["model time"], r["decode rate"], r["providers"]) == ("6", "800", "20s", "40 tok/s", "-")
 
 
-def gated(task_id, monkeypatch, tmp_path, gate=None, code_passes=100, tokens=1000, seconds=60.0, runs=100):
-    """An A/B log of task_id over runs epochs: baseline passes every run in 60 s
-    on 1,000 tokens; codecite passes code_passes of them on its own tokens and
-    seconds. The task's task.json, under a stand-in evals/, may carry an old
-    "gate" key."""
+GATED = "claude-code/m"
+
+
+def gated(task_id, monkeypatch, tmp_path, gate=None, code_passes=100, tokens=1000, seconds=60.0, runs=100, model=GATED, code_runs=None):
+    """An A/B log of task_id over runs epochs on model, by default one of the
+    gating panel's: baseline passes every run in 60 s on 1,000 tokens;
+    codecite passes code_passes of its code_runs (default runs) on its own
+    tokens and seconds. The task's task.json, under a stand-in evals/, may
+    carry an old "gate" key."""
     task = tmp_path / "tasks" / task_id
     task.mkdir(parents=True)
     (task / "task.json").write_text(json.dumps({"id": task_id} | ({"gate": gate} if gate else {})))
     monkeypatch.setattr(config, "EVALS_DIR", tmp_path)
     samples = [sample("baseline", e, passed=True) for e in range(1, runs + 1)]
-    for e in range(1, runs + 1):
+    for e in range(1, (runs if code_runs is None else code_runs) + 1):
         s = sample("codecite", e, passed=e <= code_passes)
         s.model_usage = {"m": ModelUsage(total_tokens=tokens)}
         s.total_time = seconds
         samples.append(s)
-    l = log("openrouter/m", samples, task="codecite_evals/ab", epochs=runs)
+    l = log(model, samples, task="codecite_evals/ab", epochs=runs)
     l.eval.task_args = {"task_id": task_id}
     return l
 
 
 def verdict(l):
     _, rows = table(scorecard([l]))
-    return rows[("m", "codecite")]["verdict"]
+    return rows[(l.eval.model.removeprefix("openrouter/"), "codecite")]["verdict"]
 
 
 def spans_row(l):
     _, spans = table(scorecard([l]), 2, ("model", "arms"))
-    return spans[("m", "codecite vs baseline")]
+    return spans[(l.eval.model.removeprefix("openrouter/"), "codecite vs baseline")]
 
 
 @pytest.mark.parametrize("task_id, gate", [("plain", None), ("replay-x", "replay")])
@@ -617,18 +621,34 @@ def test_the_gate_line_follows_the_gate(monkeypatch, tmp_path):
     assert "Gate: a sure drop in pass rate of more than 5 points, or time more than 50% up, is a loss" in out
 
 
-def test_a_pi_pair_is_reported_not_gated(monkeypatch, tmp_path):
-    # gated() logs an OpenRouter model: pi, beside the gating panel.
-    assert verdict(gated("plain", monkeypatch, tmp_path, seconds=78.0)).startswith("loses on time (")
-    assert verdict(gated("other", monkeypatch, tmp_path, seconds=78.0)).endswith(", reported, not gated")
+PI = "openrouter/m"
 
 
-def test_a_claude_code_pair_is_gated(monkeypatch, tmp_path):
-    l = gated("plain", monkeypatch, tmp_path, seconds=78.0)
-    l.eval.model = "claude-code/claude-haiku-5-5"
-    _, rows = table(scorecard([l]))
-    v = rows[("claude-code/claude-haiku-5-5", "codecite")]["verdict"]
-    assert v.startswith("loses on time (") and "not gated" not in v
+@pytest.mark.parametrize(
+    "kwargs, starts",
+    [
+        ({"seconds": 78.0}, "loses on time ("),
+        ({}, "no loss ("),
+        ({"code_runs": 90}, "incomplete ("),
+    ],
+)
+def test_every_pi_verdict_is_reported_not_gated(monkeypatch, tmp_path, kwargs, starts):
+    v = verdict(gated("plain", monkeypatch, tmp_path, model=PI, **kwargs))
+    assert v.startswith(starts) and v.endswith(", reported, not gated")
+
+
+def test_a_pi_pair_that_is_not_measured_is_reported_not_gated(monkeypatch, tmp_path):
+    l = gated("plain", monkeypatch, tmp_path, model=PI)
+    for s in l.samples:
+        if s.metadata["arm"] == "codecite":
+            s.events = []
+    v = verdict(l)
+    assert v.startswith("not measured (") and v.endswith(", reported, not gated")
+
+
+@pytest.mark.parametrize("kwargs", [{"seconds": 78.0}, {"code_runs": 90}])
+def test_a_claude_code_pair_is_gated(monkeypatch, tmp_path, kwargs):
+    assert "not gated" not in verdict(gated("plain", monkeypatch, tmp_path, **kwargs))
 
 
 def test_a_task_without_a_task_json_takes_the_gate():

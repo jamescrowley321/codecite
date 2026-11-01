@@ -237,8 +237,8 @@ even when switched on. A task's
 `task.json` sets its own epochs (`"epochs": {"quick": 1, "full": 3}`), and
 `EPOCHS` overrides both.
 
-At 5 runs per arm the intervals are wide, so a quick loss is rerun at 10
-before it blocks. The quick OpenRouter panel's third model is the fastest pi model by round one's medians; change it in
+At 5 runs per arm the intervals are wide, so a quick loss is rerun at the full
+tier's epochs (the table's, or the task's own) before it blocks. The quick OpenRouter panel's third model is the fastest pi model by round one's medians; change it in
 `panel.sh` when a full run's medians say another is faster.
 
 ### In CI
