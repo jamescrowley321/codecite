@@ -10,7 +10,7 @@
     "test": "node --test"
   },
   "dependencies": {
-    "jose": "^6.0.11",
-    "oidc-provider": "9.13.0"
+    "jose": "^6.2.14",
+    "oidc-provider": "9.13.3"
   }
 }
