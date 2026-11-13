@@ -223,6 +223,7 @@ sha256 = "cf1310a91c058bdea561904df387ae54b732c2e254d2c0d9c1a6eedefda63843"
 license = "IETF Trust"
 use = "quote"
 current = true
+updated_by = "rfc10070"
 aliases = ["Assertion Framework"]
 
 [[source]]
@@ -233,6 +234,7 @@ sha256 = "718fd1261b19af816ac064386f5373d63ed2b7891a0bb057ebbe29f628202f24"
 license = "IETF Trust"
 use = "quote"
 current = true
+updated_by = "rfc10070"
 aliases = ["JWT Client Authentication"]
 
 [[source]]
@@ -372,7 +374,18 @@ sha256 = "63ff5c59d0017c94165d3cc49786fd272edfe2666a4e96c2b65a623a0010b31c"
 license = "IETF Trust"
 use = "quote"
 current = true
+updated_by = "rfc10070"
 aliases = ["PAR"]
+
+[[source]]
+kind = "document"
+name = "rfc10070"
+url = "https://www.rfc-editor.org/rfc/rfc10070.html"
+sha256 = "7f251ee74f8a1a4e5192d51ca2945288e79efb51d24df4d25d085d444d626a4c"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["JWT Client Authentication Audience Updates", "RFC 7523bis"]
 
 [[source]]
 kind = "document"
