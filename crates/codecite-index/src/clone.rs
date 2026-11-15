@@ -92,6 +92,14 @@ pub enum CloneError {
         stderr: String,
     },
 
+    /// The remote has no default branch to pin: it is empty, or its `HEAD`
+    /// names a branch that does not exist.
+    #[error("git source {url} has no default branch to pin; is the repository empty?")]
+    NoHead {
+        /// The repository URL.
+        url: String,
+    },
+
     /// Creating or removing a directory in the clone cache failed.
     #[error("clone cache {}", path.display())]
     Cache {
@@ -100,6 +108,38 @@ pub enum CloneError {
         /// What went wrong.
         source: io::Error,
     },
+}
+
+/// The commit `url`'s default branch points at, as `git ls-remote`
+/// reports it: what `codecite add` pins.
+pub fn remote_head(url: &str) -> Result<String, CloneError> {
+    let args = ["ls-remote", "--", url, "HEAD"];
+    // `--` ends the options, so a URL starting with `-` is never one.
+    let output = Command::new("git")
+        .args(args)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env_remove("GIT_DIR")
+        .output()
+        .map_err(|source| CloneError::GitSpawn { source })?;
+    if !output.status.success() {
+        return Err(CloneError::Git {
+            url: url.to_owned(),
+            command: format!("git {}", args.join(" ")),
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+        });
+    }
+    // Each line is `<commit>\t<ref>`; an empty remote prints nothing.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    match stdout
+        .lines()
+        .next()
+        .and_then(|line| line.split('\t').next())
+    {
+        Some(commit) if is_lower_hex(commit, 40) => Ok(commit.to_owned()),
+        _ => Err(CloneError::NoHead {
+            url: url.to_owned(),
+        }),
+    }
 }
 
 impl Clones {
@@ -514,6 +554,34 @@ mod tests {
         let err = clones.fetch(&git).unwrap_err();
         assert!(
             matches!(&err, CloneError::Git { command, .. } if command.starts_with("git fetch")),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn remote_head_is_the_commit_the_default_branch_points_at() {
+        let (_repo, remote, commit, _cache) = setup();
+        remote.set_head("main");
+        assert_eq!(remote_head(&remote.url()).unwrap(), commit);
+    }
+
+    #[test]
+    fn remote_head_of_an_unreachable_url_keeps_gits_error() {
+        let err = remote_head("file:///nonexistent/codecite-remote").unwrap_err();
+        assert!(
+            matches!(&err, CloneError::Git { url, command, .. }
+                if url == "file:///nonexistent/codecite-remote"
+                    && command.starts_with("git ls-remote")),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn remote_head_of_an_empty_remote_is_no_head() {
+        let remote = Remote::new();
+        let err = remote_head(&remote.url()).unwrap_err();
+        assert!(
+            matches!(&err, CloneError::NoHead { url } if *url == remote.url()),
             "{err:?}"
         );
     }

@@ -5,17 +5,82 @@ Evaluation plan):
 
 - **A/B agent eval** (`inspect/`): the same coding agent does the same task
   twice, in a **baseline** arm and in a **codecite** arm with codecite's
-  `search` and `read` as native tools, the `codecite` CLI on `PATH` and a
+  `search`, `read` and `requirements` as native tools, the `codecite` CLI on `PATH` and a
   prebuilt corpus. Hidden tests and deterministic checks
   score both. Runs on [Inspect AI](https://inspect.aisi.org.uk/).
+- **History benchmark** (`history/`): queries mined from merged PRs in the
+  owner's repositories, scored against a plain `git grep` ranking; CI runs it
+  on every PR. See below.
 - **Retrieval benchmark** (`retrieval/`): labelled queries run through
   `codecite-bench`; CI runs it on every PR.
+
+## History benchmark
+
+The question an agent asks most is "where does this change go?". Every merged
+PR answers it: the PR's title, and the issue it closes as it was asked, are
+the question, and the files it modified are the answer. Nobody writes these
+labels, so nobody can tune them toward one corpus.
+
+- **Mined** by `uv run codecite-history-mine OWNER/REPO --clone DIR` into
+  `history/<repo>/queries.toml` and `manifest.toml`. Up to 40 of the newest
+  merged PRs by a person (no bots, no release PRs) that modified 1–20 files
+  are sampled. The repository is pinned at the oldest one's parent, so every
+  answer file is in the index. Lockfiles and changelogs are no answer, nor is
+  a hub file that at least 3 and more than a quarter of the sampled PRs
+  changed (a design doc, a manifest), since naming it would beat any search.
+  A file that didn't exist at the pinned commit is dropped. `history-title` queries are a PR's
+  title. `history-issue` queries are its closing issue's title and first
+  paragraph, cut to 400 characters.
+- **Frozen.** `codecite-eval-frozen` refuses a change to a mined file unless
+  `queries.toml`'s `# version:` moves up, which only remining with changed
+  rules (`history.VERSION`) does. Never edit them by hand.
+- **Scored** at file level: a result counts when it is in an answer file.
+  `codecite-bench --grep <clone> --commit <sha>` ranks the same queries with
+  `git grep` instead: files by how many of the query's words they hold, then
+  by matching lines. That is an agent with grep and nothing else. For
+  codecite, a file-labelled query ranks distinct files (each file's first
+  result from a 50-deep search), so both engines are judged on 10 files.
+  `--popular` ranks without searching at all: the files the other PRs changed
+  most. It is the floor both engines must beat. The scorecard pools each
+  repository's classes in an `all` row, which is the one to judge by, since
+  some classes hold only a few queries.
+- **Cost** (`codecite-bench --cost <checkout>`) is a second table in the
+  scorecard, `## Cost per query`. For each query with words in it, it runs
+  `codecite search` as an agent does (default limit, the human output) and
+  `rg -n` and `rg -l` over the pinned tree with the same words as whole
+  words in any case, three times each, and keeps the fastest run. The table
+  gives the median output bytes and median time per query, with the 90th
+  percentile of the time in parentheses. A query with no words is skipped
+  for both. The byte comparison is uneven by design: codecite prints its
+  default 5 hits, `rg -n` every matching line, uncapped, so `rg -l` is the
+  closer comparison. And they see different trees: `rg` searches the pinned
+  tree as `git archive` extracts it, with its defaults, so hidden files are
+  skipped and, outside a git checkout, no `.gitignore` applies; codecite
+  searches what the manifest indexed. A missing `rg` fails the cost step
+  (`--rg`, or `RG` for `run.sh`, names the program; `--rg` needs `--cost`).
+- **Run** with `history/run.sh [repo ...]`, after `cargo build --release
+  --locked -p codecite -p codecite-bench`, with ripgrep installed. It writes
+  each engine's report, the cost report and `history/results/scorecard.md`.
+  A repository whose cost step fails keeps its recall rows; the failure,
+  from `<repo>.cost-failed.txt`, is a row of the cost table, and it leaves
+  the exit status alone. A cost report that measured no query (all were
+  skipped) shows as `no measured queries`.
+
+The rule from the general-purpose design: a ranking or indexing change that
+loses on any repository doesn't merge.
+
+`codecite-bench --assist` times `codecite assist` instead: a grep call per
+labelled query with its text as the pattern and one with its first word as
+a symbol, three runs each, the fastest counting. It reports the median and
+95th percentile time and the share of calls that printed a block.
+`experiments/assist-latency/` runs it on the retrieval corpus against a
+p95 guardrail of 150 ms.
 
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `src/codecite_evals/` | The `codecite-evals` package that `uv sync` installs: `task.py` (the code tasks: one sample per arm, the agent in a Docker sandbox, the scorer), `claude_code.py` (Claude Code as the agent, for `claude-code/` models; any other model runs pi), `scrub.py` (deletes logs holding the Claude token before CI uploads them), `spec_task.py` (the spec-question task: one sample per question per arm, on the same agents), `report.py` (the scorecard, or the calibration table), `frozen.py` (the frozen-task check) and `config.py` (where every file below is found) |
+| `src/codecite_evals/` | The `codecite-evals` package that `uv sync` installs: `task.py` (the code tasks: one sample per arm, the agent in a Docker sandbox, the scorer), `claude_code.py` (Claude Code as the agent, for `claude-code/` models; any other model runs pi), `scrub.py` (deletes logs holding the Claude token before CI uploads them), `spec_task.py` (the spec-question task: one sample per question per arm, on the same agents), `report.py` (the scorecard, or the calibration table), `frozen.py` (the frozen-task check), `assist.py` (the assist arm's hook on the agent's searches), `replay.py` (mines past issues into replay tasks), `history.py` (mines merged PRs into the history benchmark's queries), `_registry.py` (registers the tasks with Inspect) and `config.py` (where every file below is found) |
 | `tests/` | Unit tests for the task's agent, the scorecard, the frozen-task check and the config; no model key or Docker needed |
 | `inspect/prepare.sh` | Stage the sandbox image's build context in `inspect/build/` for one task (`prepare.sh <task-id>`, default `fastapi-middleware`) |
 | `inspect/Dockerfile`, `inspect/compose.yaml` | The sandbox image and the IdP beside it, on a network with no route out but the proxy |
@@ -27,6 +92,8 @@ Evaluation plan):
 | `tasks/spec-questions/` | The spec-question task: `questions.toml` (labelled questions with closed answers, checked against the index by `src/codecite_evals/spec_questions.py`), `prompt.md`, the in-sandbox scorer `score.py`, and `check.sh`/`planted.py` to prove the scorer sound |
 | `fixtures/node-oidc/` | The IdP the fastapi-middleware hidden tests take tokens from |
 | `retrieval/` | The retrieval benchmark's queries and corpus manifest |
+| `history/` | The history benchmark: queries mined from merged PRs, one directory per repository, `run.sh`, and `results/` |
+| `tasks/_replay/` | `check.sh`, which proves a replay task sound |
 
 ## Tasks
 
@@ -97,10 +164,33 @@ Evaluation plan):
   (`inspect/compose-offline.yaml`). One epoch is a run per question, so its
   `task.json` sets 1 epoch on the quick tier and 3 on the full.
 
+- **Replay tasks** (`replay-<repo>-<pr>`, `"kind": "replay"`): real past
+  work. The prompt is an issue as it was asked, the project is its repository
+  at the base of the merged PR that closed it, and the hidden tests are the
+  test files that PR added or changed, at its merge commit. The `eval` corpus
+  is that same tree. `codecite-replay-mine OWNER/REPO --clone <dir>`
+  (`src/codecite_evals/replay.py`) lists merged PRs by a person that close an
+  issue, change source and add tests kept apart from it (Python `tests/`
+  and `test_*.py`, Go `*_test.go` without `TF_ACC` acceptance tests, Rust
+  `crates/<crate>/tests/*.rs`, JS/TS `*.test.*`), newest first, and writes up
+  to `--max` of them as task directories: `task.json` (the base, the hidden
+  paths, the language, the `setup` and `test` commands and the `workdir` they
+  run in), `prompt.md`, `hidden/`, `reference/fix.patch` (the PR's non-test
+  diff) and `check.sh`. It keeps a task only when `check.sh` shows the hidden
+  tests fail at the base and pass with the fix. The project the agent sees is
+  `git archive` of the base in a fresh one-commit repository, so no later
+  history reaches it; `hidden/` is overlaid on the agent's tree after it
+  exits and only those files run, offline, with the dependencies warmed into
+  the image. `check.sh` and `prepare.sh` read the repository from
+  `REPLAY_REPO`, by default the history benchmark's clone in
+  `~/.cache/codecite/history/<repo>`. A replay task has no registered name:
+  it runs as `codecite_evals/ab -T task_id=<id>`, which `panel.sh` does for it.
+
 Each task's `check.sh` proves it is well-formed; `backchannel-logout`'s needs
 only uv and an identity-model checkout, and `spec-questions`' only python3
 (it runs `score.py` on every question's reference answer and on planted
-wrong ones). CI runs both (`eval-task`):
+wrong ones), and a replay task's only its repository and the language's
+toolchain. CI runs them (`eval-task`):
 
 ```
 IDENTITY_MODEL_REPO=~/repos/auth/identity-model evals/tasks/backchannel-logout/check.sh
@@ -136,7 +226,11 @@ model each: `claude-code/<model>` and `openrouter/<model>`.
 
 A code task has one sample per arm, so its runs per arm are its epochs. The
 spec-question task has one sample per question per arm, so its runs per arm
-are questions × epochs: 59 on the quick tier, 177 on the full. A task's
+are questions × epochs: 59 on the quick tier, 177 on the full.
+
+A replay task runs on its own panel at both tiers: Claude Code alone, on
+claude-haiku-5-5, claude-sonnet-5-5 and claude-opus-5-5. OpenRouter is skipped
+for it even when switched on. A task's
 `task.json` sets its own epochs (`"epochs": {"quick": 1, "full": 3}`), and
 `EPOCHS` overrides both.
 
@@ -157,8 +251,8 @@ and never a required check.
   task. Pushes don't rerun it: to run it again on a new head, take the label
   off and put it back, or dispatch. Fork PRs never run: they get no secrets.
 - **Full:** run the workflow by hand (Actions → Evals → Run workflow) with
-  `tier: full`, the `task` to run and `arms` (`ab`, the default; `aa`; or
-  `baseline` to calibrate; see below). Its scorecard goes to the job summary.
+  `tier: full`, the `task` to run and `arms` (`ab`, the default; `aa`;
+  `assist`; or `baseline` to calibrate; see below). Its scorecard goes to the job summary.
   To finish a run that stopped part way, run it again with `resume` set to
   that run's id: it downloads that run's logs and reruns only their missing
   samples with `inspect eval-retry`.
@@ -185,7 +279,8 @@ scrub, as would one the agent sent out through api.anthropic.com itself (the
 proxy checks only the host), so a token kept for evals alone is the safer
 secret. The Inspect logs, with the scorecard, upload as the
 `eval-logs-<tier>-<task>` artifact (`eval-logs-<tier>-aa-<task>` for an A/A
-round, `eval-logs-calibration-<task>` for a calibration).
+round, `eval-logs-<tier>-assist-<task>` for the assist arm,
+`eval-logs-calibration-<task>` for a calibration).
 
 ## A/A rounds
 
@@ -197,6 +292,26 @@ default, `ab`, is baseline against codecite); `ARMS=aa inspect/panel.sh quick`
 runs a tier that way into `inspect/logs/<tier>-aa/<task>/`. The scorecard heads the
 round as A/A and gives it no verdict: it names each measure whose interval
 noise alone pushed past the 5% margin.
+
+## The assist arm
+
+`-T arms=assist` runs baseline against an `assist` arm, where codecite reaches
+the agent only through `codecite assist` on its own searches (#162,
+`docs/usage.md`): the binary stays in the sandbox at `/opt/codecite` but off
+`PATH`, with no MCP config and no note in the prompt, so the prompt is
+baseline's. `src/codecite_evals/assist.py` holds the hook, one Python script
+for both agents since the sandbox has no `jq`: Claude Code runs it as a
+PostToolUse hook on `Grep|Glob|Bash` from settings passed with `--settings`, and
+pi's extension, loaded alone with `-e`, hands it the same payload for `grep`,
+`find` and `bash`. A shell command reaches `codecite assist` only when it
+names a search program (`grep`, `rg`, `find`, `fd`, …), and `assist` reads the
+search out of it. Each search appends `{"tool", "bytes"}` to
+`/tmp/codecite-assist.jsonl`, which the agent reads after the run into the
+sample's store. A run counts as having used codecite when the hook added at
+least one block, and the scorecard adds a table of the hook's calls, blocks
+and bytes per run, with bytes / 4 as an estimate of the tokens added.
+`ARMS=assist inspect/panel.sh quick` logs to `inspect/logs/<tier>-assist/<task>/`;
+on CI, dispatch with `arms: assist`.
 
 ## The scorecard
 
@@ -218,7 +333,11 @@ noise alone pushed past the 5% margin.
   against the first, with `*` on each that reaches past 5% either side of 0.
 
 The verdict uses pass rate, total tokens and wall time (`docs/design.md`,
-Success criteria). Logs whose samples kept no model events leave the
+Success criteria). A task's `task.json` can name another gate (`"gate"`); a
+replay task's is `replay`: pass rate loses when its interval's upper bound is
+below 0, wall time when its lower bound is above +25%, and tokens get an
+interval but never lose. The scorecard prints a `Gate:` line above a task
+whose gate isn't the default. Logs whose samples kept no model events leave the
 transcript measures blank.
 
 ## Running the A/B eval locally
@@ -245,7 +364,7 @@ uv run --locked codecite-eval-report --tier quick
 
 The package registers its tasks with Inspect through the `inspect_ai` entry
 point, so Inspect runs them by name from any directory: `codecite_evals/ab`
-takes the task's id (`-T task_id=<id>`) and its arms (`-T arms=ab|aa|baseline`),
+takes the task's id (`-T task_id=<id>`) and its arms (`-T arms=ab|aa|baseline|assist`),
 and each registered task also runs by its own name.
 `codecite-eval-report` is the scorecard's command. Both find `tasks/`,
 `inspect/compose.yaml` and `inspect/logs/` through
@@ -325,7 +444,10 @@ benchmark).
   server's exposure `direct`), so `mcp__codecite__search`,
   `mcp__codecite__read` and `mcp__codecite__requirements` sit in pi's tool list next to `grep` and `find`, with
   codecite's descriptions; it keeps codecite on `PATH` too, and its prompt
-  gets a note naming the tools and the command. Otherwise the arms are identical.
+  gets a note: the agent snippet from `docs/usage.md`, saying what the corpus
+  indexes, then, for a corpus with specs, advice to list a spec's rules with
+  `codecite requirements` before implementing what it governs, then which MCP
+  tools mirror which commands. Otherwise the arms are identical.
 - The scorecard's `used codecite` column counts, per arm, the runs with at
   least one call to codecite, read from the model calls in the Inspect log: a
   native tool call, or a `bash` call that runs `codecite`. Text that only

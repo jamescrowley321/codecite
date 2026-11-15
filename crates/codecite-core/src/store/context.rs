@@ -933,7 +933,7 @@ mod tests {
         };
         assert_eq!(
             scope.check().unwrap_err(),
-            "unknown language \"pyhton\"; use one of rust, python, typescript, tsx, javascript, go, csharp, markdown"
+            "unknown language \"pyhton\"; use one of rust, python, typescript, tsx, javascript, go, csharp, markdown, html"
         );
         assert!(RuleScope::default().check().is_ok());
     }

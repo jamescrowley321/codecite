@@ -1,5 +1,5 @@
-//! Checking a spec citation: whether it resolves, what it points at, and
-//! the findings that say why not. `cite` resolves through `read` and never
+//! Checking a citation: whether it resolves, what it points at, and, for
+//! a spec citation, the findings that say why not. `cite` resolves through `read` and never
 //! forks it.
 
 use std::fmt;
@@ -11,9 +11,7 @@ use serde::Serialize;
 use super::Store;
 use super::read::pinned;
 use super::search::MAX_SNIPPET_LINES;
-use crate::{
-    Citation, CitationError, Error, ReadOptions, ReadResult, Result, SpecCitation, SpecReference,
-};
+use crate::{CitationError, Error, ReadOptions, ReadResult, Result, SpecCitation, SpecReference};
 
 /// How to check a citation.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -32,12 +30,17 @@ pub struct CiteResult {
     /// When resolved, the canonical citation, with its pinned version.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub citation: Option<String>,
-    /// When resolved, `section` or `step`.
+    /// When resolved, what `read` says it is: `code`, `document`,
+    /// `section` or `step`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
     /// The section's heading; a step has its section's.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// The heading's anchor, without `#`, when the citation is one
+    /// heading's whole span in a file or fetched document.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor: Option<String>,
     /// How agents may use the source: `adapt`, `approach_only` or `quote`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub license_class: Option<String>,
@@ -220,6 +223,9 @@ impl fmt::Display for CiteResult {
         if let Some(title) = &self.title {
             write!(f, " · {title}")?;
         }
+        if let Some(anchor) = &self.anchor {
+            write!(f, " · #{anchor}")?;
+        }
         if let Some(strength) = self.strength.as_ref().filter(|s| !s.is_empty()) {
             write!(f, " · {}", strength.join(", "))?;
         }
@@ -240,22 +246,20 @@ impl fmt::Display for CiteResult {
 }
 
 impl Store {
-    /// Checks the spec citation `citation`.
+    /// Checks the citation `citation`.
     ///
-    /// It takes what `read` takes for a spec, and a Markdown link whose
-    /// text is a written citation and whose target is a spec URL with an
+    /// It takes what `read` takes, and a Markdown link whose text is a
+    /// written spec citation and whose target is a spec URL with an
     /// anchor: `[OIDC Core §3.1.3.6](https://openid.net/specs/…#IDTokenValidation)`.
-    /// A missing section or step, a bare `§` that is not in exactly one
-    /// current document, and a link whose text and anchor disagree are
-    /// findings, with `resolved: false`. Anything else `read` refuses stays
-    /// an error, and so does a code citation.
+    /// For a spec, a missing section or step, a bare `§` that is not in
+    /// exactly one current document, and a link whose text and anchor
+    /// disagree are findings, with `resolved: false`. Anything else `read`
+    /// refuses stays an error, a missing anchor in a file or fetched
+    /// document among them.
     pub fn cite(&self, citation: &str, options: &CiteOptions) -> Result<CiteResult> {
         let text = citation.trim();
         if let Some((label, url)) = markdown_link(text) {
             return self.cite_link(label, url, options);
-        }
-        if let Ok(Citation::Code(_)) = text.parse() {
-            return Err(Error::NotASpecCitation { text: text.into() });
         }
         let read_options = ReadOptions {
             max_lines: snippet_lines(),
@@ -331,6 +335,7 @@ impl Store {
             citation: Some(read.citation),
             kind: Some(read.kind),
             title: read.title,
+            anchor: read.anchor,
             license_class: Some(read.license_class),
             indexed_at: Some(read.indexed_at),
             text: Some(read.text),
@@ -347,7 +352,8 @@ impl Store {
     /// it, or else the current version when this one is older. A document
     /// that is only updated is not superseded.
     fn superseded_by(&self, citation: &str) -> Result<Option<String>> {
-        // `read` returns only canonical spec citations here.
+        // Only a spec version is superseded: code and generic documents
+        // are not tracked across versions.
         let Ok(c) = citation.parse::<SpecCitation>() else {
             return Ok(None);
         };
@@ -473,6 +479,35 @@ mod tests {
         }
     }
 
+    /// Six lines of Markdown: `# Notes` over lines 1-2, `## Install`
+    /// over 3-6.
+    const NOTES: &str = "# Notes\nIntro.\n## Install\n\nRun it.\nThen check.\n";
+    const NOTES_HASH: &str = "9a9b00000000000000000000000000000000000000000000000000000000beef";
+
+    fn heading<'a>(anchor: &'a str, title: &'a str, lines: (u32, u32)) -> ChunkRecord<'a> {
+        ChunkRecord {
+            start_line: lines.0,
+            end_line: lines.1,
+            text: "",
+            number: None,
+            ..section("", anchor, title)
+        }
+    }
+
+    fn markdown(path: &str) -> DocumentRecord<'_> {
+        DocumentRecord {
+            language: Some("markdown"),
+            text: Some(NOTES),
+            ..spec(
+                path,
+                vec![
+                    heading("notes", "Notes", (1, 2)),
+                    heading("install", "Install", (3, 6)),
+                ],
+            )
+        }
+    }
+
     struct Fixture {
         store: Store,
         _dir: tempfile::TempDir,
@@ -518,6 +553,9 @@ mod tests {
             ..spec("src/lib.rs", Vec::new())
         };
         store.write_document(app, &code).unwrap();
+        store.write_document(app, &markdown("README.md")).unwrap();
+        let notes = store.upsert_source(&document("notes", NOTES_HASH)).unwrap();
+        store.write_document(notes, &markdown("notes")).unwrap();
 
         let rfc = store.upsert_source(&document("rfc9449", RFC9449)).unwrap();
         let chunks = vec![
@@ -623,6 +661,70 @@ mod tests {
             .unwrap();
         assert_eq!(r.citation, Some(read.citation));
         assert_eq!(r.text, Some(read.text));
+    }
+
+    #[test]
+    fn a_code_citation_resolves_to_its_full_commit() {
+        let f = fixture();
+        let r = f.ok("app@0123456:src/lib.rs#L1");
+        assert!(r.resolved && r.findings.is_empty());
+        assert_eq!(
+            r.citation.as_deref(),
+            Some(format!("app@{HEAD}:src/lib.rs#L1").as_str())
+        );
+        assert_eq!(r.kind.as_deref(), Some("code"));
+        assert_eq!(r.text.as_deref(), Some("fn a() {}"));
+        assert_eq!(r.license_class.as_deref(), Some("adapt"));
+        assert_eq!((r.title, r.anchor, r.superseded_by), (None, None, None));
+    }
+
+    #[test]
+    fn an_anchor_resolves_to_its_section_lines() {
+        let f = fixture();
+        let r = f.ok("app@0123456:README.md#install");
+        assert!(r.resolved && r.findings.is_empty());
+        assert_eq!(
+            r.citation.as_deref(),
+            Some(format!("app@{HEAD}:README.md#L3-L6").as_str())
+        );
+        assert_eq!(r.kind.as_deref(), Some("section"));
+        assert_eq!(r.title.as_deref(), Some("Install"));
+        assert_eq!(r.anchor.as_deref(), Some("install"));
+        assert_eq!(
+            r.text.as_deref(),
+            Some("## Install\n\nRun it.\nThen check.")
+        );
+    }
+
+    #[test]
+    fn a_fetched_document_resolves_by_lines_or_anchor() {
+        let f = fixture();
+        let r = f.ok("notes@sha256:9a9b00000000#L2-L4");
+        assert!(r.resolved && r.findings.is_empty());
+        assert_eq!(
+            r.citation.as_deref(),
+            Some("notes@sha256:9a9b00000000#L2-L4")
+        );
+        assert_eq!(r.kind.as_deref(), Some("document"));
+        assert_eq!(r.text.as_deref(), Some("Intro.\n## Install\n"));
+        assert_eq!((r.title, r.anchor), (None, None));
+        let r = f.ok("notes@sha256:9a9b00000000#notes");
+        assert_eq!(
+            r.citation.as_deref(),
+            Some("notes@sha256:9a9b00000000#L1-L2")
+        );
+        assert_eq!(r.kind.as_deref(), Some("section"));
+        assert_eq!(r.anchor.as_deref(), Some("notes"));
+        assert_eq!(r.superseded_by, None);
+        // The human form names the section by its title.
+        let human = r.to_string();
+        assert!(
+            human
+                .lines()
+                .nth(1)
+                .is_some_and(|l| l.starts_with("section · Notes · #notes · quote · indexed ")),
+            "{human}"
+        );
     }
 
     #[test]
@@ -813,7 +915,7 @@ mod tests {
             ("RFC 9449 §04.3", "bad_citation"),
             ("RFC 9999 §1", "unknown_source"),
             ("rfc9449@sha256:bbbbbbbbbbbb#section-4.3", "unknown_version"),
-            ("app@0123456:src/lib.rs#L1", "not_a_spec_citation"),
+            ("app@0123456:README.md#instal", "no_such_anchor"),
         ] {
             let err = f.cite(citation).unwrap_err();
             assert_eq!(err.kind(), kind, "{citation}: {err}");

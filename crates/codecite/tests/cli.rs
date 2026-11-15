@@ -41,3 +41,12 @@ fn unknown_flag_is_rejected() {
     assert_eq!(out.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&out.stderr).contains("--nope"));
 }
+
+#[test]
+fn search_help_has_examples_and_output() {
+    let out = codecite(&["search", "--help"]);
+    assert!(out.status.success());
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("Examples:"), "{text}");
+    assert!(text.contains("Output:"), "{text}");
+}

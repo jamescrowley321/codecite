@@ -1,0 +1,38 @@
+{
+  "id": "replay-identity-model-908",
+  "frozen_at": "bd5a89d620bfa665fc23a65541463117d1423f76",
+  "kind": "replay",
+  "gate": "replay",
+  "repo": "jamescrowley321/identity-model",
+  "url": "https://github.com/jamescrowley321/identity-model",
+  "base": "73d0af4964b203cacebfb2eb08123db9081ca7d0",
+  "merge": "55a2b2753a1691737b65e634896851e4a78c1a1e",
+  "pr": 908,
+  "issue": 905,
+  "language": "python",
+  "hidden": [
+    "py/src/tests/security/test_disco_algorithm_allowlist.py",
+    "py/src/tests/security/test_issuer_pinning.py",
+    "py/src/tests/unit/test_disco_algorithm_allowlist.py"
+  ],
+  "test": [
+    "uv",
+    "run",
+    "--with",
+    "pytest==9.1.1",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "{hidden}"
+  ],
+  "setup": [
+    "uv",
+    "sync"
+  ],
+  "workdir": "py",
+  "epochs": {
+    "quick": 5,
+    "full": 10
+  }
+}

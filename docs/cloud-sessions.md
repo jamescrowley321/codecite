@@ -6,14 +6,19 @@ takes one issue and follows `AGENTS.md` ("Working an issue end to end"). CI and
 the blind peer review (`claude.yml`, on James's Claude subscription) give the feedback, and the eval workflow runs the A/B eval.
 James merges.
 
-## The queue
+## Which issues
 
-- **Order:** the pinned issue #125 gives the order. Issues ready for a session
-  carry the `cloud-ready` label, and each has a "Done when" checklist.
-- **Defaults:** where an issue needed a design call, its checklist states a
-  default a reviewer can check, and James can change it in review.
-- **Issues that wait on James:** #125 lists the ones without the label and
-  what each needs first.
+- **One issue per session, on its own files.** Sessions working the same files
+  (the eval harness's `task.py`, `report.py`, `evals.yml`) open PRs that
+  conflict pairwise, and since `main` merges only up-to-date branches, each
+  merge sends the others back through CI. Run in parallel only issues that
+  touch disjoint files; otherwise run them one after another.
+- **Ready issues** carry the `cloud-ready` label and a "Done when" checklist.
+  Where an issue needed a design call, its checklist states a default a
+  reviewer can check, and James can change it in review.
+- **Sessions wake only on their own PR's events.** Falling behind `main`
+  doesn't wake one, so `gh pr update-branch <n>` or a PR comment does.
+  Stop a session by archiving it at claude.ai/code.
 
 ## Setting up the environment
 
@@ -21,8 +26,8 @@ Once, at claude.ai/code:
 
 1. Connect GitHub. The Claude GitHub App on this repo is best.
 2. Create an environment with network access **Trusted**. It needs no
-   environment variables or secrets: the eval key lives in CI as the Actions
-   secret `OPENROUTER_EVAL_API_KEY`, not on the cloud machine.
+   environment variables or secrets: the eval's credentials live in CI as
+   Actions secrets, not on the cloud machine.
 
 On start, `.claude/hooks/cloud-setup.sh` installs the toolchain pinned in
 `rust-toolchain.toml`, fetches crates and reports whether `gh` is logged in.
@@ -34,7 +39,7 @@ It only acts when `CLAUDE_CODE_REMOTE=true`, so local sessions skip it.
 claude --cloud "Work codecite#<n> per AGENTS.md 'Working an issue end to end'"
 ```
 
-Issues the queue lists as independent can run in parallel, one session each.
+Issues on disjoint files can run in parallel, one session each.
 `claude --teleport` brings a cloud session to a local terminal.
 
 To start several at once, `scripts/cloud-launch.sh 111 117 105` starts one
@@ -66,7 +71,7 @@ Sessions never merge.
 ## What stays off the cloud machine
 
 - **The A/B eval.** A cloud machine has about 4 vCPU and 16 GB, too little
-  for a panel, and it holds no eval key. Run the eval through the eval
+  for a panel, and it holds no eval credentials. Run the eval through the eval
   workflow or on the operator's machine (`evals/README.md`).
 - **Ralph as a long loop.** A loop dies when an idle cloud machine is
   reclaimed. To run Ralph in the cloud, make it a scheduled task (`/schedule`,

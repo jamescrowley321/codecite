@@ -9,7 +9,9 @@ refuses moving a task's `frozen_at`, which would re-freeze it on new files.
 
     uv run codecite-eval-frozen [--base REF]
 
-CI runs it on every PR against the base branch.
+CI runs it on every PR against the base branch. With a base, it also
+refuses a change to the history benchmark's mined files
+(`evals/history/<repo>/`) unless queries.toml's version moves up.
 """
 
 import argparse
@@ -67,6 +69,52 @@ def problems(evals_dir: Path, base=None):
                 if old is not None and task_json(old) == task_json(spec.read_text()):
                     continue
             found.append(f"{task_id}: {path} changed since it froze at {frozen_at}")
+    if base:
+        found += history_problems(root, evals_dir, base)
+    return found
+
+
+def history_version(text):
+    """The `# version: N` line of a mined history queries file, or 0."""
+    for line in (text or "").splitlines():
+        if line.startswith("# version:"):
+            return int(line.split(":", 1)[1])
+    return 0
+
+
+def history_problems(root, evals_dir, base):
+    """Mined history queries and manifests are frozen against the base
+    branch: a change needs a higher version in queries.toml, which only
+    remining writes (codecite_evals.history)."""
+    found = []
+    history = evals_dir / "history"
+    rel_history = history.resolve().relative_to(root.resolve()).as_posix()
+    # Every repository mined at the base, including any deleted since.
+    listed = git(root, "ls-tree", "--name-only", f"{base}:{rel_history}", check=False)
+    at_base = set(listed.stdout.split()) if listed.returncode == 0 else set()
+    here = {p.name for p in history.glob("*") if p.is_dir()}
+    for name in sorted(at_base | here):
+        mined = history / name
+        rel = f"{rel_history}/{name}"
+        was = show(root, base, f"{rel}/queries.toml")
+        if was is None:
+            continue
+        if not mined.is_dir():
+            found.append(f"history {name}: {rel} was mined at the base and is gone")
+            continue
+        now = (mined / "queries.toml").read_text() if (mined / "queries.toml").exists() else None
+        try:
+            remined = history_version(now) > history_version(was)
+        except ValueError:
+            found.append(f"history {name}: {rel}/queries.toml has a `# version:` line that isn't a number")
+            continue
+        if remined:
+            continue
+        for filename in ("manifest.toml", "queries.toml"):
+            path = mined / filename
+            current = path.read_text() if path.exists() else None
+            if current != show(root, base, f"{rel}/{filename}"):
+                found.append(f"history {name}: {rel}/{filename} changed without a new version in queries.toml")
     return found
 
 

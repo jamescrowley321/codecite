@@ -1,0 +1,26 @@
+# codecite-bench --assist on identity-bench, e335f36
+# Linux 6.8.0-138-generic x86_64, 22 CPUs
+{
+  "all": {
+    "calls": 244,
+    "median_block_bytes": 829,
+    "median_ms": 12.5400565,
+    "non_empty": 1.0,
+    "p95_ms": 46.32725299999999
+  },
+  "engine": "assist",
+  "free_text": {
+    "calls": 122,
+    "median_block_bytes": 858,
+    "median_ms": 32.573786,
+    "non_empty": 1.0,
+    "p95_ms": 50.2305285
+  },
+  "symbol": {
+    "calls": 122,
+    "median_block_bytes": 822,
+    "median_ms": 8.027208,
+    "non_empty": 1.0,
+    "p95_ms": 17.094187549999962
+  }
+}

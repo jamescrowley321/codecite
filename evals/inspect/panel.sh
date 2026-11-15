@@ -30,7 +30,9 @@
 # {"quick": 1}): spec-questions has a sample per question, so one epoch is
 # already a run per question. ARMS picks the arms: ab (baseline against
 # codecite, the default), aa (an A/A round, two baseline arms, logged to
-# inspect/logs/<tier>-aa/<task>/), or baseline (a calibration,
+# inspect/logs/<tier>-aa/<task>/), assist (baseline against codecite only
+# through the grep and glob hook, logged to inspect/logs/<tier>-assist/<task>/),
+# or baseline (a calibration,
 # evals/README.md: quick tier only, logged to inspect/logs/calibration/<task>/
 # and reported with no verdict).
 set -euo pipefail
@@ -91,6 +93,19 @@ case "${OPENROUTER:-0}" in
 esac
 TASK_ID="${TASK_ID:-fastapi-middleware}"
 [[ -f "tasks/$TASK_ID/task.json" ]] || { echo "no task $TASK_ID under tasks/" >&2; exit 2; }
+# A replay task (task.json "kind": "replay", replay.py) is registered under
+# no name of its own, so it runs as codecite_evals/ab -T task_id=<id>. Its
+# panel is Claude Code alone, on haiku, sonnet and opus at both tiers:
+# OpenRouter is skipped even when OPENROUTER=1.
+TASK_KIND="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("kind", ""))' "tasks/$TASK_ID/task.json")"
+TASK=("codecite_evals/${TASK_ID//-/_}")
+if [[ "$TASK_KIND" == replay ]]; then
+  TASK=(codecite_evals/ab -T task_id="$TASK_ID")
+  CLAUDE_PANEL=(claude-haiku-5-5 claude-sonnet-5-5 claude-opus-5-5)
+  CLAUDE_MODELS=("${CLAUDE_PANEL[@]/#/claude-code/}")
+  ((${#OPENROUTER_MODELS[@]} == 0)) || echo "$TASK_ID is a replay task: Claude Code only, OpenRouter skipped" >&2
+  OPENROUTER_MODELS=()
+fi
 TASK_EPOCHS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("epochs", {}).get(sys.argv[2], ""))' "tasks/$TASK_ID/task.json" "$TIER")"
 EPOCHS="${EPOCHS:-${TASK_EPOCHS:-$TIER_EPOCHS}}"
 [[ "$EPOCHS" =~ ^[1-9][0-9]*$ ]] || { echo "EPOCHS must be a positive whole number, not '$EPOCHS'" >&2; exit 2; }
@@ -98,12 +113,13 @@ ARMS="${ARMS:-ab}"
 case "$ARMS" in
   ab) LOG_DIR="inspect/logs/$TIER/$TASK_ID" ;;
   aa) LOG_DIR="inspect/logs/$TIER-aa/$TASK_ID" ;;
+  assist) LOG_DIR="inspect/logs/$TIER-assist/$TASK_ID" ;;
   baseline)
     [[ "$TIER" == quick ]] || { echo "calibrate (ARMS=baseline) on the quick tier" >&2; exit 2; }
     LOG_DIR="inspect/logs/calibration/$TASK_ID"
     ;;
   *)
-    echo "ARMS must be ab, aa or baseline, not '$ARMS'" >&2
+    echo "ARMS must be ab, aa, baseline or assist, not '$ARMS'" >&2
     exit 2
     ;;
 esac
@@ -140,7 +156,7 @@ panel() {
     fi
     uv run --locked inspect eval-retry "${unfinished[@]}" "${limits[@]}" --log-dir "$dir" --display log "${EXTRA[@]}"
   else
-    uv run --locked inspect eval "codecite_evals/${TASK_ID//-/_}" -T arms="$ARMS" --model "$(IFS=,; echo "${models[*]}")" "${args[@]}" \
+    uv run --locked inspect eval "${TASK[@]}" -T arms="$ARMS" --model "$(IFS=,; echo "${models[*]}")" "${args[@]}" \
       --epochs "$EPOCHS" --log-model-api "${limits[@]}" --log-dir "$dir" --display log "${EXTRA[@]}"
   fi
 }

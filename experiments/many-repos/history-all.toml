@@ -1,0 +1,35 @@
+name = "history-all"
+
+[[source]]
+kind = "git"
+url = "https://github.com/jamescrowley321/blind-peer-review"
+commit = "5986580b8677f3807b8360df63e104c9e02e9432"
+license = "Apache-2.0"
+use = "adapt"
+
+[[source]]
+kind = "git"
+url = "https://github.com/jamescrowley321/codecite"
+commit = "56fc2dd2b35c2418068e6cf1916a066495fd5ed4"
+license = "Apache-2.0"
+use = "adapt"
+
+[[source]]
+kind = "git"
+url = "https://github.com/jamescrowley321/identity-model"
+commit = "2fee67deb27ffb78d0327a7442b98edf779f408e"
+license = "Apache-2.0"
+use = "adapt"
+
+[[source]]
+kind = "git"
+url = "https://github.com/jamescrowley321/identity-stack"
+commit = "bef1c599e360d786f2c99edaeac00837bdbd03aa"
+use = "approach_only"
+
+[[source]]
+kind = "git"
+url = "https://github.com/jamescrowley321/terraform-provider-descope"
+commit = "c45225cfd391c3e8f2bc64a29f3c2e5ce3c7ab01"
+license = "MIT"
+use = "adapt"

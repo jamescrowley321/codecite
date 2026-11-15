@@ -1,0 +1,37 @@
+{
+  "id": "replay-identity-stack-449",
+  "frozen_at": "bd5a89d620bfa665fc23a65541463117d1423f76",
+  "kind": "replay",
+  "gate": "replay",
+  "repo": "jamescrowley321/identity-stack",
+  "url": "https://github.com/jamescrowley321/identity-stack",
+  "base": "11842e857b2dc3c6353da50029e389f3237e3a6b",
+  "merge": "60108dd0a04ddd5f2f83d1f4e8a4c8d8ee84b24f",
+  "pr": 449,
+  "issue": 439,
+  "language": "python",
+  "hidden": [
+    "backend/tests/unit/test_fga_dependencies.py",
+    "backend/tests/unit/test_fga_router.py"
+  ],
+  "test": [
+    "uv",
+    "run",
+    "--with",
+    "pytest==9.1.1",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "{hidden}"
+  ],
+  "setup": [
+    "uv",
+    "sync"
+  ],
+  "workdir": "backend",
+  "epochs": {
+    "quick": 5,
+    "full": 10
+  }
+}

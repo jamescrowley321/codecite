@@ -180,6 +180,7 @@ impl CodeChunker {
                     text: lines.span(def.start_line, def.end_line),
                     symbol: None,
                     title: None,
+                    anchor: None,
                 });
                 continue;
             };
@@ -231,6 +232,7 @@ impl CodeChunker {
                     })
                 }),
                 title: None,
+                anchor: None,
             });
         }
         out

@@ -1,0 +1,21 @@
+$ codecite add history-all https://github.com/jamescrowley321/blind-peer-review https://github.com/jamescrowley321/codecite https://github.com/jamescrowley321/identity-model https://github.com/jamescrowley321/identity-stack https://github.com/jamescrowley321/terraform-provider-descope
+added https://github.com/jamescrowley321/blind-peer-review @ 5986580b8677 · Apache-2.0 · adapt
+added https://github.com/jamescrowley321/codecite @ 56fc2dd2b35c · Apache-2.0 · adapt
+added https://github.com/jamescrowley321/identity-model @ 2fee67deb27f · Apache-2.0 · adapt
+added https://github.com/jamescrowley321/identity-stack @ bef1c599e360 · no license detected · approach_only
+added https://github.com/jamescrowley321/terraform-provider-descope @ c45225cfd391 · MIT · adapt
+check each license and use, then run: codecite index history-all
+
+$ /usr/bin/time -v codecite index history-all
+indexed corpus `history-all` into $XDG_DATA_HOME/codecite/history-all.db
+documents: 2381 written, 0 unchanged, 0 removed
+chunks: 25243 written
+skipped: 11 deny-listed, 14 symlink, 2 binary
+elapsed: 3.85s
+	Command being timed: "./target/release/codecite index history-all"
+	User time (seconds): 2.85
+	System time (seconds): 0.44
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:03.86
+	Maximum resident set size (kbytes): 27248
+
+corpus file: 116215808 bytes

@@ -1,13 +1,13 @@
 //! Chunking: splits a file into the spans that search returns. Code in a
-//! supported language splits at definitions with tree-sitter, Markdown at
-//! headings, and everything else into 60-line windows.
+//! supported language splits at definitions with tree-sitter, Markdown and
+//! HTML at headings, and everything else into 60-line windows.
 
 mod code;
 mod text;
 
 pub use code::ChunkerError;
 pub use codecite_core::Language;
-pub(crate) use text::{Heading, markdown_headings};
+pub(crate) use text::{Heading, Lines, Slugs, markdown_headings, sections, sections_at};
 
 /// The longest window, in lines.
 pub const WINDOW_LINES: u32 = 60;
@@ -23,7 +23,7 @@ pub enum ChunkKind {
     Variable,
     /// A type alias.
     TypeAlias,
-    /// A Markdown heading and the text under it.
+    /// A Markdown or HTML heading and the text under it.
     Section,
     /// A run of at most [`WINDOW_LINES`] lines.
     Window,
@@ -128,6 +128,8 @@ pub struct Chunk<'a> {
     pub symbol: Option<Symbol>,
     /// The heading text, for a section chunk.
     pub title: Option<String>,
+    /// The heading's GitHub-style anchor, for a section chunk.
+    pub anchor: Option<String>,
 }
 
 /// Splits files into chunks. Holds a parser and the compiled queries, so
@@ -150,19 +152,26 @@ impl Chunker {
     /// windows.
     pub fn chunk<'a>(&mut self, path: &str, text: &'a str) -> Vec<Chunk<'a>> {
         let lines = text::Lines::new(text);
-        let mut chunks = match Language::detect(path, text) {
+        let chunks = match Language::detect(path, text) {
             Some(Language::Markdown) => text::sections(&lines),
+            Some(Language::Html) => text::html_sections(&lines),
             Some(language) => self.code.chunk(language, &lines),
             None => Vec::new(),
         };
-        let mut covered = vec![false; lines.len()];
-        for c in &chunks {
-            covered[c.start_line as usize - 1..c.end_line as usize].fill(true);
-        }
-        chunks.extend(text::windows(&lines, &covered));
-        chunks.sort_by_key(|c| (c.start_line, std::cmp::Reverse(c.end_line)));
-        chunks
+        with_windows(&lines, chunks)
     }
+}
+
+/// `chunks` plus a window over every run of lines no chunk covers, ordered
+/// by start line, then longest first.
+pub(crate) fn with_windows<'a>(lines: &Lines<'a>, mut chunks: Vec<Chunk<'a>>) -> Vec<Chunk<'a>> {
+    let mut covered = vec![false; lines.len()];
+    for c in &chunks {
+        covered[c.start_line as usize - 1..c.end_line as usize].fill(true);
+    }
+    chunks.extend(text::windows(lines, &covered));
+    chunks.sort_by_key(|c| (c.start_line, std::cmp::Reverse(c.end_line)));
+    chunks
 }
 
 #[cfg(test)]
@@ -211,6 +220,19 @@ mod tests {
         let want = expect(&[("window", 1, 60, ""), ("window", 61, 61, "")]);
         assert_eq!(outline("notes.md", &text), want);
         assert_eq!(outline("notes.txt", &text), want);
+    }
+
+    #[test]
+    fn html_splits_at_heading_tags_and_windows_the_head() {
+        let text = "<html>\n<head><title>Guide</title></head>\n<body>\n<h1>Guide</h1>\n<p>Text.</p>\n<h2>Use</h2>\n<p>Run it.</p>\n</body>\n</html>\n";
+        assert_eq!(
+            outline("docs/guide.html", text),
+            expect(&[
+                ("window", 1, 3, ""),
+                ("section", 4, 5, "Guide"),
+                ("section", 6, 9, "Use"),
+            ])
+        );
     }
 
     #[test]

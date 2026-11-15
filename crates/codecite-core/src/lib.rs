@@ -1,14 +1,15 @@
 //! Schema and query engine for codecite: owns the per-corpus SQLite store
 //! and answers searches and greps against it. It also parses and formats the
-//! canonical code and spec citations, and parses the spec citation forms
+//! canonical code, document and spec citations, and references to a heading by its anchor, and parses the spec citation forms
 //! people write into unresolved references. It also splits identifiers
 //! into the search terms the index stores, and finds the BCP 14
 //! requirement keywords in spec text. Depends on no other codecite crate.
 
 mod citation;
 pub use citation::{
-    Citation, CitationError, CodeCitation, CommitSha, ContentHash, LineRange, SectionNumber,
-    SpecAliases, SpecCitation, SpecReference, SpecTarget,
+    AnchorCitation, Citation, CitationError, CodeCitation, CommitSha, ContentHash,
+    DocumentCitation, LineRange, Pin, SectionNumber, SpecAliases, SpecCitation, SpecReference,
+    SpecTarget,
 };
 
 mod error;

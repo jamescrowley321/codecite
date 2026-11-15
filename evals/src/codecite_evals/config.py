@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 
 EVALS_DIR = Path(os.environ.get("CODECITE_EVALS_DIR") or Path(__file__).resolve().parents[2])
+ROOT = EVALS_DIR.parent
 COMPOSE = EVALS_DIR / "inspect" / "compose.yaml"
 COMPOSE_OFFLINE = EVALS_DIR / "inspect" / "compose-offline.yaml"
 LOGS = EVALS_DIR / "inspect" / "logs"
@@ -21,6 +22,8 @@ ARMS = {
     "aa": (("baseline-a", "baseline"), ("baseline-b", "baseline")),
     # A calibration: the baseline arm alone, reported with no verdict.
     "baseline": (("baseline", "baseline"),),
+    # codecite only through the hook on the agent's own searches (assist.py).
+    "assist": (("baseline", "baseline"), ("assist", "assist")),
 }
 
 QUERIES = EVALS_DIR / "retrieval" / "queries.toml"

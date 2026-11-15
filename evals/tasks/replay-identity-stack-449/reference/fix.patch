@@ -1,0 +1,88 @@
+diff --git a/backend/app/dependencies/fga.py b/backend/app/dependencies/fga.py
+index 61de234..dce8f76 100644
+--- a/backend/app/dependencies/fga.py
++++ b/backend/app/dependencies/fga.py
+@@ -37,7 +37,7 @@ def _extract_tenant_id(request: Request) -> str:
+     return tenant_id
+ 
+ 
+-async def resolve_fga_user_target(client, identifier: str) -> str:
++async def resolve_fga_user_target(client, identifier: str, tenant_id: str) -> str:
+     """Resolve a user identifier to the Descope userId FGA keys on, if it names one.
+ 
+     Every FGA *read* in this service keys on the JWT ``sub``, which is a Descope
+@@ -57,6 +57,24 @@ async def resolve_fga_user_target(client, identifier: str) -> str:
+     real user — document share and revoke — establish that themselves and answer
+     404 before they get here.
+ 
++    Scoped to ``tenant_id``: a user the caller's tenant does not contain is
++    treated exactly like a user that does not exist, and the identifier falls
++    through unresolved. Without that check these routes resolved by login id
++    **project-wide**, which made them an existence oracle over every account in
++    the project — a hit echoed back the victim's Descope ``userId`` while a miss
++    echoed the input unchanged — and let an admin of one tenant write a real
++    grant keyed on a subject belonging to another.
++
++    Falling through is deliberate, rather than answering 403. A distinct status
++    for "exists, but not in your tenant" would rebuild the same oracle in the
++    status code. Out-of-tenant and nonexistent are made indistinguishable, and
++    the resulting tuple keys on the raw identifier, which no read matches — so
++    it confers nothing on the real user.
++
++    ``tenant_id`` is required, not optional: a caller that has no tenant to scope
++    by must not reach this function, and a future route that forgets to pass one
++    fails to call it at all rather than silently resolving project-wide.
++
+     An upstream fault is never silently swallowed: only a clean "no such user"
+     falls through to the identifier.
+     """
+@@ -71,9 +89,15 @@ async def resolve_fga_user_target(client, identifier: str) -> str:
+         logger.error("Network error resolving FGA target: %s", type(exc).__name__)
+         raise HTTPException(status_code=502, detail="Failed to resolve target user") from exc
+ 
+-    if isinstance(user, dict) and user.get("userId"):
+-        return str(user["userId"])
+-    return identifier
++    if not isinstance(user, dict) or not user.get("userId"):
++        return identifier
++
++    target_tenants = {t.get("tenantId") for t in user.get("userTenants") or [] if isinstance(t, dict)}
++    if tenant_id not in target_tenants:
++        logger.info("FGA target resolved to a user outside the caller's tenant; leaving it unresolved")
++        return identifier
++
++    return str(user["userId"])
+ 
+ 
+ def require_fga(
+diff --git a/backend/app/routers/fga.py b/backend/app/routers/fga.py
+index b21096d..474e9ef 100644
+--- a/backend/app/routers/fga.py
++++ b/backend/app/routers/fga.py
+@@ -148,7 +148,7 @@ async def create_relation(
+     """Create an FGA relation tuple. Requires owner or admin role."""
+     prefixed_id = _prefix_resource_id(tenant_id, body.resource_id)
+     client = request.app.state.descope_client
+-    target = await resolve_fga_user_target(client, body.target)
++    target = await resolve_fga_user_target(client, body.target, tenant_id)
+     try:
+         await client.create_relation(body.resource_type, prefixed_id, body.relation, target)
+         return {
+@@ -188,7 +188,7 @@ async def delete_relation(
+     """Delete an FGA relation tuple. Requires owner or admin role."""
+     prefixed_id = _prefix_resource_id(tenant_id, body.resource_id)
+     client = request.app.state.descope_client
+-    target = await resolve_fga_user_target(client, body.target)
++    target = await resolve_fga_user_target(client, body.target, tenant_id)
+     try:
+         await client.delete_relation(body.resource_type, prefixed_id, body.relation, target)
+         return {"status": "deleted"}
+@@ -269,7 +269,7 @@ async def check_permission(
+     """Check an FGA permission. Requires owner or admin role. Fail-closed: errors deny access."""
+     prefixed_id = _prefix_resource_id(tenant_id, body.resource_id)
+     client = request.app.state.descope_client
+-    target = await resolve_fga_user_target(client, body.target)
++    target = await resolve_fga_user_target(client, body.target, tenant_id)
+     try:
+         allowed = bool(await client.check_permission(body.resource_type, prefixed_id, body.relation, target))
+         return {"allowed": allowed}

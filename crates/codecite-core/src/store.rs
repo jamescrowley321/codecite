@@ -55,21 +55,32 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0004_read.sql"),
     include_str!("../migrations/0005_spec_fts.sql"),
     include_str!("../migrations/0006_guidance.sql"),
+    include_str!("../migrations/0007_heading_anchors.sql"),
+    include_str!("../migrations/0008_refill_fts.sql"),
+    include_str!("../migrations/0009_one_ranking.sql"),
 ];
 
-/// Version 5's data step: writes a `spec_fts` row for every stored spec
-/// chunk, with the terms `insert_chunks` would give it, so an upgraded
-/// corpus searches its specs without being indexed again.
-fn fill_spec_fts(tx: &rusqlite::Transaction<'_>) -> Result<()> {
-    let mut chunks = tx.prepare(
+/// Writes a row into the full-text `table` for every stored chunk that
+/// `filter` (a SQL condition over `c` and `s`) keeps, with the terms
+/// `insert_chunks` would give it, so an upgraded corpus searches without
+/// being indexed again. Version 5 fills `spec_fts` this way, and version 8
+/// refills both tables after emptying them; version 9 then drops
+/// `spec_fts`.
+///
+/// `table` and `filter` are formatted into the SQL, which is safe only
+/// because every caller passes a constant written here, never input.
+fn fill_fts(tx: &rusqlite::Transaction<'_>, table: &str, filter: &str) -> Result<()> {
+    let mut chunks = tx.prepare(&format!(
         "SELECT c.id, sym.display_name, d.path, c.terms FROM chunk c
          JOIN document d ON d.id = c.document_id
          JOIN source s ON s.id = d.source_id
          LEFT JOIN symbol sym ON sym.id = c.symbol_id
-         WHERE s.kind = 'document'",
-    )?;
-    let mut insert =
-        tx.prepare("INSERT INTO spec_fts (rowid, symbol, path, terms) VALUES (?1, ?2, ?3, ?4)")?;
+         WHERE {filter}
+         ORDER BY c.id"
+    ))?;
+    let mut insert = tx.prepare(&format!(
+        "INSERT INTO {table} (rowid, symbol, path, terms) VALUES (?1, ?2, ?3, ?4)"
+    ))?;
     let mut rows = chunks.query([])?;
     while let Some(row) = rows.next()? {
         let id: i64 = row.get(0)?;
@@ -127,8 +138,16 @@ impl Store {
         }
         for (version, sql) in (1..).zip(MIGRATIONS).skip(found as usize) {
             tx.execute_batch(sql)?;
-            if version == 5 {
-                fill_spec_fts(&tx)?;
+            match version {
+                // Every stored spec document's chunks, as version 5 found them.
+                5 => fill_fts(&tx, "spec_fts", "s.kind = 'document'")?,
+                // The rule `insert_chunks` writes by: every chunk into
+                // chunk_fts, numbered ones into spec_fts as well.
+                8 => {
+                    fill_fts(&tx, "chunk_fts", "1")?;
+                    fill_fts(&tx, "spec_fts", "c.number IS NOT NULL")?;
+                }
+                _ => {}
             }
             tx.execute(
                 "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)
@@ -413,7 +432,6 @@ mod tests {
             "document",
             "chunk",
             "chunk_fts",
-            "spec_fts",
             "symbol",
             "edge",
         ] {
@@ -782,10 +800,12 @@ mod tests {
     }
 
     #[test]
-    fn version_5_fills_spec_fts_from_the_stored_spec_chunks() {
+    fn a_version_4_corpus_upgrades_through_spec_fts_and_its_removal() {
         let dir = scratch("v4");
         let path = dir.join("corpus.db");
-        // A version 4 corpus with a code chunk and a spec chunk.
+        // A version 4 corpus with a code chunk and a numbered spec chunk,
+        // as a spec section is stored. Versions 5 and 8 fill spec_fts and
+        // version 9 drops it, so the way up must run all three.
         raw(&path)
             .execute_batch(&format!(
                 "{}
@@ -798,9 +818,10 @@ mod tests {
                           (2, 'rfc9449', 'document', 'https://x', 'def', 'quote', 'then');
                  INSERT INTO document (id, source_id, path, content_hash)
                    VALUES (1, 1, 'src/lib.rs', x'01'), (2, 2, 'rfc9449', x'02');
-                 INSERT INTO chunk (id, document_id, start_line, end_line, kind, text, terms)
-                   VALUES (1, 1, 1, 1, 'window', 'validate', 'validate'),
-                          (2, 2, 1, 1, 'section', 'validates', 'validates');
+                 INSERT INTO chunk (id, document_id, start_line, end_line, kind, number, text,
+                                    terms)
+                   VALUES (1, 1, 1, 1, 'window', NULL, 'validate', 'validate'),
+                          (2, 2, 1, 1, 'section', '1', 'validates', 'validates');
                  INSERT INTO chunk_fts (rowid, symbol, path, terms)
                    VALUES (1, '', 'src lib rs', 'validate'), (2, '', 'rfc9449', 'validates');",
                 MIGRATIONS[0], MIGRATIONS[1], MIGRATIONS[2], MIGRATIONS[3]
@@ -816,11 +837,11 @@ mod tests {
                 .collect::<rusqlite::Result<_>>()
                 .unwrap()
         };
-        // The spec chunk is in spec_fts, stemmed, with its path's terms;
-        // the code chunk isn't. Both stay in chunk_fts.
-        let spec = "SELECT rowid FROM spec_fts WHERE spec_fts MATCH";
-        assert_eq!(ids(&format!("{spec} 'validated'")), [2]);
-        assert_eq!(ids(&format!("{spec} 'path:rfc9449'")), [2]);
+        // Both chunks stay in chunk_fts, the spec one with its path's terms.
+        assert_eq!(
+            ids("SELECT rowid FROM chunk_fts WHERE chunk_fts MATCH 'path:rfc9449'"),
+            [2]
+        );
         assert_eq!(
             ids(
                 "SELECT rowid FROM chunk_fts WHERE chunk_fts MATCH 'validate OR validates' ORDER BY rowid"
@@ -832,6 +853,182 @@ mod tests {
             ids("SELECT count(*) FROM document WHERE content_hash = x''"),
             [0]
         );
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn version_7_makes_markdown_documents_split_again() {
+        let dir = scratch("v6");
+        let path = dir.join("corpus.db");
+        // A version 6 corpus with a Markdown file, a Rust file and a
+        // guidance document, which keeps no text.
+        raw(&path)
+            .execute_batch(&format!(
+                "{}
+                 INSERT INTO meta (key, value) VALUES ('schema_version', '6');
+                 INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
+                   VALUES (1, 'app', 'local', '/src/app', 'abc', 'adapt', 'then'),
+                          (2, 'rules', 'document', 'https://x', 'def', 'quote', 'then');
+                 INSERT INTO document (id, source_id, path, language, content_hash, text)
+                   VALUES (1, 1, 'README.md', 'markdown', x'01', '# App'),
+                          (2, 1, 'src/lib.rs', 'rust', x'02', 'fn a() {{}}'),
+                          (3, 2, 'rules', 'markdown', x'03', NULL);",
+                MIGRATIONS[..6].join("\n")
+            ))
+            .unwrap();
+
+        let store = Store::open_read_write(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+        let mut stmt = store
+            .conn
+            .prepare("SELECT path FROM document WHERE content_hash = x'' ORDER BY id")
+            .unwrap();
+        let cleared: Vec<String> = stmt
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(cleared, ["README.md"]);
+        drop(stmt);
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn version_8_refills_the_full_text_tables() {
+        let dir = scratch("v7");
+        let path = dir.join("corpus.db");
+        // A version 7 corpus with a function, a spec section and a generic
+        // document's section, whose full-text rows are as `insert_chunks`
+        // writes them: every chunk in chunk_fts, numbered ones in spec_fts.
+        // Version 9 drops spec_fts, so only chunk_fts is checked after.
+        let conn = raw(&path);
+        conn.execute_batch(&format!(
+            "{}
+             INSERT INTO meta (key, value) VALUES ('schema_version', '7');
+             INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
+               VALUES (1, 'app', 'local', '/src/app', 'abc', 'adapt', 'then'),
+                      (2, 'rfc', 'document', 'https://x', 'def', 'quote', 'then'),
+                      (3, 'notes', 'document', 'https://y', 'ghi', 'quote', 'then');
+             INSERT INTO document (id, source_id, path, language, content_hash, text)
+               VALUES (1, 1, 'src/lib.rs', 'rust', x'01', 'pub fn validate_token() {{}}'),
+                      (2, 2, 'rfc', 'html', x'02', NULL),
+                      (3, 3, 'notes', 'markdown', x'03', '# Sessions');
+             INSERT INTO symbol (id, display_name, kind, document_id, start_line, end_line)
+               VALUES ('app . validate_token().', 'validate_token', 'function', 1, 1, 1);
+             INSERT INTO chunk (id, document_id, start_line, end_line, kind, symbol_id, number,
+                                text, terms)
+               VALUES (1, 1, 1, 1, 'function', 'app . validate_token().', NULL,
+                       'pub fn validate_token() {{}}', 'pub fn validate token validate_token'),
+                      (2, 2, 1, 3, 'section', NULL, '1', 'Tokens are validated.',
+                       'tokens are validated'),
+                      (3, 3, 1, 1, 'section', NULL, NULL, '# Sessions', 'sessions');",
+            MIGRATIONS[..7].join("\n")
+        ))
+        .unwrap();
+        let symbol = identifier_terms("validate_token");
+        for (table, id, symbol, path, terms) in [
+            (
+                "chunk_fts",
+                1,
+                symbol.as_str(),
+                "src/lib.rs",
+                "pub fn validate token validate_token",
+            ),
+            ("chunk_fts", 2, "", "rfc", "tokens are validated"),
+            ("chunk_fts", 3, "", "notes", "sessions"),
+            ("spec_fts", 2, "", "rfc", "tokens are validated"),
+        ] {
+            conn.execute(
+                &format!(
+                    "INSERT INTO {table} (rowid, symbol, path, terms) VALUES (?1, ?2, ?3, ?4)"
+                ),
+                rusqlite::params![id, symbol, text_terms(path), terms],
+            )
+            .unwrap();
+        }
+        let totals = |conn: &Connection| -> Vec<u8> {
+            conn.query_row("SELECT block FROM chunk_fts_data WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap()
+        };
+        let right = totals(&conn);
+        // An older SQLite left deleted rows in the totals: the record's
+        // first varint, the row count, too high.
+        let mut block = totals(&conn);
+        block[0] += 5;
+        conn.execute("UPDATE chunk_fts_data SET block = ?1 WHERE id = 1", [block])
+            .unwrap();
+        assert_ne!(totals(&conn), right);
+        drop(conn);
+
+        let store = Store::open_read_write(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+        assert_eq!(totals(&store.conn), right);
+        let count = |sql: &str| -> i64 { store.conn.query_row(sql, [], |row| row.get(0)).unwrap() };
+        assert_eq!(count("SELECT count(*) FROM chunk_fts_docsize"), 3);
+        for (query, id) in [("validate", 1), ("validated", 2), ("sessions", 3)] {
+            let found: i64 = store
+                .conn
+                .query_row(
+                    "SELECT rowid FROM chunk_fts WHERE chunk_fts MATCH ?1",
+                    [query],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(found, id, "{query}");
+        }
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn version_9_drops_the_spec_only_full_text_table() {
+        let dir = scratch("v8");
+        let path = dir.join("corpus.db");
+        // A version 8 corpus with a spec section in both full-text tables.
+        raw(&path)
+            .execute_batch(&format!(
+                "{}
+                 INSERT INTO meta (key, value) VALUES ('schema_version', '8');
+                 INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
+                   VALUES (1, 'rfc', 'document', 'https://x', 'def', 'quote', 'then');
+                 INSERT INTO document (id, source_id, path, language, content_hash, text)
+                   VALUES (1, 1, 'rfc', 'html', x'01', NULL);
+                 INSERT INTO chunk (id, document_id, start_line, end_line, kind, number, text,
+                                    terms)
+                   VALUES (1, 1, 1, 3, 'section', '1', 'Tokens are validated.',
+                           'tokens are validated');
+                 INSERT INTO chunk_fts (rowid, symbol, path, terms)
+                   VALUES (1, '', 'rfc', 'tokens are validated');
+                 INSERT INTO spec_fts (rowid, symbol, path, terms)
+                   VALUES (1, '', 'rfc', 'tokens are validated');",
+                MIGRATIONS[..8].join("\n")
+            ))
+            .unwrap();
+
+        let store = Store::open_read_write(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+        let left: i64 = store
+            .conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE name LIKE 'spec_fts%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(left, 0);
+        let found: i64 = store
+            .conn
+            .query_row(
+                "SELECT rowid FROM chunk_fts WHERE chunk_fts MATCH 'validated'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(found, 1);
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }

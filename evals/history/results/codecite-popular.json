@@ -1,0 +1,341 @@
+{
+  "all": {
+    "mrr": 0.4664772727272727,
+    "queries": 44,
+    "recall_at_1": 0.2727272727272727,
+    "recall_at_10": 0.8636363636363636
+  },
+  "classes": {
+    "history-issue": {
+      "mrr": 0.434375,
+      "queries": 16,
+      "recall_at_1": 0.1875,
+      "recall_at_10": 0.9375
+    },
+    "history-title": {
+      "mrr": 0.48482142857142857,
+      "queries": 28,
+      "recall_at_1": 0.32142857142857145,
+      "recall_at_10": 0.8214285714285714
+    }
+  },
+  "engine": "popular",
+  "groups": {
+    "history": {
+      "mrr": 0.4664772727272727,
+      "queries": 44,
+      "recall_at_1": 0.2727272727272727,
+      "recall_at_10": 0.8636363636363636
+    }
+  },
+  "outcomes": [
+    {
+      "class": "history-title",
+      "id": "codecite-pr188-title",
+      "rank": 1,
+      "text": "docs: drop the cloud-session queue now that issues are worked locally",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "codecite-pr188-issue",
+      "rank": 1,
+      "text": "Cloud execution queue: the order to work cloud-ready issues\n\nThe order for Claude Code cloud sessions working the `cloud-ready` issues. Each session takes one issue and follows `AGENTS.md` (\"Working an issue end to end\"): open a PR against `main`, answer the CI and lens reviews, and add the `eval` label when the change touches indexing, search, ranking or CLI output. James merges.",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr173-title",
+      "rank": 1,
+      "text": "feat(evals): run Claude Code on the subscription always, pi on OpenRouter behind a switch",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr165-title",
+      "rank": 2,
+      "text": "feat: index house rules as a guidance source and push the ones that govern a file",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr168-title",
+      "rank": 2,
+      "text": "feat(mcp): diff a spec's pinned versions to show what changed in its rules",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "codecite-pr168-issue",
+      "rank": 2,
+      "text": "feat(mcp): diff a spec's pinned versions to show what changed in its rules\n\nIn the quick calibration of backchannel-logout, gpt-6.1-sol failed all 5 runs on one rule: Back-Channel Logout 1.0 errata set 1 made `exp` REQUIRED (§2.4), and the version before it didn't. Models learn from both versions. identity-model's own `validate_logout_token` follows the older one too. The corpus already pins both",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr167-title",
+      "rank": 2,
+      "text": "feat(mcp): add a requirements tool that lists every rule governing a spec section",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "codecite-pr167-issue",
+      "rank": 2,
+      "text": "feat(mcp): add a requirements tool that lists every rule governing a spec section\n\nThe harder eval tasks fail because agents never look rules up, not because search ranks badly. In the quick calibrations, every failed backchannel-logout run missed a rule in Back-Channel Logout 1.0 §2.4: - gpt-6.1-sol never required `exp`. - Haiku never checked that the logout event's value is a JSON object.",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr169-title",
+      "rank": null,
+      "text": "ci: bump blind-peer-review to v3.12.1",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr163-title",
+      "rank": 4,
+      "text": "feat(mcp): tell agents to search specs in the spec's own terms",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "codecite-pr163-issue",
+      "rank": 4,
+      "text": "feat(mcp): tell agents to search specs in the spec's own terms\n\nPart of #95. This is follow-up 2 of `docs/superpowers/specs/2026-10-23-hybrid-retrieval-design.md`, and arm B of its A/B arms.",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr164-title",
+      "rank": 5,
+      "text": "feat(index): stem spec text and drop query stopwords",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "codecite-pr164-issue",
+      "rank": 5,
+      "text": "feat(index): stem spec text and drop query stopwords\n\nPart of #95. This is follow-up 1 of `docs/superpowers/specs/2026-10-23-hybrid-retrieval-design.md`.",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr148-title",
+      "rank": 1,
+      "text": "fix(ralph): wait for the @claude review comment instead of the removed Merge Gate",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "codecite-pr148-issue",
+      "rank": 1,
+      "text": "fix(ralph): wait for the @claude review comment instead of the removed Merge Gate\n\n#145 removes `.github/workflows/blind-peer-review.yml`. That deletes the OpenRouter lens jobs and their Merge Gate, and leaves `claude.yml` as the only PR review. Ralph still waits on the deleted workflow, in `ralph/wait-review.sh`, `ralph/phases/review.md`, `ralph/PROMPT.md` and `ralph/README.md`. So a restarted",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr151-title",
+      "rank": null,
+      "text": "fix(ci): make the @claude review wait for its lens agents before it posts",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr145-title",
+      "rank": 1,
+      "text": "ci: review PRs with the @claude workflow only and drop the OpenRouter lens jobs",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr142-title",
+      "rank": 8,
+      "text": "feat(evals): calibrate new tasks on the baseline arm only and freeze them before their first A/B run",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "codecite-pr142-issue",
+      "rank": 8,
+      "text": "feat(evals): calibrate new tasks on the baseline arm only and freeze them before their first A/B run\n\nA new eval task should be hard enough that the arms can differ on correctness: in quick-2, every model but devstral passed `fastapi-middleware` 100% of the time in both arms (#92), so pass rate couldn't separate them. Getting a task to the right difficulty means running it and adjusting it. If we",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr141-title",
+      "rank": 2,
+      "text": "feat(core): resolve spec citations with codecite cite",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "codecite-pr141-issue",
+      "rank": 2,
+      "text": "feat(core): resolve spec citations with codecite cite\n\n`codecite cite <citation>` in `codecite-core` and the CLI: resolve a spec citation and report what it found.",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr147-title",
+      "rank": 8,
+      "text": "feat(evals): add a spec-question task where the agent doesn't know the spec's wording",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "codecite-pr147-issue",
+      "rank": 8,
+      "text": "feat(evals): add a spec-question task where the agent doesn't know the spec's wording\n\nEvery eval task so far is a code task that names its symbols, and there grep is already fast and precise (#93). codecite's case is spec retrieval: an agent that has to find and cite an OAuth/OIDC requirement without knowing the words the RFC uses.",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr140-title",
+      "rank": 2,
+      "text": "feat: find definitions with codecite def and the definition tool",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "codecite-pr140-issue",
+      "rank": 2,
+      "text": "feat: find definitions with codecite def and the definition tool\n\n`codecite def <symbol>` and the MCP `definition` tool, from the tree-sitter symbols written in M2.",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr139-title",
+      "rank": null,
+      "text": "fix(index): index Go and Rust doc comments with the definition they document",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "codecite-pr139-issue",
+      "rank": null,
+      "text": "fix(index): index Go and Rust doc comments with the definition they document\n\nIn Go and Rust, a function's doc comment is indexed as a separate `window` chunk instead of with the function. For example, the doc comment of Go's `FetchConfiguration` in `go/pkg/discovery/discovery.go` is in the window at L87-L108, and the function's own chunk starts after it.",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr136-title",
+      "rank": 8,
+      "text": "feat(evals): label spec questions in an agent's words with closed answers",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "codecite-pr136-issue",
+      "rank": 8,
+      "text": "feat(evals): label spec questions in an agent's words with closed answers for the spec-question task\n\n#104's task needs at least 20 spec questions, asked the way an agent asks them, each with a closed-form answer and the spec sections that support it. The questions are data. They need no harness, so they can be labelled now while #111 and #104's task wait.",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr137-title",
+      "rank": 2,
+      "text": "feat(search): add an exact and regex grep over indexed chunks",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "codecite-pr137-issue",
+      "rank": 2,
+      "text": "feat(search): add an exact and regex grep over indexed chunks\n\nBM25 `search` is weak at literal strings: an exact claim name like `\"jti\"`, an error message, a header name, or a pattern such as `token_type_hint=\\w+`. Agents have `rg` for their own checkout, but not for the specs and pinned repositories codecite indexes, and `rg` gives no citations.",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr135-title",
+      "rank": 8,
+      "text": "feat(evals): add a back-channel logout task stated as behaviour",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr131-title",
+      "rank": 8,
+      "text": "fix(evals): label sandbox failures apart from agent timeouts",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "codecite-pr131-issue",
+      "rank": 8,
+      "text": "fix(evals): label sandbox failures apart from agent timeouts\n\n`evals/inspect/task.py`'s `pi()` catches every exception from the agent's `sb.exec` (since ca62b9b, in #113) and records it as `timed_out`. That's deliberate: retrying infrastructure failures would keep only the runs that survive them and bias the scorecard, the same way retrying timeouts did.",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr132-title",
+      "rank": 2,
+      "text": "fix(mcp): cap result size in bytes, not only lines",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "codecite-pr132-issue",
+      "rank": 2,
+      "text": "fix(mcp): cap result size in bytes, not only lines\n\n`max_lines` and `limit` bound lines and results, but a snippet or read keeps whole lines. One minified or generated file with a 1 MiB line comes back whole even with `max_lines=1`, and `search` can return several such snippets. That floods an agent's context.",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr133-title",
+      "rank": 1,
+      "text": "feat(evals): run the A/B eval in CI as a quick tier on labelled PRs and a full tier on dispatch",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-issue",
+      "id": "codecite-pr133-issue",
+      "rank": 1,
+      "text": "feat(evals): run the A/B eval in CI as a quick tier on labelled PRs and a full tier on dispatch\n\nThe full A/B panel (9 models × 10 epochs × 2 arms, `evals/inspect/panel.sh`) takes one to two hours, so it can't be the loop we check a ranking or CLI change against. Split it into two tiers that share one task and one scorer, and **run both in GitHub Actions**. Issues are now worked by Claude Code",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr126-title",
+      "rank": 1,
+      "text": "docs: describe running issues in Claude Code cloud sessions",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr124-title",
+      "rank": 1,
+      "text": "chore: set codecite up for Claude Code cloud sessions",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr123-title",
+      "rank": null,
+      "text": "fix(ralph): wait on every required workflow and read the lens Merge Gate",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr116-title",
+      "rank": 1,
+      "text": "docs: design hybrid retrieval for spec corpora",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr120-title",
+      "rank": 1,
+      "text": "docs: correct install, release and eval docs after the security and Inspect merges",
+      "top": "popular@0:AGENTS.md#L1"
+    },
+    {
+      "class": "history-title",
+      "id": "codecite-pr122-title",
+      "rank": null,
+      "text": "ci: check only vulnerabilities in dependency review, leaving licenses to cargo-deny",
+      "top": "popular@0:AGENTS.md#L1"
+    }
+  ]
+}

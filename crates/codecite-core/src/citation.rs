@@ -1,16 +1,22 @@
 //! Canonical citations: the exact strings codecite hands to agents to name a
-//! span of code or a spec section.
+//! span of code, lines of a fetched document, or a spec section.
 //!
 //! Parsing is strict. Every string the parser accepts formats back to exactly
-//! the same string, so each span has one spelling. The `written` submodule
-//! parses the lenient spec citation forms people write, which have no round
-//! trip.
+//! the same string, so each span has one spelling. The `anchor` submodule
+//! parses references to a heading by its anchor, and the `written` submodule
+//! the lenient spec citation forms people write; neither is canonical.
 
 use std::fmt;
 use std::str::FromStr;
 
+mod anchor;
+pub use anchor::{AnchorCitation, Pin};
+
 mod code;
 pub use code::{CodeCitation, CommitSha, LineRange};
+
+mod document;
+pub use document::DocumentCitation;
 
 mod spec;
 pub use spec::{ContentHash, SectionNumber, SpecCitation};
@@ -18,24 +24,32 @@ pub use spec::{ContentHash, SectionNumber, SpecCitation};
 mod written;
 pub use written::{SpecAliases, SpecReference, SpecTarget};
 
-/// A canonical citation of either form.
+/// A canonical citation of any form.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Citation {
     /// A span of code: `<repo>@<sha>:<path>#L<a>-L<b>`.
     Code(CodeCitation),
     /// A spec section or step: `<doc>@sha256:<hash>#section-<n>[/step-<k>]`.
     Spec(SpecCitation),
+    /// Lines of a fetched document: `<doc>@sha256:<hash>#L<a>-L<b>`.
+    Document(DocumentCitation),
 }
 
 impl FromStr for Citation {
     type Err = CitationError;
 
-    /// Picks the spec form when the text after the first `@` starts with
-    /// `sha256:`, and the code form otherwise.
+    /// Picks the code form unless the text after the first `@` starts with
+    /// `sha256:`. Under `sha256:`, a fragment of `L` and a digit names
+    /// document lines; any other fragment is a spec section.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let (_, rest) = s.split_once('@').ok_or(CitationError::MissingAt)?;
         if rest.starts_with("sha256:") {
-            s.parse().map(Citation::Spec)
+            let fragment = rest.split_once('#').map_or("", |(_, f)| f);
+            if is_line_fragment(fragment) {
+                s.parse().map(Citation::Document)
+            } else {
+                s.parse().map(Citation::Spec)
+            }
         } else {
             s.parse().map(Citation::Code)
         }
@@ -47,6 +61,7 @@ impl fmt::Display for Citation {
         match self {
             Citation::Code(c) => c.fmt(f),
             Citation::Spec(c) => c.fmt(f),
+            Citation::Document(c) => c.fmt(f),
         }
     }
 }
@@ -158,12 +173,36 @@ pub enum CitationError {
         url: String,
     },
 
-    /// A spec URL's anchor has whitespace in it.
-    #[error("anchor {found:?} has whitespace in it")]
+    /// An anchor has whitespace or a character no heading anchor has.
+    #[error("anchor {found:?} has whitespace or a character anchors don't have")]
     BadAnchor {
         /// The anchor as written, without `#`.
         found: String,
     },
+
+    /// An anchor reference has no `#` after the path or hash.
+    #[error("no `#` anchor after the path or hash")]
+    MissingAnchor,
+
+    /// An anchor reference has `#` and nothing after it.
+    #[error("empty anchor after `#`")]
+    EmptyAnchor,
+
+    /// An anchor reference's fragment names lines or a spec section, which
+    /// the canonical citation forms spell.
+    #[error("#{found} names lines or a spec section, not a heading anchor")]
+    NotAnAnchor {
+        /// The fragment as written, without `#`.
+        found: String,
+    },
+}
+
+/// Whether a fragment names lines: `L` then a digit. Heading anchors are
+/// lowercase, so `l10` stays free for them.
+fn is_line_fragment(fragment: &str) -> bool {
+    fragment
+        .strip_prefix('L')
+        .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
 }
 
 /// Parses a canonical number: decimal digits only, no leading zero, at least
@@ -198,6 +237,34 @@ mod tests {
         let c: Citation = s.parse().unwrap();
         assert!(matches!(c, Citation::Spec(_)));
         assert_eq!(c.to_string(), s);
+    }
+
+    #[test]
+    fn citation_picks_the_document_form_for_lines_under_a_hash() {
+        let s = "rfc9449@sha256:1a2b3c4d5e6f#L120-L140";
+        let c: Citation = s.parse().unwrap();
+        assert!(matches!(c, Citation::Document(_)));
+        assert_eq!(c.to_string(), s);
+        let s = "rfc9449@sha256:1a2b3c4d5e6f#section-4.3";
+        assert!(matches!(s.parse::<Citation>(), Ok(Citation::Spec(_))));
+        assert_eq!(
+            "rfc9449@sha256:1a2b3c4d5e6f#L10-L10".parse::<Citation>(),
+            Err(CitationError::SingleLineRange { line: 10 })
+        );
+    }
+
+    #[test]
+    fn an_anchor_is_not_a_canonical_citation() {
+        assert!(
+            "notes@sha256:1a2b3c4d5e6f#install"
+                .parse::<Citation>()
+                .is_err()
+        );
+        assert!(
+            "repo@abc1234:README.md#install"
+                .parse::<Citation>()
+                .is_err()
+        );
     }
 
     #[test]

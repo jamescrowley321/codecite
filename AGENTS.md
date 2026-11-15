@@ -73,15 +73,17 @@ This is how an agent, local or in a Claude Code cloud session, takes one
 issue from open to a reviewed PR. Ralph (`ralph/`) runs the same steps in a
 loop.
 
-1. **Pick.** Take the next open issue labelled `cloud-ready`, in the order the
-   pinned queue issue gives. Read it and `docs/design.md`.
+1. **Pick.** Take the issue James names, or else the next open issue in the
+   earliest open milestone. A cloud session takes only an issue labelled
+   `cloud-ready`, as `scripts/cloud-launch.sh` checks. Read it and
+   `docs/design.md`.
 2. **Plan.** Follow Planning above. If the superpowers skills aren't
    installed, as in a cloud session, write the plan by hand in
    `docs/superpowers/plans/` and commit it with the PR.
 3. **Build test-first.** Before every push, run what CI runs:
    `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D
    warnings` and `cargo test --workspace --locked`.
-4. **Open the PR against `main`**, never stacked. Use a conventional title and put `Closes #<n>`, the issue's
+4. **Open the PR against `main`**, never stacked. Only the ralph loop stacks its PRs (`ralph/README.md`). Use a conventional title and put `Closes #<n>`, the issue's
    acceptance criteria and the provenance section in the body.
 5. **Read the feedback.** CI and the blind peer review come back on the PR.
    `claude.yml` runs the review when the PR opens and posts one comment,

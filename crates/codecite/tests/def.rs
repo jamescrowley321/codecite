@@ -166,17 +166,21 @@ fn an_ambiguous_symbol_lists_every_definition_source_first() {
     assert!(output.status.success(), "{}", stderr(&output));
     let text = String::from_utf8(output.stdout).unwrap();
     let lines: Vec<&str> = text.lines().collect();
-    assert_eq!(lines[0], "3 definitions of callback · ambiguous", "{text}");
-    assert!(lines[1].starts_with("1. app@"), "{text}");
     assert!(
-        lines[1].contains(":src/client.rs#L4-L6 · method callback · source · adapt · indexed "),
+        lines[0].starts_with("3 definitions of callback · ambiguous · adapt · indexed "),
         "{text}"
     );
-    assert_eq!(lines[2], "   pub fn callback(&self) -> bool {", "{text}");
     assert!(
-        lines[5].contains(" · function callback · test · "),
+        lines[1].contains(
+            ":src/client.rs#L4-L6 · method callback · source · pub fn callback(&self) -> bool {"
+        ),
         "{text}"
     );
+    assert!(
+        lines[3].contains(" · function callback · test · "),
+        "{text}"
+    );
+    assert_eq!(lines.len(), 4, "{text}");
 }
 
 #[test]

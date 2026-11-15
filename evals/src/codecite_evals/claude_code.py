@@ -27,6 +27,7 @@ import os
 
 from inspect_ai.model import GenerateConfig, ModelAPI, ModelOutput, modelapi
 
+from codecite_evals import assist
 from codecite_evals.report import CLI, NATIVE
 
 PROVIDER = "claude-code"
@@ -73,14 +74,16 @@ def runs(model) -> bool:
 def command(condition: str, prompt: str, model: str, timeout: int) -> list[str]:
     """Claude Code's command line for an arm, its stream-json written to
     OUTPUT. Only the codecite arm gets an MCP config; --strict-mcp-config
-    keeps any other out of both. `timeout` stops it a little before Inspect
-    would."""
+    keeps any other out of every arm. Only the assist arm gets the settings
+    holding its grep and glob hook. `timeout` stops it a little before
+    Inspect would."""
     mcp = ["--mcp-config", MCP] if condition == "codecite" else []
+    settings = ["--settings", assist.SETTINGS_PATH] if condition == "assist" else []
     return [
         "sh", "-c", f'"$@" >{OUTPUT}', "sh",
         "timeout", "--kill-after=10", str(timeout),
         "claude", "-p", "--output-format", "stream-json", "--verbose", "--model", model,
-        "--tools", ",".join(TOOLS), "--strict-mcp-config", *mcp,
+        "--tools", ",".join(TOOLS), "--strict-mcp-config", *mcp, *settings,
         "--dangerously-skip-permissions", "--no-session-persistence", "--", prompt,
     ]  # fmt: skip
 
@@ -93,6 +96,27 @@ def events(stdout: str):
             continue
         if isinstance(event, dict):
             yield event
+
+
+# The most characters of one tool call's input kept in the store.
+MAX_CALL_CHARS = 300
+
+
+def tool_calls(stdout: str) -> list[dict]:
+    """Every tool call in Claude Code's stream-json, in order, as {"name",
+    "input"} with the input as JSON cut at MAX_CALL_CHARS. Inspect cuts a
+    sandbox read's output at 10,000 characters in the log, so this is what
+    shows which tools a run searched with."""
+    calls = []
+    for event in events(stdout):
+        message = event.get("message") if event.get("type") == "assistant" else None
+        if not isinstance(message, dict):
+            continue
+        for block in message.get("content") or []:
+            if isinstance(block, dict) and block.get("type") == "tool_use":
+                text = json.dumps(block.get("input"), ensure_ascii=False)
+                calls.append({"name": str(block.get("name")), "input": text[:MAX_CALL_CHARS]})
+    return calls
 
 
 def measures(stdout: str) -> dict:

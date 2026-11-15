@@ -26,6 +26,14 @@ fi
 
 cp "$LOOP/ralph/PROMPT.md" "$LOOP/PROMPT.md"
 
+# The history benchmark compares with ripgrep. An interactive shell's `rg` may
+# be a function the loop's shells never see, so name a binary when there is one.
+if [[ -z "${RG:-}" ]]; then
+  RG="$(command -v rg || true)"
+  [[ -n "$RG" ]] || { [[ -x "$HOME/.pi/agent/bin/rg" ]] && RG="$HOME/.pi/agent/bin/rg"; }
+  [[ -n "$RG" ]] && export RG
+fi
+
 if [[ -f "$REPO/.claude/task-state.md" ]]; then
   echo "Resuming: $(grep -E '^(issue|phase):' "$REPO/.claude/task-state.md" | tr '\n' ' ')"
 fi

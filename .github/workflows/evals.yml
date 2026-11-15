@@ -27,9 +27,9 @@ on:
         type: string
         default: fastapi-middleware
       arms:
-        description: ab (baseline against codecite), aa (an A/A round, two baseline arms, to measure noise) or baseline (calibrate the task on the quick tier, no verdict)
+        description: ab (baseline against codecite), aa (an A/A round, two baseline arms, to measure noise), baseline (calibrate the task on the quick tier, no verdict) or assist (baseline against codecite only through the hook on the agent's searches, through grep, glob or the shell)
         type: choice
-        options: [ab, aa, baseline]
+        options: [ab, aa, baseline, assist]
         default: ab
       epochs:
         description: Epochs per arm, if not the tier's own (quick 5, full 10)
@@ -88,8 +88,8 @@ jobs:
       EPOCHS: ${{ inputs.epochs }}
       OPENROUTER: ${{ (inputs.openrouter || vars.EVALS_OPENROUTER == 'true') && '1' || '0' }}
       # Where panel.sh logs, under inspect/logs/: the tier, the tier's A/A
-      # round, or calibration.
-      RUN_NAME: ${{ inputs.arms == 'baseline' && 'calibration' || format('{0}{1}', inputs.tier || 'quick', inputs.arms == 'aa' && '-aa' || '') }}
+      # round, the assist arm's round, or calibration.
+      RUN_NAME: ${{ inputs.arms == 'baseline' && 'calibration' || format('{0}{1}', inputs.tier || 'quick', inputs.arms == 'aa' && '-aa' || inputs.arms == 'assist' && '-assist' || '') }}
       # Each sandbox is one Docker network; the daemon below gets 256 of
       # them. The runner's 4 vCPU set the limit: at 20 sandboxes, samples
       # spent three quarters of their wall time waiting, which skews the
@@ -108,11 +108,20 @@ jobs:
         run: |
           rustup toolchain install
           rustc --version
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo build --release --locked -p codecite
+      # A replay task's project is its own repository at the task's base.
       - name: Fetch identity-model at the task's pinned commit
         run: |
-          commit="$(jq -r .corpus.commit "evals/tasks/$TASK_ID/task.json")"
+          task="evals/tasks/$TASK_ID/task.json"
+          if [[ "$(jq -r '.kind // ""' "$task")" == replay ]]; then
+            repo="$RUNNER_TEMP/replay"
+            git init -q "$repo"
+            git -C "$repo" fetch -q --depth 1 "$(jq -r .url "$task")" "$(jq -r .base "$task")"
+            echo "REPLAY_REPO=$repo" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          commit="$(jq -r .corpus.commit "$task")"
           repo="$RUNNER_TEMP/identity-model"
           git init -q "$repo"
           git -C "$repo" fetch -q --depth 1 https://github.com/jamescrowley321/identity-model "$commit"

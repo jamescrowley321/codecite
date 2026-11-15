@@ -2,13 +2,11 @@
 //! numbered sections as a spec is, each with the scope its own comment
 //! gives it.
 
-use std::collections::HashSet;
-
 use codecite_core::{RuleScope, SectionNumber, is_invisible_format, requirement_keywords};
 use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
 
 use crate::SpecSection;
-use crate::chunk::{Heading, markdown_headings};
+use crate::chunk::{Heading, Slugs, markdown_headings};
 
 /// The comment that opens a rule's scope: `<!-- codecite-scope`, then TOML
 /// up to `-->`.
@@ -530,35 +528,6 @@ fn has_toml_comment(text: &str) -> bool {
         }
     }
     false
-}
-
-/// GitHub-style heading anchors, with `-1`, `-2`, … on a repeated one.
-#[derive(Default)]
-struct Slugs {
-    seen: HashSet<String>,
-}
-
-impl Slugs {
-    /// The anchor for a heading with `title`: lowercase, letters, digits,
-    /// `-` and `_` kept, spaces as `-`, anything else dropped.
-    fn slug(&mut self, title: &str) -> String {
-        let base: String = title
-            .chars()
-            .filter_map(|c| match c {
-                ' ' => Some('-'),
-                c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
-                _ => None,
-            })
-            .flat_map(char::to_lowercase)
-            .collect();
-        let mut slug = base.clone();
-        let mut n = 0;
-        while !self.seen.insert(slug.clone()) {
-            n += 1;
-            slug = format!("{base}-{n}");
-        }
-        slug
-    }
 }
 
 #[cfg(test)]

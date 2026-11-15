@@ -97,7 +97,7 @@ pub fn imports(language: Language, text: &str) -> Vec<String> {
                 }
             }
         }
-        Language::Markdown => {}
+        Language::Markdown | Language::Html => {}
     }
     found
 }
@@ -114,7 +114,7 @@ pub fn imports_dependency(language: Language, module: &str, dependency: &str) ->
         Language::Python | Language::CSharp => ".",
         Language::TypeScript | Language::Tsx | Language::JavaScript | Language::Go => "/",
         Language::Rust => "::",
-        Language::Markdown => return module == dependency,
+        Language::Markdown | Language::Html => return module == dependency,
     };
     module
         .strip_prefix(dependency)
