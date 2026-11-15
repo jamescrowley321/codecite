@@ -205,7 +205,6 @@ def write_task(c: Candidate, clone: Path, out: Path) -> Path:
     meta = {
         "id": task_id,
         "kind": "replay",
-        "gate": "replay",
         "repo": c.repo,
         "url": f"https://github.com/{c.repo}",
         "base": c.base,
