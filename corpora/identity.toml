@@ -208,6 +208,28 @@ use = "quote"
 current = true
 aliases = ["IDA Claims", "Identity Assurance Claims Registration"]
 
+# OAuth 2.0 response type and response mode specifications, from openid.net.
+
+[[source]]
+kind = "document"
+name = "oauth-v2-multiple-response-types-1_0"
+url = "https://openid.net/specs/oauth-v2-multiple-response-types-1_0.html"
+sha256 = "6b0c1ee34cd13c91ff0dc0531e52a761947b2241f121cc6e1dae48a1c845196f"
+license = "OpenID Foundation"
+use = "quote"
+current = true
+aliases = ["Multiple Response Types", "OAuth 2.0 Multiple Response Type Encoding Practices"]
+
+[[source]]
+kind = "document"
+name = "oauth-v2-form-post-response-mode-1_0"
+url = "https://openid.net/specs/oauth-v2-form-post-response-mode-1_0.html"
+sha256 = "5c776e43611a8fb03f673b121ebadab504f5372cb3c15dc020a9bd867a3a02dc"
+license = "OpenID Foundation"
+use = "quote"
+current = true
+aliases = ["Form Post", "Form Post Response Mode"]
+
 # IETF RFCs, from rfc-editor.org. RFC 2119 and RFC 8174 define the requirement keywords.
 
 [[source]]
@@ -220,6 +242,17 @@ use = "quote"
 current = true
 aliases = ["BCP 14"]
 updated_by = "rfc8174"
+
+[[source]]
+kind = "document"
+name = "rfc3986"
+url = "https://www.rfc-editor.org/rfc/rfc3986.html"
+sha256 = "28869fb6d1a48e86b4faaf03f9f1b1391ecd191cc619a51931a04cfaf328caac"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["URI", "URI Generic Syntax"]
+updated_by = "rfc8820"
 
 [[source]]
 kind = "document"
@@ -262,6 +295,16 @@ license = "IETF Trust"
 use = "quote"
 current = true
 aliases = ["JWS"]
+
+[[source]]
+kind = "document"
+name = "rfc7516"
+url = "https://www.rfc-editor.org/rfc/rfc7516.html"
+sha256 = "82e64c816e0c0be03ce3a0e81230e0d934f8c3feb738b1babe4c63d8d31a0a2c"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["JWE"]
 
 [[source]]
 kind = "document"
@@ -369,6 +412,27 @@ aliases = ["Token Introspection"]
 
 [[source]]
 kind = "document"
+name = "rfc7800"
+url = "https://www.rfc-editor.org/rfc/rfc7800.html"
+sha256 = "0166838af5307f30102ff9ce87e615af381db29624e44961e076eccc64378e68"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["PoP Key Semantics", "JWT cnf"]
+
+[[source]]
+kind = "document"
+name = "rfc8037"
+url = "https://www.rfc-editor.org/rfc/rfc8037.html"
+sha256 = "8ee23cef94a52d7409b748f0df6b9a05829305d80eb21d769f7d644697b15074"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["JOSE OKP", "CFRG JOSE"]
+updated_by = "rfc9864"
+
+[[source]]
+kind = "document"
 name = "rfc8174"
 url = "https://www.rfc-editor.org/rfc/rfc8174.html"
 sha256 = "fa760f13d456fc6d0b95d2d565d4bfa698d3c542e0890c19a2a8c6125e1c3260"
@@ -385,6 +449,16 @@ license = "IETF Trust"
 use = "quote"
 current = true
 aliases = ["Authorization Server Metadata"]
+
+[[source]]
+kind = "document"
+name = "rfc8417"
+url = "https://www.rfc-editor.org/rfc/rfc8417.html"
+sha256 = "073dda426d926c1a266c49011cc0e82a6e57456c8887f30914b9d1b35b7faf52"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["SET", "Security Event Token"]
 
 [[source]]
 kind = "document"
@@ -435,6 +509,16 @@ license = "IETF Trust"
 use = "quote"
 current = true
 aliases = ["JWT BCP"]
+
+[[source]]
+kind = "document"
+name = "rfc9068"
+url = "https://www.rfc-editor.org/rfc/rfc9068.html"
+sha256 = "03f9f0f2090864299fa2779dd4129824859017165a0ae99f90669d7084a1712f"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["JWT Access Token Profile", "at+jwt"]
 
 [[source]]
 kind = "document"
@@ -499,6 +583,16 @@ aliases = ["DPoP"]
 
 [[source]]
 kind = "document"
+name = "rfc9701"
+url = "https://www.rfc-editor.org/rfc/rfc9701.html"
+sha256 = "6210addcc742146e0049dca621f0db9dac81a9c489b411be6befe05bd1209bf7"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["JWT Introspection Response", "Signed Introspection"]
+
+[[source]]
+kind = "document"
 name = "rfc9700"
 url = "https://www.rfc-editor.org/rfc/rfc9700.html"
 sha256 = "c00e2234fcd79581bc29669c60d693afaa42f67d9205bddee848f757ae975419"
@@ -506,3 +600,13 @@ license = "IETF Trust"
 use = "quote"
 current = true
 aliases = ["OAuth 2.0 Security BCP"]
+
+[[source]]
+kind = "document"
+name = "rfc9864"
+url = "https://www.rfc-editor.org/rfc/rfc9864.html"
+sha256 = "c893d4d32a4146d1189c6dc32cb125aca986136a2116d7f650f64a9230928aee"
+license = "IETF Trust"
+use = "quote"
+current = true
+aliases = ["Fully-Specified Algorithms"]
