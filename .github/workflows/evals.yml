@@ -1,10 +1,11 @@
 name: Evals
 
-# The A/B agent eval (evals/README.md). The quick tier runs when a PR gets
-# the `eval` label, once: pushes don't rerun it, so take the label off and
+# The A/B agent eval (evals/README.md). The quick tier, the gate run, runs
+# when a PR gets the `eval` label, once: pushes don't rerun it, so take the label off and
 # put it back, or dispatch, to run it again. It runs one job per task in the
 # eval job's matrix and posts their scorecards as one PR comment, updated in
-# place; the full tier runs on dispatch, for the one task it names.
+# place; the full tier, the rerun of a pair that lost on quick before it
+# blocks, runs on dispatch, for the one task it names.
 #
 # Every run has Claude Code on the Claude panel, on the subscription behind
 # CLAUDE_CODE_OAUTH_TOKEN. pi on the OpenRouter panel, billed per token, runs
@@ -18,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       tier:
-        description: quick (2 Claude models, 5 epochs) or full (2 Claude models, 10 epochs); OpenRouter adds 3 or 9 models
+        description: quick (the gate run, 3 Claude models, 5 epochs) or full (the rerun of a losing pair, 3 Claude models, 10 epochs); OpenRouter adds 3 or 9 models, reported only
         type: choice
         options: [quick, full]
         default: quick
@@ -71,8 +72,9 @@ jobs:
       || (github.event.pull_request.head.repo.full_name == github.repository
       && github.event.label.name == 'eval')
     runs-on: ubuntu-latest
-    # More epochs than the quick tier's own take the full tier's limits.
-    timeout-minutes: ${{ (inputs.tier == 'full' || inputs.epochs) && 360 || 75 }}
+    # More epochs than the quick tier's own take the full tier's limits. The
+    # quick tier's three Claude models, opus among them, get an hour and a half.
+    timeout-minutes: ${{ (inputs.tier == 'full' || inputs.epochs) && 360 || 105 }}
     permissions:
       contents: read
       actions: read # download an earlier run's logs to resume
@@ -173,7 +175,7 @@ jobs:
           gh run download "$RESUME" -R "$GITHUB_REPOSITORY" -n "eval-logs-$RUN_NAME-$TASK_ID" -D "evals/inspect/logs/$RUN_NAME/$TASK_ID"
           echo RETRY=1 >> "$GITHUB_ENV"
       - name: Run the ${{ env.TIER }} tier on ${{ env.TASK_ID }} (arms ${{ env.ARMS }})
-        timeout-minutes: ${{ (inputs.tier == 'full' || inputs.epochs) && 345 || 60 }}
+        timeout-minutes: ${{ (inputs.tier == 'full' || inputs.epochs) && 345 || 90 }}
         working-directory: evals
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
