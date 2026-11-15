@@ -205,39 +205,40 @@ inspect/compose.yaml build`). `panel.sh` runs the task `TASK_ID` names
 Every task takes `-T arms=baseline` to run the baseline arm alone, a
 calibration (see below).
 
-## Two tiers
+## The gate run and the rerun
 
-The A/B eval runs at one of two tiers. They share the task, the scorer and the
-report; only the panel and the number of epochs differ.
+The A/B eval runs at one of two tiers. They share the task, the scorer, the
+report and the gating panel; only the number of epochs differs, and the
+OpenRouter panel when it is on. `quick` is the gate run; `full` is the rerun of
+a pair that lost on `quick`, and a loss there blocks (`docs/design.md`,
+Success criteria).
 
-Each tier has two panels on two agents. The **Claude panel** always runs:
-Claude Code (`src/codecite_evals/claude_code.py`) on claude-haiku-5-5 and
-claude-sonnet-5-5, billed to the Claude subscription behind
+The **gating panel** always runs: Claude Code
+(`src/codecite_evals/claude_code.py`) on claude-haiku-5-5, claude-sonnet-5-5
+and claude-opus-5-5, billed to the Claude subscription behind
 `CLAUDE_CODE_OAUTH_TOKEN`. The **OpenRouter panel** is pi on the models below,
 billed per token to `OPENROUTER_API_KEY`, and runs beside it only when
 `OPENROUTER=1` (in CI, the `openrouter` dispatch input or the `EVALS_OPENROUTER`
-repository variable). The two agents' results are reported apart, a row per
-model each: `claude-code/<model>` and `openrouter/<model>`.
+repository variable); its verdicts are reported, never part of the gate. The
+two agents' results are reported apart, a row per model each:
+`claude-code/<model>` and `openrouter/<model>`.
 
-| Tier | OpenRouter panel | Epochs per sample | Takes | Use it |
-| --- | --- | --- | --- | --- |
-| `quick` | claude-haiku-5.5, claude-sonnet-5.5, gpt-6.1-sol | 5; spec-questions 1 | under 20 minutes in CI for a code task | on a PR that touches indexing, search, ranking or the CLI's output |
-| `full` | all 9 models | 10; spec-questions 3 | within CI's 6-hour job limit | before a milestone closes, after a quick loss, or when the task set changes |
+| Tier | OpenRouter panel | Epochs per sample | Use it |
+| --- | --- | --- | --- |
+| `quick` | claude-haiku-5.5, claude-sonnet-5.5, gpt-6.1-sol | 5; spec-questions 1 | the gate run, on a PR that touches indexing, search, ranking or the CLI's output |
+| `full` | all 9 models | 10; spec-questions 3 | the rerun of a pair that lost on `quick`, before it blocks |
 
 A code task has one sample per arm, so its runs per arm are its epochs. The
 spec-question task has one sample per question per arm, so its runs per arm
 are questions × epochs: 59 on the quick tier, 177 on the full.
 
-A replay task runs on its own panel at both tiers: Claude Code alone, on
-claude-haiku-5-5, claude-sonnet-5-5 and claude-opus-5-5. OpenRouter is skipped
-for it even when switched on. A task's
+A replay task runs on the gating panel alone: OpenRouter is skipped for it
+even when switched on. A task's
 `task.json` sets its own epochs (`"epochs": {"quick": 1, "full": 3}`), and
 `EPOCHS` overrides both.
 
-The quick verdict is directional, never the gate: at 5 runs per arm its
-intervals are wide, so a quick loss means "run the full tier", not "stop". The
-full tier is the gate in `docs/design.md` (Evaluation plan). The quick panel's
-third model is the fastest pi model by round one's medians; change it in
+At 5 runs per arm the intervals are wide, so a quick loss is rerun at the full
+tier's epochs (the table's, or the task's own) before it blocks. The quick OpenRouter panel's third model is the fastest pi model by round one's medians; change it in
 `panel.sh` when a full run's medians say another is faster.
 
 ### In CI
@@ -245,13 +246,13 @@ third model is the fastest pi model by round one's medians; change it in
 `.github/workflows/evals.yml` runs both tiers. It is advisory, like `bench`,
 and never a required check.
 
-- **Quick:** add the `eval` label to a PR. The tier runs once, one job per
+- **Quick, the gate run:** add the `eval` label to a PR. The tier runs once, one job per
   task (`fastapi-middleware` and `spec-questions`, the eval job's matrix),
   and their scorecards go to one PR comment, updated in place, a table per
   task. Pushes don't rerun it: to run it again on a new head, take the label
   off and put it back, or dispatch. Fork PRs never run: they get no secrets.
-- **Full:** run the workflow by hand (Actions → Evals → Run workflow) with
-  `tier: full`, the `task` to run and `arms` (`ab`, the default; `aa`;
+- **Full, the rerun:** after a quick loss, run the workflow by hand
+  (Actions → Evals → Run workflow) with `tier: full`, the losing `task` and `arms` (`ab`, the default; `aa`;
   `assist`; or `baseline` to calibrate; see below). Its scorecard goes to the job summary.
   To finish a run that stopped part way, run it again with `resume` set to
   that run's id: it downloads that run's logs and reruns only their missing
@@ -330,14 +331,17 @@ on CI, dispatch with `arms: assist`.
   which Inspect keeps only with `--log-model-api` (`panel.sh` passes it);
   calls without one count as `not logged`.
 - **Intervals:** the 95% bootstrap interval of every measure, second arm
-  against the first, with `*` on each that reaches past 5% either side of 0.
+  against the first. Pass rate and time get `*` when the interval lies wholly
+  past the gate's line on either side of 0 (0 points for pass, 25% for time),
+  where the gate sees a sure difference; tokens never do; the other measures
+  get it when they reach past 5% either side of 0.
 
-The verdict uses pass rate, total tokens and wall time (`docs/design.md`,
-Success criteria). A task's `task.json` can name another gate (`"gate"`); a
-replay task's is `replay`: pass rate loses when its interval's upper bound is
-below 0, wall time when its lower bound is above +25%, and tokens get an
-interval but never lose. The scorecard prints a `Gate:` line above a task
-whose gate isn't the default. Logs whose samples kept no model events leave the
+One gate judges every task (`docs/design.md`, Success criteria), and the
+scorecard states it above each task's tables: pass rate loses when its
+interval's upper bound is below 0, any sure drop; wall time loses when its
+lower bound is above +25%; tokens get an interval but never lose. A pi
+model's verdict ends `reported, not gated`. The `"gate"`
+key that older replay tasks' `task.json` carry is ignored. Logs whose samples kept no model events leave the
 transcript measures blank.
 
 ## Running the A/B eval locally
