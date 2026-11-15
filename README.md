@@ -62,14 +62,14 @@ identity-model from `~/repos/auth/identity-model`, so clone it there first.
 $ git clone https://github.com/jamescrowley321/codecite && cd codecite
 $ codecite index identity
 indexed corpus `identity` into ~/.local/share/codecite/identity.db
-documents: 877 written, 0 unchanged, 0 removed
-chunks: 12985 written
-fetched: 0 downloaded, 49 from the cache
+documents: 886 written, 0 unchanged, 0 removed
+chunks: 13468 written
+fetched: 0 downloaded, 58 from the cache
 skipped: 39 ignored, 7 deny-listed, 4 symlink, 1 binary
 elapsed: 6.16s
 ```
 
-The first run downloads the 49 pinned specs (`fetched: 49 downloaded`); later
+The first run downloads the 58 pinned specs (`fetched: 58 downloaded`); later
 runs read them from the cache. `codecite search` ranks chunks by BM25 and
 cites each one:
 
