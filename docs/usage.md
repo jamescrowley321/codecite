@@ -220,8 +220,8 @@ The run ends with a summary:
 
 ```text
 indexed corpus `identity` into ~/.local/share/codecite/identity.db
-documents: 865 written, 0 unchanged, 0 removed
-chunks: 12187 written
+documents: 877 written, 0 unchanged, 0 removed
+chunks: 12985 written
 fetched: 0 downloaded, 49 from the cache
 skipped: 39 ignored, 7 deny-listed, 4 symlink, 1 binary
 elapsed: 2.12s
