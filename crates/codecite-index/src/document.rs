@@ -55,6 +55,9 @@ pub(crate) struct GenericDocument {
 
 /// Spec layouts are not checked here; the caller tries `split_spec` first.
 pub(crate) fn split_document(body: &str, url: &str) -> GenericDocument {
+    // A byte-order mark is not whitespace, so left in it would hide the `<`
+    // that marks a page as HTML.
+    let body = body.strip_prefix('\u{feff}').unwrap_or(body);
     let format = Format::detect(body, url);
     if format != Format::Html {
         return GenericDocument {
@@ -231,6 +234,19 @@ mod tests {
             (chunks[0].kind, chunks[0].start_line, chunks[0].end_line),
             (ChunkKind::Window, 1, 2)
         );
+    }
+
+    #[test]
+    fn a_byte_order_mark_is_not_part_of_the_page() {
+        let doc = split_document(&format!("\u{feff}{PLAIN}"), "https://example.com/notes");
+        let plain = split_document(PLAIN, "https://example.com/notes");
+        assert_eq!(doc.format, Format::Html);
+        assert_eq!(doc.text, plain.text);
+        assert_eq!(sections(&doc), sections(&plain));
+
+        let doc = split_document("\u{feff}one\ntwo\n", "https://example.com/notes.txt");
+        assert_eq!(doc.format, Format::Text);
+        assert_eq!(doc.text, "one\ntwo\n");
     }
 
     #[test]
