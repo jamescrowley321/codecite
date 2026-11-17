@@ -99,7 +99,9 @@ source `lib`: `use` is "adapt", but `license` "MIT AND GPL-3.0-only" needs GPL-3
 ```
 
 `MIT OR GPL-3.0-only` is fine, since MIT meets it. A `license` that isn't an
-SPDX expression, such as `IETF Trust`, is not judged.
+SPDX expression is refused when any word in it is such a license's id
+(`GPL-3.0-only AND IETF Trust`); one that names none, such as `IETF Trust`,
+is not judged.
 
 A `document` source can be any page. One in a spec layout (an RFC on
 rfc-editor.org, an OpenID spec) is split into numbered sections and steps and
@@ -276,7 +278,11 @@ its text. `--json` adds a heading section's `title` and `anchor`, which `read`
 takes in place of the lines. Results come
 best first; `--json` adds each one's score. When the results share a license
 class and index time, the header gives them once; otherwise each line carries
-its own, before the text:
+its own, before the text. A result from an `approach_only` source adds the
+line `instruction: Describe the approach in your own words; never copy this
+text or code. …`, under the header when every result shares it and under its
+own result otherwise; `grep`, `def`, `read`, `cite`, `context`, `requirements`
+and `diff` print any `instruction` the same way, a `quote` source's included:
 
 ```text
 2 results

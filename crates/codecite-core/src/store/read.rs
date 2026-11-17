@@ -113,8 +113,8 @@ pub struct ReadResult {
 }
 
 impl fmt::Display for ReadResult {
-    /// The human form: the citation, a line saying what it is, a blank
-    /// line, and the text.
+    /// The human form: the citation, a line saying what it is, any
+    /// instruction, a blank line, and the text.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "{}", self.citation)?;
         write!(f, "{}", self.kind)?;
@@ -131,7 +131,11 @@ impl fmt::Display for ReadResult {
         if self.dirty == Some(true) {
             write!(f, " · dirty")?;
         }
-        writeln!(f, "\n")?;
+        writeln!(f)?;
+        if let Some(instruction) = &self.instruction {
+            writeln!(f, "instruction: {instruction}")?;
+        }
+        writeln!(f)?;
         writeln!(f, "{}", self.text)?;
         if self.truncated {
             writeln!(f, "… (truncated)")?;
@@ -1480,6 +1484,7 @@ mod tests {
             r.to_string(),
             "openid-connect-core-1_0@sha256:c0de00000000#section-3.1.3.7/step-13
 step · ID Token Validation · MUST · quote · indexed 2026-10-20T06:00:00Z
+instruction: Quote this text exactly, with its citation; never paraphrase it.
 
 13. If the auth_time Claim was requested, ...
 "
@@ -1769,6 +1774,7 @@ pub fn validate() {{
             r.to_string(),
             "notes@sha256:9a9b00000000#L4-L8
 section · Install · #install · quote · indexed 2026-10-20T06:00:00Z
+instruction: Quote this text exactly, with its citation; never paraphrase it.
 
 ## Install
 

@@ -967,6 +967,18 @@ updated_by = "openid-connect-core-1_0-errata2"
              leave `license` out for a source you hold the rights to"
         );
 
+        // So is a license that names a copyleft id beside other text.
+        let err = Manifest::parse(&manifest(&format!(
+            "[[source]]\nname = \"lib\"\nurl = \"u\"\ncommit = \"{COMMIT}\"\n\
+             license = \"GPL-3.0-only AND IETF Trust\"\nuse = \"adapt\"\n"
+        )))
+        .unwrap_err();
+        assert!(
+            matches!(&err, ManifestError::LicenseForbidsAdapt { forbidding, .. }
+                if *forbidding == ["GPL-3.0-only"]),
+            "{err:?}"
+        );
+
         // A local source is held to it too.
         let err = Manifest::parse(&manifest(
             "[[source]]\nkind = \"local\"\npath = \"/a\"\nlicense = \"AGPL-3.0-only\"\nuse = \"adapt\"\n",

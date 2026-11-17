@@ -160,7 +160,8 @@ pub fn detect_license(dir: &Path) -> io::Result<DetectedLicense> {
 
 /// SPDX ids outside the GNU and MPL families whose terms keep `adapt` out:
 /// weak copyleft the SPDX data doesn't flag as copyleft, and
-/// source-available licenses.
+/// source-available licenses. Only these exact ids are covered; terms with
+/// no SPDX id, such as the Commons Clause, are the person's call.
 const NOT_ADAPTABLE: &[&str] = &[
     "BUSL-1.1",
     "CDDL-1.0",
@@ -169,6 +170,8 @@ const NOT_ADAPTABLE: &[&str] = &[
     "Elastic-2.0",
     "EPL-1.0",
     "EPL-2.0",
+    "PolyForm-Noncommercial-1.0.0",
+    "PolyForm-Small-Business-1.0.0",
     "SSPL-1.0",
 ];
 
@@ -185,19 +188,31 @@ fn forbids_adapt(id: spdx::LicenseId) -> bool {
 /// The licenses that keep `use = "adapt"` out of a source licensed under
 /// `license`, when it is an SPDX expression that no choice of its `OR`
 /// branches meets without one of them: `GPL-3.0-only` or
-/// `MIT AND GPL-2.0-only`, but not `MIT OR GPL-3.0-only`. `None` when the
-/// expression allows adapting, and for anything that isn't an SPDX
-/// expression (`IETF Trust`), whose class is the person's call.
+/// `MIT AND GPL-2.0-only`, but not `MIT OR GPL-3.0-only`. A `license`
+/// that isn't an SPDX expression can't show an `OR` that avoids them, so
+/// any word in it that is such an SPDX id keeps `adapt` out:
+/// `GPL-3.0-only AND IETF Trust`. `None` when the expression allows
+/// adapting, and for text that names no such id (`IETF Trust`), whose class
+/// is the person's call.
 pub(crate) fn forbids_adapting(license: &str) -> Option<Vec<String>> {
-    let expression = Expression::parse_mode(license, ParseMode::LAX).ok()?;
-    let failures = expression
-        .evaluate_with_failures(|req| match &req.license {
-            LicenseItem::Spdx { id, .. } => !forbids_adapt(*id),
-            LicenseItem::Other { .. } => true,
-        })
-        .err()?;
-    let names: BTreeSet<String> = failures.iter().map(|f| f.req.to_string()).collect();
-    Some(names.into_iter().collect())
+    let names: BTreeSet<String> = match Expression::parse_mode(license, ParseMode::LAX) {
+        Ok(expression) => expression
+            .evaluate_with_failures(|req| match &req.license {
+                LicenseItem::Spdx { id, .. } => !forbids_adapt(*id),
+                LicenseItem::Other { .. } => true,
+            })
+            .err()?
+            .iter()
+            .map(|f| f.req.to_string())
+            .collect(),
+        Err(_) => license
+            .split(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '+')))
+            .filter_map(spdx::license_id)
+            .filter(|id| forbids_adapt(*id))
+            .map(|id| id.name.to_owned())
+            .collect(),
+    };
+    (!names.is_empty()).then(|| names.into_iter().collect())
 }
 
 #[cfg(test)]
@@ -316,7 +331,7 @@ mod tests {
             forbids("MIT AND GPL-2.0-only"),
             Some(vec!["GPL-2.0-only".into()])
         );
-        // Each license is named once, in order.
+        // Each license is named once, sorted.
         assert_eq!(
             forbids("GPL-3.0-only AND MIT AND MPL-2.0 AND GPL-3.0-only"),
             Some(vec!["GPL-3.0-only".into(), "MPL-2.0".into()])
@@ -331,9 +346,24 @@ mod tests {
             // How people write them, read leniently.
             "GPL-3.0",
             "GPL-2.0+",
+            "PolyForm-Noncommercial-1.0.0",
         ] {
             assert!(forbids(l).is_some(), "{l}");
         }
+        // A copyleft id beside text that isn't SPDX still forbids it: the
+        // expression can't be judged, so no `OR` can be shown to avoid it.
+        assert_eq!(
+            forbids("GPL-3.0-only AND IETF Trust"),
+            Some(vec!["GPL-3.0-only".into()])
+        );
+        assert_eq!(
+            forbids("MIT, AGPL-3.0-or-later (see NOTICE)"),
+            Some(vec!["AGPL-3.0-or-later".into()])
+        );
+        assert_eq!(
+            forbids("Custom Terms AND GPL-2.0+"),
+            Some(vec!["GPL-2.0".into()])
+        );
     }
 
     #[test]
@@ -349,6 +379,7 @@ mod tests {
             "MIT/Apache-2.0",
             "IETF Trust",
             "OpenID Foundation",
+            "MIT, see NOTICE",
             "",
         ] {
             assert_eq!(forbids_adapting(l), None, "{l}");

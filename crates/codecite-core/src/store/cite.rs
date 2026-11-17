@@ -203,7 +203,7 @@ impl fmt::Display for Finding {
 
 impl fmt::Display for CiteResult {
     /// The human form. Resolved: the citation, a line saying what it is,
-    /// what supersedes it, a blank line and the text. Not resolved:
+    /// what supersedes it, any instruction, a blank line and the text. Not resolved:
     /// `unresolved`, the findings and the candidates.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Some(citation) = &self.citation else {
@@ -236,6 +236,9 @@ impl fmt::Display for CiteResult {
         writeln!(f)?;
         if let Some(by) = &self.superseded_by {
             writeln!(f, "superseded by {by}")?;
+        }
+        if let Some(instruction) = &self.instruction {
+            writeln!(f, "instruction: {instruction}")?;
         }
         writeln!(f)?;
         writeln!(f, "{}", self.text.as_deref().unwrap_or_default())?;
@@ -992,6 +995,7 @@ mod tests {
                 "rfc9449@sha256:aaaaaaaaaaaa#section-4.3
 section · Checking DPoP Proofs · quote · indexed 2026-10-20T06:00:00Z
 superseded by {PINNED}
+instruction: Quote this text exactly, with its citation; never paraphrase it.
 
 Checking DPoP Proofs
 "

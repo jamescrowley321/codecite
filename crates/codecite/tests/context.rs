@@ -157,6 +157,11 @@ fn the_human_form_carries_each_rule_text() {
     let header = lines.next().unwrap();
     assert!(header.starts_with("1. house-rules@sha256:"), "{header}");
     assert!(header.ends_with("#section-4 · MUST · Headers"), "{header}");
+    // A quote source's rule says how to quote it, under its header.
+    assert_eq!(
+        lines.next(),
+        Some("   instruction: Quote this text exactly, with its citation; never paraphrase it.")
+    );
     assert_eq!(lines.next(), Some("   ## 4 Headers"));
     assert!(
         text.contains("   Every file MUST carry the license header.\n"),

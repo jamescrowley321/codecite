@@ -71,8 +71,9 @@ pub struct DiffResult {
 }
 
 impl fmt::Display for DiffResult {
-    /// The human form: the versions compared, then each change with its
-    /// citations and texts, `-` for the older and `+` for the newer.
+    /// The human form: the versions compared, any instruction, then each
+    /// change with its citations and texts, `-` for the older and `+` for
+    /// the newer.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} → {}", self.from, self.to)?;
         if let Some(section) = &self.section {
@@ -83,6 +84,9 @@ impl fmt::Display for DiffResult {
             "\n{} normative changes · {} · indexed {}",
             self.total, self.license_class, self.indexed_at
         )?;
+        if let Some(instruction) = &self.instruction {
+            writeln!(f, "instruction: {instruction}")?;
+        }
         for (n, c) in self.changes.iter().enumerate() {
             writeln!(f)?;
             write_change(f, n + 1, c)?;

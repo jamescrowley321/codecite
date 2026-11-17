@@ -927,6 +927,9 @@ fn human_matches(matches: &[GrepMatch]) -> String {
         );
     }
     out.push('\n');
+    if shared {
+        write_instruction(&mut out, "", first.instruction.as_deref());
+    }
     for m in matches {
         out.push_str(&escape_controls(&abbreviate_commit(&m.citation)));
         if m.dirty == Some(true) {
@@ -945,8 +948,24 @@ fn human_matches(matches: &[GrepMatch]) -> String {
             ": {}",
             escape_controls(&cut(m.text.trim(), HUMAN_SNIPPET_CHARS))
         );
+        if !shared {
+            write_instruction(&mut out, "  ", m.instruction.as_deref());
+        }
     }
     out
+}
+
+/// Writes the line `instruction: <instruction>` to `out`, after `indent`,
+/// when there is an instruction: what codecite tells the agent about a
+/// result from the source's license class, such as never to copy an
+/// `approach_only` source's code.
+fn write_instruction(out: &mut String, indent: &str, instruction: Option<&str>) {
+    use std::fmt::Write as _;
+
+    if let Some(instruction) = instruction {
+        // `write!` to a `String` can't fail.
+        let _ = writeln!(out, "{indent}instruction: {}", escape_controls(instruction));
+    }
 }
 
 /// Writes the rules for a file to `out`, as JSON or in the human form.
@@ -965,8 +984,9 @@ fn write_context(
 
 /// The human form of the rules for a file, which an agent's hook can pass
 /// on as it is: a header with how many rules govern the file, then per
-/// rule a line with its rank, citation, strength and title, and its text
-/// indented, then the citations of any rules left out.
+/// rule a line with its rank, citation, strength and title, any
+/// instruction and its text indented, then the citations of any rules
+/// left out.
 fn human_context(found: &Context) -> String {
     use std::fmt::Write as _;
 
@@ -998,6 +1018,7 @@ fn human_context(found: &Context) -> String {
             let _ = write!(out, " · {}", escape_controls(title));
         }
         out.push('\n');
+        write_instruction(&mut out, "   ", rule.instruction.as_deref());
         for line in rule.text.lines() {
             let _ = writeln!(out, "   {}", escape_controls(line));
         }
@@ -1066,6 +1087,9 @@ fn human_definitions(found: &Definitions) -> String {
         );
     }
     out.push('\n');
+    if let Some(first) = shared {
+        write_instruction(&mut out, "", first.instruction.as_deref());
+    }
     for d in &found.results {
         let _ = write!(
             out,
@@ -1094,6 +1118,9 @@ fn human_definitions(found: &Definitions) -> String {
             );
         }
         out.push('\n');
+        if shared.is_none() {
+            write_instruction(&mut out, "  ", d.instruction.as_deref());
+        }
     }
     out
 }
@@ -1134,6 +1161,9 @@ fn human(results: &[SearchResult]) -> String {
         );
     }
     out.push('\n');
+    if shared {
+        write_instruction(&mut out, "", first.instruction.as_deref());
+    }
     for r in results {
         let _ = write!(
             out,
@@ -1167,6 +1197,9 @@ fn human(results: &[SearchResult]) -> String {
             );
         }
         out.push('\n');
+        if !shared {
+            write_instruction(&mut out, "  ", r.instruction.as_deref());
+        }
     }
     out
 }
@@ -2102,6 +2135,105 @@ rfc9449@sha256:0123456789ab#section-4.3/step-2 · quote · indexed 2026-10-20T06
         assert_eq!(out, b"{\"matches\":[]}\n");
         let err = write_matches(&mut ClosedPipe, Vec::new(), false).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::BrokenPipe);
+    }
+
+    #[test]
+    fn the_human_forms_print_an_approach_only_results_instruction() {
+        use codecite_core::APPROACH_ONLY_INSTRUCTION as NEVER_COPY;
+        let line = format!("instruction: {NEVER_COPY}\n");
+        let approach_only = |class: &mut String, instruction: &mut Option<String>| {
+            *class = "approach_only".into();
+            *instruction = Some(NEVER_COPY.into());
+        };
+
+        // Shared by every result: once, under the header.
+        let mut hit = code("src/a.rs", Some("a"), "fn a() {}");
+        approach_only(&mut hit.license_class, &mut hit.instruction);
+        assert_eq!(
+            human(std::slice::from_ref(&hit)),
+            format!(
+                "1 result · approach_only · indexed 2026-10-20T06:00:00Z\n{line}\
+                 app@0123456789ab:src/a.rs#L1-L5 · function a · fn a() {{}}\n"
+            )
+        );
+        // Not shared: under the result it belongs to.
+        let out = human(&[code("src/b.rs", Some("b"), "fn b() {}"), hit]);
+        assert!(out.ends_with(&format!("fn a() {{}}\n  {line}")), "{out}");
+        assert_eq!(out.matches("instruction:").count(), 1, "{out}");
+
+        let mut found = matched(&format!("app@{SHA}:src/a.rs#L3"), "jti");
+        approach_only(&mut found.license_class, &mut found.instruction);
+        assert_eq!(
+            human_matches(std::slice::from_ref(&found)),
+            format!(
+                "1 match · approach_only · indexed 2026-10-20T06:00:00Z\n{line}\
+                 app@0123456789ab:src/a.rs#L3: jti\n"
+            )
+        );
+        let out = human_matches(&[matched("app@0123456:a.rs#L1", "x"), found]);
+        assert!(out.ends_with(&format!(": jti\n  {line}")), "{out}");
+
+        let mut def = definition("src/a.rs", "source");
+        approach_only(&mut def.license_class, &mut def.instruction);
+        let out = human_definitions(&Definitions {
+            symbol: "callback".into(),
+            ambiguous: false,
+            total: 1,
+            results: vec![def.clone()],
+        });
+        assert_eq!(out.lines().nth(1), Some(line.trim_end()), "{out}");
+        let out = human_definitions(&Definitions {
+            symbol: "callback".into(),
+            ambiguous: true,
+            total: 2,
+            results: vec![definition("src/b.rs", "source"), def],
+        });
+        assert!(out.ends_with(&format!("\n  {line}")), "{out}");
+
+        let read = ReadResult {
+            citation: format!("app@{SHA}:src/a.rs#L1-L2"),
+            kind: "code".into(),
+            title: None,
+            anchor: None,
+            strength: None,
+            license_class: "approach_only".into(),
+            indexed_at: "2026-10-20T06:00:00Z".into(),
+            dirty: Some(false),
+            text: "fn a() {}".into(),
+            truncated: false,
+            instruction: Some(NEVER_COPY.into()),
+            older_versions: None,
+        };
+        let mut out = Vec::new();
+        write_read(&mut out, &read, false).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            format!(
+                "app@{SHA}:src/a.rs#L1-L2\n\
+                 code · approach_only · indexed 2026-10-20T06:00:00Z\n{line}\nfn a() {{}}\n"
+            )
+        );
+
+        let cite = CiteResult {
+            resolved: true,
+            citation: Some(read.citation.clone()),
+            kind: Some("code".into()),
+            license_class: Some("approach_only".into()),
+            indexed_at: Some("2026-10-20T06:00:00Z".into()),
+            text: Some("fn a() {}".into()),
+            truncated: Some(false),
+            instruction: Some(NEVER_COPY.into()),
+            ..CiteResult::default()
+        };
+        let mut out = Vec::new();
+        write_cite(&mut out, &cite, false).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            format!(
+                "app@{SHA}:src/a.rs#L1-L2\n\
+                 code · approach_only · indexed 2026-10-20T06:00:00Z\n{line}\nfn a() {{}}\n"
+            )
+        );
     }
 
     /// A writer whose every write fails, like stdout after its reader has

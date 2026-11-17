@@ -631,10 +631,16 @@ mod tests {
 
     #[test]
     fn approach_only_code_comes_with_the_instruction_not_to_copy_it() {
-        use crate::{APPROACH_ONLY_INSTRUCTION, CiteOptions, GrepQuery, ReadOptions, SearchQuery};
+        use crate::{
+            APPROACH_ONLY_INSTRUCTION, CiteOptions, GrepQuery, QUOTE_INSTRUCTION, ReadOptions,
+            SearchQuery,
+        };
         for (class, expected) in [
             ("approach_only", Some(APPROACH_ONLY_INSTRUCTION)),
             ("adapt", None),
+            // A quote source's snippets carry none; its text is quoted
+            // from `read`, whose instruction says how.
+            ("quote", None),
         ] {
             let (_dir, store) = fixture_licensed(class);
             let def = &store.definition("Client", false).unwrap().results[0];
@@ -669,19 +675,24 @@ mod tests {
             for found in &grep {
                 assert_eq!(found.instruction.as_deref(), expected, "{class} grep");
             }
+            // The field is left out of the JSON when there is none.
+            let json = serde_json::to_value(def).unwrap();
+            assert_eq!(json.get("instruction").is_some(), expected.is_some());
             let options = ReadOptions {
                 max_lines: 80,
                 allow_stale: false,
             };
             let read = store.read(&def.citation, &options).unwrap();
-            assert_eq!(read.instruction.as_deref(), expected, "{class} read");
             let cite = store
                 .cite(&def.citation, &CiteOptions { allow_stale: false })
                 .unwrap();
+            if class == "quote" {
+                assert_eq!(read.instruction.as_deref(), Some(QUOTE_INSTRUCTION));
+                assert_eq!(cite.instruction.as_deref(), Some(QUOTE_INSTRUCTION));
+                continue;
+            }
+            assert_eq!(read.instruction.as_deref(), expected, "{class} read");
             assert_eq!(cite.instruction.as_deref(), expected, "{class} cite");
-            // The field is left out of the JSON when there is none.
-            let json = serde_json::to_value(def).unwrap();
-            assert_eq!(json.get("instruction").is_some(), expected.is_some());
         }
     }
 }
