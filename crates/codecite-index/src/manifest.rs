@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use codecite_core::{RuleScope, SectionNumber};
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 
 /// A parsed and validated corpus manifest (`corpora/<name>.toml`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,6 +17,9 @@ pub struct Manifest {
     pub max_age_days: u32,
     /// The sources, in manifest order.
     pub sources: Vec<Source>,
+    /// The sha256 of the manifest's text, in hex, which each index run
+    /// records as `meta.manifest_hash`.
+    pub sha256: String,
 }
 
 /// One `[[source]]` entry.
@@ -319,6 +323,7 @@ impl Manifest {
             name: raw.name,
             max_age_days: raw.max_age_days,
             sources,
+            sha256: crate::fetch::hex(&Sha256::digest(text)),
         })
     }
 
@@ -501,6 +506,20 @@ mod tests {
 
     fn manifest(sources: &str) -> String {
         format!("name = \"test\"\n\n{sources}")
+    }
+
+    #[test]
+    fn the_manifest_hash_is_the_sha256_of_its_text() {
+        let text = manifest("");
+        let parsed = Manifest::parse(&text).unwrap();
+        assert_eq!(
+            parsed.sha256,
+            crate::fetch::hex(&Sha256::digest(text.as_bytes()))
+        );
+        assert_ne!(
+            parsed.sha256,
+            Manifest::parse(&format!("{text}\n")).unwrap().sha256
+        );
     }
 
     #[test]

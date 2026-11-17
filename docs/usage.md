@@ -216,6 +216,11 @@ work offline and rewrite only the files whose content changed. A document whose
 bytes no longer match its pin, or a commit the repository doesn't have, stops
 the run before anything is written.
 
+A run publishes all at once: queries see the previous index until it finishes,
+and a run that fails or is interrupted leaves the corpus as it was. Only one
+run at a time may write a corpus; a second one fails within seconds, naming the
+lock file `<corpus>.db.lock` beside the corpus.
+
 The run ends with a summary:
 
 ```text

@@ -45,6 +45,9 @@ pub use search::{
     MAX_SNIPPET_LINES, Scope, SearchQuery, SearchResult, SearchResults,
 };
 
+mod run;
+pub use run::{FTS_TOKENIZER, IndexRun, RunCounts};
+
 mod write;
 pub use write::{ChunkRecord, DocumentRecord, SourceRecord, SymbolRecord};
 
@@ -61,6 +64,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0007_heading_anchors.sql"),
     include_str!("../migrations/0008_refill_fts.sql"),
     include_str!("../migrations/0009_one_ranking.sql"),
+    include_str!("../migrations/0010_index_run.sql"),
 ];
 
 /// Writes a row into the full-text `table` for every stored chunk that
@@ -106,6 +110,9 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 pub struct Store {
     conn: Connection,
     path: PathBuf,
+    /// The exclusive lock on `<path>.lock` an index run holds, released
+    /// when the store is dropped.
+    lock: Option<std::fs::File>,
 }
 
 impl Store {
@@ -180,13 +187,14 @@ impl Store {
         enable_wal(&conn, path)?;
         // In WAL mode, NORMAL syncs at checkpoints rather than at every
         // commit. A power cut can lose the last commits but never corrupts
-        // the file, and an index run commits once per document.
+        // the file, and an index run commits once, when it publishes.
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         search::register_functions(&conn)?;
 
         Ok(Store {
             conn,
             path: path.to_path_buf(),
+            lock: None,
         })
     }
 
@@ -231,6 +239,7 @@ impl Store {
         Ok(Store {
             conn,
             path: path.to_path_buf(),
+            lock: None,
         })
     }
 

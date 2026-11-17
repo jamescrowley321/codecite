@@ -25,6 +25,16 @@ pub enum Error {
     #[error("SQLite error")]
     Sqlite(#[from] rusqlite::Error),
 
+    /// Another index run holds the corpus's lock file.
+    #[error(
+        "another codecite index run is writing this corpus (it holds {}); wait for it to finish",
+        path.display()
+    )]
+    CorpusLocked {
+        /// The lock file, `<corpus>.db.lock`.
+        path: PathBuf,
+    },
+
     /// The corpus was written by a newer codecite, with a schema this one
     /// doesn't know.
     #[error(
@@ -265,6 +275,7 @@ impl Error {
         match self {
             Error::Io(_) => "io",
             Error::InvalidCorpus { .. } => "invalid_corpus",
+            Error::CorpusLocked { .. } => "corpus_locked",
             Error::Sqlite(_) => "sqlite",
             Error::SchemaTooNew { .. } => "schema_too_new",
             Error::InvalidCorpusName { .. } => "invalid_corpus_name",

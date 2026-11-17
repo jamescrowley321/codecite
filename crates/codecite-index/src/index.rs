@@ -1,6 +1,6 @@
 //! Indexing a corpus: walk each local source and each git source's clone at
 //! its pinned commit, chunk the files whose content changed, split each new document version into its sections and steps,
-//! and write them into the store, one transaction per document.
+//! and write them into the store, all in one transaction that publishes the run.
 
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
@@ -9,13 +9,14 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use codecite_core::{
-    ChunkRecord, DocumentRecord, RuleScope, SourceRecord, SpecAliases, Store, SymbolRecord,
+    ChunkRecord, DocumentRecord, IndexRun, RuleScope, RunCounts, SourceRecord, SpecAliases, Store,
+    SymbolRecord,
 };
 use sha2::{Digest, Sha256};
 
 use crate::{
-    Checkout, Chunker, Clones, DocumentSource, Error, Fetcher, GitSource, GuidanceError,
-    GuidanceRule, GuidanceSource, Language, LicenseClass, LocalSource, LocalTree,
+    CHUNKER_VERSION, Checkout, Chunker, Clones, DocumentSource, Error, Fetcher, GitSource,
+    GuidanceError, GuidanceRule, GuidanceSource, Language, LicenseClass, LocalSource, LocalTree,
     MAX_DOCUMENT_SIZE, Manifest, Result, SkipReason, Source, SpecError, SpecSection, WalkOptions,
     document::split_document, split_guidance, split_spec, walk_local,
 };
@@ -68,7 +69,48 @@ pub struct IndexSummary {
 ///
 /// A reindex leaves `store` as a fresh index of the same pins would: the
 /// same rows and the same full-text totals, so search ranks alike.
+///
+/// The run is one publish. It holds the corpus's lock file for its whole
+/// length, so a second run fails with [`codecite_core::Error::CorpusLocked`]
+/// instead of interleaving its writes, and it makes every write in one
+/// transaction, so queries see the old corpus until the run commits and a
+/// run that fails, or is killed, leaves it as it was. Each run is recorded
+/// in `index_run`, and a published one in `meta.manifest_hash` and each
+/// source's `index_run_id`.
 pub fn index_corpus(
+    store: &mut Store,
+    manifest: &Manifest,
+    options: &WalkOptions,
+    fetcher: &Fetcher,
+    clones: &Clones,
+) -> Result<IndexSummary> {
+    store.lock_for_index()?;
+    let run = store.start_run(&IndexRun {
+        codecite_version: env!("CARGO_PKG_VERSION"),
+        manifest_sha256: &manifest.sha256,
+        chunker_version: CHUNKER_VERSION,
+    })?;
+    let published = index_sources(store, manifest, options, fetcher, clones).and_then(|summary| {
+        let counts = RunCounts {
+            written: summary.written,
+            unchanged: summary.unchanged,
+            removed: summary.removed,
+            chunks: summary.chunks,
+        };
+        store.publish_run(run, &counts)?;
+        Ok(summary)
+    });
+    if let Err(err) = &published {
+        // The run's own error is the one to report; recording it is best
+        // effort, and the rollback happens when the store is dropped anyway.
+        let _ = store.fail_run(run, &err.to_string());
+    }
+    published
+}
+
+/// Fetches and indexes every source, as [`index_corpus`] describes, inside
+/// the run's one transaction.
+fn index_sources(
     store: &mut Store,
     manifest: &Manifest,
     options: &WalkOptions,
@@ -139,6 +181,9 @@ pub fn index_corpus(
     }
     let aliases = document_aliases(manifest)?;
     let mut chunker = Chunker::new()?;
+    // Everything above only reads; every write from here on is in one
+    // transaction, published by `index_corpus`.
+    store.begin_publish()?;
     let mut indexed: Vec<String> = Vec::new();
     let mut keep: Vec<i64> = Vec::new();
     for source in &manifest.sources {
@@ -871,6 +916,7 @@ mod tests {
             name: "test".into(),
             max_age_days: 30,
             sources,
+            sha256: String::new(),
         }
     }
 
@@ -1019,6 +1065,146 @@ mod tests {
         /// The row count and the averages record BM25 reads, for
         /// `chunk_fts`.
         fts: Vec<Vec<rusqlite::types::Value>>,
+    }
+
+    /// Every source row and `meta` row, the rows a published run changes
+    /// besides [`Contents`].
+    fn published(corpus: &Corpus) -> Vec<Vec<rusqlite::types::Value>> {
+        let conn = corpus.sql();
+        let mut stmt = conn
+            .prepare(
+                "SELECT name, kind, url, revision, indexed_at, index_run_id FROM source
+                 UNION ALL SELECT key, value, NULL, NULL, NULL, NULL FROM meta
+                 ORDER BY 1, 2",
+            )
+            .unwrap();
+        stmt.query_map([], |row| (0..6).map(|i| row.get(i)).collect())
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    }
+
+    /// The newest run's status and error.
+    fn last_run(corpus: &Corpus) -> (String, Option<String>) {
+        corpus
+            .sql()
+            .query_row(
+                "SELECT status, error FROM index_run ORDER BY id DESC LIMIT 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn a_failed_run_leaves_the_corpus_unchanged() {
+        let repo = fixture();
+        let corpus = Corpus::new();
+        corpus.index(&manifest(vec![local(&repo, Some("app"))]));
+        let (contents, rows) = (corpus.contents(), published(&corpus));
+
+        // A new commit changes two files, so the run rewrites them and the
+        // source's revision, then fails on the second source's name.
+        repo.write("src/lib.rs", "pub fn reissue_grant() {}\n");
+        repo.write("notes.txt", "rotate keys weekly\n");
+        repo.commit_all(&["src/lib.rs", "notes.txt"]);
+        let other = fixture();
+        let err = corpus
+            .try_index(&manifest(vec![
+                local(&repo, Some("app")),
+                local(&other, Some("app")),
+            ]))
+            .unwrap_err();
+        assert!(matches!(err, Error::DuplicateSource { .. }), "{err:?}");
+
+        assert_eq!(corpus.contents(), contents);
+        assert_eq!(published(&corpus), rows);
+        assert_eq!(corpus.matches("reissue"), 0);
+        let (status, error) = last_run(&corpus);
+        assert_eq!(status, "failed");
+        assert!(error.is_some_and(|e| e.contains("app")));
+    }
+
+    #[test]
+    fn a_run_is_recorded_with_its_manifest_hash() {
+        let repo = fixture();
+        let corpus = Corpus::new();
+        let mut run = manifest(vec![local(&repo, Some("app"))]);
+        run.sha256 = "5eed".repeat(16);
+        let summary = corpus.index(&run);
+
+        let conn = corpus.sql();
+        let hash: String = conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'manifest_hash'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(hash, run.sha256);
+        let (id, status, version, manifest_sha256, chunker, written, chunks): (
+            i64,
+            String,
+            String,
+            String,
+            u32,
+            i64,
+            i64,
+        ) = conn
+            .query_row(
+                "SELECT id, status, codecite_version, manifest_sha256, chunker_version, written,
+                        chunks
+                 FROM index_run",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(status, "succeeded");
+        assert_eq!(version, env!("CARGO_PKG_VERSION"));
+        assert_eq!(manifest_sha256, run.sha256);
+        assert_eq!(chunker, crate::CHUNKER_VERSION);
+        assert_eq!(
+            (written, chunks),
+            (summary.written as i64, summary.chunks as i64)
+        );
+        let unstamped: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM source WHERE index_run_id IS NOT ?1",
+                [id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(unstamped, 0);
+    }
+
+    #[test]
+    fn a_second_run_fails_while_another_holds_the_lock() {
+        let repo = fixture();
+        let corpus = Corpus::new();
+        let first = Store::open_for_index(&corpus.path()).unwrap();
+        let err = corpus
+            .try_index(&manifest(vec![local(&repo, Some("app"))]))
+            .unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                Error::Core(codecite_core::Error::CorpusLocked { path })
+                    if path.ends_with("corpus.db.lock")
+            ),
+            "{err:?}"
+        );
+        drop(first);
+        corpus.index(&manifest(vec![local(&repo, Some("app"))]));
     }
 
     /// A guidance document: a title, a scoped rule with a subsection, a

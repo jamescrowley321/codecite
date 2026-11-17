@@ -40,13 +40,14 @@ pub use store::{CheckOptions, CitationChecker, CitationProblem, Problem, TextChe
 pub use store::{
     ChunkRecord, CiteOptions, CiteResult, Context, ContextQuery, ContextTarget, Corpora,
     CorpusInfo, DEFAULT_MAX_AGE_DAYS, DEFAULT_MAX_LINES, DEFAULT_SEARCH_LIMIT, Definition,
-    Definitions, DiffOptions, DiffResult, DocumentRecord, Finding, Freshness, GrepMatch, GrepQuery,
-    GrepResults, MAX_CONTEXT_BYTES, MAX_READ_BYTES, MAX_READ_LINES, MAX_SEARCH_LIMIT,
-    MAX_SNIPPET_BYTES, MAX_SNIPPET_LINES, QUOTE_INSTRUCTION, QUOTE_TRUNCATED_INSTRUCTION,
-    ReadOptions, ReadResult, Requirement, RequirementSection, Requirements, RequirementsOptions,
-    Rule, RuleScope, SCHEMA_VERSION, Scope, SearchQuery, SearchResult, SearchResults, SourceRecord,
-    Store, SymbolRecord, VersionChange, corpora, is_corpus_name,
+    Definitions, DiffOptions, DiffResult, DocumentRecord, FTS_TOKENIZER, Finding, Freshness,
+    GrepMatch, GrepQuery, GrepResults, IndexRun, MAX_CONTEXT_BYTES, MAX_READ_BYTES, MAX_READ_LINES,
+    MAX_SEARCH_LIMIT, MAX_SNIPPET_BYTES, MAX_SNIPPET_LINES, QUOTE_INSTRUCTION,
+    QUOTE_TRUNCATED_INSTRUCTION, ReadOptions, ReadResult, Requirement, RequirementSection,
+    Requirements, RequirementsOptions, Rule, RuleScope, RunCounts, SCHEMA_VERSION, Scope,
+    SearchQuery, SearchResult, SearchResults, SourceRecord, Store, SymbolRecord, VersionChange,
+    corpora, is_corpus_name,
 };
 
 mod terms;
-pub use terms::{identifier_terms, split_identifier, text_terms};
+pub use terms::{TERMS_VERSION, identifier_terms, split_identifier, text_terms};
