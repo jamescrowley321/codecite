@@ -126,6 +126,11 @@ pub fn read_scip(path: &Path) -> Result<Vec<ScipDocument>, ScipError> {
 /// The bytes of the SCIP index at `path`: a regular file of at most
 /// [`MAX_SCIP_SIZE`], with the read itself stopped past it.
 pub fn read_scip_bytes(path: &Path) -> Result<Vec<u8>, ScipError> {
+    // Checked before opening, since opening a FIFO waits for a writer, and
+    // again after, in case the path changed in between.
+    if !std::fs::metadata(path)?.is_file() {
+        return Err(ScipError::NotAFile);
+    }
     let file = std::fs::File::open(path)?;
     if !file.metadata()?.is_file() {
         return Err(ScipError::NotAFile);
@@ -178,11 +183,15 @@ pub fn decode_scip(bytes: &[u8]) -> Result<Vec<ScipDocument>, ScipError> {
             let roles = u32::try_from(occ.symbol_roles).unwrap_or_default();
             if roles & ROLE_DEFINITION != 0 {
                 let found = info(symbol);
+                let short = |n: &String| !n.is_empty() && n.len() <= MAX_DISPLAY_NAME_BYTES;
                 let display_name = found
                     .map(|i| i.display_name.clone())
-                    .filter(|n| !n.is_empty() && n.len() <= MAX_DISPLAY_NAME_BYTES)
-                    .or_else(|| symbol_name(symbol))
-                    .unwrap_or_else(|| symbol.to_owned());
+                    .filter(short)
+                    .or_else(|| symbol_name(symbol).filter(short))
+                    .unwrap_or_else(|| {
+                        let name = symbol_name(symbol).unwrap_or_else(|| symbol.to_owned());
+                        name[..name.floor_char_boundary(MAX_DISPLAY_NAME_BYTES)].to_owned()
+                    });
                 let (first, last) = enclosing_lines(occ).unwrap_or((start_line, end_line));
                 out.definitions.push(ScipDefinition {
                     symbol: symbol.to_owned(),
@@ -286,6 +295,15 @@ fn kind_name(kind: i32, symbol: &str) -> &'static str {
             _ => "symbol",
         },
     }
+}
+
+/// `bytes`, a SCIP index, without its document at `path`, for tests that
+/// change an index.
+#[cfg(test)]
+pub(crate) fn without_document(bytes: &[u8], path: &str) -> Vec<u8> {
+    let mut index = Index::decode(bytes).unwrap();
+    index.documents.retain(|d| d.relative_path != path);
+    index.encode_to_vec()
 }
 
 #[cfg(test)]
@@ -419,10 +437,11 @@ mod tests {
             display_name: name,
         };
         let (long, short) = (format!("{PKG}f()."), format!("{PKG}g()."));
+        let backticked = format!("{PKG}`{}`().", "é ".repeat(300));
         let index = Index {
             documents: vec![Document {
                 relative_path: "a.rs".into(),
-                occurrences: vec![def(&long), def(&short)],
+                occurrences: vec![def(&long), def(&short), def(&backticked)],
                 symbols: vec![info(&long, "x".repeat(300)), info(&short, "gee".into())],
             }],
             external_symbols: vec![info(&short, "external".into())],
@@ -433,7 +452,13 @@ mod tests {
             .iter()
             .map(|d| d.display_name.as_str())
             .collect();
-        assert_eq!(names, ["f", "gee"]);
+        assert_eq!(names[..2], ["f", "gee"]);
+        // A descriptor's name is held to the same cap.
+        assert!(
+            names[2].len() <= MAX_DISPLAY_NAME_BYTES && names[2].starts_with("é "),
+            "{}",
+            names[2]
+        );
     }
 
     #[test]
@@ -472,10 +497,19 @@ mod tests {
     fn bad_files_are_errors() {
         let dir = tempfile::tempdir().unwrap();
         let err = read_scip(dir.path()).unwrap_err();
-        assert!(
-            matches!(err, ScipError::NotAFile | ScipError::Io(_)),
-            "{err:?}"
-        );
+        assert!(matches!(err, ScipError::NotAFile), "{err:?}");
+        // A FIFO is refused without waiting for a writer.
+        #[cfg(unix)]
+        {
+            let fifo = dir.path().join("fifo.scip");
+            let made = std::process::Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap();
+            assert!(made.success());
+            let err = read_scip(&fifo).unwrap_err();
+            assert!(matches!(err, ScipError::NotAFile), "{err:?}");
+        }
         let truncated = dir.path().join("cut.scip");
         let bytes = std::fs::read(FIXTURE).unwrap();
         std::fs::write(&truncated, &bytes[..bytes.len() / 2]).unwrap();

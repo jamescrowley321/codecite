@@ -78,6 +78,11 @@ pub struct ScipSummary {
     /// Definitions skipped because their ID was already stored: a second
     /// definition of one symbol, or another source's.
     pub conflicts: usize,
+    /// IDs taken from another source's SCIP-only symbol by a definition that
+    /// sits on a tree-sitter symbol of the same name here.
+    pub taken_over: usize,
+    /// The other sources that already held one of those IDs, sorted.
+    pub conflicting_sources: Vec<String>,
     /// Occurrences written, definitions included.
     pub occurrences: usize,
     /// Definitions and occurrences past the end of their file, skipped.
@@ -122,13 +127,30 @@ impl Store {
         found.sort_by(|a, b| a.0.path.cmp(&b.0.path));
         summary.documents = found.len();
         for &(doc, document_id, lines) in &found {
-            write_definitions(&tx, document_id, lines, doc, &mut summary)?;
+            write_definitions(&tx, source_id, document_id, lines, doc, &mut summary)?;
         }
         for &(doc, document_id, lines) in &found {
             write_occurrences(&tx, document_id, lines, doc, &mut summary)?;
         }
         tx.commit()?;
         Ok(summary)
+    }
+
+    /// Undoes every source's SCIP layer, in one transaction, so an index run
+    /// applies each source's index to a store where no other source, one the
+    /// manifest no longer lists included, still holds a SCIP ID.
+    pub fn clear_all_scip(&mut self) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        let sources: Vec<i64> = {
+            let mut stmt = tx.prepare("SELECT id FROM source ORDER BY id")?;
+            let rows = stmt.query_map([], |row| row.get(0))?;
+            rows.collect::<rusqlite::Result<_>>()?
+        };
+        for source_id in sources {
+            undo_scip(&tx, source_id)?;
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     /// Undoes the source's SCIP layer, in one transaction: its occurrences,
@@ -223,6 +245,7 @@ fn rename_symbol(
 /// symbol that holds it, or is added.
 fn write_definitions(
     tx: &Transaction<'_>,
+    source_id: i64,
     document_id: i64,
     lines: u32,
     doc: &ScipDocument,
@@ -233,13 +256,6 @@ fn write_definitions(
     for def in definitions {
         if def.line == 0 || def.line > lines {
             summary.past_end += 1;
-            continue;
-        }
-        let taken: bool = tx
-            .prepare_cached("SELECT EXISTS (SELECT 1 FROM symbol WHERE id = ?1)")?
-            .query_row([&def.symbol], |row| row.get(0))?;
-        if taken {
-            summary.conflicts += 1;
             continue;
         }
         let holder: Option<String> = tx
@@ -253,6 +269,38 @@ fn write_definitions(
                 row.get(0)
             })
             .optional()?;
+        // Who holds the ID already: whether only SCIP found it there, and
+        // in which source.
+        let taken: Option<(bool, i64, String)> = tx
+            .prepare_cached(
+                "SELECT sym.local_id IS NULL AND sym.provider = 'scip', s.id, s.name
+                 FROM symbol sym
+                 JOIN document d ON d.id = sym.document_id
+                 JOIN source s ON s.id = d.source_id
+                 WHERE sym.id = ?1",
+            )?
+            .query_row([&def.symbol], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .optional()?;
+        if let Some((scip_only, other, name)) = taken {
+            // A definition that sits on a tree-sitter symbol of the same
+            // name wins over another source's that SCIP alone found there,
+            // whatever order the manifest lists them in; otherwise the
+            // first keeps the ID.
+            if scip_only && other != source_id && holder.is_some() {
+                tx.prepare_cached("DELETE FROM symbol WHERE id = ?1")?
+                    .execute([&def.symbol])?;
+                summary.taken_over += 1;
+            } else {
+                summary.conflicts += 1;
+                if other != source_id && !summary.conflicting_sources.contains(&name) {
+                    summary.conflicting_sources.push(name);
+                    summary.conflicting_sources.sort();
+                }
+                continue;
+            }
+        }
         if let Some(local_id) = holder {
             rename_symbol(tx, &local_id, &def.symbol, "scip", Some(&local_id))?;
             summary.matched += 1;
@@ -588,6 +636,7 @@ pub fn validate(&self, token: &str) -> bool {\n        check(token) && !self.iss
 mod tests {
     use super::fixture::{app, index, local, scip};
     use super::*;
+    use crate::Error;
 
     /// Every row a SCIP layer touches, sorted, to compare two stores.
     fn rows(store: &Store) -> Vec<String> {
@@ -881,18 +930,127 @@ mod tests {
     fn definition_reports_scip_and_finds_dotted_names_in_scip_ids() {
         let (_dir, mut store, id) = app();
         let before = store.definition("login", false).unwrap();
+        assert_eq!(before.results[0].id, local("src/lib.rs", "login()."));
         assert_eq!(before.results[0].providers, ["treesitter"]);
         assert_eq!(before.results[0].confidence, 2);
         store.write_scip(id, &index()).unwrap();
         let after = store.definition("login", false).unwrap();
         assert_eq!(after.results[0].providers, ["scip", "treesitter"]);
+        assert_eq!(after.results[0].id, scip("login()."));
         assert_eq!(after.results[0].confidence, 3);
         assert_eq!(after.results[0].citation, before.results[0].citation);
         let dotted = store.definition("Client.validate", false).unwrap();
         assert_eq!(dotted.total, 1);
         assert_eq!(dotted.results[0].providers, ["scip", "treesitter"]);
-        // SCIP-only symbols have no chunk, so `definition` doesn't list them.
-        assert!(store.definition("issuer", false).is_err());
+        // SCIP-only symbols have no chunk, so `definition` doesn't list them,
+        // nor suggest them.
+        let err = store.definition("Issuer", false).unwrap_err();
+        let Error::NoSuchSymbol { candidates, .. } = &err else {
+            panic!("{err:?}")
+        };
+        assert!(candidates.is_empty(), "{candidates:?}");
+    }
+
+    /// A second source, `other`, whose one file SCIP says defines
+    /// `login()` though tree-sitter found nothing there.
+    fn other_source(store: &mut Store) -> (i64, Vec<ScipDocument>) {
+        use crate::{DocumentRecord, SourceRecord};
+        let id = store
+            .upsert_source(&SourceRecord {
+                name: "other",
+                kind: "local",
+                url: "/src/other",
+                revision: fixture::HEAD,
+                license_spdx: None,
+                license_class: "adapt",
+                is_current: true,
+                obsoleted_by: None,
+                updated_by: None,
+            })
+            .unwrap();
+        store
+            .write_document(
+                id,
+                &DocumentRecord {
+                    path: "src/lib.rs",
+                    language: Some("rust"),
+                    content_hash: b"other",
+                    size_bytes: 3,
+                    dirty: false,
+                    text: Some("// login\n"),
+                    chunks: vec![],
+                },
+            )
+            .unwrap();
+        let docs = vec![ScipDocument {
+            path: "src/lib.rs".into(),
+            definitions: vec![ScipDefinition {
+                symbol: scip("login()."),
+                display_name: "login".into(),
+                kind: "function".into(),
+                line: 1,
+                start_line: 1,
+                end_line: 1,
+            }],
+            occurrences: vec![],
+        }];
+        (id, docs)
+    }
+
+    /// The source holding a symbol ID.
+    fn owner(store: &Store, symbol: &str) -> String {
+        store
+            .conn
+            .query_row(
+                "SELECT s.name FROM symbol sym JOIN document d ON d.id = sym.document_id
+                 JOIN source s ON s.id = d.source_id WHERE sym.id = ?1",
+                [symbol],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn a_definition_on_a_tree_sitter_symbol_wins_an_id_whatever_the_order() {
+        // `other` first: app's definition, on its tree-sitter `login`, takes
+        // the ID over.
+        let (_dir, mut store, app_id) = app();
+        let (other, docs) = other_source(&mut store);
+        store.write_scip(other, &docs).unwrap();
+        let summary = store.write_scip(app_id, &index()).unwrap();
+        assert_eq!((summary.taken_over, summary.conflicts), (1, 0));
+        assert_eq!(owner(&store, &scip("login().")), "app");
+
+        // app first: `other` can't take it, and the summary names app.
+        let (_dir, mut store, app_id) = app();
+        let (other, docs) = other_source(&mut store);
+        store.write_scip(app_id, &index()).unwrap();
+        let summary = store.write_scip(other, &docs).unwrap();
+        assert_eq!(summary.conflicts, 1);
+        assert_eq!(summary.conflicting_sources, ["app"]);
+        assert_eq!(owner(&store, &scip("login().")), "app");
+    }
+
+    #[test]
+    fn clearing_every_source_frees_the_ids_they_held() {
+        let (_dir, mut store, app_id) = app();
+        let (other, docs) = other_source(&mut store);
+        store.write_scip(app_id, &index()).unwrap();
+        store.write_scip(other, &docs).unwrap();
+        store.clear_all_scip().unwrap();
+        let scip_rows: i64 = store
+            .conn
+            .query_row(
+                "SELECT (SELECT count(*) FROM symbol WHERE provider = 'scip')
+                      + (SELECT count(*) FROM occurrence) + (SELECT count(*) FROM edge)",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(scip_rows, 0);
+        // With app's layer gone, `other` now holds the ID.
+        store.write_scip(other, &docs).unwrap();
+        assert_eq!(owner(&store, &scip("login().")), "other");
     }
 
     #[test]

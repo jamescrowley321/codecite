@@ -662,9 +662,9 @@ One line per definition: its citation, kind, symbol and role, then the first
 line of its text. A header gives the license class and index time once when
 the definitions share them. `read` a definition's citation for its whole text. `--json` prints
 `{"symbol", "ambiguous", "total", "results"}`; each result also carries
-`providers` and `confidence`: `["treesitter"]` and 2, or `["scip",
-"treesitter"]` and 3 when the source's SCIP index gave the definition its
-SCIP ID. A name nothing defines is an error that lists
+`id`, the symbol ID the graph tools take, and `providers` and `confidence`:
+`["treesitter"]` and 2 with codecite's own ID, or `["scip", "treesitter"]`
+and 3 with the SCIP ID when the source's SCIP index gave the definition one. A name nothing defines is an error that lists
 the names differing from it only in case, `_` or `-`:
 
 ```text
@@ -701,7 +701,11 @@ A SCIP definition takes over the tree-sitter symbol in the same file with the
 same name whose lines hold it, so `def` keeps citing the same lines and reports
 both providers. A definition tree-sitter doesn't chunk, such as a struct field,
 is a symbol of its own, which `refs` and `graph` find but `def` doesn't list.
-A missing or unreadable index stops the run before anything is written, and
+Two sources whose indexes define the same SCIP ID (two checkouts of one
+crate and version) can't both hold it: a definition on a tree-sitter symbol
+of the same name wins over one only SCIP found, and otherwise the source
+listed first keeps it; the summary's `IDs already defined by <source>` names
+the other. A missing or unreadable index stops the run before anything is written, and
 so does one whose hash isn't its `scip_sha256`. Pin an index you didn't build
 yourself: its definitions and edges reach agents as exact, so a stale or
 altered file would mislead them. A reference inside a function to that same
@@ -748,8 +752,10 @@ each result with `id`, `name`, `kind`, `distance`, `citation`, `via`,
 `call_site`, `providers`, `confidence`, `license_class` and `indexed_at`.
 
 A name that several symbols have is an error listing their IDs, rather than
-a merged answer; pass one of them. A symbol whose source has no SCIP index is
-a `no_graph` error, never an empty list that would read as "nothing calls
+a merged answer; pass one of them. A definition the index didn't name but that
+holds references it found, such as a function SCIP and tree-sitter name
+differently, keeps codecite's own ID and still answers. A symbol with no SCIP
+data at all is a `no_graph` error, never an empty list that would read as "nothing calls
 this":
 
 ```text

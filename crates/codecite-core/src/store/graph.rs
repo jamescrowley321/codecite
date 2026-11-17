@@ -502,7 +502,7 @@ impl Store {
             .query_row([name], |row| row.get(0))
             .optional()?;
         match exact.as_deref() {
-            Some("treesitter") => {
+            Some("treesitter") if !self.in_graph(name)? => {
                 return Err(Error::NoGraph {
                     symbol: name.into(),
                 });
@@ -543,11 +543,11 @@ impl Store {
         match found.len() {
             0 => Err(Error::NoSuchSymbol {
                 symbol: name.into(),
-                candidates: self.similar_names(last)?,
+                candidates: self.similar_graph_names(last)?,
             }),
             1 => {
                 let (id, provider) = found.remove(0);
-                if provider == "treesitter" {
+                if provider == "treesitter" && !self.in_graph(&id)? {
                     Err(Error::NoGraph {
                         symbol: name.into(),
                     })
@@ -566,6 +566,19 @@ impl Store {
                 })
             }
         }
+    }
+
+    /// Whether a SCIP edge starts or ends at the symbol: a tree-sitter
+    /// definition no SCIP definition replaced can still hold references a
+    /// SCIP index found, and the graph tools give its ID as a result.
+    fn in_graph(&self, id: &str) -> Result<bool> {
+        Ok(self
+            .conn
+            .prepare_cached(
+                "SELECT EXISTS (SELECT 1 FROM edge WHERE src = ?1)
+                     OR EXISTS (SELECT 1 FROM edge WHERE dst = ?1)",
+            )?
+            .query_row([id], |row| row.get(0))?)
     }
 
     /// The IDs and providers of the symbols in current sources whose name
@@ -787,6 +800,31 @@ mod tests {
     }
 
     #[test]
+    fn a_tree_sitter_symbol_in_the_scip_graph_can_be_walked_from() {
+        let (_dir, mut store, id) = app();
+        let mut docs = index();
+        // SCIP defines nothing named `helper`, but it calls check.
+        docs[0].occurrences.push(ScipOccurrence {
+            symbol: scip("client/check()."),
+            start_line: 18,
+            end_line: 18,
+            roles: 0,
+        });
+        store.write_scip(id, &docs).unwrap();
+        let helper = "codecite . app . src/`lib.rs`/helper().";
+        let callers = walk(&store, &scip("client/check()."), Direction::Callers, 1);
+        assert!(
+            callers.results.iter().any(|n| n.id == helper),
+            "{callers:?}"
+        );
+        // The ID a result gave is accepted, by ID and by name.
+        let callees = walk(&store, helper, Direction::Callees, 1);
+        assert_eq!(callees.results[0].id, scip("client/check()."));
+        assert_eq!(walk(&store, "helper", Direction::Callees, 1).total, 1);
+        assert_eq!(walk(&store, helper, Direction::Callers, 1).total, 0);
+    }
+
+    #[test]
     fn a_symbol_must_name_one_symbol_with_a_graph() {
         let (_dir, mut store, id) = app();
         // Before SCIP, nothing has a graph.
@@ -812,6 +850,12 @@ mod tests {
             panic!("{err:?}")
         };
         assert_eq!(candidates, &["login".to_owned()]);
+        // A SCIP-only name is suggested, since the graph tools find it.
+        let err = store.references("Issuer", 0, false).unwrap_err();
+        let Error::NoSuchSymbol { candidates, .. } = &err else {
+            panic!("{err:?}")
+        };
+        assert_eq!(candidates, &["issuer".to_owned()]);
         let err = store.references("  ", 0, false).unwrap_err();
         assert!(matches!(err, Error::EmptyQuery), "{err:?}");
         // Dotted names and IDs both find a symbol.

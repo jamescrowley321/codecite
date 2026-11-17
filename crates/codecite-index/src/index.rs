@@ -190,6 +190,10 @@ pub fn index_corpus(
     let mut chunker = Chunker::new()?;
     let mut indexed: Vec<String> = Vec::new();
     let mut keep: Vec<i64> = Vec::new();
+    // Every source's SCIP layer comes off before any is applied again, so
+    // no source, one the manifest no longer lists included, still holds an
+    // ID another source's index defines.
+    store.clear_all_scip()?;
     for (source, scip) in manifest.sources.iter().zip(&scip) {
         let walked = match source {
             Source::Local(local) if local.license_class != LicenseClass::Excluded => {
@@ -848,8 +852,18 @@ impl fmt::Display for IndexSummary {
             if scip.past_end > 0 {
                 write!(f, "; {} past the end of their file", scip.past_end)?;
             }
+            if scip.taken_over > 0 {
+                write!(
+                    f,
+                    "; {} IDs taken over from another source's SCIP-only symbols",
+                    scip.taken_over
+                )?;
+            }
             if scip.conflicts > 0 {
                 write!(f, "; {} IDs already defined", scip.conflicts)?;
+                if !scip.conflicting_sources.is_empty() {
+                    write!(f, " by {}", scip.conflicting_sources.join(", "))?;
+                }
             }
             writeln!(f)?;
         }
@@ -1876,6 +1890,57 @@ mod tests {
     }
 
     #[test]
+    fn reindexing_with_a_changed_scip_index_matches_a_fresh_index() {
+        let (repo, index) = scip_fixture();
+        let dir = tempfile::tempdir().unwrap();
+        let smaller = dir.path().join("smaller.scip");
+        std::fs::write(
+            &smaller,
+            crate::scip::without_document(&std::fs::read(&index).unwrap(), "src/lib.rs"),
+        )
+        .unwrap();
+        let changed = manifest(vec![with_scip(local(&repo, Some("app")), Some(&smaller))]);
+        let reindexed = Corpus::new();
+        reindexed.index(&manifest(vec![with_scip(
+            local(&repo, Some("app")),
+            Some(&index),
+        )]));
+        reindexed.index(&changed);
+        let fresh = Corpus::new();
+        fresh.index(&changed);
+        assert_eq!(reindexed.contents(), fresh.contents());
+    }
+
+    #[test]
+    fn removing_the_source_that_held_an_id_matches_a_fresh_index() {
+        // Two checkouts of one crate with one index: the same SCIP IDs.
+        let (first, index) = scip_fixture();
+        let (second, _) = scip_fixture();
+        let both = manifest(vec![
+            with_scip(local(&first, Some("first")), Some(&index)),
+            with_scip(local(&second, Some("second")), Some(&index)),
+        ]);
+        let only_second = manifest(vec![with_scip(
+            local(&second, Some("second")),
+            Some(&index),
+        )]);
+        let corpus = Corpus::new();
+        let summary = corpus.index(&both);
+        let (name, second_scip) = &summary.scip[1];
+        assert_eq!(name, "second");
+        assert_eq!(second_scip.conflicting_sources, ["first"]);
+        assert!(
+            summary.to_string().contains("IDs already defined by first"),
+            "{summary}"
+        );
+
+        corpus.index(&only_second);
+        let fresh = Corpus::new();
+        fresh.index(&only_second);
+        assert_eq!(corpus.contents(), fresh.contents());
+    }
+
+    #[test]
     fn a_scip_pin_is_checked_and_an_unpinned_index_is_named() {
         let (repo, index) = scip_fixture();
         let pinned = |pin: Option<String>| {
@@ -2379,6 +2444,8 @@ mod tests {
                     matched: 6,
                     added: 3,
                     conflicts: 1,
+                    taken_over: 0,
+                    conflicting_sources: vec!["lib".into()],
                     occurrences: 30,
                     past_end: 2,
                     edges: 12,
@@ -2395,7 +2462,7 @@ mod tests {
              source client not indexed: use = \"excluded\"\n\
              source old removed: the run no longer indexes it\n\
              scip app: 2 documents, 6 symbols given SCIP IDs, 3 added, 30 occurrences, 12 edges; \
-             1 documents the source doesn't have; 2 past the end of their file; 1 IDs already defined\n\
+             1 documents the source doesn't have; 2 past the end of their file; 1 IDs already defined by lib\n\
              scip app is not pinned: give it a scip_sha256 so a changed index stops the run until it is reviewed\n\
              guidance rules is not pinned: give it a sha256 so a changed rule stops the run until it is reviewed\n\
              elapsed: 1.25s"

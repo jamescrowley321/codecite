@@ -53,6 +53,10 @@ pub struct Definition {
     pub citation: String,
     /// The name as written in the code.
     pub symbol: String,
+    /// The definition's symbol ID: its SCIP symbol string when a SCIP
+    /// index gave it one, else codecite's own SCIP-shaped local ID. The
+    /// graph tools take it as `symbol`.
+    pub id: String,
     /// What it defines: `function`, `method`, `class`, `struct`, `enum`,
     /// `trait`, `interface`, `variable` or `type_alias`.
     pub kind: String,
@@ -167,6 +171,7 @@ impl Store {
             let definition = Definition {
                 citation: code_citation(&source, &revision, &path, row.get(2)?, row.get(3)?),
                 symbol: row.get(12)?,
+                id: row.get(0)?,
                 kind: row.get(1)?,
                 role: role.as_str(),
                 license_class: row.get(9)?,
@@ -186,13 +191,34 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// The defined names that differ from `name` only in case, `_` or `-`,
-    /// sorted. Only an error asks, so a scan of the symbols is fine here.
+    /// The names `definition` could find that differ from `name` only in
+    /// case, `_` or `-`, sorted: symbols with a chunk, in a current source.
+    /// Only an error asks, so a scan of the symbols is fine here.
     pub(super) fn similar_names(&self, name: &str) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT DISTINCT display_name FROM symbol
-             WHERE codecite_name_key(display_name) = ?1 ORDER BY display_name LIMIT ?2",
-        )?;
+        self.similar(
+            name,
+            "EXISTS (SELECT 1 FROM chunk c WHERE c.symbol_id = sym.id)",
+        )
+    }
+
+    /// The names the graph tools could find that differ from `name` only in
+    /// case, `_` or `-`: every symbol in a current source, SCIP-only ones
+    /// included.
+    pub(super) fn similar_graph_names(&self, name: &str) -> Result<Vec<String>> {
+        self.similar(name, "1")
+    }
+
+    /// The similar names among the symbols `filter` keeps, a SQL condition
+    /// over `sym`. It is formatted into the SQL, which is safe only because
+    /// every caller passes a constant written here.
+    fn similar(&self, name: &str, filter: &str) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare_cached(&format!(
+            "SELECT DISTINCT sym.display_name FROM symbol sym
+             JOIN document d ON d.id = sym.document_id
+             JOIN source s ON s.id = d.source_id
+             WHERE codecite_name_key(sym.display_name) = ?1 AND s.is_current AND {filter}
+             ORDER BY sym.display_name LIMIT ?2"
+        ))?;
         let limit = i64::try_from(MAX_CANDIDATES).unwrap_or(i64::MAX);
         let rows = stmt.query_map(params![name_key(name), limit], |row| row.get(0))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -477,6 +503,7 @@ mod tests {
         let def = &found.results[0];
         assert_eq!(def.citation, format!("app@{HEAD}:src/client.rs#L1"));
         assert_eq!(def.symbol, "Client");
+        assert_eq!(def.id, "codecite . app . src/`client.rs`/Client#");
         assert_eq!(def.kind, "struct");
         assert_eq!(def.role, "source");
         assert_eq!(def.license_class, "adapt");
@@ -492,6 +519,7 @@ mod tests {
                 "citation",
                 "confidence",
                 "dirty",
+                "id",
                 "indexed_at",
                 "kind",
                 "license_class",

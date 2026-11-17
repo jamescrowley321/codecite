@@ -1531,9 +1531,6 @@ mod tests {
         session.stop().await;
     }
 
-    /// Every result a tool sends, success or error, fits the output schema
-    /// it advertises: a client that checks structured content against the
-    /// schema, as the MCP spec says it may, accepts both.
     #[tokio::test]
     async fn the_graph_tools_return_what_the_store_does() {
         let dir = scip_fixture();
@@ -1598,6 +1595,9 @@ mod tests {
         session.stop().await;
     }
 
+    /// Every result a tool sends, success or error, fits the output schema
+    /// it advertises: a client that checks structured content against the
+    /// schema, as the MCP spec says it may, accepts both.
     #[tokio::test]
     async fn every_result_fits_its_tools_output_schema() {
         let dir = scip_fixture();

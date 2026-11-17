@@ -124,6 +124,10 @@ fn def_reports_the_scip_id_and_both_providers() {
     let def = &found["results"][0];
     assert_eq!(def["providers"], serde_json::json!(["scip", "treesitter"]));
     assert_eq!(def["confidence"], 3);
+    assert_eq!(
+        def["id"],
+        "rust-analyzer cargo app 0.1.0 client/impl#[Client]validate()."
+    );
     assert_eq!(span(&def["citation"]), "src/client.rs#L14-L17");
 }
 
