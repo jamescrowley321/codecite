@@ -41,10 +41,13 @@ fn pattern() -> &'static Regex {
 /// as `repo@sha:README.md#install`, `doc@sha256:<12 hex>#section-4.3`), and
 /// each Markdown link whose text holds `§` and whose target is a URL with an
 /// anchor. Trailing dots and colons, which end a sentence rather than a
-/// citation, are left out. Written spec forms in running text, such as `RFC 9449 §4.3`,
+/// citation, are left out. A leading byte-order mark is not counted in a
+/// column. Written spec forms in running text, such as `RFC 9449 §4.3`,
 /// are not found.
 pub fn find_citations(text: &str) -> Vec<WrittenCitation<'_>> {
     let mut found = Vec::new();
+    // A byte-order mark is no character of the first line.
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     for (index, line) in text.lines().enumerate() {
         for m in pattern().find_iter(line) {
             let written = m.as_str().trim_end_matches(['.', ':']);
@@ -148,6 +151,19 @@ mod tests {
                     text: "b@abcdef0:b.rs#L2",
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn a_byte_order_mark_is_not_a_column() {
+        let found = find_citations("\u{feff}app@0123456:a.rs#L1\n");
+        assert_eq!(
+            found,
+            [WrittenCitation {
+                line: 1,
+                column: 1,
+                text: "app@0123456:a.rs#L1",
+            }]
         );
     }
 

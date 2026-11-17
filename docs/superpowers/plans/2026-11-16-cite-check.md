@@ -16,10 +16,12 @@ Issue #222, milestone M5 Manifests and licensing.
   `find_citations(text)` returns each citation with its line and column
   (from 1, in characters). One regex: the canonical forms (a name that may
   hold `/`, `@`, a 7-64 digit commit or `sha256:` and 12 digits, an
-  optional `:path` stopped by whitespace, quotes, brackets, `|`, `,`, `;`,
-  `*`, and a `#` fragment), or a Markdown link whose text holds `§` and whose
-  target is an http(s) URL with an anchor. Trailing dots are dropped.
-  Written forms in running text are out of scope.
+  optional `:path` that runs to the `#` and stops only at whitespace,
+  backticks, quotes, `<`, `>` and `|`, and a `#` fragment of any letter or
+  digit, `_`, `-`, `.`, `:` and `/`), or a Markdown link whose text holds `§`
+  and whose target is an http(s) URL with an anchor. Trailing dots and
+  colons are dropped, and a leading byte-order mark is not counted in a
+  column. Written forms in running text are out of scope.
 - **Checking** reuses `Store::cite`: `Store::citation_checker(options)`
   checks freshness once and returns a `CitationChecker` that caches each
   distinct citation's outcome. `NotACitation` is skipped; the
@@ -32,7 +34,9 @@ Issue #222, milestone M5 Manifests and licensing.
   (`args_conflicts_with_subcommands`, `subcommand_negates_reqs`, no `help`
   subcommand), so `codecite cite <corpus> <citation>` is unchanged. Walking
   and output live in `crates/codecite/src/check.rs`, keeping `main.rs`
-  edits small. Exit 1 when any citation fails.
+  edits small. Exit 1 when any citation fails and 2 when the check can't be
+  made. Files found in a walk that are not text are skipped and counted; a
+  named one is an error.
 
 ## Steps
 

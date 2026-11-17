@@ -385,18 +385,50 @@ fn check_passes_a_tree_whose_citations_resolve() {
     );
     // Hidden entries, binary files and links are not read.
     write(tree.path(), ".git/notes.md", b"app@0123456:gone.rs#L1\n");
-    write(tree.path(), "logo.png", b"\0app@0123456:gone.rs#L1\n");
     std::os::unix::fs::symlink(
         tree.path().join(".git/notes.md"),
         tree.path().join("linked.md"),
     )
     .unwrap();
+    // Files that are not text are skipped, and the summary counts them.
+    write(tree.path(), "logo.png", b"\0app@0123456:gone.rs#L1\n");
+    write(
+        tree.path(),
+        "latin1.md",
+        b"caf\xe9 app@0123456:gone.rs#L1\n",
+    );
+    let mut big = b"app@0123456:gone.rs#L1\n".repeat(50_000);
+    big.truncate(1024 * 1024 + 1);
+    write(tree.path(), "big.md", &big);
     let output = check(home.path(), tree.path(), &[]);
     assert!(output.status.success(), "{}", stderr(&output));
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "3 citations in 2 files: 0 failed\n"
+        "3 citations in 2 files: 0 failed; 3 files skipped \
+         (1 over 1 MiB, 1 not UTF-8, 1 holding a NUL byte)\n"
     );
+    let output = check(home.path(), tree.path(), &["--json"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        report["skipped"],
+        json!([
+            {"path": "./big.md", "reason": "over_1_mib"},
+            {"path": "./latin1.md", "reason": "not_utf8"},
+            {"path": "./logo.png", "reason": "nul_byte"},
+        ])
+    );
+
+    // A file named on the command line that can't be read as text is an
+    // error: the check could not be made.
+    let output = check(home.path(), tree.path(), &["README.md", "latin1.md"]);
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("latin1.md is not UTF-8"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(output.stdout.is_empty());
 }
 
 #[test]
@@ -483,6 +515,13 @@ fn check_fails_on_each_citation_that_does_not_hold_up() {
         report["problems"][2]["findings"][0]["type"],
         "no_such_section"
     );
+
+    // A path that starts with `::` is not read as a CI workflow command.
+    write(tree.path(), "::error x.md", b"app@0123456:src/gone.rs#L1\n");
+    let output = check(home.path(), tree.path(), &["::error x.md"]);
+    assert_eq!(output.status.code(), Some(1));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.starts_with("./::error x.md:1:1: "), "{stdout}");
 }
 
 #[test]
@@ -490,9 +529,26 @@ fn check_refuses_a_stale_index_or_a_missing_path() {
     let home = data_home();
     let tree = tempfile::tempdir().unwrap();
     write(tree.path(), "a.md", b"app@0123456:README.md#L2\n");
+    // Not being able to check exits 2, apart from a citation failing (1).
     let output = check(home.path(), tree.path(), &["nowhere"]);
-    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
     assert!(stderr(&output).contains("nowhere"), "{}", stderr(&output));
+    let fifo = tree.path().join("fifo");
+    assert!(
+        Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let output = check(home.path(), tree.path(), &["fifo"]);
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("fifo is not a file or directory"),
+        "{}",
+        stderr(&output)
+    );
+    std::fs::remove_file(&fifo).unwrap();
 
     rusqlite::Connection::open(home.path().join("codecite/demo.db"))
         .unwrap()
@@ -502,7 +558,7 @@ fn check_refuses_a_stale_index_or_a_missing_path() {
         )
         .unwrap();
     let output = check(home.path(), tree.path(), &[]);
-    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
     assert!(
         stderr(&output).contains("allow a stale index"),
         "{}",

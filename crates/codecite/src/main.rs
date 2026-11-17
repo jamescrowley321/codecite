@@ -396,7 +396,8 @@ enum Only {
 #[derive(Subcommand)]
 enum CiteCommand {
     /// Check every citation written in files, for CI: exits 1 when any
-    /// doesn't resolve, is refused, or names a superseded version.
+    /// doesn't resolve, is refused, or names a superseded version, and 2
+    /// when the check can't be made.
     #[command(after_long_help = "Examples:
   codecite cite check app
   codecite cite check app src docs README.md
@@ -406,7 +407,13 @@ It finds the canonical citations codecite prints (repo@sha:path#L10-L42,
 doc@sha256:<12 hex>#L3-L9, an #anchor, doc@sha256:<12 hex>#section-4.3) and
 Markdown links whose text cites a § and whose target is a URL with an
 anchor. Directories are walked without following links or reading hidden
-entries; files over 1 MiB or not UTF-8 text are skipped.")]
+entries; files in them over 1 MiB, not UTF-8 or holding a NUL byte are
+skipped and counted, and a file named that way is an error. Flags go after
+`check`.
+
+Exit status: 0 when every citation holds up, 1 when any fails, 2 when the
+check can't be made (a stale index, an unknown corpus, a path that can't be
+read).")]
     Check {
         /// The corpus to check against.
         corpus: String,
@@ -523,7 +530,13 @@ fn main() -> anyhow::Result<()> {
                 allow_stale,
                 allow_superseded,
             };
-            cite_check(&corpus, &paths, &options, json)
+            // A citation that fails exits 1 (in `cite_check`); a check that
+            // could not be made exits 2, so CI can tell the two apart.
+            if let Err(err) = cite_check(&corpus, &paths, &options, json) {
+                eprintln!("Error: {err:?}");
+                std::process::exit(2);
+            }
+            Ok(())
         }
         Command::Cite {
             corpus: Some(corpus),
@@ -727,7 +740,7 @@ fn cite(corpus: &str, citation: &str, options: &CiteOptions, json: bool) -> anyh
 
 /// `codecite cite check`: opens the corpus read-only, checks every citation
 /// in the files at `paths` (`.` when none) and prints the problems. Exits 1
-/// when there are any.
+/// when there are any; an error is returned for the caller to exit 2.
 fn cite_check(
     corpus: &str,
     paths: &[PathBuf],
@@ -1692,6 +1705,17 @@ mod tests {
         // A corpus is required; paths are not.
         assert!(Cli::try_parse_from(["codecite", "cite", "check"]).is_err());
         assert!(Cli::try_parse_from(["codecite", "cite", "check", "identity"]).is_ok());
+        // A flag before `check` makes it `cite`'s corpus, so flags go after.
+        let args = ["codecite", "cite", "--json", "check", "identity"];
+        let Command::Cite {
+            check: None,
+            corpus,
+            ..
+        } = Cli::try_parse_from(args).unwrap().command
+        else {
+            panic!("not cite");
+        };
+        assert_eq!(corpus.as_deref(), Some("check"));
         // A corpus named `check` is still checked one citation at a time.
         let args = ["codecite", "cite", "--", "check", "RFC 9449 §4.3"];
         let Command::Cite {

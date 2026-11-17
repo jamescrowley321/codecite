@@ -21,6 +21,41 @@ pub struct Report {
     pub citations: usize,
     /// Each problem, with the file it is in, in file order.
     pub problems: Vec<(PathBuf, CitationProblem)>,
+    /// Each file found in a directory walk and not read, and why.
+    pub skipped: Vec<(PathBuf, Skip)>,
+}
+
+/// Why a file was not read as text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Skip {
+    /// It is over [`MAX_FILE_BYTES`].
+    TooLarge,
+    /// It is not UTF-8.
+    NotUtf8,
+    /// It holds a NUL byte, as a binary file does.
+    NulByte,
+}
+
+impl Skip {
+    const ALL: [Skip; 3] = [Skip::TooLarge, Skip::NotUtf8, Skip::NulByte];
+
+    /// The reason's name in JSON.
+    fn code(self) -> &'static str {
+        match self {
+            Skip::TooLarge => "over_1_mib",
+            Skip::NotUtf8 => "not_utf8",
+            Skip::NulByte => "nul_byte",
+        }
+    }
+
+    /// The reason in words, after "is" or a count.
+    fn words(self) -> &'static str {
+        match self {
+            Skip::TooLarge => "over 1 MiB",
+            Skip::NotUtf8 => "not UTF-8",
+            Skip::NulByte => "holding a NUL byte",
+        }
+    }
 }
 
 /// Checks every citation in the files at `paths`, each a file or a
@@ -34,10 +69,23 @@ pub fn check(store: &Store, paths: &[PathBuf], options: &CheckOptions) -> anyhow
     }
     // A file named twice, or inside a directory also named, is read once.
     let mut seen = std::collections::HashSet::new();
-    files.retain(|file| seen.insert(fs::canonicalize(file).unwrap_or_else(|_| file.clone())));
-    for file in files {
-        let Some(text) = read_text(&file)? else {
-            continue;
+    files.retain(|(file, _)| seen.insert(fs::canonicalize(file).unwrap_or_else(|_| file.clone())));
+    for (file, named) in files {
+        let text = match read_text(&file)? {
+            Ok(text) => text,
+            // A file asked for by name that can't be checked fails the run;
+            // one found in a walk is counted and reported.
+            Err(skip) if named => {
+                anyhow::bail!(
+                    "{} is {}, so it can't be checked",
+                    file.display(),
+                    skip.words()
+                )
+            }
+            Err(skip) => {
+                report.skipped.push((file, skip));
+                continue;
+            }
         };
         report.files += 1;
         let found = checker.check(&text)?;
@@ -50,9 +98,10 @@ pub fn check(store: &Store, paths: &[PathBuf], options: &CheckOptions) -> anyhow
 }
 
 /// Adds `path` to `files`, or, for a directory, every file under it in
-/// name order. A link or hidden entry inside a directory is skipped; a
-/// path named on the command line is taken as given.
-fn collect(path: &Path, named: bool, files: &mut Vec<PathBuf>) -> anyhow::Result<()> {
+/// name order, each with whether it was named. A link or hidden entry
+/// inside a directory is skipped; a path named on the command line is taken
+/// as given, and must be a file or a directory.
+fn collect(path: &Path, named: bool, files: &mut Vec<(PathBuf, bool)>) -> anyhow::Result<()> {
     let meta = if named {
         fs::metadata(path)
     } else {
@@ -60,7 +109,7 @@ fn collect(path: &Path, named: bool, files: &mut Vec<PathBuf>) -> anyhow::Result
     }
     .with_context(|| format!("reading {}", path.display()))?;
     if meta.is_file() {
-        files.push(path.to_owned());
+        files.push((path.to_owned(), named));
     } else if meta.is_dir() {
         let mut entries = fs::read_dir(path)
             .with_context(|| format!("reading {}", path.display()))?
@@ -73,21 +122,37 @@ fn collect(path: &Path, named: bool, files: &mut Vec<PathBuf>) -> anyhow::Result
             }
             collect(&entry.path(), false, files)?;
         }
+    } else if named {
+        anyhow::bail!("{} is not a file or directory", path.display());
     }
     Ok(())
 }
 
-/// The file's text, or `None` when it is over [`MAX_FILE_BYTES`], not
-/// UTF-8, or holds a NUL byte, as a binary file does.
-fn read_text(path: &Path) -> anyhow::Result<Option<String>> {
+/// The file's text, or why it is not text: over [`MAX_FILE_BYTES`], not
+/// UTF-8, or holding a NUL byte, as a binary file does.
+fn read_text(path: &Path) -> anyhow::Result<Result<String, Skip>> {
     let mut bytes = Vec::new();
     fs::File::open(path)
         .and_then(|file| file.take(MAX_FILE_BYTES + 1).read_to_end(&mut bytes))
         .with_context(|| format!("reading {}", path.display()))?;
-    if bytes.len() as u64 > MAX_FILE_BYTES || bytes.contains(&0) {
-        return Ok(None);
+    if bytes.len() as u64 > MAX_FILE_BYTES {
+        return Ok(Err(Skip::TooLarge));
     }
-    Ok(String::from_utf8(bytes).ok())
+    if bytes.contains(&0) {
+        return Ok(Err(Skip::NulByte));
+    }
+    Ok(String::from_utf8(bytes).map_err(|_| Skip::NotUtf8))
+}
+
+/// The path as a report line starts with it: a relative path that starts
+/// with `::` gets `./`, so CI does not take the line as a workflow command.
+fn shown(path: &Path) -> String {
+    let shown = path.display().to_string();
+    if shown.starts_with("::") {
+        format!("./{shown}")
+    } else {
+        shown
+    }
 }
 
 /// Writes the report: as one JSON object, or one line per problem, then a
@@ -104,11 +169,17 @@ pub fn write_report(out: &mut impl Write, report: &Report, json: bool) -> io::Re
                 value
             })
             .collect();
+        let skipped: Vec<serde_json::Value> = report
+            .skipped
+            .iter()
+            .map(|(path, skip)| json!({"path": path.display().to_string(), "reason": skip.code()}))
+            .collect();
         let value = json!({
             "files": report.files,
             "citations": report.citations,
             "failed": report.problems.len(),
             "problems": problems,
+            "skipped": skipped,
         });
         writeln!(out, "{value}")?;
         return out.flush();
@@ -116,7 +187,7 @@ pub fn write_report(out: &mut impl Write, report: &Report, json: bool) -> io::Re
     for (path, p) in &report.problems {
         let line = format!(
             "{}:{}:{}: {} · {}",
-            path.display(),
+            shown(path),
             p.line,
             p.column,
             p.citation,
@@ -129,13 +200,29 @@ pub fn write_report(out: &mut impl Write, report: &Report, json: bool) -> io::Re
             }
         }
     }
-    writeln!(
+    write!(
         out,
         "{} in {}: {} failed",
         plural(report.citations, "citation"),
         plural(report.files, "file"),
         report.problems.len()
     )?;
+    if !report.skipped.is_empty() {
+        let reasons: Vec<String> = Skip::ALL
+            .iter()
+            .filter_map(|&reason| {
+                let n = report.skipped.iter().filter(|(_, s)| *s == reason).count();
+                (n > 0).then(|| format!("{n} {}", reason.words()))
+            })
+            .collect();
+        write!(
+            out,
+            "; {} skipped ({})",
+            plural(report.skipped.len(), "file"),
+            reasons.join(", ")
+        )?;
+    }
+    writeln!(out)?;
     out.flush()
 }
 

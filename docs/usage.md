@@ -450,15 +450,22 @@ It finds the canonical citations codecite prints (`repo@sha:path#L10-L42`,
 a `§` and whose target is a URL with an anchor. Spec citations written in
 running text, such as `RFC 9449 §4.3`, are not found; check those one at a
 time with `cite`. Directories are walked without following links or reading
-hidden entries (`.git`, `.github`), and files over 1 MiB, not UTF-8 or
-holding a NUL byte are skipped; name a hidden directory to check it, or pass
-the files `git ls-files` lists to leave out what git ignores. A file named
-twice, or inside a directory also named, is read once.
+hidden entries (`.git`, `.github`), and files in them over 1 MiB, not UTF-8
+or holding a NUL byte are skipped and counted in the summary
+(`; 3 files skipped (1 over 1 MiB, 2 holding a NUL byte)`); a file named on
+the command line that is one of those is an error. Name a hidden directory to
+check it, or pass the files `git ls-files` lists to leave out what git
+ignores. A file named twice, or inside a directory also named, is read once.
+Flags go after `check`: `codecite cite --json check …` reads `check` as a
+corpus.
 
 A citation fails when it doesn't resolve, when `read` refuses it (an unknown
 source, version, file or anchor, lines past the end, a malformed citation),
 or when what it names is superseded. Each failure is one line, an unresolved
-citation's candidates under it, and the command exits 1:
+citation's candidates under it, and the command exits 1. It exits 2 when the
+check can't be made at all (a stale index, an unknown corpus, a path that is
+missing, unreadable or not text), so CI can tell broken citations from a
+checker that never ran, and 0 when every citation holds up:
 
 ```text
 $ codecite cite check identity docs
@@ -472,7 +479,8 @@ docs/notes.md:12:5: rfc9449@sha256:2d8657f07291#section-4.9 · no_such_section: 
 
 `--allow-superseded` lets a citation of an older version pass, for a project
 that cites the version it implements. `--json` prints one object,
-`{"files", "citations", "failed", "problems"}`, each problem with `path`,
+`{"files", "citations", "failed", "problems", "skipped"}`, each skipped file
+with `path` and `reason` (`over_1_mib`, `not_utf8` or `nul_byte`), each problem with `path`,
 `line`, `column`, `citation` and `problem`: `unresolved` with `findings` and
 `candidates`, `refused` with the error's `kind`, `message` and `candidates`,
 or `superseded` with `resolved` and `superseded_by`. A stale index stops the
