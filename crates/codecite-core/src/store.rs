@@ -45,56 +45,86 @@ pub use search::{
     MAX_SNIPPET_LINES, Scope, SearchQuery, SearchResult, SearchResults,
 };
 
+mod run;
+pub use run::FTS_TOKENIZER;
+
 mod write;
-pub use write::{ChunkRecord, DocumentRecord, SourceRecord, SymbolRecord};
+pub use write::{ChunkRecord, DocumentRecord, SourceRecord, StoredDocument, SymbolRecord};
+
+/// One numbered migration.
+struct Migration {
+    /// The SQL, compiled into the binary, so it needs no migrations
+    /// directory at run time.
+    sql: &'static str,
+    /// Whether this build's queries can read a file that stops just before
+    /// this migration: it only adds what no query reads, or changes
+    /// derived data an index run rewrites. A query opens a file older than
+    /// [`SCHEMA_VERSION`] with a warning when every migration it lacks is
+    /// read-compatible, and refuses it otherwise. A migration stops being
+    /// read-compatible once a query reads what it adds.
+    read_compatible: bool,
+}
 
 /// The migrations, oldest first. Index `i` brings a file to version `i + 1`.
-/// The files are compiled into the binary, so it needs no migrations
-/// directory at run time.
-const MIGRATIONS: &[&str] = &[
-    include_str!("../migrations/0001_initial.sql"),
-    include_str!("../migrations/0002_incremental_index.sql"),
-    include_str!("../migrations/0003_document_versions.sql"),
-    include_str!("../migrations/0004_read.sql"),
-    include_str!("../migrations/0005_spec_fts.sql"),
-    include_str!("../migrations/0006_guidance.sql"),
-    include_str!("../migrations/0007_heading_anchors.sql"),
-    include_str!("../migrations/0008_refill_fts.sql"),
-    include_str!("../migrations/0009_one_ranking.sql"),
+///
+/// A migration that changes how documents are split or their terms made
+/// sets `document.chunker_version` or `document.terms_version` to 0 for
+/// the documents it affects, from version 10 on, so the next index run
+/// splits them again. Raising `codecite_index::CHUNKER_VERSION` or
+/// [`TERMS_VERSION`](crate::TERMS_VERSION) needs no migration at all.
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        sql: include_str!("../migrations/0001_initial.sql"),
+        read_compatible: false,
+    },
+    Migration {
+        sql: include_str!("../migrations/0002_incremental_index.sql"),
+        read_compatible: false,
+    },
+    Migration {
+        sql: include_str!("../migrations/0003_document_versions.sql"),
+        read_compatible: false,
+    },
+    Migration {
+        sql: include_str!("../migrations/0004_read.sql"),
+        read_compatible: false,
+    },
+    Migration {
+        sql: include_str!("../migrations/0005_spec_fts.sql"),
+        read_compatible: false,
+    },
+    Migration {
+        sql: include_str!("../migrations/0006_guidance.sql"),
+        read_compatible: false,
+    },
+    Migration {
+        sql: include_str!("../migrations/0007_heading_anchors.sql"),
+        read_compatible: false,
+    },
+    Migration {
+        sql: include_str!("../migrations/0008_refill_fts.sql"),
+        read_compatible: false,
+    },
+    Migration {
+        sql: include_str!("../migrations/0009_one_ranking.sql"),
+        read_compatible: false,
+    },
+    // Adds the derived-data versions and `meta.tokenizer`, which no query
+    // reads.
+    Migration {
+        sql: include_str!("../migrations/0010_derived_versions.sql"),
+        read_compatible: true,
+    },
 ];
 
-/// Writes a row into the full-text `table` for every stored chunk that
-/// `filter` (a SQL condition over `c` and `s`) keeps, with the terms
-/// `insert_chunks` would give it, so an upgraded corpus searches without
-/// being indexed again. Version 5 fills `spec_fts` this way, and version 8
-/// refills both tables after emptying them; version 9 then drops
-/// `spec_fts`.
-///
-/// `table` and `filter` are formatted into the SQL, which is safe only
-/// because every caller passes a constant written here, never input.
-fn fill_fts(tx: &rusqlite::Transaction<'_>, table: &str, filter: &str) -> Result<()> {
-    let mut chunks = tx.prepare(&format!(
-        "SELECT c.id, sym.display_name, d.path, c.terms FROM chunk c
-         JOIN document d ON d.id = c.document_id
-         JOIN source s ON s.id = d.source_id
-         LEFT JOIN symbol sym ON sym.id = c.symbol_id
-         WHERE {filter}
-         ORDER BY c.id"
-    ))?;
-    let mut insert = tx.prepare(&format!(
-        "INSERT INTO {table} (rowid, symbol, path, terms) VALUES (?1, ?2, ?3, ?4)"
-    ))?;
-    let mut rows = chunks.query([])?;
-    while let Some(row) = rows.next()? {
-        let id: i64 = row.get(0)?;
-        let symbol: Option<String> = row.get(1)?;
-        let path: String = row.get(2)?;
-        let terms: String = row.get(3)?;
-        let symbol = symbol.map_or_else(String::new, |name| identifier_terms(&name));
-        insert.execute(rusqlite::params![id, symbol, text_terms(&path), terms])?;
-    }
-    Ok(())
-}
+/// The version whose migration empties the full-text table. Every document
+/// of a file brought up past it has its terms marked behind, so the index
+/// run that migrated it writes them again.
+const REFILL_FTS: u32 = 8;
+
+/// `PRAGMA application_id` of a codecite corpus: `cdct` in ASCII. A
+/// codecite file written before it was set has 0.
+pub const APPLICATION_ID: i32 = 0x6364_6374;
 
 /// The schema version this build creates and reads.
 pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
@@ -106,6 +136,8 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 pub struct Store {
     conn: Connection,
     path: PathBuf,
+    /// Why a file opened for queries is read at an older schema.
+    schema_warning: Option<String>,
 }
 
 impl Store {
@@ -139,24 +171,23 @@ impl Store {
                 supported: SCHEMA_VERSION,
             });
         }
-        for (version, sql) in (1..).zip(MIGRATIONS).skip(found as usize) {
-            tx.execute_batch(sql)?;
-            match version {
-                // Every stored spec document's chunks, as version 5 found them.
-                5 => fill_fts(&tx, "spec_fts", "s.kind = 'document'")?,
-                // The rule `insert_chunks` writes by: every chunk into
-                // chunk_fts, numbered ones into spec_fts as well.
-                8 => {
-                    fill_fts(&tx, "chunk_fts", "1")?;
-                    fill_fts(&tx, "spec_fts", "c.number IS NOT NULL")?;
-                }
-                _ => {}
-            }
+        for (version, migration) in (1..).zip(MIGRATIONS).skip(found as usize) {
+            tx.execute_batch(migration.sql)?;
             tx.execute(
                 "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)
                  ON CONFLICT (key) DO UPDATE SET value = excluded.value",
                 [version.to_string()],
             )?;
+        }
+        // Version 8 emptied chunk_fts. Rather than refill it here by a copy
+        // of `insert_chunks`' rule, mark every document's terms behind: the
+        // index run that opened the file writes them all again.
+        if found < REFILL_FTS {
+            tx.execute("UPDATE document SET terms_version = 0", [])?;
+        }
+        let id: i32 = tx.query_row("PRAGMA application_id", [], |row| row.get(0))?;
+        if id != APPLICATION_ID {
+            tx.pragma_update(None, "application_id", APPLICATION_ID)?;
         }
         // With the keys off, nothing checked the rebuilt tables' rows.
         let orphans: i64 =
@@ -187,15 +218,17 @@ impl Store {
         Ok(Store {
             conn,
             path: path.to_path_buf(),
+            schema_warning: None,
         })
     }
 
     /// Opens the corpus at `path` for queries. SQLite itself rejects every
     /// write through the returned handle.
     ///
-    /// Never creates or changes the file, so it accepts only a file already
-    /// at [`SCHEMA_VERSION`]: an older one must be upgraded by re-running
-    /// `codecite index`.
+    /// Never creates or changes the file. An older file opens only when
+    /// every migration it lacks is read-compatible, with a
+    /// [`Store::schema_warning`] saying so; any other must be upgraded by
+    /// re-running `codecite index`.
     pub fn open_read_only(path: &Path) -> Result<Store> {
         // SQLite's own error for a missing file doesn't name the path.
         if !path.exists() {
@@ -218,19 +251,28 @@ impl Store {
                 supported: SCHEMA_VERSION,
             });
         }
+        let mut schema_warning = None;
         if found < SCHEMA_VERSION {
-            return Err(Error::InvalidCorpus {
-                path: path.to_path_buf(),
-                reason: format!(
-                    "schema version {found} is older than {SCHEMA_VERSION}; re-run codecite index to upgrade it"
-                ),
-            });
+            let lacking = &MIGRATIONS[found as usize..];
+            if found == 0 || !lacking.iter().all(|m| m.read_compatible) {
+                return Err(Error::InvalidCorpus {
+                    path: path.to_path_buf(),
+                    reason: format!(
+                        "schema version {found} is older than {SCHEMA_VERSION}; re-run codecite index to upgrade it"
+                    ),
+                });
+            }
+            schema_warning = Some(format!(
+                "corpus file {} has schema version {found}, older than {SCHEMA_VERSION}; it can still be read, and re-running codecite index upgrades it",
+                path.display()
+            ));
         }
         search::register_functions(&conn)?;
 
         Ok(Store {
             conn,
             path: path.to_path_buf(),
+            schema_warning,
         })
     }
 
@@ -280,6 +322,12 @@ impl Store {
     /// Where the corpus file is.
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// For a file opened for queries at an older, read-compatible schema,
+    /// a warning saying so, for the caller to show; `None` otherwise.
+    pub fn schema_warning(&self) -> Option<&str> {
+        self.schema_warning.as_deref()
     }
 }
 
@@ -340,13 +388,23 @@ fn enable_wal(conn: &Connection, path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Reads `meta.schema_version`. A file with no schema objects at all is
-/// version 0; any other file without a `meta` table isn't a codecite corpus.
+/// Reads `meta.schema_version`. A file whose `application_id` is neither
+/// codecite's nor 0 isn't a codecite corpus. Of the rest, which include
+/// codecite files written before the id was set, a file with no schema
+/// objects at all is version 0, and any other file without a `meta` table
+/// isn't a codecite corpus.
 fn read_version(conn: &Connection, path: &Path) -> Result<u32> {
     let invalid = |reason: &str| Error::InvalidCorpus {
         path: path.to_path_buf(),
         reason: reason.into(),
     };
+
+    let id: i32 = conn.query_row("PRAGMA application_id", [], |row| row.get(0))?;
+    if id != 0 && id != APPLICATION_ID {
+        return Err(invalid(&format!(
+            "not a codecite corpus (application_id {id:#010x})"
+        )));
+    }
 
     let has_meta: bool = conn.query_row(
         "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta')",
@@ -388,6 +446,16 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    /// The SQL of the first `n` migrations, which brings a fresh file to
+    /// version `n`.
+    fn up_to(n: usize) -> String {
+        MIGRATIONS[..n]
+            .iter()
+            .map(|m| m.sql)
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     /// Opens the file directly, bypassing `Store`.
@@ -545,7 +613,7 @@ mod tests {
             .execute_batch(&format!(
                 "{}
                  INSERT INTO meta (key, value) VALUES ('schema_version', '{SCHEMA_VERSION}');",
-                MIGRATIONS.join("\n")
+                up_to(MIGRATIONS.len())
             ))
             .unwrap();
 
@@ -717,7 +785,7 @@ mod tests {
                  INSERT INTO chunk (id, document_id, start_line, end_line, kind, symbol_id, text, terms)
                    VALUES (7, 1, 1, 1, 'function', 's', 'fn validate() {{}}', 'validate');
                  INSERT INTO chunk_fts (rowid, symbol, path, terms) VALUES (7, 'validate', 'lib', 'validate');",
-                MIGRATIONS[0], MIGRATIONS[1]
+                MIGRATIONS[0].sql, MIGRATIONS[1].sql
             ))
             .unwrap();
 
@@ -741,6 +809,21 @@ mod tests {
             )
             .unwrap()
         };
+        // Version 8 emptied chunk_fts and the document's terms are marked
+        // behind, so the index run that upgraded it writes them again.
+        assert_eq!(fts(&store.conn), 0);
+        let terms_version: u32 = store
+            .conn
+            .query_row("SELECT terms_version FROM document", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(terms_version, 0);
+        store
+            .conn
+            .execute(
+                "INSERT INTO chunk_fts (rowid, symbol, path, terms) VALUES (7, '', '', 'validate')",
+                [],
+            )
+            .unwrap();
         assert_eq!(fts(&store.conn), 1);
 
         store.conn.execute("DELETE FROM source", []).unwrap();
@@ -774,7 +857,7 @@ mod tests {
                           (2, 'rfc9449', 'document', 'https://x', 'def', 'quote', 'then');
                  INSERT INTO document (id, source_id, path, content_hash)
                    VALUES (1, 1, 'src/lib.rs', x'01'), (2, 2, 'rfc9449', x'02');",
-                MIGRATIONS[0], MIGRATIONS[1], MIGRATIONS[2]
+                MIGRATIONS[0].sql, MIGRATIONS[1].sql, MIGRATIONS[2].sql
             ))
             .unwrap();
 
@@ -827,7 +910,7 @@ mod tests {
                           (2, 2, 1, 1, 'section', '1', 'validates', 'validates');
                  INSERT INTO chunk_fts (rowid, symbol, path, terms)
                    VALUES (1, '', 'src lib rs', 'validate'), (2, '', 'rfc9449', 'validates');",
-                MIGRATIONS[0], MIGRATIONS[1], MIGRATIONS[2], MIGRATIONS[3]
+                MIGRATIONS[0].sql, MIGRATIONS[1].sql, MIGRATIONS[2].sql, MIGRATIONS[3].sql
             ))
             .unwrap();
 
@@ -840,18 +923,24 @@ mod tests {
                 .collect::<rusqlite::Result<_>>()
                 .unwrap()
         };
-        // Both chunks stay in chunk_fts, the spec one with its path's terms.
+        // spec_fts is gone, both chunks stay, and chunk_fts, emptied by
+        // version 8, is refilled by the run that upgraded the file: every
+        // document's terms are behind, its chunks current, and no content
+        // hash is cleared.
         assert_eq!(
-            ids("SELECT rowid FROM chunk_fts WHERE chunk_fts MATCH 'path:rfc9449'"),
-            [2]
+            ids("SELECT count(*) FROM sqlite_master WHERE name LIKE 'spec_fts%'"),
+            [0]
+        );
+        assert_eq!(ids("SELECT id FROM chunk ORDER BY id"), [1, 2]);
+        assert_eq!(ids("SELECT count(*) FROM chunk_fts_docsize"), [0]);
+        assert_eq!(
+            ids("SELECT terms_version FROM document ORDER BY id"),
+            [0, 0]
         );
         assert_eq!(
-            ids(
-                "SELECT rowid FROM chunk_fts WHERE chunk_fts MATCH 'validate OR validates' ORDER BY rowid"
-            ),
-            [1, 2]
+            ids("SELECT chunker_version FROM document ORDER BY id"),
+            [1, 1]
         );
-        // Nothing has to be indexed again.
         assert_eq!(
             ids("SELECT count(*) FROM document WHERE content_hash = x''"),
             [0]
@@ -877,7 +966,7 @@ mod tests {
                    VALUES (1, 1, 'README.md', 'markdown', x'01', '# App'),
                           (2, 1, 'src/lib.rs', 'rust', x'02', 'fn a() {{}}'),
                           (3, 2, 'rules', 'markdown', x'03', NULL);",
-                MIGRATIONS[..6].join("\n")
+                up_to(6)
             ))
             .unwrap();
 
@@ -899,13 +988,14 @@ mod tests {
     }
 
     #[test]
-    fn version_8_refills_the_full_text_tables() {
+    fn version_8_empties_the_full_text_table_and_marks_every_document_behind() {
         let dir = scratch("v7");
         let path = dir.join("corpus.db");
         // A version 7 corpus with a function, a spec section and a generic
         // document's section, whose full-text rows are as `insert_chunks`
         // writes them: every chunk in chunk_fts, numbered ones in spec_fts.
         // Version 9 drops spec_fts, so only chunk_fts is checked after.
+        // Its totals are wrong, as an older SQLite left them.
         let conn = raw(&path);
         conn.execute_batch(&format!(
             "{}
@@ -927,7 +1017,7 @@ mod tests {
                       (2, 2, 1, 3, 'section', NULL, '1', 'Tokens are validated.',
                        'tokens are validated'),
                       (3, 3, 1, 1, 'section', NULL, NULL, '# Sessions', 'sessions');",
-            MIGRATIONS[..7].join("\n")
+            up_to(7)
         ))
         .unwrap();
         let symbol = identifier_terms("validate_token");
@@ -957,32 +1047,30 @@ mod tests {
             })
             .unwrap()
         };
-        let right = totals(&conn);
         // An older SQLite left deleted rows in the totals: the record's
         // first varint, the row count, too high.
         let mut block = totals(&conn);
         block[0] += 5;
         conn.execute("UPDATE chunk_fts_data SET block = ?1 WHERE id = 1", [block])
             .unwrap();
-        assert_ne!(totals(&conn), right);
         drop(conn);
 
+        // The table and its totals are emptied, and every document's terms
+        // are behind, so the index run that upgraded the file writes them
+        // all again; the chunks themselves are current.
         let store = Store::open_read_write(&path).unwrap();
         assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
-        assert_eq!(totals(&store.conn), right);
         let count = |sql: &str| -> i64 { store.conn.query_row(sql, [], |row| row.get(0)).unwrap() };
-        assert_eq!(count("SELECT count(*) FROM chunk_fts_docsize"), 3);
-        for (query, id) in [("validate", 1), ("validated", 2), ("sessions", 3)] {
-            let found: i64 = store
-                .conn
-                .query_row(
-                    "SELECT rowid FROM chunk_fts WHERE chunk_fts MATCH ?1",
-                    [query],
-                    |row| row.get(0),
-                )
-                .unwrap();
-            assert_eq!(found, id, "{query}");
-        }
+        assert_eq!(count("SELECT count(*) FROM chunk_fts_docsize"), 0);
+        assert_eq!(
+            count("SELECT count(*) FROM chunk_fts WHERE chunk_fts MATCH 'validate'"),
+            0
+        );
+        assert_eq!(count("SELECT count(*) FROM chunk"), 3);
+        assert_eq!(
+            count("SELECT count(*) FROM document WHERE terms_version = 0 AND chunker_version = 1"),
+            3
+        );
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -1008,7 +1096,7 @@ mod tests {
                    VALUES (1, '', 'rfc', 'tokens are validated');
                  INSERT INTO spec_fts (rowid, symbol, path, terms)
                    VALUES (1, '', 'rfc', 'tokens are validated');",
-                MIGRATIONS[..8].join("\n")
+                up_to(8)
             ))
             .unwrap();
 
@@ -1047,7 +1135,7 @@ mod tests {
                  {}
                  INSERT INTO meta (key, value) VALUES ('schema_version', '2');
                  INSERT INTO document (id, source_id, path, content_hash) VALUES (1, 99, 'a', x'00');",
-                MIGRATIONS[0], MIGRATIONS[1]
+                MIGRATIONS[0].sql, MIGRATIONS[1].sql
             ))
             .unwrap();
         let before = fs::read(&path).unwrap();
@@ -1151,6 +1239,187 @@ mod tests {
             .err()
             .unwrap();
         assert!(matches!(err, Error::UnknownCorpus { .. }), "{err:?}");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A version 9 corpus with one source and two documents.
+    fn version_9_file(path: &Path) {
+        raw(path)
+            .execute_batch(&format!(
+                "{}
+                 INSERT INTO meta (key, value) VALUES ('schema_version', '9'),
+                   ('indexed_at', strftime('%Y-%m-%dT%H:%M:%SZ', 'now')), ('max_age_days', '30');
+                 INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
+                   VALUES (1, 'app', 'local', '/src/app', 'abc', 'adapt', 'then');
+                 INSERT INTO document (id, source_id, path, language, content_hash, text)
+                   VALUES (1, 1, 'src/lib.rs', 'rust', x'01', 'fn a() {{}}'),
+                          (2, 1, 'README.md', 'markdown', x'02', '# App');",
+                up_to(9)
+            ))
+            .unwrap();
+    }
+
+    #[test]
+    fn version_10_stamps_stored_documents_and_records_the_tokenizer() {
+        let dir = scratch("v9");
+        let path = dir.join("corpus.db");
+        version_9_file(&path);
+
+        let store = Store::open_read_write(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+        let versions: Vec<(u32, u32)> = {
+            let mut stmt = store
+                .conn
+                .prepare("SELECT chunker_version, terms_version FROM document ORDER BY id")
+                .unwrap();
+            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap()
+        };
+        assert_eq!(versions, [(1, 1), (1, 1)]);
+        // Nothing has to be split again for them.
+        let cleared: i64 = store
+            .conn
+            .query_row(
+                "SELECT count(*) FROM document WHERE content_hash = x''",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(cleared, 0);
+        let tokenizer: String = store
+            .conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'tokenizer'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(tokenizer, FTS_TOKENIZER);
+        let fts: String = store
+            .conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE name = 'chunk_fts'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            fts.contains(&format!("tokenize='{FTS_TOKENIZER}'")),
+            "{fts}"
+        );
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn application_id(path: &Path) -> i32 {
+        raw(path)
+            .query_row("PRAGMA application_id", [], |row| row.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn a_corpus_carries_codecites_application_id() {
+        let dir = scratch("app-id");
+        let path = dir.join("corpus.db");
+        drop(Store::open_read_write(&path).unwrap());
+        assert_eq!(application_id(&path), APPLICATION_ID);
+        assert_eq!(&APPLICATION_ID.to_be_bytes(), b"cdct");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_foreign_application_id_is_refused_unchanged() {
+        let dir = scratch("foreign-id");
+        let path = dir.join("corpus.db");
+        // Another program's file that happens to have a `meta` table like
+        // codecite's.
+        raw(&path)
+            .execute_batch(
+                "PRAGMA application_id = 42;
+                 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
+                 INSERT INTO meta VALUES ('schema_version', '1');",
+            )
+            .unwrap();
+        let before = fs::read(&path).unwrap();
+
+        for err in [
+            Store::open_read_only(&path).err().unwrap(),
+            Store::open_read_write(&path).err().unwrap(),
+        ] {
+            assert!(
+                matches!(&err, Error::InvalidCorpus { reason, .. }
+                    if reason.contains("not a codecite corpus") && reason.contains("0x0000002a")),
+                "{err:?}"
+            );
+        }
+        assert_eq!(fs::read(&path).unwrap(), before);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_codecite_file_from_before_the_application_id_is_accepted_and_stamped() {
+        let dir = scratch("no-app-id");
+        let path = dir.join("corpus.db");
+        drop(Store::open_read_write(&path).unwrap());
+        raw(&path)
+            .execute_batch("PRAGMA application_id = 0")
+            .unwrap();
+        assert_eq!(application_id(&path), 0);
+
+        drop(Store::open_read_only(&path).unwrap());
+        assert_eq!(application_id(&path), 0);
+        drop(Store::open_read_write(&path).unwrap());
+        assert_eq!(application_id(&path), APPLICATION_ID);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn read_only_opens_a_read_compatible_older_schema_with_a_warning() {
+        let dir = scratch("ro-compatible");
+        let path = dir.join("corpus.db");
+        version_9_file(&path);
+        let before = fs::read(&path).unwrap();
+
+        let store = Store::open_read_only(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), 9);
+        let warning = store.schema_warning().unwrap();
+        assert!(
+            warning.contains(&format!("schema version 9, older than {SCHEMA_VERSION}"))
+                && warning.contains("codecite index"),
+            "{warning}"
+        );
+        // It answers queries.
+        assert!(!store.freshness().unwrap().is_stale());
+        drop(store);
+        assert_eq!(fs::read(&path).unwrap(), before);
+
+        // An upgraded file has no warning.
+        drop(Store::open_read_write(&path).unwrap());
+        assert_eq!(Store::open_read_only(&path).unwrap().schema_warning(), None);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn read_only_refuses_an_older_schema_behind_an_incompatible_migration() {
+        let dir = scratch("ro-incompatible");
+        let path = dir.join("corpus.db");
+        // Version 9 isn't read-compatible, so a version 8 file is refused.
+        raw(&path)
+            .execute_batch(&format!(
+                "{}
+                 INSERT INTO meta (key, value) VALUES ('schema_version', '8');",
+                up_to(8)
+            ))
+            .unwrap();
+
+        let err = Store::open_read_only(&path).err().unwrap();
+        assert!(
+            matches!(&err, Error::InvalidCorpus { reason, .. }
+                if reason.contains("schema version 8") && reason.contains("codecite index")),
+            "{err:?}"
+        );
         fs::remove_dir_all(&dir).unwrap();
     }
 

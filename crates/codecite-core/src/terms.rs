@@ -2,6 +2,12 @@
 //! kebab-case names into lowercase words, and keep the original so an
 //! exact name still matches.
 
+/// The version of the rules that turn text into search terms. Raise it
+/// whenever [`identifier_terms`] or [`text_terms`] gives different terms;
+/// each document stores the version its full-text rows were written by,
+/// and an index run writes again every document stored under another.
+pub const TERMS_VERSION: u32 = 1;
+
 /// Splits an identifier into its lowercase parts.
 ///
 /// Characters that are not letters or digits separate parts. An uppercase

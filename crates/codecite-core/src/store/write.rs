@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use rusqlite::{OptionalExtension, Transaction, params};
 
 use super::Store;
-use crate::{Keyword, Result, SpecAliases, identifier_terms, text_terms};
+use crate::{Keyword, Result, SpecAliases, TERMS_VERSION, identifier_terms, text_terms};
 
 /// A source to create or update. A document is matched by its name and
 /// revision, since each pinned version is its own source; any other source
@@ -32,6 +32,29 @@ pub struct SourceRecord<'a> {
     pub obsoleted_by: Option<&'a str>,
     /// A document that amends this one, as the manifest names it.
     pub updated_by: Option<&'a str>,
+}
+
+/// A stored document, as an index run compares it with the file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredDocument {
+    /// The sha256 of the bytes it was written from.
+    pub content_hash: Vec<u8>,
+    /// The chunker version that split it: `codecite_index::CHUNKER_VERSION`
+    /// in the build that wrote it, or 0 for a document written without one.
+    pub chunker_version: u32,
+    /// The [`TERMS_VERSION`] that made its full-text rows.
+    pub terms_version: u32,
+}
+
+impl StoredDocument {
+    /// Whether splitting bytes with sha256 `hash` again with the chunker at
+    /// `chunker_version` would store the same rows: the bytes are the same,
+    /// and that chunker and this build's terms rules wrote it.
+    pub fn is_current(&self, hash: &[u8], chunker_version: u32) -> bool {
+        self.content_hash == hash
+            && self.chunker_version == chunker_version
+            && self.terms_version == TERMS_VERSION
+    }
 }
 
 /// A document and every chunk in it.
@@ -147,12 +170,23 @@ impl Store {
         Ok(())
     }
 
-    /// The content hash of each document stored for the source, by path.
-    pub fn document_hashes(&self, source_id: i64) -> Result<HashMap<String, Vec<u8>>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT path, content_hash FROM document WHERE source_id = ?1")?;
-        let rows = stmt.query_map([source_id], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    /// Each document stored for the source, by path: its content hash and
+    /// the versions that derived its rows.
+    pub fn stored_documents(&self, source_id: i64) -> Result<HashMap<String, StoredDocument>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT path, content_hash, chunker_version, terms_version
+             FROM document WHERE source_id = ?1",
+        )?;
+        let rows = stmt.query_map([source_id], |row| {
+            Ok((
+                row.get(0)?,
+                StoredDocument {
+                    content_hash: row.get(1)?,
+                    chunker_version: row.get(2)?,
+                    terms_version: row.get(3)?,
+                },
+            ))
+        })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
@@ -185,21 +219,38 @@ impl Store {
             .unwrap_or(false))
     }
 
-    /// Replaces the document at `document.path` in the source, with its
-    /// chunks, symbols and full-text rows, in one transaction. Returns how
-    /// many chunks were written.
+    /// Writes a document no chunker split, such as one made by hand, as
+    /// [`Store::write_split_document`] does with chunker version 0: the
+    /// next index run splits it again.
     pub fn write_document(
         &mut self,
         source_id: i64,
         document: &DocumentRecord<'_>,
     ) -> Result<usize> {
+        self.write_split_document(source_id, document, 0)
+    }
+
+    /// Replaces the document at `document.path` in the source, with its
+    /// chunks, symbols and full-text rows, in one transaction, stamped with
+    /// `chunker_version`, the version of the chunker that split it, and
+    /// this build's [`TERMS_VERSION`]. Returns how many chunks were
+    /// written.
+    pub fn write_split_document(
+        &mut self,
+        source_id: i64,
+        document: &DocumentRecord<'_>,
+        chunker_version: u32,
+    ) -> Result<usize> {
         let tx = self.conn.transaction()?;
         let document_id: i64 = tx.query_row(
-            "INSERT INTO document (source_id, path, language, content_hash, size_bytes, dirty, text)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            "INSERT INTO document (source_id, path, language, content_hash, size_bytes, dirty, text,
+                                   chunker_version, terms_version)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
              ON CONFLICT (source_id, path) DO UPDATE SET
                language = excluded.language, content_hash = excluded.content_hash,
-               size_bytes = excluded.size_bytes, dirty = excluded.dirty, text = excluded.text
+               size_bytes = excluded.size_bytes, dirty = excluded.dirty, text = excluded.text,
+               chunker_version = excluded.chunker_version,
+               terms_version = excluded.terms_version
              RETURNING id",
             params![
                 source_id,
@@ -210,6 +261,8 @@ impl Store {
                 i64::try_from(document.size_bytes).unwrap_or(i64::MAX),
                 document.dirty,
                 document.text,
+                chunker_version,
+                TERMS_VERSION,
             ],
             |row| row.get(0),
         )?;
@@ -506,8 +559,30 @@ mod tests {
         assert_eq!(matches(&store, "symbol:validate"), 1);
         assert_eq!(matches(&store, "path:lib"), 1);
         assert_eq!(matches(&store, "terms:token"), 1);
-        let hashes = store.document_hashes(id).unwrap();
-        assert_eq!(hashes["src/lib.rs"], text.as_bytes());
+        // Written without a chunker version, it is split again.
+        let stored = &store.stored_documents(id).unwrap()["src/lib.rs"];
+        assert_eq!(
+            stored,
+            &StoredDocument {
+                content_hash: text.as_bytes().to_vec(),
+                chunker_version: 0,
+                terms_version: TERMS_VERSION,
+            }
+        );
+        assert!(!stored.is_current(text.as_bytes(), 3));
+        store
+            .write_split_document(id, &document("src/lib.rs", text), 3)
+            .unwrap();
+        let stored = &store.stored_documents(id).unwrap()["src/lib.rs"];
+        assert_eq!(stored.chunker_version, 3);
+        assert!(stored.is_current(text.as_bytes(), 3));
+        assert!(!stored.is_current(b"other bytes", 3));
+        assert!(!stored.is_current(text.as_bytes(), 4));
+        let terms_behind = StoredDocument {
+            terms_version: TERMS_VERSION - 1,
+            ..stored.clone()
+        };
+        assert!(!terms_behind.is_current(text.as_bytes(), 3));
         let stored: String = store
             .conn
             .query_row("SELECT text FROM document", [], |row| row.get(0))
