@@ -89,6 +89,7 @@ p95 guardrail of 150 ms.
 | `inspect/pi-models.json` | Points pi at Inspect's agent bridge |
 | `inspect/panel.sh` | Run one tier (`quick` or `full`): every model in one Inspect process, then the report |
 | `tasks/<id>/` | A task: `task.json` (with `frozen_at` once frozen), `prompt.md`, starting `project/`, `hidden/` tests, `checks.py`, `reference/`, and `check.sh`/`planted.sh` to prove the task and checks are sound |
+| `tasks/house-rules/` | The size-dial task: `corpus/{s,m,l}.toml` (its corpus at each size), `rules.toml` (the rule layer it exercises, each rule's kind, checks and citation), `probe.toml` (the memorization probe), `reference/solution.patch`, and `planted.py` with the rule breaks `planted.sh` plants |
 | `tasks/spec-questions/` | The spec-question task: `questions.toml` (labelled questions with closed answers, checked against the index by `src/codecite_evals/spec_questions.py`), `prompt.md`, the in-sandbox scorer `score.py`, and `check.sh`/`planted.py` to prove the scorer sound |
 | `fixtures/node-oidc/` | The IdP the fastapi-middleware hidden tests take tokens from |
 | `retrieval/` | The retrieval benchmark's queries and corpus manifest |
@@ -146,6 +147,56 @@ p95 guardrail of 150 ms.
   solution that calls identity-model and adds those two checks, a hand-written
   one, and identity-model alone (`library-only`, which fails).
 
+- **`house-rules`** (#160): knowledge the model can't have. The project is
+  identity-stack at the commit where its rule layer (identity-stack#512) and
+  its functional domain core (identity-stack#513) had merged, with about forty
+  house rules in BCP 14 terms spread over `docs/conventions.md`, eight ADRs
+  (ADR-0002 superseded by ADR-0005, both in the tree) and the docstrings of
+  its own helpers (`app/knobs.py`, `app/outbound.py`, `app/logbook.py`).
+  `rules.toml` lists them, each with its kind (`house`, an arbitrary house
+  choice; `habit`, against common habit, such as no `os.environ`, no raw
+  `httpx`, no `logging.getLogger`; or `control`, best practice), what decides
+  it, and a `codecite read` citation. The prompt is a feature request in the
+  backend, naming no helper and no rule: import a tenant's roles from a
+  partner catalogue over HTTP (`POST /api/roles/import`, a new
+  `PARTNER_CATALOGUE_URL` setting, 502 on a failed or slow catalogue,
+  owners and admins only), and make every role name a lowercase slug. The
+  hidden tests drive the real app over a SQLite file per test with a stub
+  catalogue, and one calls `access.role_name` directly, with no database: it
+  passes only when the slug rule is decided in the domain, not in the
+  service or the request model. `checks.py` runs identity-stack's own
+  enforcement as the start had it (Ruff's bans, import-linter's contracts and
+  the house-rule tests, laid over a copy of the agent's tree so loosening
+  them doesn't help) plus its own reuse checks (no settings, HTTP or logging
+  library in place of `app.knobs`, `app.outbound`, `app.logbook`; new routes
+  answer through `result_to_response` and take the tenant from
+  `get_tenant_id`). A run passes only with the hidden tests passing and no
+  violation of a MUST rule; the control rules and best-practice checks
+  (pyflakes, bare `except`, `print`, the agent's own unit tests) are reported
+  apart, never gated. `planted.sh` plants seventeen rule breaks and
+  hand-rolled helpers on the reference (`reference/solution.patch`) and shows
+  each caught. `probe.toml` holds the memorization probe: three questions
+  only the rule layer answers, for a model asked with no files; no runner
+  asks them yet.
+
+  **The size dial.** One prompt, one set of hidden tests and checks, at three
+  corpus sizes, each a manifest under `corpus/` with every git source pinned
+  by full commit: `s` is identity-stack alone; `m` adds identity-model and the
+  identity spec documents; `l` adds public FastAPI and auth repositories
+  (full-stack-fastapi-template, fastapi's code, examples and English docs,
+  fastapi-users, authlib, pydantic-settings), with helpers that do almost
+  what identity-stack's do and examples that break its rules. Both arms see
+  the same bytes: `prepare.sh` stages the project in `/work/project`, the
+  other git sources in `/opt/corpus/<name>` and the current documents in
+  `/opt/specs`, and the image indexes the manifest itself, so citations name
+  the pinned commits. The image build resolves every rule's citation with
+  `codecite read` and fails if one doesn't. `-T corpus=s|m|l` picks the size
+  (default `m`), and it must match the staged image, which the sample checks
+  before the agent starts; the scorecard names the task `house_rules@<size>`,
+  a table per size. Stage and run a size with `CORPUS=<size>` for both
+  `prepare.sh` and `panel.sh`, or dispatch the Evals workflow with `corpus`.
+  Calibration is gated at `m` only; `s` and `l` are reported.
+
 - **`spec-questions`**: one question about the identity specs per sample,
   asked in an agent's words rather than the spec's (`questions.toml`, from
   the `spec-plain` and `spec-requirement` classes of
@@ -187,7 +238,9 @@ p95 guardrail of 150 ms.
   it runs as `codecite_evals/ab -T task_id=<id>`, which `panel.sh` does for it.
 
 Each task's `check.sh` proves it is well-formed; `backchannel-logout`'s needs
-only uv and an identity-model checkout, and `spec-questions`' only python3
+only uv and an identity-model checkout, `house-rules`' only git, uv and the
+network (it fetches identity-stack at its pin unless `IDENTITY_STACK_REPO`
+names a clone that has it), and `spec-questions`' only python3
 (it runs `score.py` on every question's reference answer and on planted
 wrong ones), and a replay task's only its repository and the language's
 toolchain. CI runs them (`eval-task`):
@@ -252,7 +305,7 @@ and never a required check.
   task. Pushes don't rerun it: to run it again on a new head, take the label
   off and put it back, or dispatch. Fork PRs never run: they get no secrets.
 - **Full, the rerun:** after a quick loss, run the workflow by hand
-  (Actions → Evals → Run workflow) with `tier: full`, the losing `task` and `arms` (`ab`, the default; `aa`;
+  (Actions → Evals → Run workflow) with `tier: full`, the losing `task` (and `corpus`, for a size-dial task) and `arms` (`ab`, the default; `aa`;
   `assist`; or `baseline` to calibrate; see below). Its scorecard goes to the job summary.
   To finish a run that stopped part way, run it again with `resume` set to
   that run's id: it downloads that run's logs and reruns only their missing
@@ -281,7 +334,8 @@ proxy checks only the host), so a token kept for evals alone is the safer
 secret. The Inspect logs, with the scorecard, upload as the
 `eval-logs-<tier>-<task>` artifact (`eval-logs-<tier>-aa-<task>` for an A/A
 round, `eval-logs-<tier>-assist-<task>` for the assist arm,
-`eval-logs-calibration-<task>` for a calibration).
+`eval-logs-calibration-<task>` for a calibration; a size-dial task's `<task>`
+is `<task>-<size>`, as `house-rules-m`).
 
 ## A/A rounds
 
@@ -417,7 +471,8 @@ benchmark).
 1. Add `tasks/<id>/` with a new id, and prove it with its `check.sh` and
    `planted.sh`. Leave `frozen_at` out of its `task.json`.
 2. Run the baseline arm on the quick panel: dispatch the Evals workflow with
-   `task: <id>` and `arms: baseline` (tier `quick`), or locally
+   `task: <id>` and `arms: baseline` (tier `quick`), plus `corpus: <size>` for a
+   size-dial task, once per size, or locally
    `evals/inspect/prepare.sh <id>`, rebuild the image, then `TASK_ID=<id>
    ARMS=baseline evals/inspect/panel.sh quick`. Logs land in
    `inspect/logs/calibration/<id>/` (the `eval-logs-calibration-<id>` artifact

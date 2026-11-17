@@ -1,0 +1,18 @@
+# house-rules at size s: identity-stack alone, the rules and nothing else.
+#
+# Frozen with the task once its first A/B run starts (docs/design.md,
+# Calibration and freezing). identity-stack is pinned where its rule layer
+# (identity-stack#512, PR #520) and the functional domain core
+# (identity-stack#513, PR #578) had both merged. prepare.sh stages each git
+# source as files (identity-stack as the project, /work/project; the rest
+# under /opt/corpus/<name>) and each current document under /opt/specs, so
+# both arms see the same bytes; the image indexes them as the `eval` corpus.
+
+name = "eval"
+
+[[source]]
+kind = "git"
+name = "identity-stack"
+url = "https://github.com/jamescrowley321/identity-stack"
+commit = "efa14d27d1887af47fb82c3c1c10e107caee3f67"
+use = "adapt"

@@ -16,6 +16,10 @@ codecite's `search` and `read` as tools of their own, from `codecite mcp`
 through pi's built-in MCP support, and keeps the CLI on PATH; the baseline
 arm has no MCP and no codecite.
 
+A task with a size dial (task.json kind "corpus", house-rules) takes
+`-T corpus=s|m|l`, the corpus size its image was staged at
+(`inspect/prepare.sh <task-id>` with CORPUS set); left out, its default.
+
 `-T arms=aa` runs an A/A round instead: two baseline arms with the same prompt
 and sandbox, labelled apart, so the scorecard shows what noise alone does.
 `-T arms=baseline` runs only the baseline arm, to calibrate a task's
@@ -26,6 +30,7 @@ import json
 import os
 import posixpath
 import re
+import tomllib
 from pathlib import Path
 from time import monotonic
 
@@ -42,6 +47,11 @@ from codecite_evals import assist, claude_code, config, scrub
 ARMS = {"both": ("baseline", "codecite"), "baseline": ("baseline",)}
 PROJECT = "/work/project"
 IDENTITY_MODEL = "/opt/identity-model"
+# A size-dial task's other git sources, its spec documents, and its project
+# as the image built it (prepare.sh, Dockerfile).
+CORPUS_DIR = "/opt/corpus"
+SPECS_DIR = "/opt/specs"
+PROJECT_START = "/opt/project-start.tar"
 CODECITE = "/opt/codecite/bin/codecite"
 CODECITE_TOOLS = ["mcp__codecite__search", "mcp__codecite__read", "mcp__codecite__requirements"]
 PI_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"]
@@ -82,18 +92,58 @@ def snippet(corpus: str, what: str) -> str:
     return m.group(1).strip().replace("<CORPUS>", corpus).replace("<WHAT>", what)
 
 
-def codecite_note(task_dir: Path) -> str:
+def corpus_size(meta: dict, corpus: str = "") -> str:
+    """A size-dial task's corpus size: `corpus`, or the task's default.
+    Raises for a size the task doesn't have, or for a size given to a task
+    without the dial."""
+    sizes = meta.get("corpus", {}).get("sizes") if meta.get("kind") == "corpus" else None
+    if not sizes:
+        if corpus:
+            raise ValueError(f"task {meta.get('id')!r} has no corpus sizes, so takes no corpus={corpus!r}")
+        return ""
+    size = corpus or meta["corpus"]["default"]
+    if size not in sizes:
+        raise ValueError(f"corpus must be one of {', '.join(sizes)}, not {size!r}")
+    return size
+
+
+def corpus_manifest(task_dir: Path, meta: dict, size: str) -> dict:
+    """The manifest of a size-dial task's corpus at `size`."""
+    return tomllib.loads((task_dir / meta["corpus"]["sizes"][size]).read_text())
+
+
+def corpus_indexes(task_dir: Path, meta: dict, size: str) -> tuple[str, bool]:
+    """What a size-dial task's `eval` corpus indexes at `size`, in words, and
+    whether it holds spec documents. The project is at PROJECT, every other
+    git source under CORPUS_DIR, the current documents under SPECS_DIR."""
+    sources = corpus_manifest(task_dir, meta, size)["source"]
+    project = meta["corpus"]["project"]
+    others = [s["name"] for s in sources if s.get("kind", "git") == "git" and s["name"] != project]
+    specs = any(s.get("kind") == "document" for s in sources)
+    words = f"the {project} source at `{PROJECT}`"
+    if others:
+        words += f", the {', '.join(others)} source under `{CORPUS_DIR}/<name>`"
+    if specs:
+        words += f" and the OAuth 2.0, OpenID Connect and FAPI specifications under `{SPECS_DIR}`"
+    return words, specs
+
+
+def codecite_note(task_dir: Path, corpus: str = "") -> str:
     """The codecite arm's note: the snippet, naming what the task's `eval`
     corpus indexes, then spec advice when the corpus has specs, then which
     MCP tools mirror which commands."""
     meta = json.loads((task_dir / "task.json").read_text())
+    specs = bool(meta.get("corpus", {}).get("documents"))
     if meta.get("kind") == "replay":
         indexes = f"the {meta['repo']} source at `{PROJECT}`"
+    elif meta.get("kind") == "corpus":
+        indexes, specs = corpus_indexes(task_dir, meta, corpus_size(meta, corpus))
     else:
         indexes = f"the identity-model source at `{IDENTITY_MODEL}`"
     note = []
-    if meta.get("corpus", {}).get("documents"):
-        indexes += " and the OAuth 2.0, OpenID Connect and FAPI specifications it implements"
+    if specs:
+        if meta.get("kind") != "corpus":
+            indexes += " and the OAuth 2.0, OpenID Connect and FAPI specifications it implements"
         note.append(
             "Before implementing or fixing anything a spec governs, list its rules with "
             '`codecite requirements eval "<citation>"` and search with the terms the spec would use.'
@@ -105,24 +155,31 @@ def codecite_note(task_dir: Path) -> str:
     return "\n\n".join([snippet("eval", indexes), *note])
 
 
-def prompt(task_dir: Path, condition: str) -> str:
+def prompt(task_dir: Path, condition: str, corpus: str = "") -> str:
     text = (task_dir / "prompt.md").read_text().replace("{identity_model}", IDENTITY_MODEL)
-    return f"{text}\n\n{codecite_note(task_dir)}\n" if condition == "codecite" else text
+    return f"{text}\n\n{codecite_note(task_dir, corpus)}\n" if condition == "codecite" else text
 
 
-def ab_task(task_id: str, arms: str = "ab") -> Task:
+def ab_task(task_id: str, arms: str = "ab", corpus: str = "") -> Task:
     """One task's eval: a sample per arm (config.ARMS), scored by its hidden
     tests and checks. arms="baseline" keeps only the baseline arm, a
-    calibration; arms="aa" runs two baseline arms."""
+    calibration; arms="aa" runs two baseline arms. corpus picks a size-dial
+    task's corpus size (its default when empty)."""
     if arms not in config.ARMS:
         raise ValueError(f"arms must be one of {', '.join(config.ARMS)}, not {arms!r}")
     task_dir = config.task_dir(task_id)
+    size = corpus_size(json.loads((task_dir / "task.json").read_text()), corpus)
+    extra = {"corpus": size} if size else {}
     return Task(
         dataset=[
-            Sample(id=label, input=prompt(task_dir, condition), metadata={"arm": label, "condition": condition})
+            Sample(
+                id=label,
+                input=prompt(task_dir, condition, size),
+                metadata={"arm": label, "condition": condition, **extra},
+            )
             for label, condition in config.ARMS[arms]
         ],
-        solver=[condition_to_store(), coding_agent()],
+        solver=[condition_to_store(), *([corpus_staged(size)] if size else []), coding_agent()],
         scorer=hidden_tests_and_checks(task_id),
         sandbox=("docker", str(config.COMPOSE)),
     )
@@ -142,9 +199,9 @@ def pi_command(condition: str, prompt: str) -> list[str]:
 
 
 @task
-def ab(task_id: str = "fastapi-middleware", arms: str = "ab") -> Task:
+def ab(task_id: str = "fastapi-middleware", arms: str = "ab", corpus: str = "") -> Task:
     """Any task under tasks/ by its id; the eval workflow and panel.sh run this."""
-    return ab_task(task_id, arms)
+    return ab_task(task_id, arms, corpus)
 
 
 @task
@@ -160,6 +217,28 @@ def client_auth_uri(arms: str = "ab") -> Task:
 @task
 def backchannel_logout(arms: str = "ab") -> Task:
     return ab_task("backchannel-logout", arms)
+
+
+@task
+def house_rules(arms: str = "ab", corpus: str = "") -> Task:
+    return ab_task("house-rules", arms, corpus)
+
+
+@solver
+def corpus_staged(size: str):
+    """Refuse to run a size-dial task on an image staged at another size:
+    the sample would be scored as `size` with another corpus behind it."""
+
+    async def solve(state: TaskState, generate: Generate) -> TaskState:
+        try:
+            staged = (await sandbox().read_file(f"{CORPUS_DIR}/.size")).strip()
+        except Exception:
+            staged = "none"
+        if staged != size:
+            raise RuntimeError(f"the sandbox image holds corpus size {staged!r}, not {size!r}: run prepare.sh with CORPUS={size}")
+        return state
+
+    return solve
 
 
 @solver
@@ -375,6 +454,26 @@ async def score_replay(sb, task_dir: Path, meta: dict) -> tuple[bool, str, list]
     return passed, tail, []
 
 
+async def score_corpus(sb, task_dir: Path, meta: dict) -> tuple[bool, str, list]:
+    """A size-dial task: its hidden tests, run from its workdir in the
+    project's own environment, then its checks against the project as the
+    image built it (PROJECT_START). A check marked `control` is reported and
+    never fails the sample."""
+    for f in (task_dir / "hidden").glob("*.py"):
+        await sb.write_file(f"/score/hidden/{f.name}", f.read_text())
+    await sb.write_file("/score/checks.py", (task_dir / "checks.py").read_text())
+    cmd = ["/score/hidden" if arg == "{hidden}" else arg for arg in meta["score"]]
+    cwd = posixpath.normpath(posixpath.join(PROJECT, meta["workdir"]))
+    tests_passed, tests_tail = await run_hidden(sb, cmd, cwd, offline_env(meta["language"]))
+    try:
+        await sb.exec(["sh", "-c", f"mkdir -p /score/start && tar -xf {PROJECT_START} -C /score/start"], timeout=120)
+        checks = await sb.exec(["python3", "-I", "/score/checks.py", "/score/start", PROJECT], timeout=300)
+        results = json.loads(checks.stdout)["checks"] if checks.success else []
+    except (TimeoutError, ValueError, KeyError, TypeError):
+        results = []
+    return tests_passed, tests_tail, results
+
+
 @scorer(metrics=[accuracy(), stderr()])
 def hidden_tests_and_checks(task_id: str):
     """Correct when the hidden tests and every deterministic check pass. The
@@ -388,6 +487,24 @@ def hidden_tests_and_checks(task_id: str):
         sb = sandbox()
         stopped, sandbox_error = store().get("stopped"), store().get("sandbox_error")
         why = why_stopped(stopped, sandbox_error)
+        if meta.get("kind") == "corpus":
+            tests_passed, tests_tail, results = await score_corpus(sb, task_dir, meta)
+            gating = [c["name"] for c in results if not c["passed"] and not c.get("control")] if results else ["checks-crashed"]
+            controls = [c["name"] for c in results if not c["passed"] and c.get("control")]
+            return Score(
+                value=1 if tests_passed and not gating and not stopped else 0,
+                explanation=f"{why}hidden tests {'passed' if tests_passed else 'failed'}; failed checks: {', '.join(gating) or 'none'}"
+                + (f"; failed controls (reported, not gated): {', '.join(controls)}" if controls else ""),
+                metadata={
+                    "stopped": stopped,
+                    "sandbox_error": sandbox_error,
+                    "tests_passed": tests_passed,
+                    "tests_tail": tests_tail,
+                    "checks": results,
+                    "violations": len(gating),
+                    "corpus": (getattr(state, "metadata", None) or {}).get("corpus"),
+                },
+            )
         if meta.get("kind") == "replay":
             tests_passed, tests_tail, results = await score_replay(sb, task_dir, meta)
             return Score(

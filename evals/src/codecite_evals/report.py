@@ -354,9 +354,13 @@ def medians(runs):
 
 def task_name(log):
     """The task's name: its task_id argument when it ran as the `ab` task
-    (codecite_evals/ab -T task_id=<id>, as a replay task does), else its own."""
+    (codecite_evals/ab -T task_id=<id>, as a replay task does), else its own;
+    for a size-dial task, with its corpus size after an @ (house_rules@m), so
+    each size gets its own table."""
+    args = log.eval.task_args or {}
     name = log.eval.task.removeprefix("codecite_evals/")
-    return (log.eval.task_args or {}).get("task_id", name) if name == "ab" else name
+    name = args.get("task_id", name) if name == "ab" else name
+    return f"{name}@{args['corpus']}" if args.get("corpus") else name
 
 
 def per_arm(log, arm, arms=2):

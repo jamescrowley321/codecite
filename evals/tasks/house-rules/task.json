@@ -1,0 +1,34 @@
+{
+  "id": "house-rules",
+  "kind": "corpus",
+  "prompt": "prompt.md",
+  "hidden": "hidden",
+  "checks": "checks.py",
+  "rules": "rules.toml",
+  "probe": "probe.toml",
+  "corpus": {
+    "project": "identity-stack",
+    "sizes": {
+      "s": "corpus/s.toml",
+      "m": "corpus/m.toml",
+      "l": "corpus/l.toml"
+    },
+    "default": "m"
+  },
+  "language": "python",
+  "workdir": "backend",
+  "setup": [
+    "uv",
+    "sync",
+    "--locked"
+  ],
+  "score": [
+    ".venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "{hidden}"
+  ]
+}
