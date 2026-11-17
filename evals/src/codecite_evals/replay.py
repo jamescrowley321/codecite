@@ -13,8 +13,10 @@ import posixpath
 import re
 import shutil
 import subprocess
+import unicodedata
 from collections import Counter
 from dataclasses import dataclass, replace
+from datetime import datetime
 from pathlib import Path, PurePosixPath
 
 from codecite_evals.history import closing_issue, gh_json, is_bot, run
@@ -63,12 +65,10 @@ INTERFACE = """
 The tests that check this change call these names, which don't exist yet.
 Define them as shown.
 """
-# Directories whose files are all test data, code or not: fixtures, golden
-# files and snapshots a PR's tests read.
-DATA_DIRS = {"testdata", "fixtures", "__fixtures__", "__snapshots__", "snapshots"}
-# Test directories, whose non-code files are test data and whose code is
-# for is_test_path to judge.
+# Test directories: their non-code files are test data, and so is all of a
+# data directory below one. Go's testdata is test data wherever it is.
 TEST_DIRS = {"tests", "test", "__tests__"}
+DATA_DIRS = {"fixtures", "__fixtures__", "__snapshots__", "snapshots"}
 # A top-level definition on an added line, per language: the name is group 1.
 DEFINITION = {
     "python": re.compile(r"^(?:\s*(?:async\s+)?def\s+|\s*class\s+)([A-Za-z_]\w*)|^([A-Z_][A-Z0-9_]*)\s*(?::[^=]*)?=[^=]"),
@@ -95,7 +95,7 @@ def is_test_path(path: str) -> bool:
     agent exits can't overwrite the agent's fix."""
     p = PurePosixPath(path)
     dirs = p.parts[:-1]
-    if DATA_DIRS.intersection(dirs):
+    if is_test_data(path):
         return False
     if p.suffix == ".py":
         return "tests" in dirs or "test" in dirs or p.name.startswith("test_") or p.stem.endswith("_test") or p.name == "conftest.py"
@@ -104,7 +104,10 @@ def is_test_path(path: str) -> bool:
     if p.suffix == ".rs":
         # Cargo's integration tests, in a crate's tests/; inline
         # #[cfg(test)] modules and src/tests/ are the library's own.
-        return "tests" in dirs and "src" not in dirs[: dirs.index("tests")]
+        if "tests" not in dirs:
+            return False
+        i = dirs.index("tests")
+        return i == 0 or dirs[i - 1] != "src"
     if LANGUAGES.get(p.suffix) == "node":
         return bool(JS_TEST.search(p.name)) or "__tests__" in dirs
     return False
@@ -112,14 +115,18 @@ def is_test_path(path: str) -> bool:
 
 def is_test_data(path: str) -> bool:
     """A file a PR's tests read rather than run (a fixture, golden file or
-    snapshot): anything under a data directory, or a non-code file under a
-    test directory. It goes in `hidden/` with the tests, so they find it
-    whatever the agent does."""
+    snapshot): anything under `testdata`, and under a test directory a
+    non-code file or anything in a data directory below it. It goes in
+    `hidden/` with the tests, so they find it whatever the agent does. A
+    `fixtures` or `snapshots` directory outside the tests is source."""
     p = PurePosixPath(path)
     dirs = p.parts[:-1]
-    if DATA_DIRS.intersection(dirs):
+    if "testdata" in dirs:
         return True
-    return p.suffix not in LANGUAGES and bool(TEST_DIRS.intersection(dirs))
+    tests = [i for i, d in enumerate(dirs) if d in TEST_DIRS]
+    if not tests:
+        return False
+    return p.suffix not in LANGUAGES or bool(DATA_DIRS.intersection(dirs[tests[0] + 1:]))
 
 
 def language(paths: list[str]) -> str:
@@ -146,11 +153,13 @@ class Candidate:
     sources: tuple[str, ...]  # everything else it changed: the reference fix
     language: str
     data: tuple[str, ...] = ()  # test data the tests read, overlaid with them
+    commits: tuple[tuple[str, str], ...] = ()  # the PR's commits: (authoredDate, headline)
 
 
 def candidates(prs: list[dict], repo: str, issues: dict[int, dict] | None = None) -> list[Candidate]:
     """The replayable PRs among `gh pr list --json number,author,baseRefOid,
-    mergeCommit,mergedAt,closingIssuesReferences,files` records, newest first.
+    mergeCommit,mergedAt,closingIssuesReferences,files,commits` records,
+    newest first.
 
     `issues` maps an issue number to its `title` and `body`; one missing
     leaves them empty for the caller to fetch.
@@ -186,6 +195,7 @@ def candidates(prs: list[dict], repo: str, issues: dict[int, dict] | None = None
                 sources=sources,
                 language=lang,
                 data=data,
+                commits=tuple((k.get("authoredDate") or "", k.get("messageHeadline") or "") for k in p.get("commits") or []),
             )
         )
     return found
@@ -253,10 +263,10 @@ def versions(out: Path, repo: str, pr: int) -> list[int]:
 
 
 def task_id(c: Candidate, out: Path) -> str:
-    """`replay-<repo>-<pr>` when no version of the PR was ever mined, else
-    one past the highest `-v<n>`: a frozen task is never rewritten, and an
-    id is never reused even once its task is deleted, so a re-mined PR is
-    always a new task."""
+    """`replay-<repo>-<pr>` when no version of the PR is under `out`, else
+    one past the highest version there: a task is never rewritten, so a
+    re-mined PR is a new task. An id is unique only among the task
+    directories that exist; one deleted can be issued again."""
     stem = f"replay-{c.repo.split('/')[1]}-{c.pr}"
     found = versions(out, c.repo, c.pr)
     return f"{stem}-v{max(found) + 1}" if found else stem
@@ -275,6 +285,34 @@ def whole_change(clone: Path, parent: str, c: Candidate) -> bool:
     out = subprocess.run(["git", "diff", "--name-only", "-z", parent, c.merge], cwd=clone, capture_output=True, check=True).stdout
     changed = set(os.fsdecode(p) for p in out.split(b"\0") if p)
     return set((*c.tests, *c.sources, *c.data)) <= changed
+
+
+def rebase_merged(clone: Path, c: Candidate) -> bool:
+    """Whether a PR of several commits was rebase-merged: its merge commit
+    has one parent and is the PR's last commit replayed, keeping its author
+    date or subject, where a squash makes a new commit. Then the first
+    parent already holds the PR's earlier commits."""
+    if len(c.commits) < 2:
+        return False
+    parents, date, subject = run("git", "log", "-1", "--format=%P%n%aI%n%s", c.merge, cwd=clone).stdout.split("\n", 2)
+    if len(parents.split()) != 1:
+        return False
+    last_date, last_subject = c.commits[-1]
+    return same_time(date, last_date) or subject.rstrip("\n") == last_subject
+
+
+def same_time(a: str, b: str) -> bool:
+    try:
+        return datetime.fromisoformat(a.replace("Z", "+00:00")) == datetime.fromisoformat(b.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+
+
+def visible(text: str) -> str:
+    """`text` without Unicode format and control characters (zero-width,
+    bidi overrides, tag characters): a mined line reaches the agent's
+    prompt, and these would hide words from the person who reviews it."""
+    return "".join(ch for ch in text if ch == "\t" or unicodedata.category(ch) not in ("Cf", "Cc"))
 
 
 def go_blocks(text: str) -> set[int]:
@@ -316,7 +354,7 @@ def interface(c: Candidate, clone: Path) -> list[tuple[str, str, list[str]]]:
         here, lineno = lineno, lineno + 1
         text = line[1:]
         if COMMENT.match(text):
-            comment.append(text.strip()[:LINE_CHARS])
+            comment.append(visible(text).strip()[:LINE_CHARS])
             continue
         m = pattern.match(text)
         if not m and c.language == "go":
@@ -325,7 +363,7 @@ def interface(c: Candidate, clone: Path) -> list[tuple[str, str, list[str]]]:
             m = GO_BLOCK_ENTRY.match(text) if here in blocks[path] else None
         name = m and next(g for g in m.groups() if g)
         if name and name in used and name not in found and len(name) > 2:
-            found[name] = (path, [*comment[-COMMENT_LINES:], text.strip()[:LINE_CHARS]])
+            found[name] = (visible(path), [*comment[-COMMENT_LINES:], visible(text).strip()[:LINE_CHARS]])
         comment = []
     absent = [n for n in found if run("git", "grep", "-q", "-w", "-e", n, c.base, cwd=clone, check=False).returncode]
     return [(n, *found[n]) for n in absent]
@@ -444,7 +482,7 @@ def main(argv=None):
         run("git", "clone", "-q", "--filter=blob:none", f"https://github.com/{args.repo}", str(clone))
     prs = gh_json(
         "pr", "list", "-R", args.repo, "--state", "merged", "--limit", "500",
-        "--json", "number,author,baseRefOid,mergeCommit,mergedAt,closingIssuesReferences,files",
+        "--json", "number,author,baseRefOid,mergeCommit,mergedAt,closingIssuesReferences,files,commits",
     )
     written, seen = 0, set()
     for c in candidates(prs, args.repo):
@@ -459,6 +497,9 @@ def main(argv=None):
             continue
         if run("git", "cat-file", "-e", f"{c.merge}^{{commit}}", cwd=clone, check=False).returncode:
             print(f"skip {label}: its merge commit is not in the clone")
+            continue
+        if rebase_merged(clone, c):
+            print(f"skip {label}: rebase-merged, so its merge's parent already holds the PR's earlier commits")
             continue
         parent = first_parent(clone, c.merge)
         if not whole_change(clone, parent, c):

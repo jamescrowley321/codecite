@@ -174,26 +174,31 @@ p95 guardrail of 150 ms.
   person that close an issue, change source and add tests kept apart from it
   (Python `tests/` and `test_*.py`, Go `*_test.go` without `TF_ACC`
   acceptance tests, Rust `crates/<crate>/tests/*.rs`, JS/TS `*.test.*`),
-  newest first, skips any PR that already has a task, and any whose merge
-  commit doesn't change every file the PR did (a multi-commit rebase merge,
-  whose first parent already holds part of the PR), and writes up to
+  newest first, skips any PR that already has a task, and any rebase-merged
+  PR of several commits, whose merge's first parent already holds its
+  earlier commits: one whose merge commit has one parent and keeps the PR's
+  last commit's author date or subject, which a squash doesn't, or whose
+  merge commit doesn't change every file the PR did. It writes up to
   `--max` of them as task directories: `task.json` (the base, the hidden
   tests, the test `data`, the language, the `setup` and `test` commands and
   the `workdir` they run in), `prompt.md`, `hidden/`, `reference/fix.patch`
   (the PR's non-test diff) and `check.sh`. Test data is any file the PR
-  changed under a `testdata`, `fixtures`, `__fixtures__` or snapshot
-  directory, code or not, and any non-code file under a `tests`, `test` or
-  `__tests__` directory: it goes into `hidden/` with the tests and is
+  changed under `testdata`, and under a `tests`, `test` or `__tests__`
+  directory any non-code file and anything in a `fixtures`, `__fixtures__`
+  or snapshot directory below it, code or not; a `fixtures` or `snapshots`
+  directory outside the tests is source: it goes into `hidden/` with the tests and is
   overlaid with them, but only the test files are named to the runner. A
-  Rust test target is a file directly in a crate's `tests/` (not under
-  `src/`); one deeper (`tests/common/mod.rs`) is overlaid but is no
+  Rust test target is a file directly in a crate's `tests/` (not
+  `src/tests/`, a module of the library); one deeper (`tests/common/mod.rs`) is overlaid but is no
   `--test`, and a Rust PR with no target is skipped, since a bare `cargo
   test` would run the whole package. When the hidden tests call names the
   fix adds and the base lacks, the prompt ends with a "Names the tests use"
   section giving each one's file, doc comment and definition line, since an
   agent can't discover a name that doesn't exist yet. That comment is the
   mined PR's text, so only its last five lines reach the prompt, each cut
-  to 200 characters, inside a fence no backtick run in them can close; read
+  to 200 characters and stripped of Unicode format and control characters
+  (zero-width, bidi overrides), inside a fence no backtick run in them can
+  close; read
   the section by hand before the task freezes, as with anything added by
   hand. What else the tests
   pin that the issue leaves open (an exact message, say) is added by hand
@@ -201,8 +206,9 @@ p95 guardrail of 150 ms.
   task only when `check.sh` shows the hidden tests fail at the base and pass
   with the fix. It never rewrites a task directory, and a write that fails
   leaves none behind: `--pr <n>` mines a PR again, as one past its highest
-  `-v<n>` (`replay-<repo>-<pr>-v2` after the bare id), so an id is never
-  reused even once its task is deleted. A `--pr` that names no replayable
+  `-v<n>` there (`replay-<repo>-<pr>-v2` after the bare id). An id is
+  unique only among the task directories that exist: once a task is
+  deleted, its id can be issued again. A `--pr` that names no replayable
   PR among the 500 newest is reported, not silently dropped. The project the agent sees is
   `git archive` of the base in a fresh one-commit repository, so no later
   history reaches it; `hidden/` is overlaid on the agent's tree after it
