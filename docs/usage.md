@@ -724,7 +724,12 @@ Two sources whose indexes define the same SCIP ID (two checkouts of one
 crate and version) can't both hold it: a definition on a tree-sitter symbol
 of the same name wins over one only SCIP found, and otherwise the source
 listed first keeps it; the summary's `IDs already defined by <source>` names
-the other. A missing or unreadable index stops the run before anything is written, and
+the other. The losing source's references stay but are no longer inside that
+definition. Since a call in one source can resolve to a definition in
+another this way, a `graph` result whose definition is in another source than
+its call site says `defined in <source>` (`defined_in` in JSON). Symbols and
+names holding control or invisible format characters, and symbols in
+codecite's own `codecite` scheme, are skipped. A missing or unreadable index stops the run before anything is written, and
 so does one whose hash isn't its `scip_sha256`. Pin an index you didn't build
 yourself: its definitions and edges reach agents as exact, so a stale or
 altered file would mislead them. A reference inside a function to that same
@@ -769,10 +774,13 @@ extracted, 1 inferred, 0 ambiguous); SCIP's are exact. `--json` prints
 grep give it), `indexed_at`, `dirty`, `providers` and `confidence`; and
 `{"symbol", "id", "direction", "depth", "total", "results"}` for `graph`,
 each result with `id`, `name`, `kind`, `distance`, `citation`, `via`,
-`call_site`, `providers`, `confidence`, `license_class` and `indexed_at`.
+`call_site`, `providers`, `confidence`, `license_class`, `indexed_at` and
+`defined_in`.
 
-A name that several symbols have is an error listing their IDs, rather than
-a merged answer; pass one of them. A definition the index didn't name but that
+A name that several symbols the graph tools can walk from have is an error
+listing their IDs, rather than a merged answer; pass one of them. A name that
+only one of them has resolves to it, even when tree-sitter has other
+definitions of it. A definition the index didn't name but that
 holds references it found, such as a function SCIP and tree-sitter name
 differently, keeps codecite's own ID and still answers. A symbol with no SCIP
 data at all is a `no_graph` error, never an empty list that would read as "nothing calls

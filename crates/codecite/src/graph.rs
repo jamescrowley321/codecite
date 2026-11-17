@@ -270,6 +270,9 @@ fn human_graph(graph: &Graph) -> String {
         if let Some(class) = &node.license_class {
             let _ = write!(out, " · {}", escape_controls(class));
         }
+        if let Some(source) = &node.defined_in {
+            let _ = write!(out, " · defined in {}", escape_controls(source));
+        }
         out.push('\n');
     }
     out

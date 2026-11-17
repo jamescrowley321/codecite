@@ -162,6 +162,11 @@ pub struct GraphNode {
     /// When its definition's source was last indexed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub indexed_at: Option<String>,
+    /// The source its definition is in, when that isn't the call site's:
+    /// SCIP IDs are global, so another source indexing the same package
+    /// can hold the definition a call resolves to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub defined_in: Option<String>,
 }
 
 /// Where a definition is, to sort by: its source, path and first line.
@@ -421,9 +426,9 @@ impl Store {
         let link: Vec<_> = edges.iter().filter(|e| e.0 == via).collect();
         let providers: BTreeSet<String> = link.iter().map(|e| e.1.clone()).collect();
         let confidence = link.iter().map(|e| e.2).max().unwrap_or_default();
-        let call_site = match link.first() {
-            Some((_, _, _, Some(doc), Some(line))) => self.line_citation(*doc, *line)?,
-            _ => None,
+        let (call_site, call_source) = match link.first() {
+            Some((_, _, _, Some(doc), Some(line))) => self.line_citation(*doc, *line)?.unzip(),
+            _ => (None, None),
         };
         let defined = self
             .conn
@@ -445,15 +450,24 @@ impl Store {
                     code_citation(&source, &revision, &path, row.get(2)?, row.get(3)?),
                     row.get::<_, String>(7)?,
                     row.get::<_, String>(8)?,
+                    source,
                 ))
             })
             .optional()?;
-        let (name, kind, citation, license_class, indexed_at) = match defined {
-            Some((name, kind, citation, class, indexed)) => {
-                (name, kind, Some(citation), Some(class), Some(indexed))
-            }
-            None => (descriptor_name(node), None, None, None, None),
+        let (name, kind, citation, license_class, indexed_at, source) = match defined {
+            Some((name, kind, citation, class, indexed, source)) => (
+                name,
+                kind,
+                Some(citation),
+                Some(class),
+                Some(indexed),
+                Some(source),
+            ),
+            None => (descriptor_name(node), None, None, None, None, None),
         };
+        // SCIP IDs are global, so a call in one source can resolve to a
+        // definition in another; say so rather than cite it silently.
+        let defined_in = source.filter(|s| call_source.as_ref().is_some_and(|c| c != s));
         Ok(GraphNode {
             id: node.into(),
             name,
@@ -466,12 +480,13 @@ impl Store {
             confidence,
             license_class,
             indexed_at,
+            defined_in,
         })
     }
 
-    /// One line of a stored document, cited, or `None` when the document
-    /// isn't a current code file.
-    fn line_citation(&self, document_id: i64, line: u32) -> Result<Option<String>> {
+    /// One line of a stored document, cited, with its source's name, or
+    /// `None` when the document isn't a current code file.
+    fn line_citation(&self, document_id: i64, line: u32) -> Result<Option<(String, String)>> {
         Ok(self
             .conn
             .prepare_cached(
@@ -482,7 +497,7 @@ impl Store {
                 let path: String = row.get(0)?;
                 let source: String = row.get(1)?;
                 let revision: String = row.get(2)?;
-                Ok(code_citation(&source, &revision, &path, line, line))
+                Ok((code_citation(&source, &revision, &path, line, line), source))
             })
             .optional()?)
     }
@@ -545,29 +560,32 @@ impl Store {
                 })
             });
         }
-        match found.len() {
-            0 => Err(Error::NoSuchSymbol {
+        if found.is_empty() {
+            return Err(Error::NoSuchSymbol {
                 symbol: name.into(),
                 candidates: self.similar_graph_names(last)?,
-            }),
-            1 => {
-                let (id, provider) = found.remove(0);
-                if provider == "treesitter" && !self.in_graph(&id)? {
-                    Err(Error::NoGraph {
-                        symbol: name.into(),
-                    })
-                } else {
-                    Ok(id)
-                }
+            });
+        }
+        // Only symbols the graph tools can walk from count: a tree-sitter
+        // symbol no SCIP edge touches would only answer `no_graph`.
+        let mut walkable = Vec::new();
+        for (id, provider) in found {
+            if provider != "treesitter" || self.in_graph(&id)? {
+                walkable.push(id);
             }
+        }
+        match walkable.len() {
+            0 => Err(Error::NoGraph {
+                symbol: name.into(),
+            }),
+            1 => Ok(walkable.remove(0)),
             _ => {
                 let limit = usize::try_from(MAX_SEARCH_LIMIT).unwrap_or(usize::MAX);
-                let mut ids: Vec<String> = found.into_iter().map(|(id, _)| id).collect();
-                ids.sort();
-                ids.truncate(limit);
+                walkable.sort();
+                walkable.truncate(limit);
                 Err(Error::AmbiguousSymbol {
                     symbol: name.into(),
-                    candidates: ids,
+                    candidates: walkable,
                 })
             }
         }
@@ -844,6 +862,71 @@ mod tests {
     }
 
     #[test]
+    fn a_definition_in_another_source_than_the_call_is_marked() {
+        use crate::{DocumentRecord, ScipDefinition, SourceRecord};
+        let (_dir, mut store, id) = app();
+        store.write_scip(id, &index()).unwrap();
+        // `other` has a function that calls app's `check`.
+        let other = store
+            .upsert_source(&SourceRecord {
+                name: "other",
+                kind: "local",
+                url: "/src/other",
+                revision: HEAD,
+                license_spdx: None,
+                license_class: "adapt",
+                is_current: true,
+                obsoleted_by: None,
+                updated_by: None,
+            })
+            .unwrap();
+        let text = "fn run() {\n    check(\"x\");\n}\n";
+        store
+            .write_document(
+                other,
+                &DocumentRecord {
+                    path: "src/run.rs",
+                    language: Some("rust"),
+                    content_hash: b"run",
+                    size_bytes: text.len() as u64,
+                    dirty: false,
+                    text: Some(text),
+                    chunks: vec![],
+                },
+            )
+            .unwrap();
+        let run = "rust-analyzer cargo other 0.1.0 run().";
+        store
+            .write_scip(
+                other,
+                &[ScipDocument {
+                    path: "src/run.rs".into(),
+                    definitions: vec![ScipDefinition {
+                        symbol: run.into(),
+                        display_name: "run".into(),
+                        kind: "function".into(),
+                        line: 1,
+                        start_line: 1,
+                        end_line: 3,
+                    }],
+                    occurrences: vec![ScipOccurrence {
+                        symbol: scip("client/check()."),
+                        start_line: 2,
+                        end_line: 2,
+                        roles: 0,
+                    }],
+                }],
+            )
+            .unwrap();
+        let callees = walk(&store, run, Direction::Callees, 1);
+        assert_eq!(callees.results[0].id, scip("client/check()."));
+        assert_eq!(callees.results[0].defined_in.as_deref(), Some("app"));
+        // A caller in the call's own source isn't marked.
+        let callers = walk(&store, &scip("client/check()."), Direction::Callers, 1);
+        assert!(callers.results.iter().all(|n| n.defined_in.is_none()), "{callers:?}");
+    }
+
+    #[test]
     fn a_symbol_must_name_one_symbol_with_a_graph() {
         let (_dir, mut store, id) = app();
         // Before SCIP, nothing has a graph.
@@ -852,7 +935,22 @@ mod tests {
         store.write_scip(id, &index()).unwrap();
         let err = store.references("helper", 0, false).unwrap_err();
         assert!(matches!(err, Error::NoGraph { .. }), "{err:?}");
-        // lib.rs's tree-sitter `check` and client.rs's SCIP one.
+        // lib.rs's tree-sitter `check` has no graph, so `check` is
+        // client.rs's SCIP one.
+        assert_eq!(
+            store.references("check", 0, false).unwrap().id,
+            scip("client/check().")
+        );
+        // Once lib.rs's `check` holds a reference SCIP found, both can be
+        // walked from, and the name is ambiguous.
+        let mut docs = index();
+        docs[0].occurrences.push(ScipOccurrence {
+            symbol: scip("login()."),
+            start_line: 20,
+            end_line: 20,
+            roles: 0,
+        });
+        store.write_scip(id, &docs).unwrap();
         let err = store.references("check", 0, false).unwrap_err();
         let Error::AmbiguousSymbol { candidates, .. } = &err else {
             panic!("{err:?}")

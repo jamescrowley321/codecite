@@ -1584,13 +1584,10 @@ mod tests {
         assert_eq!(callees["depth"], 10);
         assert_eq!(callees["results"][0]["id"], SCIP_VALIDATE);
 
-        // tests/check.rs keeps its tree-sitter `check` beside the SCIP one.
-        let err = session.err("callers", json!({"symbol": "check"})).await;
-        assert_eq!(err["kind"], "ambiguous_symbol");
-        assert_eq!(
-            err["candidates"],
-            json!(["codecite . app . tests/`check.rs`/check().", SCIP_CHECK])
-        );
+        // tests/check.rs keeps its tree-sitter `check` beside the SCIP one,
+        // but only the SCIP one can be walked from, so `check` names it.
+        let callers = session.ok("callers", json!({"symbol": "check"})).await;
+        assert_eq!(callers["id"], SCIP_CHECK);
         session.stop().await;
 
         let plain = fixture();
@@ -1647,7 +1644,7 @@ mod tests {
             ("requirements", json!({"citation": citation}), true),
             ("requirements", json!({}), true),
             ("references", json!({"symbol": "validate"}), false),
-            ("references", json!({"symbol": "check"}), true),
+            ("references", json!({"symbol": "check"}), false),
             ("references", json!({"symbol": "nothing"}), true),
             ("callers", json!({"symbol": "validate"}), false),
             ("callees", json!({"symbol": SCIP_CHECK, "depth": 3}), false),

@@ -290,8 +290,22 @@ fn write_definitions(
             // whatever order the manifest lists them in; otherwise the
             // first keeps the ID.
             if scip_only && other != source_id && holder.is_some() {
+                // The losing source's references stay, but no longer inside
+                // the definition it lost: its edges from it go, and its
+                // occurrences lose it as their enclosing definition.
+                const LOSER: &str = "(SELECT id FROM document WHERE source_id = ?2)";
                 tx.prepare_cached("DELETE FROM symbol WHERE id = ?1")?
                     .execute([&def.symbol])?;
+                tx.prepare_cached(&format!(
+                    "DELETE FROM edge WHERE src = ?1 AND provider = 'scip'
+                       AND evidence_doc IN {LOSER}"
+                ))?
+                .execute(params![def.symbol, other])?;
+                tx.prepare_cached(&format!(
+                    "UPDATE occurrence SET enclosing = NULL WHERE enclosing = ?1
+                       AND document_id IN {LOSER}"
+                ))?
+                .execute(params![def.symbol, other])?;
                 summary.taken_over += 1;
             } else {
                 summary.conflicts += 1;
@@ -1054,6 +1068,57 @@ mod tests {
         assert_eq!(summary.conflicts, 1);
         assert_eq!(summary.conflicting_sources, ["app"]);
         assert_eq!(owner(&store, &scip("login().")), "app");
+    }
+
+    #[test]
+    fn taking_an_id_over_drops_the_losers_edges_from_it() {
+        let (_dir, mut store, app_id) = app();
+        let (other, mut docs) = other_source(&mut store);
+        // `other`'s login calls `new` and `check`; app's calls `new` too.
+        for callee in ["client/impl#[Client]new().", "client/check()."] {
+            docs[0].occurrences.push(ScipOccurrence {
+                symbol: scip(callee),
+                start_line: 1,
+                end_line: 1,
+                roles: 0,
+            });
+        }
+        store.write_scip(other, &docs).unwrap();
+        let summary = store.write_scip(app_id, &index()).unwrap();
+        assert_eq!(summary.taken_over, 1);
+        let edges: Vec<(String, String)> = {
+            let mut stmt = store
+                .conn
+                .prepare(
+                    "SELECT e.dst, d.path || '@' || s.name FROM edge e
+                     JOIN document d ON d.id = e.evidence_doc JOIN source s ON s.id = d.source_id
+                     WHERE e.src = ?1 ORDER BY e.dst",
+                )
+                .unwrap();
+            stmt.query_map([scip("login().")], |row| Ok((row.get(0)?, row.get(1)?)))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap()
+        };
+        // Only app's calls, each with app's evidence.
+        assert_eq!(
+            edges,
+            [
+                (scip("client/Client#"), "src/lib.rs@app".to_owned()),
+                (scip("client/impl#[Client]new()."), "src/lib.rs@app".to_owned()),
+                (scip("client/impl#[Client]validate()."), "src/lib.rs@app".to_owned()),
+            ]
+        );
+        let held: i64 = store
+            .conn
+            .query_row(
+                "SELECT count(*) FROM occurrence WHERE enclosing = ?1 AND document_id IN
+                   (SELECT id FROM document WHERE source_id = ?2)",
+                params![scip("login()."), other],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(held, 0, "the loser's references are no longer inside login");
     }
 
     #[test]
