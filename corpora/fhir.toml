@@ -1,0 +1,287 @@
+# The fhir corpus: open-source FHIR servers and libraries, and the pages of
+# the FHIR R4 (4.0.1) specification a server implements first.
+#
+# Index it with `codecite index fhir`. Git sources are pinned by commit;
+# `codecite add fhir <url>` adds one at its remote's current commit. Documents
+# are pinned by the sha256 of their bytes; `codecite index fhir
+# --print-hashes` prints the hash each URL serves now.
+#
+# Java and Clojure have no grammar here, so HAPI FHIR and Blaze index as
+# plain text in 60-line windows, not at their definitions.
+
+name = "fhir"
+
+# FHIR R4 (4.0.1), from hl7.org. The specification is published under CC0.
+
+# RESTful API.
+[[source]]
+kind = "document"
+name = "fhir-r4-http"
+url = "https://hl7.org/fhir/R4/http.html"
+sha256 = "cdcf4039ffa4c0c8aca35bdcb77532b8d892daf868d444ff7b191214d602be7e"
+license = "CC0-1.0"
+use = "quote"
+current = true
+aliases = ["FHIR REST", "FHIR RESTful API", "FHIR HTTP"]
+
+# Search.
+[[source]]
+kind = "document"
+name = "fhir-r4-search"
+url = "https://hl7.org/fhir/R4/search.html"
+sha256 = "7db9490e5723cf44a6c998471f229575d7a00d76db52ee2684014049f8e0524d"
+license = "CC0-1.0"
+use = "quote"
+current = true
+aliases = ["FHIR Search"]
+
+# _filter Parameter.
+[[source]]
+kind = "document"
+name = "fhir-r4-search-filter"
+url = "https://hl7.org/fhir/R4/search_filter.html"
+sha256 = "fbb2a496638006fb52367519d235ae2e6c761b4f416b57aae5003a334c86e6d4"
+license = "CC0-1.0"
+use = "quote"
+current = true
+aliases = ["FHIR _filter"]
+
+# JSON Representation of Resources.
+[[source]]
+kind = "document"
+name = "fhir-r4-json"
+url = "https://hl7.org/fhir/R4/json.html"
+sha256 = "29f37b0f90451ab55318ab371f35dd3176c5b24c1d5f4406cb855a1dbf1bc56e"
+license = "CC0-1.0"
+use = "quote"
+current = true
+aliases = ["FHIR JSON"]
+
+# Resource Formats.
+[[source]]
+kind = "document"
+name = "fhir-r4-formats"
+url = "https://hl7.org/fhir/R4/formats.html"
+sha256 = "669b4ee048cfda7efa8b96275914fa64b281c060c0d5fb5720bb7d6d228cc713"
+license = "CC0-1.0"
+use = "quote"
+current = true
+aliases = ["FHIR Formats"]
+
+# Data Types.
+[[source]]
+kind = "document"
+name = "fhir-r4-datatypes"
+url = "https://hl7.org/fhir/R4/datatypes.html"
+sha256 = "03d88289865b77620321652f4b9b5c954b795c17715aa0a24f1a220dc12af573"
+license = "CC0-1.0"
+use = "quote"
+current = true
+aliases = ["FHIR Data Types"]
+
+# Resource.
+[[source]]
+kind = "document"
+name = "fhir-r4-resource"
+url = "https://hl7.org/fhir/R4/resource.html"
+sha256 = "7a090df22a2cfcc77c4dd0ada8da471b70c24eca91ed51caf90614b2f5058c49"
+license = "CC0-1.0"
+use = "quote"
+current = true
+aliases = ["FHIR Resource"]
+
+# DomainResource.
+[[source]]
+kind = "document"
+name = "fhir-r4-domainresource"
+url = "https://hl7.org/fhir/R4/domainresource.html"
+sha256 = "dbc0393dc8cc2c91c66f7a4ad1e6a42f76b54b1609329c86913f1abaa19c65f7"
+license = "CC0-1.0"
+use = "quote"
+current = true
+aliases = ["FHIR DomainResource"]
+
+# References between Resources.
+[[source]]
+kind = "document"
+name = "fhir-r4-references"
+url = "https://hl7.org/fhir/R4/references.html"
+sha256 = "c7b2bade9002d88236d10f8c55754bc4b43edb3297d196a42935f30107bbee0f"
+license = "CC0-1.0"
+use = "quote"
+current = true
+aliases = ["FHIR References"]
+
+# Extensibility.
+[[source]]
+kind = "document"
+name = "fhir-r4-extensibility"
+url = "https://hl7.org/fhir/R4/extensibility.html"
+sha256 = "3c1df2fd19b10d5f7f132976dea0691e42addfaafd0bd10295ccf8ec51269eb3"
+license = "CC0-1.0"
+use = "quote"
+current = true
+aliases = ["FHIR Extensibility"]
+
+# Bundle.
+[[source]]
+kind = "document"
+name = "fhir-r4-bundle"
+url = "https://hl7.org/fhir/R4/bundle.html"
+sha256 = "2b7149161abde932769e5438c746b5bc5833b0abd8f5895d3ecf58de722fb2d2"
+license = "CC0-1.0"
+use = "quote"
+current = true
+aliases = ["FHIR Bundle"]
+
+# OperationOutcome.
+[[source]]
+kind = "document"
+name = "fhir-r4-operationoutcome"
+url = "https://hl7.org/fhir/R4/operationoutcome.html"
+sha256 = "d29bbfccfd126f92ff7ed1cbc4e598a1c97337e28063ed5975597b17167b9dcc"
+license = "CC0-1.0"
+use = "quote"
+current = true
+aliases = ["FHIR OperationOutcome"]
+
+# CapabilityStatement.
+[[source]]
+kind = "document"
+name = "fhir-r4-capabilitystatement"
+url = "https://hl7.org/fhir/R4/capabilitystatement.html"
+sha256 = "94004ea62a9421e8769630f59330026bfe81b71cffcb4fc17d02152fabdb987a"
+license = "CC0-1.0"
+use = "quote"
+current = true
+aliases = ["FHIR CapabilityStatement"]
+
+# SearchParameter.
+[[source]]
+kind = "document"
+name = "fhir-r4-searchparameter"
+url = "https://hl7.org/fhir/R4/searchparameter.html"
+sha256 = "7250f3dc804540c3a3d8ef7f2b7418e5bf14171ea3b6944c1cad26565767c65c"
+license = "CC0-1.0"
+use = "quote"
+current = true
+aliases = ["FHIR SearchParameter"]
+
+# CompartmentDefinition.
+[[source]]
+kind = "document"
+name = "fhir-r4-compartmentdefinition"
+url = "https://hl7.org/fhir/R4/compartmentdefinition.html"
+sha256 = "323a1107d1160337d71609450b98f2b9e3eaf036a3de3986421dd727604983c2"
+license = "CC0-1.0"
+use = "quote"
+current = true
+aliases = ["FHIR CompartmentDefinition"]
+
+# FHIRPath in FHIR.
+[[source]]
+kind = "document"
+name = "fhir-r4-fhirpath"
+url = "https://hl7.org/fhir/R4/fhirpath.html"
+sha256 = "07653b0728f7a8c78aadaaae7bdc5a6856c04aa3b42f4ba727d92a61b56ad1a4"
+license = "CC0-1.0"
+use = "quote"
+current = true
+aliases = ["FHIR FHIRPath"]
+
+# Extended Operations.
+[[source]]
+kind = "document"
+name = "fhir-r4-operations"
+url = "https://hl7.org/fhir/R4/operations.html"
+sha256 = "46866c86b2f1ebd6b44905200b6ccbd0fbfa87420bbddbf8fcf7faa254aa0c30"
+license = "CC0-1.0"
+use = "quote"
+current = true
+aliases = ["FHIR Operations"]
+
+# Validating Resources.
+[[source]]
+kind = "document"
+name = "fhir-r4-validation"
+url = "https://hl7.org/fhir/R4/validation.html"
+sha256 = "d1372a4d0614d0d298edd6e92e3f74542329d31d7691cb0054782b6131d6e5bb"
+license = "CC0-1.0"
+use = "quote"
+current = true
+aliases = ["FHIR Validation"]
+
+# Conformance Rules.
+[[source]]
+kind = "document"
+name = "fhir-r4-conformance-rules"
+url = "https://hl7.org/fhir/R4/conformance-rules.html"
+sha256 = "3bd856c42a512898fe54ad5bf3f6ebc5af396a957a8ebdd0fd122b248d0804a2"
+license = "CC0-1.0"
+use = "quote"
+current = true
+aliases = ["FHIR Conformance Rules"]
+
+# Servers and libraries, each at the commit its default branch pointed to when
+# added. The three largest leave out their JSON and XML: almost all of it is
+# FHIR fixtures and definitions, about 930 MiB that took the corpus file from
+# 3.1 GB to 6.8 GB.
+
+[[source]]
+kind = "git"
+url = "https://github.com/hapifhir/hapi-fhir"
+commit = "4b491718d6504a84978a6a6418ae35ce369a595f"
+license = "Apache-2.0"
+use = "adapt"
+exclude = ["**/*.json", "**/*.xml", "**/*.xsd", "**/*.sch"]
+
+[[source]]
+kind = "git"
+url = "https://github.com/HeliosSoftware/hfs"
+commit = "2808e8d359869fdd8a2241ab769a586c62502511"
+license = "MIT"
+use = "adapt"
+exclude = ["**/*.json", "**/*.xml"]
+
+[[source]]
+kind = "git"
+url = "https://github.com/HasteHealth/HasteHealth"
+commit = "e335d0750d4216023be49dd0bdafeac4fd46f576"
+license = "Apache-2.0"
+use = "adapt"
+exclude = ["**/*.json", "**/*.xml"]
+
+[[source]]
+kind = "git"
+url = "https://github.com/octofhir/server-rs"
+commit = "650ff15cc4601bcecfb0b61768bea777b8c83b3b"
+license = "Apache-2.0"
+use = "adapt"
+
+[[source]]
+kind = "git"
+url = "https://github.com/octofhir/fhirpath-rs"
+commit = "0fc55c63c09b2d9bf782bbefdfa22c318e06f26e"
+license = "MIT OR Apache-2.0"
+use = "adapt"
+
+[[source]]
+kind = "git"
+url = "https://github.com/wso2/fhir-server"
+commit = "fc1bd27ddfe7e12170b4f41d14e64b4e447bd866"
+license = "Apache-2.0"
+use = "adapt"
+
+[[source]]
+kind = "git"
+url = "https://github.com/samply/blaze"
+commit = "e286819d4244c980f873abae37b0c8ef0f4d0de8"
+license = "Apache-2.0"
+use = "adapt"
+
+[[source]]
+kind = "git"
+url = "https://github.com/medplum/medplum"
+commit = "8d13bbf8cb629b93b35eb36ef1d021ed1d459b49"
+license = "Apache-2.0"
+use = "adapt"
