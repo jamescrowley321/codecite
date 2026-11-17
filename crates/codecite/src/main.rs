@@ -1919,6 +1919,7 @@ section · Checking\\u{1b}[2J · MUST · quote · indexed 2026-10-20T06:00:00Z
         codecite_core::Definition {
             citation: format!("app@{SHA}:{path}#L1-L5"),
             symbol: "callback".into(),
+            id: format!("codecite . app . {path}/callback()."),
             kind: "method".into(),
             role,
             license_class: "adapt".into(),
