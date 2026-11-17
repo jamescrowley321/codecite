@@ -8,7 +8,21 @@ from dataclasses import replace
 
 import pytest
 
-from codecite_evals.replay import Candidate, acceptance_only, accepted, candidates, command_for, is_test_path, language, project_dir, write_task
+from codecite_evals.replay import (
+    Candidate,
+    acceptance_only,
+    accepted,
+    candidates,
+    command_for,
+    first_parent,
+    interface,
+    is_test_data,
+    is_test_path,
+    language,
+    mined,
+    project_dir,
+    write_task,
+)
 
 REPO = "o/r"
 
@@ -92,6 +106,7 @@ def test_a_candidate_carries_its_issue_tests_and_sources():
         tests=("tests/test_a.py",),
         sources=("src/a.py", "README.md"),
         language="python",
+        data=(),
     )
 
 
@@ -207,6 +222,7 @@ def replay(base, merge):
         tests=("tests/test_new.py", "tests/test_old.py"),
         sources=("src/a.py",),
         language="python",
+        data=(),
     )
 
 
@@ -261,6 +277,7 @@ def test_task_json_round_trips(clone, tmp_path):
         "issue": 10,
         "language": "python",
         "hidden": ["tests/test_new.py", "tests/test_old.py"],
+        "data": [],
         "test": command_for("python", ["tests/test_new.py", "tests/test_old.py"]),
         "setup": [],
         "workdir": ".",
@@ -363,3 +380,155 @@ def test_check_needs_the_repository(tmp_path):
     result = subprocess.run(["bash", str(task / "check.sh")], env={"PATH": os.environ["PATH"]}, capture_output=True, text=True)
     assert result.returncode != 0
     assert "REPLAY_REPO" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "tests/fixtures/data.json",
+        "py/src/tests/data/case.yaml",
+        "internal/x/testdata/golden.txt",
+        "web/__tests__/__snapshots__/a.snap",
+        "crates/x/tests/snapshots/out.snap",
+        "test/fixture.pem",
+    ],
+)
+def test_test_data_paths(path):
+    """Files a PR's tests read: kept with the hidden tests, not the fix."""
+    assert is_test_data(path)
+    assert not is_test_path(path)
+
+
+@pytest.mark.parametrize("path", ["tests/test_a.py", "src/data.json", "docs/tests.md", "README.md", "tests/cli.rs"])
+def test_not_test_data(path):
+    assert not is_test_data(path)
+
+
+def test_test_data_goes_with_the_hidden_tests_not_the_fix():
+    [c] = candidates([record(1, file("src/a.py"), file("tests/test_a.py"), file("tests/data/case.json", "ADDED"))], REPO, ISSUES)
+    assert c.tests == ("tests/test_a.py",)
+    assert c.data == ("tests/data/case.json",)
+    assert "tests/data/case.json" not in c.sources
+
+
+def test_test_data_reaches_hidden_and_not_the_patch(clone, tmp_path):
+    repo, base, merge = clone
+    (repo / "tests/data").mkdir()
+    (repo / "tests/data/case.json").write_text('{"want": 2}\n')
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "data")
+    merge = git(repo, "rev-parse", "HEAD")
+    task = write_task(replace(replay(base, merge), data=("tests/data/case.json",)), repo, tmp_path / "tasks")
+    assert (task / "hidden/tests/data/case.json").read_text() == '{"want": 2}\n'
+    assert "case.json" not in (task / "reference/fix.patch").read_text()
+    meta = json.loads((task / "task.json").read_text())
+    assert meta["data"] == ["tests/data/case.json"]
+    # The data is overlaid, never named to the test runner.
+    assert "tests/data/case.json" not in meta["hidden"]
+
+
+def test_the_base_is_the_merges_first_parent(clone):
+    """baseRefOid is wherever the PR's base branch stood, which can be
+    behind the merge's parent; the parent is what the PR's diff was
+    applied to."""
+    repo, base, merge = clone
+    git(repo, "checkout", "-q", "-b", "other", base)
+    (repo / "unrelated.txt").write_text("another PR\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "another PR")
+    parent = git(repo, "rev-parse", "HEAD")
+    (repo / "src/a.py").write_text("def f():\n    return 2\n")
+    git(repo, "commit", "-qam", "the fix")
+    merge = git(repo, "rev-parse", "HEAD")
+    assert first_parent(repo, merge) == parent != base
+
+
+def test_rust_targets_are_only_the_files_directly_in_tests():
+    """tests/common/mod.rs is a module the targets share, not a target:
+    `--test mod` would make cargo fail."""
+    cmd = command_for("rust", ["crates/x/tests/cli.rs", "crates/x/tests/common/mod.rs", "crates/x/tests/support/helpers.rs"])
+    assert cmd == ["cargo", "test", "--locked", "--offline", "--test", "cli"]
+
+
+def test_write_task_never_replaces_a_task(clone, tmp_path):
+    """A task already there, frozen or not, stays; a re-mine of the same
+    PR gets the next free id."""
+    repo, base, merge = clone
+    out = tmp_path / "tasks"
+    first = write_task(replay(base, merge), repo, out)
+    (first / "task.json").write_text('{"frozen_at": "abc"}\n')
+    second = write_task(replay(base, merge), repo, out)
+    third = write_task(replay(base, merge), repo, out)
+    assert (first.name, second.name, third.name) == ("replay-r-7", "replay-r-7-v2", "replay-r-7-v3")
+    assert (first / "task.json").read_text() == '{"frozen_at": "abc"}\n'
+    assert json.loads((second / "task.json").read_text())["id"] == "replay-r-7-v2"
+
+
+def test_mined_finds_every_version_of_a_pr(tmp_path):
+    for name in ("replay-r-7", "replay-r-7-v2", "replay-r-70", "replay-other-7"):
+        (tmp_path / name).mkdir()
+    assert mined(tmp_path, "o/r", 7)
+    assert not mined(tmp_path, "o/r", 8)
+    assert mined(tmp_path, "o/r", 70)
+    (tmp_path / "replay-r-9-v2").mkdir()
+    assert mined(tmp_path, "o/r", 9)
+
+
+@pytest.fixture
+def go_clone(tmp_path):
+    """A Go package whose PR adds an unexported helper and a constant that
+    its new test calls, and changes a function that already existed."""
+    repo = tmp_path / "go-clone"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "config", "user.email", "t@example.com")
+    git(repo, "config", "user.name", "t")
+    (repo / "retry.go").write_text("package infra\n\nfunc Retry() error {\n\treturn nil\n}\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "base")
+    base = git(repo, "rev-parse", "HEAD")
+    (repo / "retry.go").write_text(
+        "package infra\n\nimport \"time\"\n\nconst (\n\tbaseWait = 2 * time.Second\n)\n\n"
+        "func Retry() error {\n\treturn nil\n}\n\n"
+        "// isRetryable reports whether err is worth retrying.\n// Server errors are.\n"
+        "func isRetryable(err error) bool {\n\tlocal := err != nil\n\treturn local\n}\n\n"
+        "func unused() {}\n"
+    )
+    (repo / "retry_test.go").write_text(
+        "package infra\n\nfunc TestRetry(t *testing.T) {\n\t_ = Retry()\n\t_ = isRetryable(nil)\n\t_ = baseWait\n\tlocal := 1\n\t_ = local\n}\n"
+    )
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "fix (#3)")
+    c = Candidate(repo="o/r", pr=3, issue=1, title="Retry server errors", body="They fail.", base=base,
+                  merge=git(repo, "rev-parse", "HEAD"), tests=("retry_test.go",), sources=("retry.go",), language="go", data=())
+    return repo, c
+
+
+def test_interface_names_what_the_tests_call_that_the_fix_adds(go_clone):
+    repo, c = go_clone
+    found = {name: (path, lines) for name, path, lines in interface(c, repo)}
+    # Retry was there at the base, unused isn't called, local is a variable.
+    assert set(found) == {"isRetryable", "baseWait"}
+    path, lines = found["isRetryable"]
+    assert path == "retry.go"
+    assert lines == [
+        "// isRetryable reports whether err is worth retrying.",
+        "// Server errors are.",
+        "func isRetryable(err error) bool {",
+    ]
+    assert found["baseWait"] == ("retry.go", ["baseWait = 2 * time.Second"])
+
+
+def test_the_prompt_names_the_interface(go_clone, tmp_path):
+    repo, c = go_clone
+    prompt = (write_task(c, repo, tmp_path / "tasks") / "prompt.md").read_text()
+    assert "# Retry server errors" in prompt
+    assert "func isRetryable(err error) bool {" in prompt
+    assert "`retry.go`" in prompt and "baseWait = 2 * time.Second" in prompt
+    assert "func unused" not in prompt and "retry_test" not in prompt
+
+
+def test_a_prompt_with_nothing_to_name_is_just_the_issue(clone, tmp_path):
+    repo, base, merge = clone
+    prompt = (write_task(replay(base, merge), repo, tmp_path / "tasks") / "prompt.md").read_text()
+    assert "## " not in prompt

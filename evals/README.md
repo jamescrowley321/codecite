@@ -166,18 +166,33 @@ p95 guardrail of 150 ms.
 
 - **Replay tasks** (`replay-<repo>-<pr>`, `"kind": "replay"`): real past
   work. The prompt is an issue as it was asked, the project is its repository
-  at the base of the merged PR that closed it, and the hidden tests are the
-  test files that PR added or changed, at its merge commit. The `eval` corpus
-  is that same tree. `codecite-replay-mine OWNER/REPO --clone <dir>`
-  (`src/codecite_evals/replay.py`) lists merged PRs by a person that close an
-  issue, change source and add tests kept apart from it (Python `tests/`
-  and `test_*.py`, Go `*_test.go` without `TF_ACC` acceptance tests, Rust
-  `crates/<crate>/tests/*.rs`, JS/TS `*.test.*`), newest first, and writes up
-  to `--max` of them as task directories: `task.json` (the base, the hidden
-  paths, the language, the `setup` and `test` commands and the `workdir` they
-  run in), `prompt.md`, `hidden/`, `reference/fix.patch` (the PR's non-test
-  diff) and `check.sh`. It keeps a task only when `check.sh` shows the hidden
-  tests fail at the base and pass with the fix. The project the agent sees is
+  at the merged PR's base, the merge commit's first parent (not the PR's
+  `baseRefOid`, which can lag it and bring other PRs' edits), and the hidden
+  tests are the test files that PR added or changed, at its merge commit.
+  The `eval` corpus is that same tree. `codecite-replay-mine OWNER/REPO
+  --clone <dir>` (`src/codecite_evals/replay.py`) lists merged PRs by a
+  person that close an issue, change source and add tests kept apart from it
+  (Python `tests/` and `test_*.py`, Go `*_test.go` without `TF_ACC`
+  acceptance tests, Rust `crates/<crate>/tests/*.rs`, JS/TS `*.test.*`),
+  newest first, skips any PR that already has a task, and writes up to
+  `--max` of them as task directories: `task.json` (the base, the hidden
+  tests, the test `data`, the language, the `setup` and `test` commands and
+  the `workdir` they run in), `prompt.md`, `hidden/`, `reference/fix.patch`
+  (the PR's non-test diff) and `check.sh`. Test data is any non-code file
+  the PR changed under a `tests`, `test`, `testdata`, `fixtures` or
+  snapshot directory: it goes into `hidden/` with the tests and is overlaid
+  with them, but only the test files are named to the runner. A Rust test
+  target is a file directly in `tests/`; one deeper (`tests/common/mod.rs`)
+  is overlaid but is no `--test`. When the hidden tests call names the fix
+  adds and the base lacks, the prompt ends with a "Names the tests use"
+  section giving each one's file, doc comment and definition line, since an
+  agent can't discover a name that doesn't exist yet. What else the tests
+  pin that the issue leaves open (an exact message, say) is added by hand
+  under "What the tests check" before the task freezes. The miner keeps a
+  task only when `check.sh` shows the hidden tests fail at the base and pass
+  with the fix. It never rewrites a task directory: `--pr <n>` mines a PR
+  again, as `replay-<repo>-<pr>-v2` (or the next free `-v<n>`) beside the
+  one already there. The project the agent sees is
   `git archive` of the base in a fresh one-commit repository, so no later
   history reaches it; `hidden/` is overlaid on the agent's tree after it
   exits and only those files run, offline, with the dependencies warmed into
@@ -185,6 +200,11 @@ p95 guardrail of 150 ms.
   `REPLAY_REPO`, by default the history benchmark's clone in
   `~/.cache/codecite/history/<repo>`. A replay task has no registered name:
   it runs as `codecite_evals/ab -T task_id=<id>`, which `panel.sh` does for it.
+  Its agent has the same 600 s as any task's, so a PR too broad to replay in
+  that time is cut to the part its hidden tests check, by hand, before the
+  task freezes. A failing sample's score metadata keeps the tail of the
+  hidden tests' stdout and then of their stderr (`tests_tail`), where a
+  failed build says why.
 
 Each task's `check.sh` proves it is well-formed; `backchannel-logout`'s needs
 only uv and an identity-model checkout, and `spec-questions`' only python3

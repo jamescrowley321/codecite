@@ -54,6 +54,30 @@ asks for. Stop when you're done.
 
 {body}
 """
+# What follows the issue when the hidden tests call names the fix adds: the
+# agent can't discover a name that doesn't exist yet, so the tests would
+# measure guessing.
+INTERFACE = """
+## Names the tests use
+
+The tests that check this change call these names, which don't exist yet.
+Define them as shown.
+"""
+# Directories whose non-code files are test data: fixtures, golden files and
+# snapshots a PR's tests read.
+TEST_DIRS = {"tests", "test", "testdata", "__tests__", "fixtures", "__fixtures__", "__snapshots__", "snapshots"}
+# A top-level definition on an added line, per language: the name is group 1.
+DEFINITION = {
+    "python": re.compile(r"^(?:\s*(?:async\s+)?def\s+|\s*class\s+)([A-Za-z_]\w*)|^([A-Z_][A-Z0-9_]*)\s*(?::[^=]*)?=[^=]"),
+    "go": re.compile(
+        r"^(?:func\s+(?:\([^)]*\)\s*)?|type\s+|const\s+|var\s+)([A-Za-z_]\w*)"
+        r"|^\t([A-Za-z_]\w*)(?:\s+[\w.*\[\]]+)?\s*=[^=]"
+    ),
+    "rust": re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?(?:fn|struct|enum|trait|const|static|type|mod)\s+([A-Za-z_]\w*)"),
+    "node": re.compile(r"^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function\*?|class|const|let|var)\s+([A-Za-z_$][\w$]*)"),
+}
+COMMENT = re.compile(r"^\s*(?://|#|/\*|\*)")
+IDENT = re.compile(r"[A-Za-z_]\w*")
 
 
 def is_test_path(path: str) -> bool:
@@ -71,6 +95,14 @@ def is_test_path(path: str) -> bool:
     if LANGUAGES.get(p.suffix) == "node":
         return bool(JS_TEST.search(p.name)) or "__tests__" in dirs
     return False
+
+
+def is_test_data(path: str) -> bool:
+    """A file a PR's tests read rather than run (a fixture, golden file or
+    snapshot): not code, under a test directory. It goes in `hidden/` with
+    the tests, so they find it whatever the agent does."""
+    p = PurePosixPath(path)
+    return p.suffix not in LANGUAGES and bool(TEST_DIRS.intersection(p.parts[:-1]))
 
 
 def language(paths: list[str]) -> str:
@@ -96,6 +128,7 @@ class Candidate:
     tests: tuple[str, ...]  # the hidden tests: the PR's test files in its language
     sources: tuple[str, ...]  # everything else it changed: the reference fix
     language: str
+    data: tuple[str, ...] = ()  # test data the tests read, overlaid with them
 
 
 def candidates(prs: list[dict], repo: str, issues: dict[int, dict] | None = None) -> list[Candidate]:
@@ -116,7 +149,8 @@ def candidates(prs: list[dict], repo: str, issues: dict[int, dict] | None = None
         if not merge or issue is None:
             continue
         files = [f for f in p.get("files") or [] if f.get("changeType") != "DELETED"]
-        sources = tuple(f["path"] for f in files if not is_test_path(f["path"]))
+        data = tuple(f["path"] for f in files if is_test_data(f["path"]))
+        sources = tuple(f["path"] for f in files if not is_test_path(f["path"]) and not is_test_data(f["path"]))
         lang = language(list(sources))
         tests = tuple(f["path"] for f in files if is_test_path(f["path"]) and language([f["path"]]) == lang)
         if not lang or not tests:
@@ -134,6 +168,7 @@ def candidates(prs: list[dict], repo: str, issues: dict[int, dict] | None = None
                 tests=tests,
                 sources=sources,
                 language=lang,
+                data=data,
             )
         )
     return found
@@ -157,8 +192,10 @@ def command_for(language: str, hidden: list[str]) -> list[str]:
         packages = sorted({"./" + str(PurePosixPath(h).parent) if "/" in h else "." for h in hidden})
         return ["go", "test", "-count=1", *packages]
     if language == "rust":
-        # Each file under a tests/ directory is its own test target.
-        return ["cargo", "test", "--locked", "--offline", *(a for h in hidden for a in ("--test", PurePosixPath(h).stem))]
+        # Each file directly in a tests/ directory is its own test target;
+        # one deeper (tests/common/mod.rs) is a module the targets share.
+        targets = [PurePosixPath(h).stem for h in hidden if PurePosixPath(h).parent.name == "tests"]
+        return ["cargo", "test", "--locked", "--offline", *(a for t in targets for a in ("--test", t))]
     if language == "node":
         return ["npm", "test", "--", "{hidden}"]
     raise ValueError(f"no test command for {language!r}")
@@ -172,6 +209,77 @@ def exists(clone: Path, commit: str, path: str) -> bool:
     return run("git", "cat-file", "-e", f"{commit}:{path}", cwd=clone, check=False).returncode == 0
 
 
+def first_parent(clone: Path, merge: str) -> str:
+    """The merge commit's first parent: the tree the PR's change was applied
+    to. The PR's `baseRefOid` can lag it, and then the project and the fix
+    would carry other PRs' edits."""
+    return run("git", "rev-parse", f"{merge}^1", cwd=clone).stdout.strip()
+
+
+def task_id(c: Candidate, out: Path) -> str:
+    """`replay-<repo>-<pr>`, or its next free `-v<n>` when a task by that
+    name is already there: a frozen task is never rewritten, so a re-mined
+    one is a new task."""
+    stem = f"replay-{c.repo.split('/')[1]}-{c.pr}"
+    if not (out / stem).exists():
+        return stem
+    n = 2
+    while (out / f"{stem}-v{n}").exists():
+        n += 1
+    return f"{stem}-v{n}"
+
+
+def mined(out: Path, repo: str, pr: int) -> bool:
+    """Whether some version of `repo`'s PR `pr` is a task under `out`."""
+    stem = f"replay-{repo.split('/')[1]}-{pr}"
+    return (out / stem).exists() or any(re.fullmatch(re.escape(stem) + r"-v\d+", p.name) for p in out.glob(f"{stem}-v*"))
+
+
+def interface(c: Candidate, clone: Path) -> list[tuple[str, str, list[str]]]:
+    """The names the hidden tests use that the fix defines and the base
+    lacks, each as (name, the file defining it, the definition's added
+    lines: its comment, then the line that defines it)."""
+    pattern = DEFINITION.get(c.language)
+    if pattern is None:
+        return []
+    used = {name for t in c.tests for name in IDENT.findall(show(clone, c.merge, t).decode(errors="replace"))}
+    diff = run("git", "diff", "-U0", c.base, c.merge, "--", *c.sources, cwd=clone).stdout
+    found, path, comment = {}, None, []
+    for line in diff.splitlines():
+        if line.startswith("+++ "):
+            path = line[len("+++ b/"):] if line.startswith("+++ b/") else None
+            comment = []
+            continue
+        if not line.startswith("+") or path is None:
+            comment = []
+            continue
+        text = line[1:]
+        if COMMENT.match(text):
+            comment.append(text.strip())
+            continue
+        m = pattern.match(text)
+        name = m and next(g for g in m.groups() if g)
+        if name and name in used and name not in found and len(name) > 2:
+            found[name] = (path, [*comment, text.strip()])
+        comment = []
+    absent = [n for n in found if run("git", "grep", "-q", "-w", "-e", n, c.base, cwd=clone, check=False).returncode]
+    return [(n, *found[n]) for n in absent]
+
+
+def prompt(c: Candidate, clone: Path) -> str:
+    """The issue as asked, then the names its tests call that the agent
+    can't discover, if any."""
+    text = PROMPT.format(repo=c.repo, title=c.title.strip(), body=c.body.strip())
+    names = interface(c, clone)
+    if not names:
+        return text
+    fence = c.language if c.language != "node" else "js"
+    parts = [text, INTERFACE]
+    for name, path, lines in names:
+        parts.append(f"\n- `{name}` in `{path}`:\n\n  ```{fence}\n" + "".join(f"  {line}\n" for line in lines) + "  ```\n")
+    return "".join(parts)
+
+
 def project_dir(clone: Path, commit: str, lock: str, hidden: list[str]) -> str:
     """The directory a project's setup and tests run from: the nearest one
     above the first hidden test that holds `lock` at `commit`, so a project
@@ -183,27 +291,26 @@ def project_dir(clone: Path, commit: str, lock: str, hidden: list[str]) -> str:
 
 
 def write_task(c: Candidate, clone: Path, out: Path) -> Path:
-    """Write `c` as the task directory `out/replay-<repo>-<pr>/` and return
-    it. `clone` holds both of its commits."""
-    name = c.repo.split("/")[1]
-    task_id = f"replay-{name}-{c.pr}"
-    task = out / task_id
-    if task.exists():
-        shutil.rmtree(task)
-    for path in c.tests:
+    """Write `c` as a new task directory under `out`, named by `task_id`,
+    and return it. `clone` holds both of its commits. A task already there
+    is left alone."""
+    tid = task_id(c, out)
+    task = out / tid
+    task.mkdir(parents=True)
+    for path in (*c.tests, *c.data):
         hidden = task / "hidden" / path
         hidden.parent.mkdir(parents=True, exist_ok=True)
         hidden.write_bytes(show(clone, c.merge, path))
-    (task / "reference").mkdir(parents=True)
+    (task / "reference").mkdir()
     fix = subprocess.run(["git", "diff", "--binary", c.base, c.merge, "--", *c.sources], cwd=clone, capture_output=True, check=True)
     (task / "reference" / "fix.patch").write_bytes(fix.stdout)
-    (task / "prompt.md").write_text(PROMPT.format(repo=c.repo, title=c.title.strip(), body=c.body.strip()))
+    (task / "prompt.md").write_text(prompt(c, clone))
     lock, setup = SETUP[c.language]
     workdir = project_dir(clone, c.base, lock, list(c.tests))
     # The test command runs in workdir, so it names the hidden tests from there.
     local = [posixpath.relpath(t, workdir) for t in c.tests]
     meta = {
-        "id": task_id,
+        "id": tid,
         "kind": "replay",
         "repo": c.repo,
         "url": f"https://github.com/{c.repo}",
@@ -213,6 +320,7 @@ def write_task(c: Candidate, clone: Path, out: Path) -> Path:
         "issue": c.issue,
         "language": c.language,
         "hidden": list(c.tests),
+        "data": list(c.data),
         "test": command_for(c.language, local),
         "setup": setup if exists(clone, c.base, str(PurePosixPath(workdir) / lock)) else [],
         "workdir": workdir,
@@ -242,6 +350,7 @@ def main(argv=None):
     parser.add_argument("--clone", type=Path, required=True, help="where to clone or fetch the repository")
     parser.add_argument("--max", type=int, default=3, help="most tasks to write")
     parser.add_argument("--out", type=Path, default=Path(__file__).resolve().parents[2] / "tasks")
+    parser.add_argument("--pr", type=int, action="append", default=[], help="mine this PR again, as a new task id if one is there (repeatable)")
     args = parser.parse_args(argv)
     clone = args.clone
     if (clone / ".git").exists() or (clone / "HEAD").exists():
@@ -258,9 +367,15 @@ def main(argv=None):
         if written >= args.max:
             break
         label = f"{args.repo}#{c.pr}"
-        if any(run("git", "cat-file", "-e", f"{sha}^{{commit}}", cwd=clone, check=False).returncode for sha in (c.base, c.merge)):
-            print(f"skip {label}: its commits are not in the clone")
+        if args.pr and c.pr not in args.pr:
             continue
+        if not args.pr and mined(args.out, args.repo, c.pr):
+            print(f"skip {label}: already a task (--pr {c.pr} mines it again)")
+            continue
+        if run("git", "cat-file", "-e", f"{c.merge}^{{commit}}", cwd=clone, check=False).returncode:
+            print(f"skip {label}: its merge commit is not in the clone")
+            continue
+        c = replace(c, base=first_parent(clone, c.merge))
         viewed = run("gh", "issue", "view", str(c.issue), "-R", args.repo, "--json", "title,body", check=False)
         if viewed.returncode:
             print(f"skip {label}: issue #{c.issue} can't be read")
