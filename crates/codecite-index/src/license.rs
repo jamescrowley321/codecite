@@ -196,9 +196,8 @@ pub(crate) fn forbids_adapting(license: &str) -> Option<Vec<String>> {
             LicenseItem::Other { .. } => true,
         })
         .err()?;
-    let mut names: Vec<String> = failures.iter().map(|f| f.req.to_string()).collect();
-    names.dedup();
-    Some(names)
+    let names: BTreeSet<String> = failures.iter().map(|f| f.req.to_string()).collect();
+    Some(names.into_iter().collect())
 }
 
 #[cfg(test)]
@@ -316,6 +315,11 @@ mod tests {
         assert_eq!(
             forbids("MIT AND GPL-2.0-only"),
             Some(vec!["GPL-2.0-only".into()])
+        );
+        // Each license is named once, in order.
+        assert_eq!(
+            forbids("GPL-3.0-only AND MIT AND MPL-2.0 AND GPL-3.0-only"),
+            Some(vec!["GPL-3.0-only".into(), "MPL-2.0".into()])
         );
         for l in [
             "AGPL-3.0-or-later",

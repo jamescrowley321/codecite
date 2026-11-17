@@ -54,7 +54,7 @@ pub const QUOTE_INSTRUCTION: &str =
 
 /// What a result from an `approach_only` source tells the agent: its
 /// license keeps the code from being copied.
-pub const APPROACH_ONLY_INSTRUCTION: &str = "Describe the approach in your own words; never copy this code. Its license class is approach_only.";
+pub const APPROACH_ONLY_INSTRUCTION: &str = "Describe the approach in your own words; never copy this text or code. Its license class is approach_only.";
 
 /// What a `quote` read tells the agent when its text stops before the end
 /// of what was cited, so a partial quote is never passed off as the whole.

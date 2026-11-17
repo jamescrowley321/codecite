@@ -15,9 +15,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 
 use super::Store;
-use super::read::{
-    MAX_READ_BYTES, QUOTE_INSTRUCTION, QUOTE_TRUNCATED_INSTRUCTION, SourceRow, byte_prefix, pinned,
-};
+use super::read::{MAX_READ_BYTES, SourceRow, byte_prefix, instruction, pinned};
 use crate::requirement_keywords;
 use crate::{Error, Keyword, MAX_SEARCH_LIMIT, MAX_SNIPPET_BYTES, Result, SectionNumber};
 
@@ -66,7 +64,8 @@ pub struct DiffResult {
     /// lists at most 50, and their texts together hold at most 64 KiB.
     pub truncated: bool,
     /// What the license asks of the agent: a `quote` source's text is to be
-    /// quoted exactly, with its citation.
+    /// quoted exactly, with its citation, and an `approach_only` one's never
+    /// copied.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instruction: Option<String>,
 }
@@ -857,11 +856,6 @@ impl Store {
         let changes_cut = keep_within(&mut changes, &mut budget);
         let reworded_cut = keep_within(&mut reworded, &mut budget);
         let texts_cut = changes.iter().chain(&reworded).any(|c| c.text_truncated);
-        let instruction = if texts_cut {
-            QUOTE_TRUNCATED_INSTRUCTION
-        } else {
-            QUOTE_INSTRUCTION
-        };
         Ok(DiffResult {
             document: name,
             from: from_pin,
@@ -874,7 +868,7 @@ impl Store {
             total,
             reworded_total,
             truncated: changes_cut || reworded_cut,
-            instruction: (to.license_class == "quote").then(|| instruction.into()),
+            instruction: instruction(&to.license_class, texts_cut),
         })
     }
 
@@ -1369,6 +1363,21 @@ mod tests {
             .unwrap()
     }
 
+    #[test]
+    fn an_approach_only_diff_says_never_to_copy() {
+        let f = fixture();
+        f.store
+            .conn
+            .execute("UPDATE source SET license_class = 'approach_only'", [])
+            .unwrap();
+        let d = diff(&f, Some("2.4"));
+        assert_eq!(d.license_class, "approach_only");
+        assert_eq!(
+            d.instruction.as_deref(),
+            Some(crate::APPROACH_ONLY_INSTRUCTION)
+        );
+    }
+
     const NEW_PIN: &str = "openid-connect-backchannel-1_0@sha256:3b5c933d5269";
     const OLD_PIN: &str = "openid-connect-backchannel-1_0@sha256:02343424f9e5";
 
@@ -1431,7 +1440,7 @@ mod tests {
         assert_eq!(d.reworded[0].change, "reworded");
         assert_eq!(d.total, 3);
         assert!(!d.truncated);
-        assert_eq!(d.instruction.as_deref(), Some(QUOTE_INSTRUCTION));
+        assert_eq!(d.instruction.as_deref(), Some(crate::QUOTE_INSTRUCTION));
     }
 
     #[test]
