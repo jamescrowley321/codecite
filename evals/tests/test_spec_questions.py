@@ -4,6 +4,8 @@ The index checks run on made-up sections here; CI's bench job runs them on
 the real identity-bench index.
 """
 
+import sqlite3
+
 import pytest
 
 from codecite_evals import config
@@ -156,3 +158,46 @@ def test_a_new_question_must_match_its_retrieval_query():
     assert sq.check_set(qs, QUERIES, DOCUMENTS) == [
         "spec-plain-old: differs from the query of the same id in queries.toml"
     ]
+
+
+def test_sections_read_text_a_document_keeps_from_its_lines(tmp_path):
+    """A generic document's section stores no text of its own (#249): its text
+    is its lines of the document's, cut as codecite cuts them. A spec section
+    keeps its own."""
+    db = tmp_path / "corpus.db"
+    con = sqlite3.connect(db)
+    con.executescript(
+        """
+        CREATE TABLE source (id INTEGER PRIMARY KEY, name TEXT, kind TEXT, is_current INTEGER);
+        CREATE TABLE document (id INTEGER PRIMARY KEY, source_id INTEGER, text TEXT);
+        CREATE TABLE chunk (id INTEGER PRIMARY KEY, document_id INTEGER, start_line INTEGER,
+          end_line INTEGER, kind TEXT, number TEXT, parent_id INTEGER, text TEXT);
+        INSERT INTO source VALUES (1, 'rfc6749', 'document', 1), (2, 'notes', 'document', 1);
+        INSERT INTO document VALUES (1, 1, NULL), (2, 2, 'Intro\r\n## Install\r\nRun it.\r\n## Use\n');
+        INSERT INTO chunk VALUES
+          (1, 1, 1, 3, 'section', '2.3.1', NULL, '2.3.1. Client Password'),
+          (2, 1, 4, 4, 'step', '1', 1, 'One.'),
+          (3, 2, 2, 3, 'section', NULL, NULL, NULL);
+        """
+    )
+    con.commit()
+    con.close()
+    assert sq.sections(db) == {
+        ("rfc6749", "2.3.1"): {"text": "2.3.1. Client Password", "steps": {"1"}},
+        ("notes", None): {"text": "## Install\r\nRun it.", "steps": set()},
+    }
+
+
+@pytest.mark.parametrize(
+    ("text", "start", "end", "span"),
+    [
+        ("a\nb\n", 1, 1, "a"),
+        ("a\r\nb\r\n", 1, 2, "a\r\nb"),
+        ("a\nb\n", 3, 3, None),
+        ("a\nb", 2, 9, "b"),
+        ("a\nb", 2, 1, None),
+        ("a\n\nb", 2, 2, ""),
+    ],
+)
+def test_line_span_cuts_as_codecite_does(text, start, end, span):
+    assert sq.line_span(text, start, end) == span

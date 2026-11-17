@@ -36,6 +36,9 @@ pub use read::{
     QUOTE_INSTRUCTION, QUOTE_TRUNCATED_INSTRUCTION, ReadOptions, ReadResult, defuse_instruction,
 };
 
+mod lines;
+use lines::LineStarts;
+
 mod requirements;
 pub use requirements::{Requirement, RequirementSection, Requirements, RequirementsOptions};
 
@@ -69,7 +72,7 @@ struct Migration {
 ///
 /// A migration that changes how documents are split or their terms made
 /// sets `document.chunker_version` or `document.terms_version` to 0 for
-/// the documents it affects, from version 12 on, so the next index run
+/// the documents it affects, from version 13 on, so the next index run
 /// splits them again. Raising `codecite_index::CHUNKER_VERSION` or
 /// [`TERMS_VERSION`](crate::TERMS_VERSION) needs no migration at all.
 const MIGRATIONS: &[Migration] = &[
@@ -119,13 +122,65 @@ const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../migrations/0011_index_run.sql"),
         read_compatible: true,
     },
+    // Drops `chunk.terms`, which no query reads, and clears chunk text a
+    // document's text holds. Queries read a chunk's text as
+    // `coalesce(c.text, codecite_lines(...))`, which an older file, whose
+    // chunks all keep their text, answers the same way.
+    Migration {
+        sql: include_str!("../migrations/0012_derive_chunk_text.sql"),
+        read_compatible: true,
+    },
     // Adds the derived-data versions and `meta.tokenizer`, which no query
     // reads.
     Migration {
-        sql: include_str!("../migrations/0012_derived_versions.sql"),
+        sql: include_str!("../migrations/0013_derived_versions.sql"),
         read_compatible: true,
     },
 ];
+
+/// The version whose migration clears the chunk text a document's text
+/// holds. A file brought up past it is vacuumed, so the space comes back.
+const DERIVE_CHUNK_TEXT: u32 = 12;
+
+/// The `meta` key that marks a file a migration freed space in: set in the
+/// migration's transaction and deleted only once a vacuum succeeds, so a
+/// vacuum that fails is tried again on the next read-write open.
+const VACUUM_PENDING: &str = "vacuum_pending";
+
+#[cfg(test)]
+thread_local! {
+    /// Makes the next vacuum on this thread fail, as a full disk would.
+    static FAIL_VACUUM: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Vacuums the file if a migration left it flagged, then deletes the flag.
+/// VACUUM rewrites the whole file and can't run inside a transaction, so
+/// this runs after the migrations commit; a failure, such as too little
+/// disk for the copy or another writer holding the lock past the busy
+/// timeout, leaves the flag for the next open. Returns SQLite's own error,
+/// whose message says what went wrong.
+fn vacuum_if_pending(conn: &Connection) -> rusqlite::Result<()> {
+    let pending: Option<String> = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = ?1",
+            [VACUUM_PENDING],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if pending.is_none() {
+        return Ok(());
+    }
+    #[cfg(test)]
+    if FAIL_VACUUM.get() {
+        return Err(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_FULL),
+            Some("injected vacuum failure".into()),
+        ));
+    }
+    conn.execute_batch("VACUUM")?;
+    conn.execute("DELETE FROM meta WHERE key = ?1", [VACUUM_PENDING])?;
+    Ok(())
+}
 
 /// The version whose migration empties the full-text tables, to drop the
 /// totals an older SQLite left wrong. The same transaction refills
@@ -135,10 +190,13 @@ const MIGRATIONS: &[Migration] = &[
 const REFILL_FTS: u32 = 8;
 
 /// Writes `chunk_fts`'s row for every stored chunk, by
-/// [`write::fts_row`], the rule `insert_chunks` writes by.
+/// [`write::fts_row`], the rule `insert_chunks` writes by. A chunk's text
+/// is read as queries read it, so this works on any version's rows.
 fn refill_fts(tx: &rusqlite::Transaction<'_>) -> Result<()> {
     let mut chunks = tx.prepare(
-        "SELECT c.id, sym.display_name, d.path, c.text FROM chunk c
+        "SELECT c.id, sym.display_name, d.path,
+           coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))
+         FROM chunk c
          JOIN document d ON d.id = c.document_id
          LEFT JOIN symbol sym ON sym.id = c.symbol_id
          ORDER BY c.id",
@@ -153,6 +211,37 @@ fn refill_fts(tx: &rusqlite::Transaction<'_>) -> Result<()> {
         let text: String = row.get(3)?;
         let [symbol, path, terms] = write::fts_row(symbol.as_deref(), &path, &text);
         insert.execute(rusqlite::params![id, symbol, path, terms])?;
+    }
+    Ok(())
+}
+
+/// Clears `chunk.text` wherever the chunk's document stores its text and
+/// the chunk is that text's lines, as `insert_chunks` writes a chunk from
+/// version 12 on. A chunk whose text differs from its lines keeps it.
+fn clear_derivable_text(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+    let mut documents = tx.prepare("SELECT id, text FROM document WHERE text IS NOT NULL")?;
+    let mut chunks = tx.prepare(
+        "SELECT id, start_line, end_line, text FROM chunk
+         WHERE document_id = ?1 AND text IS NOT NULL",
+    )?;
+    let mut clear = tx.prepare("UPDATE chunk SET text = NULL WHERE id = ?1")?;
+    let mut rows = documents.query([])?;
+    while let Some(row) = rows.next()? {
+        let document_id: i64 = row.get(0)?;
+        let text: String = row.get(1)?;
+        let lines = LineStarts::new(&text);
+        let mut derivable = Vec::new();
+        let mut chunk_rows = chunks.query([document_id])?;
+        while let Some(c) = chunk_rows.next()? {
+            let own: String = c.get(3)?;
+            if lines.span(c.get(1)?, c.get(2)?) == Some(own.as_str()) {
+                derivable.push(c.get::<_, i64>(0)?);
+            }
+        }
+        drop(chunk_rows);
+        for id in derivable {
+            clear.execute([id])?;
+        }
     }
     Ok(())
 }
@@ -207,6 +296,7 @@ pub struct Store {
     path: PathBuf,
     /// Why a file opened for queries is read at an older schema.
     schema_warning: Option<String>,
+    vacuum_error: Option<String>,
     /// The exclusive lock on `<path>.lock` an index run holds, released
     /// when the store is dropped.
     lock: Option<std::fs::File>,
@@ -234,6 +324,8 @@ impl Store {
         // `BEGIN IMMEDIATE` takes the write lock before reading the version,
         // so two indexers racing on a fresh file migrate it one after the
         // other. Any early return drops `tx`, which rolls it back.
+        // Migrations read chunk text through `codecite_lines`.
+        search::register_functions(&conn)?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let found = read_version(&tx, path)?;
         if found > SCHEMA_VERSION {
@@ -249,6 +341,16 @@ impl Store {
                 REFILL_FTS => refill_fts(&tx)?,
                 // What search ranks by, for the rows stored before it.
                 RANK_INPUTS => fill_rank_inputs(&tx)?,
+                DERIVE_CHUNK_TEXT => {
+                    clear_derivable_text(&tx)?;
+                    // A file that was empty had nothing to free.
+                    if found > 0 {
+                        tx.execute(
+                            "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, '1')",
+                            [VACUUM_PENDING],
+                        )?;
+                    }
+                }
                 _ => {}
             }
             tx.execute(
@@ -273,6 +375,11 @@ impl Store {
             });
         }
         tx.commit()?;
+        // Clearing chunk text frees pages but doesn't shrink the file. The
+        // migrations are committed whatever the vacuum does, so a failed one
+        // doesn't fail the open: the caller hears why, and the next open
+        // tries again.
+        let vacuum_error = vacuum_if_pending(&conn).err().map(|e| e.to_string());
         conn.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, false)?;
         // Every write from here on checks foreign keys and runs their
         // `ON DELETE CASCADE`.
@@ -285,12 +392,12 @@ impl Store {
         // commit. A power cut can lose the last commits but never corrupts
         // the file, and an index run commits once, when it publishes.
         conn.pragma_update(None, "synchronous", "NORMAL")?;
-        search::register_functions(&conn)?;
 
         Ok(Store {
             conn,
             path: path.to_path_buf(),
             schema_warning: None,
+            vacuum_error,
             lock: None,
         })
     }
@@ -346,8 +453,17 @@ impl Store {
             conn,
             path: path.to_path_buf(),
             schema_warning,
+            vacuum_error: None,
             lock: None,
         })
+    }
+
+    /// Why the vacuum [`Store::open_read_write`] owed the file failed, when
+    /// it did. The open went ahead, the file is valid and fully migrated,
+    /// and only its freed space stays in it until a later read-write open
+    /// vacuums it.
+    pub fn vacuum_error(&self) -> Option<&str> {
+        self.vacuum_error.as_deref()
     }
 
     /// Opens the corpus named `corpus` in `dir`, the file
@@ -536,6 +652,16 @@ mod tests {
     /// Opens the file directly, bypassing `Store`.
     fn raw(path: &Path) -> Connection {
         Connection::open(path).unwrap()
+    }
+
+    fn table_columns(conn: &Connection, table: &str) -> Vec<String> {
+        let mut stmt = conn
+            .prepare("SELECT name FROM pragma_table_info(?1)")
+            .unwrap();
+        stmt.query_map([table], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
     }
 
     fn table_names(conn: &Connection) -> Vec<String> {
@@ -1088,7 +1214,7 @@ mod tests {
         ))
         .unwrap();
         // Every row's terms are its chunk's text's, as `insert_chunks`
-        // writes them, so the refill gives the same totals.
+        // wrote them, so the refill gives the same totals.
         let symbol = identifier_terms("validate_token");
         for (table, id, symbol, path, text) in [
             (
@@ -1199,6 +1325,196 @@ mod tests {
             )
             .unwrap();
         assert_eq!(found, 1);
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn version_12_clears_chunk_text_its_document_holds_and_drops_terms() {
+        let dir = scratch("v11");
+        let path = dir.join("corpus.db");
+        // A version 11 corpus: a code file whose function, nested method and
+        // window are its lines, plus one chunk whose text isn't, and a spec
+        // section with no document text. Every chunk has its full-text row.
+        let code = "struct S;\r\nimpl S {\r\n    fn validate() {}\r\n}\n\n// tail\n";
+        let chunks: [(i64, i64, u32, u32, &str, &str); 5] = [
+            (1, 1, 1, 1, "class", "struct S;"),
+            (2, 1, 2, 4, "class", "impl S {\r\n    fn validate() {}\r\n}"),
+            (3, 1, 3, 3, "function", "    fn validate() {}"),
+            (4, 1, 6, 6, "window", "// tail, as an older chunker cut it"),
+            (5, 2, 1, 3, "section", "Tokens are validated."),
+        ];
+        let conn = raw(&path);
+        conn.execute_batch(&format!(
+            "{}
+             INSERT INTO meta (key, value) VALUES ('schema_version', '11');
+             INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
+               VALUES (1, 'app', 'local', '/src/app', 'abc', 'adapt', 'then'),
+                      (2, 'rfc', 'document', 'https://x', 'def', 'quote', 'then');
+             INSERT INTO document (id, source_id, path, language, content_hash, text)
+               VALUES (1, 1, 'src/lib.rs', 'rust', x'01', NULL),
+                      (2, 2, 'rfc', NULL, x'02', NULL);",
+            up_to(11)
+        ))
+        .unwrap();
+        conn.execute("UPDATE document SET text = ?1 WHERE id = 1", [code])
+            .unwrap();
+        for (id, document, start, end, kind, text) in chunks {
+            conn.execute(
+                "INSERT INTO chunk (id, document_id, start_line, end_line, kind, text, terms)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![id, document, start, end, kind, text, text_terms(text)],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO chunk_fts (rowid, symbol, path, terms) VALUES (?1, '', '', ?2)",
+                rusqlite::params![id, text_terms(text)],
+            )
+            .unwrap();
+        }
+        // A wide row on the overflow pages a vacuum gives back.
+        let filler = "x".repeat(64 * 1024);
+        conn.execute(
+            "INSERT INTO chunk (id, document_id, start_line, end_line, kind, text, terms)
+             VALUES (6, 1, 1, 1, 'window', ?1, ?1)",
+            [&filler],
+        )
+        .unwrap();
+        conn.execute("DELETE FROM chunk WHERE id = 6", []).unwrap();
+        let free: i64 = conn
+            .query_row("PRAGMA freelist_count", [], |row| row.get(0))
+            .unwrap();
+        assert!(free > 0);
+        drop(conn);
+
+        let store = Store::open_read_write(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+        let own: Vec<(i64, Option<String>)> = {
+            let mut stmt = store
+                .conn
+                .prepare("SELECT id, text FROM chunk ORDER BY id")
+                .unwrap();
+            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap()
+        };
+        assert_eq!(
+            own,
+            [
+                (1, None),
+                (2, None),
+                (3, None),
+                (4, Some(chunks[3].5.to_owned())),
+                (5, Some(chunks[4].5.to_owned())),
+            ]
+        );
+        // Every chunk reads back as written.
+        for (id, _, _, _, _, text) in chunks {
+            let read: String = store
+                .conn
+                .query_row(
+                    "SELECT coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))
+                     FROM chunk c JOIN document d ON d.id = c.document_id WHERE c.id = ?1",
+                    [id],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(read, text, "chunk {id}");
+        }
+        let columns = table_columns(&store.conn, "chunk");
+        assert!(!columns.iter().any(|c| c == "terms"), "{columns:?}");
+        // The full-text rows, the indexes and the delete trigger survive.
+        let count = |sql: &str| -> i64 { store.conn.query_row(sql, [], |row| row.get(0)).unwrap() };
+        assert_eq!(
+            count("SELECT rowid FROM chunk_fts WHERE chunk_fts MATCH 'validate' AND rowid = 3"),
+            3
+        );
+        assert_eq!(
+            count(
+                "SELECT count(*) FROM sqlite_master WHERE tbl_name = 'chunk'
+                   AND name IN ('chunk_document', 'chunk_parent', 'chunk_symbol', 'chunk_fts_delete')"
+            ),
+            4
+        );
+        // The freed pages went back to the file system.
+        assert_eq!(count("PRAGMA freelist_count"), 0);
+        store.conn.execute("DELETE FROM chunk", []).unwrap();
+        assert_eq!(
+            count("SELECT count(*) FROM chunk_fts WHERE chunk_fts MATCH 'validate'"),
+            0
+        );
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_failed_vacuum_keeps_the_open_and_is_retried_on_the_next() {
+        let dir = scratch("vacuum");
+        let path = dir.join("corpus.db");
+        // A version 11 corpus with free pages for a vacuum to give back.
+        let conn = raw(&path);
+        conn.execute_batch(&format!(
+            "{}
+             INSERT INTO meta (key, value) VALUES ('schema_version', '11');
+             INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
+               VALUES (1, 'app', 'local', '/src/app', 'abc', 'adapt', 'then');
+             INSERT INTO document (id, source_id, path, language, content_hash, text)
+               VALUES (1, 1, 'src/lib.rs', 'rust', x'01', 'fn a() {{}}');
+             INSERT INTO chunk (id, document_id, start_line, end_line, kind, text, terms)
+               VALUES (1, 1, 1, 1, 'function', 'fn a() {{}}', 'fn a');",
+            up_to(11)
+        ))
+        .unwrap();
+        let filler = "x".repeat(64 * 1024);
+        conn.execute(
+            "INSERT INTO chunk (id, document_id, start_line, end_line, kind, text, terms)
+             VALUES (2, 1, 1, 1, 'window', ?1, ?1)",
+            [&filler],
+        )
+        .unwrap();
+        conn.execute("DELETE FROM chunk WHERE id = 2", []).unwrap();
+        drop(conn);
+        let pending = |store: &Store| -> bool {
+            store
+                .conn
+                .query_row(
+                    "SELECT count(*) FROM meta WHERE key = 'vacuum_pending'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap()
+                > 0
+        };
+        let free = |store: &Store| -> i64 {
+            store
+                .conn
+                .query_row("PRAGMA freelist_count", [], |row| row.get(0))
+                .unwrap()
+        };
+
+        // The vacuum fails, say for want of disk: the migration stays
+        // committed, the open succeeds and says why, and the flag stays.
+        FAIL_VACUUM.set(true);
+        let opened = Store::open_read_write(&path);
+        FAIL_VACUUM.set(false);
+        let store = opened.unwrap();
+        assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+        assert!(store.vacuum_error().is_some_and(|e| e.contains("injected")));
+        assert!(pending(&store));
+        assert!(free(&store) > 0);
+        drop(store);
+
+        // The next open vacuums and clears the flag.
+        let store = Store::open_read_write(&path).unwrap();
+        assert_eq!(store.vacuum_error(), None);
+        assert!(!pending(&store));
+        assert_eq!(free(&store), 0);
+        drop(store);
+
+        // A fresh file has nothing to give back, so it never flags one.
+        let store = Store::open_read_write(&dir.join("fresh.db")).unwrap();
+        assert!(!pending(&store));
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -1409,10 +1725,10 @@ mod tests {
     }
 
     #[test]
-    fn version_12_stamps_stored_documents_and_records_the_tokenizer() {
-        let dir = scratch("v11-versions");
+    fn version_13_stamps_stored_documents_and_records_the_tokenizer() {
+        let dir = scratch("v12-versions");
         let path = dir.join("corpus.db");
-        older_file(&path, 11);
+        older_file(&path, 12);
 
         let store = Store::open_read_write(&path).unwrap();
         assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
@@ -1528,8 +1844,18 @@ mod tests {
     fn read_only_opens_a_read_compatible_older_schema_with_a_warning() {
         let dir = scratch("ro-compatible");
         let path = dir.join("corpus.db");
-        // Two read-compatible migrations behind: 11 and 12.
+        // Three read-compatible migrations behind: 11, 12 and 13. Its one
+        // chunk keeps its text and `terms`, as every chunk did before 12.
         older_file(&path, 10);
+        raw(&path)
+            .execute_batch(
+                "UPDATE document SET role = 'source', role_weight = 1.0;
+                 INSERT INTO chunk (id, document_id, start_line, end_line, kind, text, terms)
+                   VALUES (1, 1, 1, 1, 'function', 'fn a() {}', 'fn a');
+                 INSERT INTO chunk_fts (rowid, symbol, path, terms)
+                   VALUES (1, '', 'src lib rs', 'fn a validate');",
+            )
+            .unwrap();
         let before = fs::read(&path).unwrap();
 
         let store = Store::open_read_only(&path).unwrap();
@@ -1540,8 +1866,20 @@ mod tests {
                 && warning.contains("codecite index"),
             "{warning}"
         );
-        // It answers queries.
+        // It answers queries, a chunk's text read as this build reads it.
         assert!(!store.freshness().unwrap().is_stale());
+        let found = store
+            .search(&SearchQuery {
+                text: "validate",
+                language: None,
+                path: None,
+                only: None,
+                limit: 5,
+                allow_stale: false,
+            })
+            .unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].snippet, "fn a() {}");
         drop(store);
         assert_eq!(fs::read(&path).unwrap(), before);
 

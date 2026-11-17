@@ -239,9 +239,11 @@ impl Store {
         matches: &mut Vec<GrepMatch>,
     ) -> Result<()> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT id, kind, start_line, end_line, number, parent_id, text
-             FROM chunk WHERE document_id = ?1 AND kind IN ('section', 'step')
-             ORDER BY start_line, id",
+            "SELECT c.id, c.kind, c.start_line, c.end_line, c.number, c.parent_id,
+               coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))
+             FROM chunk c JOIN document d ON d.id = c.document_id
+             WHERE c.document_id = ?1 AND c.kind IN ('section', 'step')
+             ORDER BY c.start_line, c.id",
         )?;
         let mut sections: Vec<(i64, SpecSpan, String)> = Vec::new();
         let mut steps: HashMap<i64, Vec<SpecSpan>> = HashMap::new();

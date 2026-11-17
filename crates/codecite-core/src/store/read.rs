@@ -752,7 +752,8 @@ impl Store {
             .conn
             .query_row(
                 &format!(
-                    "SELECT c.id, c.number, c.title, c.strength, c.text
+                    "SELECT c.id, c.number, c.title, c.strength,
+                       coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))
                      FROM chunk c JOIN document d ON d.id = c.document_id
                      WHERE d.source_id = ?1 AND c.kind = 'section' AND c.{column} = ?2
                        AND c.number IS NOT NULL
@@ -769,9 +770,11 @@ impl Store {
         Ok(self
             .conn
             .query_row(
-                "SELECT id, number, title, strength, text FROM chunk
-                 WHERE parent_id = ?1 AND kind = 'step' AND number = ?2
-                 ORDER BY id LIMIT 1",
+                "SELECT c.id, c.number, c.title, c.strength,
+                   coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))
+                 FROM chunk c JOIN document d ON d.id = c.document_id
+                 WHERE c.parent_id = ?1 AND c.kind = 'step' AND c.number = ?2
+                 ORDER BY c.id LIMIT 1",
                 params![section_id, k.to_string()],
                 spec_chunk,
             )
