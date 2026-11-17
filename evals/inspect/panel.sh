@@ -37,7 +37,10 @@
 # through the grep and glob hook, logged to inspect/logs/<tier>-assist/<task>/),
 # or baseline (a calibration,
 # evals/README.md: quick tier only, logged to inspect/logs/calibration/<task>/
-# and reported with no verdict).
+# and reported with no verdict). CORPUS picks a size-dial task's corpus size
+# (task.json kind "corpus": s, m or l, default the task's own; stage the image
+# at the same size, CORPUS=<size> prepare.sh <task-id>): it runs with
+# -T corpus=<size> and logs under <task>-<size> in place of <task>.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 TIER="${1:-}"
@@ -106,17 +109,27 @@ if [[ "$TASK_KIND" == replay ]]; then
   ((${#OPENROUTER_MODELS[@]} == 0)) || echo "$TASK_ID is a replay task: Claude Code only, OpenRouter skipped" >&2
   OPENROUTER_MODELS=()
 fi
+LOG_TASK="$TASK_ID"
+if [[ "$TASK_KIND" == corpus ]]; then
+  CORPUS="${CORPUS:-$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["corpus"]["default"])' "tasks/$TASK_ID/task.json")}"
+  [[ "$CORPUS" =~ ^[a-z]+$ ]] || { echo "CORPUS must be a size of $TASK_ID, not '$CORPUS'" >&2; exit 2; }
+  TASK+=(-T corpus="$CORPUS")
+  LOG_TASK="$TASK_ID-$CORPUS"
+elif [[ -n "${CORPUS:-}" ]]; then
+  echo "$TASK_ID has no corpus sizes; unset CORPUS" >&2
+  exit 2
+fi
 TASK_EPOCHS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("epochs", {}).get(sys.argv[2], ""))' "tasks/$TASK_ID/task.json" "$TIER")"
 EPOCHS="${EPOCHS:-${TASK_EPOCHS:-$TIER_EPOCHS}}"
 [[ "$EPOCHS" =~ ^[1-9][0-9]*$ ]] || { echo "EPOCHS must be a positive whole number, not '$EPOCHS'" >&2; exit 2; }
 ARMS="${ARMS:-ab}"
 case "$ARMS" in
-  ab) LOG_DIR="inspect/logs/$TIER/$TASK_ID" ;;
-  aa) LOG_DIR="inspect/logs/$TIER-aa/$TASK_ID" ;;
-  assist) LOG_DIR="inspect/logs/$TIER-assist/$TASK_ID" ;;
+  ab) LOG_DIR="inspect/logs/$TIER/$LOG_TASK" ;;
+  aa) LOG_DIR="inspect/logs/$TIER-aa/$LOG_TASK" ;;
+  assist) LOG_DIR="inspect/logs/$TIER-assist/$LOG_TASK" ;;
   baseline)
     [[ "$TIER" == quick ]] || { echo "calibrate (ARMS=baseline) on the quick tier" >&2; exit 2; }
-    LOG_DIR="inspect/logs/calibration/$TASK_ID"
+    LOG_DIR="inspect/logs/calibration/$LOG_TASK"
     ;;
   *)
     echo "ARMS must be ab, aa, baseline or assist, not '$ARMS'" >&2
@@ -192,6 +205,6 @@ minutes=$(((SECONDS - start) / 60))
 {
   uv run --locked codecite-eval-report --tier "$TIER" "$LOG_DIR"
   printf '\n%s, arms %s: %s models, %s epochs per sample, at most %s sandboxes: Inspect ran %s min (exit %s).\n' \
-    "$TASK_ID" "$ARMS" "$((${#CLAUDE_MODELS[@]} + ${#OPENROUTER_MODELS[@]}))" "$EPOCHS" "$MAX_SANDBOXES" "$minutes" "$status"
+    "$LOG_TASK" "$ARMS" "$((${#CLAUDE_MODELS[@]} + ${#OPENROUTER_MODELS[@]}))" "$EPOCHS" "$MAX_SANDBOXES" "$minutes" "$status"
 } | tee "$LOG_DIR/scorecard.md"
 exit "$status"

@@ -1,0 +1,388 @@
+# The rule layer house-rules exercises: identity-stack's rules at the pinned
+# commit, where each is stated, and what decides it. `kind` is the issue's mix:
+# `house` (an arbitrary house choice, followed only by finding it), `habit`
+# (against common habit) or `control` (best practice, which both arms should
+# keep; checks.py reports control rules apart and never fails a run on one).
+# `checked` names the checks.py checks, or hidden tests, that decide a rule;
+# a rule with none is left to review. `citation` is a `codecite read`
+# citation into the `eval` corpus, which the sandbox image resolves for every
+# rule when it is built (prepare.sh stages them in citations.txt), so each
+# resolves at every size.
+
+[[rule]]
+id = "conventions-1"
+title = "Configuration is read only through `app.knobs`"
+where = "docs/conventions.md \u00a71"
+kind = "habit"
+levels = ["MUST", "MUST NOT"]
+checked = "ruff-\u00a71, test_only_knobs_reads_the_environment, reuse-app.knobs"
+citation = "identity-stack@efa14d2:docs/conventions.md#L23-L39"
+
+[[rule]]
+id = "conventions-2"
+title = "Every variable is documented with its default"
+where = "docs/conventions.md \u00a72"
+kind = "house"
+levels = ["MUST", "MUST NOT"]
+checked = "test_every_knob_is_documented_with_its_default"
+citation = "identity-stack@efa14d2:docs/conventions.md#L41-L51"
+
+[[rule]]
+id = "conventions-3"
+title = "Switches and provider lists use the typed helpers"
+where = "docs/conventions.md \u00a73"
+kind = "house"
+levels = ["MUST", "MUST NOT"]
+checked = "test_knob_flag_switches_are_named_for_the_secure_state"
+citation = "identity-stack@efa14d2:docs/conventions.md#L53-L65"
+
+[[rule]]
+id = "conventions-4"
+title = "HTTP clients come from `app.outbound`"
+where = "docs/conventions.md \u00a74"
+kind = "habit"
+levels = ["MUST", "MUST NOT"]
+checked = "ruff-\u00a74, reuse-app.outbound, test_router_functions_that_call_descope_handle_upstream_failures, test_adapter_methods_that_call_descope_handle_upstream_failures"
+citation = "identity-stack@efa14d2:docs/conventions.md#L69-L99"
+
+[[rule]]
+id = "conventions-5"
+title = "The Descope Management API is called through `DescopeManagementClient`"
+where = "docs/conventions.md \u00a75"
+kind = "house"
+levels = ["MUST", "MUST NOT"]
+checked = "test_pass_through_routers_reach_descope_only_through_the_adapter"
+citation = "identity-stack@efa14d2:docs/conventions.md#L101-L119"
+
+[[rule]]
+id = "conventions-6"
+title = "Every outbound call has an explicit timeout"
+where = "docs/conventions.md \u00a76"
+kind = "control"
+levels = ["MUST"]
+checked = ""
+citation = "identity-stack@efa14d2:docs/conventions.md#L121-L132"
+
+[[rule]]
+id = "conventions-7"
+title = "Loggers come from `app.logbook`"
+where = "docs/conventions.md \u00a77"
+kind = "habit"
+levels = ["MUST", "MUST NOT"]
+checked = "ruff-\u00a77, reuse-app.logbook"
+citation = "identity-stack@efa14d2:docs/conventions.md#L136-L148"
+
+[[rule]]
+id = "conventions-8"
+title = "Log calls pass arguments, not formatted strings"
+where = "docs/conventions.md \u00a78"
+kind = "habit"
+levels = ["MUST", "MUST NOT"]
+checked = "ruff-\u00a78"
+citation = "identity-stack@efa14d2:docs/conventions.md#L150-L156"
+
+[[rule]]
+id = "conventions-9"
+title = "No secrets in logs"
+where = "docs/conventions.md \u00a79"
+kind = "control"
+levels = ["MUST", "MUST NOT"]
+checked = ""
+citation = "identity-stack@efa14d2:docs/conventions.md#L158-L177"
+
+[[rule]]
+id = "conventions-10"
+title = "Services return `Result[T, IdentityError]`"
+where = "docs/conventions.md \u00a710"
+kind = "house"
+levels = ["MUST", "MUST NOT"]
+checked = "test_service_methods_return_result"
+citation = "identity-stack@efa14d2:docs/conventions.md#L181-L193"
+
+[[rule]]
+id = "conventions-11"
+title = "Services and repositories do not know about HTTP"
+where = "docs/conventions.md \u00a711"
+kind = "control"
+levels = ["MUST NOT"]
+checked = "test_services_and_repositories_do_not_import_fastapi"
+citation = "identity-stack@efa14d2:docs/conventions.md#L195-L203"
+
+[[rule]]
+id = "conventions-12"
+title = "Routers answer a `Result` only through `result_to_response`"
+where = "docs/conventions.md \u00a712"
+kind = "house"
+levels = ["MUST", "MUST NOT", "MAY"]
+checked = "result-to-response"
+citation = "identity-stack@efa14d2:docs/conventions.md#L205-L227"
+
+[[rule]]
+id = "conventions-13"
+title = "A new error kind is an `IdentityError` with a mapping"
+where = "docs/conventions.md \u00a713"
+kind = "house"
+levels = ["MUST"]
+checked = "test_every_identity_error_is_a_registered_frozen_dataclass"
+citation = "identity-stack@efa14d2:docs/conventions.md#L229-L237"
+
+[[rule]]
+id = "conventions-14"
+title = "Guards refuse by raising"
+where = "docs/conventions.md \u00a714"
+kind = "house"
+levels = ["MUST", "MUST NOT", "SHOULD"]
+checked = ""
+citation = "identity-stack@efa14d2:docs/conventions.md#L239-L248"
+
+[[rule]]
+id = "conventions-15"
+title = "Every tenant-scoped route declares its authorization"
+where = "docs/conventions.md \u00a715"
+kind = "house"
+levels = ["MUST"]
+checked = "test_every_tenant_scoped_route_declares_authorization, test_member_routes_register_has_no_stale_entries"
+citation = "identity-stack@efa14d2:docs/conventions.md#L252-L267"
+
+[[rule]]
+id = "conventions-16"
+title = "Router code takes identity from dependencies, not `request.state`"
+where = "docs/conventions.md \u00a716"
+kind = "house"
+levels = ["MUST NOT"]
+checked = "test_router_code_does_not_read_request_state, tenant-from-dependency"
+citation = "identity-stack@efa14d2:docs/conventions.md#L269-L284"
+
+[[rule]]
+id = "conventions-17"
+title = "Authorization fails closed"
+where = "docs/conventions.md \u00a717"
+kind = "control"
+levels = ["MUST"]
+checked = ""
+citation = "identity-stack@efa14d2:docs/conventions.md#L286-L293"
+
+[[rule]]
+id = "conventions-18"
+title = "Descope principals are authorized from Descope's own claims"
+where = "docs/conventions.md \u00a718"
+kind = "house"
+levels = ["MUST", "MUST NOT"]
+checked = ""
+citation = "identity-stack@efa14d2:docs/conventions.md#L295-L302"
+
+[[rule]]
+id = "conventions-19"
+title = "Queries live in `app/repositories/`"
+where = "docs/conventions.md \u00a719"
+kind = "control"
+levels = ["MUST", "MUST NOT", "SHOULD", "SHOULD NOT"]
+checked = "test_queries_live_in_repositories"
+citation = "identity-stack@efa14d2:docs/conventions.md#L306-L319"
+
+[[rule]]
+id = "conventions-20"
+title = "Every public service method opens its own span"
+where = "docs/conventions.md \u00a720"
+kind = "house"
+levels = ["MUST", "MAY"]
+checked = "test_public_service_methods_open_their_own_span, test_logout_strategies_open_a_span_per_logout_kind, test_descope_client_spans_leave_status_to_the_caller"
+citation = "identity-stack@efa14d2:docs/conventions.md#L323-L359"
+
+[[rule]]
+id = "conventions-21"
+title = "A rule change is recorded"
+where = "docs/conventions.md \u00a721"
+kind = "house"
+levels = ["MUST", "SHOULD"]
+checked = ""
+citation = "identity-stack@efa14d2:docs/conventions.md#L363-L371"
+
+[[rule]]
+id = "conventions-22"
+title = "Imports point inward"
+where = "docs/conventions.md \u00a722"
+kind = "control"
+levels = ["MUST NOT"]
+checked = "import-linter-\u00a722"
+citation = "identity-stack@efa14d2:docs/conventions.md#L378-L384"
+
+[[rule]]
+id = "conventions-23"
+title = "The domain is pure"
+where = "docs/conventions.md \u00a723"
+kind = "house"
+levels = ["MUST", "MUST NOT"]
+checked = "import-linter-\u00a723, test_domain_is_pure"
+citation = "identity-stack@efa14d2:docs/conventions.md#L386-L397"
+
+[[rule]]
+id = "conventions-24"
+title = "Domain functions return `Result`"
+where = "docs/conventions.md \u00a724"
+kind = "house"
+levels = ["MUST", "MUST NOT"]
+checked = "test_domain_does_not_raise, hidden: test_the_domain_refuses_a_role_name_that_is_not_a_slug"
+citation = "identity-stack@efa14d2:docs/conventions.md#L399-L413"
+
+[[rule]]
+id = "conventions-25"
+title = "Domain types are immutable"
+where = "docs/conventions.md \u00a725"
+kind = "house"
+levels = ["MUST", "MAY"]
+checked = "test_domain_types_are_frozen_dataclasses_or_enums, hidden: test_the_domain_refuses_a_role_name_that_is_not_a_slug"
+citation = "identity-stack@efa14d2:docs/conventions.md#L415-L423"
+
+[[rule]]
+id = "conventions-26"
+title = "Routers and services skip no layer"
+where = "docs/conventions.md \u00a726"
+kind = "house"
+levels = ["MUST NOT"]
+checked = "import-linter-\u00a726"
+citation = "identity-stack@efa14d2:docs/conventions.md#L425-L453"
+
+[[rule]]
+id = "conventions-27"
+title = "Each bounded context has its own package and glossary"
+where = "docs/conventions.md \u00a727"
+kind = "house"
+levels = ["MUST", "MUST NOT", "SHOULD"]
+checked = "import-linter-\u00a727"
+citation = "identity-stack@efa14d2:docs/conventions.md#L455-L463"
+
+[[rule]]
+id = "adr-0001"
+title = "ADR-0001: Services return `Result`; routers translate with `result_to_response`"
+where = "docs/adr/0001-services-return-result.md, Decision"
+kind = "house"
+levels = []
+checked = ""
+note = "Status: Accepted"
+citation = "identity-stack@efa14d2:docs/adr/0001-services-return-result.md#L15-L24"
+
+[[rule]]
+id = "adr-0002"
+title = "ADR-0002: Read configuration at the call site"
+where = "docs/adr/0002-read-configuration-at-the-call-site.md, Decision"
+kind = "house"
+levels = []
+checked = ""
+note = "Status: Superseded by ADR-0005"
+citation = "identity-stack@efa14d2:docs/adr/0002-read-configuration-at-the-call-site.md#L12-L18"
+
+[[rule]]
+id = "adr-0003"
+title = "ADR-0003: Authorization is declared as route dependencies"
+where = "docs/adr/0003-authorization-as-route-dependencies.md, Decision"
+kind = "house"
+levels = []
+checked = ""
+note = "Status: Accepted"
+citation = "identity-stack@efa14d2:docs/adr/0003-authorization-as-route-dependencies.md#L16-L27"
+
+[[rule]]
+id = "adr-0004"
+title = "ADR-0004: Routing-layer guards raise `IdentityErrorRaised`"
+where = "docs/adr/0004-guards-raise-identity-errors.md, Decision"
+kind = "house"
+levels = []
+checked = ""
+note = "Status: Accepted"
+citation = "identity-stack@efa14d2:docs/adr/0004-guards-raise-identity-errors.md#L15-L22"
+
+[[rule]]
+id = "adr-0005"
+title = "ADR-0005: One settings module, `app.knobs`, read at call time"
+where = "docs/adr/0005-central-settings-module.md, Decision"
+kind = "house"
+levels = []
+checked = ""
+note = "Status: Accepted"
+citation = "identity-stack@efa14d2:docs/adr/0005-central-settings-module.md#L18-L30"
+
+[[rule]]
+id = "adr-0006"
+title = "ADR-0006: One HTTP client helper and one logger helper"
+where = "docs/adr/0006-outbound-http-and-logging-helpers.md, Decision"
+kind = "house"
+levels = []
+checked = ""
+note = "Status: Accepted"
+citation = "identity-stack@efa14d2:docs/adr/0006-outbound-http-and-logging-helpers.md#L15-L28"
+
+[[rule]]
+id = "adr-0007"
+title = "ADR-0007: Every public service method opens a span"
+where = "docs/adr/0007-a-span-per-service-method.md, Decision"
+kind = "house"
+levels = []
+checked = ""
+note = "Status: Accepted"
+citation = "identity-stack@efa14d2:docs/adr/0007-a-span-per-service-method.md#L18-L27"
+
+[[rule]]
+id = "adr-0008"
+title = "ADR-0008: Layered architecture with a functional domain core"
+where = "docs/adr/0008-layered-architecture-with-a-functional-domain-core.md, Decision"
+kind = "house"
+levels = []
+checked = ""
+note = "Status: Accepted"
+citation = "identity-stack@efa14d2:docs/adr/0008-layered-architecture-with-a-functional-domain-core.md#L18-L144"
+
+[[rule]]
+id = "docstring-knobs-module"
+title = "Every knob name is documented with its default"
+where = "backend/app/knobs.py docstring"
+kind = "house"
+levels = ["MUST"]
+checked = "test_every_knob_is_documented_with_its_default"
+citation = "identity-stack@efa14d2:backend/app/knobs.py#L1-L20"
+
+[[rule]]
+id = "docstring-knob"
+title = "An empty value is returned as set; `knob(NAME) or fallback` treats it as unset"
+where = "backend/app/knobs.py docstring"
+kind = "house"
+levels = ["MUST"]
+checked = ""
+citation = "identity-stack@efa14d2:backend/app/knobs.py#L42-L48"
+
+[[rule]]
+id = "docstring-knob-flag"
+title = "A knob_flag switch is named for its secure state"
+where = "backend/app/knobs.py docstring"
+kind = "house"
+levels = ["MUST"]
+checked = "test_knob_flag_switches_are_named_for_the_secure_state"
+citation = "identity-stack@efa14d2:backend/app/knobs.py#L64-L74"
+
+[[rule]]
+id = "docstring-outbound-module"
+title = "A client built per call is closed by that call (`async with outbound_client(...)`)"
+where = "backend/app/outbound.py docstring"
+kind = "house"
+levels = ["MUST"]
+checked = ""
+citation = "identity-stack@efa14d2:backend/app/outbound.py#L1-L15"
+
+[[rule]]
+id = "docstring-outbound-client"
+title = "Every client carries an explicit timeout; 30.0 for Descope management calls"
+where = "backend/app/outbound.py docstring"
+kind = "house"
+levels = ["MUST"]
+checked = ""
+citation = "identity-stack@efa14d2:backend/app/outbound.py#L31-L37"
+
+[[rule]]
+id = "docstring-logbook-module"
+title = "Log %-style arguments and identifiers, never credentials; truncate upstream bodies"
+where = "backend/app/logbook.py docstring"
+kind = "habit"
+levels = ["MUST"]
+checked = "ruff-\u00a78"
+citation = "identity-stack@efa14d2:backend/app/logbook.py#L1-L19"
+
