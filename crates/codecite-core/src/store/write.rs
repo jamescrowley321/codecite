@@ -8,7 +8,8 @@ use std::collections::HashMap;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::Store;
-use crate::{Keyword, Result, SpecAliases, identifier_terms, text_terms};
+use super::search::name_key;
+use crate::{Keyword, Result, Role, SpecAliases, identifier_terms, text_terms};
 
 /// A source to create or update. A document is matched by its name and
 /// revision, since each pinned version is its own source; any other source
@@ -196,12 +197,22 @@ impl Store {
         document: &DocumentRecord<'_>,
     ) -> Result<usize> {
         let tx = self.conn.savepoint()?;
+        // What the document is for, stored so that search reads its weight
+        // instead of working it out for every candidate it ranks.
+        let source_kind: String = tx.query_row(
+            "SELECT kind FROM source WHERE id = ?1",
+            [source_id],
+            |row| row.get(0),
+        )?;
+        let role = Role::of_stored(document.path, &source_kind, document.text.is_some());
         let document_id: i64 = tx.query_row(
-            "INSERT INTO document (source_id, path, language, content_hash, size_bytes, dirty, text)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            "INSERT INTO document (source_id, path, language, content_hash, size_bytes, dirty, text,
+               role, role_weight)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
              ON CONFLICT (source_id, path) DO UPDATE SET
                language = excluded.language, content_hash = excluded.content_hash,
-               size_bytes = excluded.size_bytes, dirty = excluded.dirty, text = excluded.text
+               size_bytes = excluded.size_bytes, dirty = excluded.dirty, text = excluded.text,
+               role = excluded.role, role_weight = excluded.role_weight
              RETURNING id",
             params![
                 source_id,
@@ -212,6 +223,8 @@ impl Store {
                 i64::try_from(document.size_bytes).unwrap_or(i64::MAX),
                 document.dirty,
                 document.text,
+                role.as_str(),
+                role.weight(),
             ],
             |row| row.get(0),
         )?;
@@ -316,8 +329,8 @@ fn clear_document(tx: &Connection, document_id: i64) -> Result<()> {
 /// the one full-text table search ranks every kind of chunk in.
 fn insert_chunks(tx: &Connection, document_id: i64, document: &DocumentRecord<'_>) -> Result<()> {
     let mut symbol = tx.prepare_cached(
-        "INSERT INTO symbol (id, display_name, kind, document_id, start_line, end_line)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO symbol (id, display_name, kind, document_id, start_line, end_line, name_key)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
     )?;
     let mut chunk = tx.prepare_cached(
         "INSERT INTO chunk (document_id, start_line, end_line, kind, symbol_id, number, anchor,
@@ -338,7 +351,8 @@ fn insert_chunks(tx: &Connection, document_id: i64, document: &DocumentRecord<'_
                 s.kind,
                 document_id,
                 c.start_line,
-                c.end_line
+                c.end_line,
+                name_key(s.display_name),
             ])?;
         }
         let terms = text_terms(c.text);
@@ -511,6 +525,32 @@ mod tests {
             .query_row("SELECT text FROM document", [], |row| row.get(0))
             .unwrap();
         assert_eq!(stored, text);
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn write_document_stores_what_search_ranks_by() {
+        let (mut store, dir) = store("rank-inputs");
+        let id = store.upsert_source(&source("app")).unwrap();
+        store
+            .write_document(id, &document("tests/lib.rs", "fn validate_Token() {}"))
+            .unwrap();
+        let (role, weight): (String, f64) = store
+            .conn
+            .query_row("SELECT role, role_weight FROM document", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(
+            (role.as_str(), weight),
+            ("test", crate::Role::Test.weight())
+        );
+        let key: String = store
+            .conn
+            .query_row("SELECT name_key FROM symbol", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(key, "validatetoken");
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }
