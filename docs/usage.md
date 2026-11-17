@@ -441,8 +441,14 @@ resolving against the pinned corpus:
 ```sh
 codecite cite check mywork                     # every file under .
 codecite cite check mywork src docs README.md
-git ls-files -z '*.md' | xargs -0r codecite cite check mywork   # -r: no files, no run
+git ls-files -z '*.md' | codecite cite check mywork --files0-from -
 ```
+
+`--files0-from <file>` reads the paths NUL-separated from a file, or from stdin
+with `-`, as `git ls-files -z` prints them; each is checked as if named, and an
+empty list checks no files. Prefer it to `xargs`, which may split a long list
+into several runs (several JSON objects, one summary each) and turns exit 1
+and 2 into 123.
 
 It finds the canonical citations codecite prints (`repo@sha:path#L10-L42`,
 `doc@sha256:<12 hex>#L3-L9`, a heading's `#anchor`,
@@ -453,7 +459,8 @@ time with `cite`. Directories are walked without following links or reading
 hidden entries (`.git`, `.github`), and files in them over 1 MiB, not UTF-8
 or holding a NUL byte are skipped and counted in the summary
 (`; 3 files skipped (1 over 1 MiB, 2 holding a NUL byte)`); a file named on
-the command line that is one of those is an error. Name a hidden directory to
+the command line (or listed by `--files0-from`) that is one of those is an
+error, even when a directory named beside it holds it. Name a hidden directory to
 check it, or pass the files `git ls-files` lists to leave out what git
 ignores. A file named twice, or inside a directory also named, is read once.
 Flags go after `check`: `codecite cite --json check …` reads `check` as a
@@ -465,7 +472,10 @@ or when what it names is superseded. Each failure is one line, an unresolved
 citation's candidates under it, and the command exits 1. It exits 2 when the
 check can't be made at all (a stale index, an unknown corpus, a path that is
 missing, unreadable or not text), so CI can tell broken citations from a
-checker that never ran, and 0 when every citation holds up:
+checker that never ran, and 0 when every citation holds up. A path that
+starts with whitespace or `:` is printed `./<path>`, and control characters in
+paths are escaped on stdout and stderr alike, so a file name can't start a line
+CI reads as a workflow command:
 
 ```text
 $ codecite cite check identity docs

@@ -67,9 +67,7 @@ pub fn check(store: &Store, paths: &[PathBuf], options: &CheckOptions) -> anyhow
     for path in paths {
         collect(path, true, &mut files)?;
     }
-    // A file named twice, or inside a directory also named, is read once.
-    let mut seen = std::collections::HashSet::new();
-    files.retain(|(file, _)| seen.insert(fs::canonicalize(file).unwrap_or_else(|_| file.clone())));
+    let files = dedup(files);
     for (file, named) in files {
         let text = match read_text(&file)? {
             Ok(text) => text,
@@ -95,6 +93,56 @@ pub fn check(store: &Store, paths: &[PathBuf], options: &CheckOptions) -> anyhow
             .extend(found.problems.into_iter().map(|p| (file.clone(), p)));
     }
     Ok(report)
+}
+
+/// `files` with each file once, in the order first found: a file named
+/// twice, or inside a directory also named, is read once, and is named when
+/// any of its entries was.
+fn dedup(files: Vec<(PathBuf, bool)>) -> Vec<(PathBuf, bool)> {
+    let mut first: std::collections::HashMap<PathBuf, usize> = std::collections::HashMap::new();
+    let mut kept: Vec<(PathBuf, bool)> = Vec::new();
+    for (file, named) in files {
+        let key = fs::canonicalize(&file).unwrap_or_else(|_| file.clone());
+        match first.get(&key) {
+            Some(&index) => kept[index].1 |= named,
+            None => {
+                first.insert(key, kept.len());
+                kept.push((file, named));
+            }
+        }
+    }
+    kept
+}
+
+/// The paths in `list` (`-` for stdin), separated by NUL bytes, as
+/// `git ls-files -z` prints them. Empty entries are left out.
+pub fn read_paths0(list: &Path) -> anyhow::Result<Vec<PathBuf>> {
+    let mut bytes = Vec::new();
+    if list == Path::new("-") {
+        io::stdin()
+            .lock()
+            .read_to_end(&mut bytes)
+            .context("reading paths from stdin")?;
+    } else {
+        bytes = fs::read(list).with_context(|| format!("reading {}", list.display()))?;
+    }
+    bytes
+        .split(|&b| b == 0)
+        .filter(|entry| !entry.is_empty())
+        .map(path_from_bytes)
+        .collect()
+}
+
+#[cfg(unix)]
+fn path_from_bytes(bytes: &[u8]) -> anyhow::Result<PathBuf> {
+    use std::os::unix::ffi::OsStrExt as _;
+    Ok(PathBuf::from(std::ffi::OsStr::from_bytes(bytes)))
+}
+
+#[cfg(not(unix))]
+fn path_from_bytes(bytes: &[u8]) -> anyhow::Result<PathBuf> {
+    let path = std::str::from_utf8(bytes).context("a listed path is not UTF-8")?;
+    Ok(PathBuf::from(path))
 }
 
 /// Adds `path` to `files`, or, for a directory, every file under it in
@@ -144,11 +192,12 @@ fn read_text(path: &Path) -> anyhow::Result<Result<String, Skip>> {
     Ok(String::from_utf8(bytes).map_err(|_| Skip::NotUtf8))
 }
 
-/// The path as a report line starts with it: a relative path that starts
-/// with `::` gets `./`, so CI does not take the line as a workflow command.
+/// The path as a report line starts with it: a path that starts with
+/// whitespace or `:` gets `./`, so CI does not take the line as a workflow
+/// command such as `::error::`.
 fn shown(path: &Path) -> String {
     let shown = path.display().to_string();
-    if shown.starts_with("::") {
+    if shown.starts_with(|c: char| c.is_whitespace() || c == ':') {
         format!("./{shown}")
     } else {
         shown

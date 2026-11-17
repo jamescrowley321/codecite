@@ -429,6 +429,65 @@ fn check_passes_a_tree_whose_citations_resolve() {
         stderr(&output)
     );
     assert!(output.stdout.is_empty());
+    // Named after a directory that holds it, it is still named.
+    let output = check(home.path(), tree.path(), &[".", "latin1.md"]);
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+
+    // A control character in a path is escaped in an error, as on stdout.
+    write(tree.path(), "x\n::error::x.md", b"caf\xe9\n");
+    let output = check(home.path(), tree.path(), &["x\n::error::x.md"]);
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    let err = stderr(&output);
+    assert!(err.contains("x\\u{a}::error::x.md is not UTF-8"), "{err}");
+    assert!(!err.lines().any(|l| l.starts_with("::")), "{err}");
+}
+
+/// Runs `codecite cite check demo --files0-from - <args>` in `dir` with
+/// `input` on stdin.
+fn check_stdin(home: &Path, dir: &Path, input: &[u8], args: &[&str]) -> Output {
+    use std::io::Write as _;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_codecite"))
+        .env("HOME", home)
+        .env("XDG_DATA_HOME", home)
+        .current_dir(dir)
+        .args(["cite", "check", "demo", "--files0-from", "-"])
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(input).unwrap();
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn check_reads_nul_separated_paths_from_stdin() {
+    let home = data_home();
+    let tree = tempfile::tempdir().unwrap();
+    write(tree.path(), "a.md", b"app@0123456:README.md#L2\n");
+    write(tree.path(), "b c.md", b"app@0123456:gone.rs#L1\n");
+    write(tree.path(), "unlisted.md", b"app@0123456:gone.rs#L1\n");
+    let output = check_stdin(home.path(), tree.path(), b"a.md\0b c.md\0", &["--json"]);
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        (&report["files"], &report["citations"], &report["failed"]),
+        (&json!(2), &json!(2), &json!(1))
+    );
+    assert_eq!(report["problems"][0]["path"], "b c.md");
+
+    // No paths is no files, not the whole tree.
+    let output = check_stdin(home.path(), tree.path(), b"", &[]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "0 citations in 0 files: 0 failed\n"
+    );
+
+    // A missing listed file can't be checked.
+    let output = check_stdin(home.path(), tree.path(), b"gone.md\0", &[]);
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
 }
 
 #[test]
@@ -522,6 +581,13 @@ fn check_fails_on_each_citation_that_does_not_hold_up() {
     assert_eq!(output.status.code(), Some(1));
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.starts_with("./::error x.md:1:1: "), "{stdout}");
+    // Nor is one that starts with whitespace before the `::`.
+    for name in [" ::error x.md", "\t::error x.md"] {
+        write(tree.path(), name, b"app@0123456:src/gone.rs#L1\n");
+        let output = check(home.path(), tree.path(), &[name]);
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.starts_with(&format!("./{name}:1:1: ")), "{stdout}");
+    }
 }
 
 #[test]

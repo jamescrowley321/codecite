@@ -401,7 +401,7 @@ enum CiteCommand {
     #[command(after_long_help = "Examples:
   codecite cite check app
   codecite cite check app src docs README.md
-  git ls-files -z '*.md' | xargs -0r codecite cite check app --json
+  git ls-files -z '*.md' | codecite cite check app --files0-from - --json
 
 It finds the canonical citations codecite prints (repo@sha:path#L10-L42,
 doc@sha256:<12 hex>#L3-L9, an #anchor, doc@sha256:<12 hex>#section-4.3) and
@@ -419,6 +419,10 @@ read).")]
         corpus: String,
         /// Files, and directories to walk for files (default: `.`).
         paths: Vec<PathBuf>,
+        /// Read the paths, NUL-separated, from this file (`-` for stdin),
+        /// as `git ls-files -z` prints them. No paths checks no files.
+        #[arg(long, value_name = "FILE", conflicts_with = "paths")]
+        files0_from: Option<PathBuf>,
         /// Print the result as JSON.
         #[arg(long)]
         json: bool,
@@ -520,6 +524,7 @@ fn main() -> anyhow::Result<()> {
                 Some(CiteCommand::Check {
                     corpus,
                     paths,
+                    files0_from,
                     json,
                     allow_stale,
                     allow_superseded,
@@ -532,8 +537,16 @@ fn main() -> anyhow::Result<()> {
             };
             // A citation that fails exits 1 (in `cite_check`); a check that
             // could not be made exits 2, so CI can tell the two apart.
-            if let Err(err) = cite_check(&corpus, &paths, &options, json) {
-                eprintln!("Error: {err:?}");
+            let checked = match files0_from {
+                Some(list) => check::read_paths0(&list)
+                    .and_then(|paths| cite_check(&corpus, &paths, &options, json)),
+                None if paths.is_empty() => {
+                    cite_check(&corpus, &[PathBuf::from(".")], &options, json)
+                }
+                None => cite_check(&corpus, &paths, &options, json),
+            };
+            if let Err(err) = checked {
+                eprintln!("{}", error_text(&err));
                 std::process::exit(2);
             }
             Ok(())
@@ -739,8 +752,8 @@ fn cite(corpus: &str, citation: &str, options: &CiteOptions, json: bool) -> anyh
 }
 
 /// `codecite cite check`: opens the corpus read-only, checks every citation
-/// in the files at `paths` (`.` when none) and prints the problems. Exits 1
-/// when there are any; an error is returned for the caller to exit 2.
+/// in the files at `paths` and prints the problems. Exits 1 when there are
+/// any; an error is returned for the caller to exit 2.
 fn cite_check(
     corpus: &str,
     paths: &[PathBuf],
@@ -749,12 +762,7 @@ fn cite_check(
 ) -> anyhow::Result<()> {
     let dirs = project_dirs()?;
     let store = Store::open_corpus(dirs.data_dir(), corpus)?;
-    let paths = if paths.is_empty() {
-        vec![PathBuf::from(".")]
-    } else {
-        paths.to_vec()
-    };
-    let report = check::check(&store, &paths, options)?;
+    let report = check::check(&store, paths, options)?;
     to_stdout(|out| check::write_report(out, &report, json))?;
     if !report.problems.is_empty() {
         std::process::exit(1);
@@ -1299,6 +1307,22 @@ fn cut(text: &str, max: usize) -> std::borrow::Cow<'_, str> {
 /// characters (zero-width spaces and joiners, bidi controls, Unicode tag
 /// characters, the byte order mark), print as Rust escapes like `\u{1b}`
 /// instead.
+/// An error as `main` prints it, `Error: ` then each cause, with control
+/// characters escaped: a path in it may be a file name a PR author chose,
+/// and a newline in one could start a line CI reads as a command.
+fn error_text(err: &anyhow::Error) -> String {
+    let mut causes = err.chain().map(|cause| escape_controls(&cause.to_string()));
+    let mut text = format!("Error: {}", causes.next().unwrap_or_default());
+    let rest: Vec<String> = causes.collect();
+    if !rest.is_empty() {
+        text.push_str("\n\nCaused by:");
+        for cause in rest {
+            text.push_str(&format!("\n    {cause}"));
+        }
+    }
+    text
+}
+
 fn escape_controls(text: &str) -> String {
     text.chars()
         .map(|c| {
@@ -1693,6 +1717,7 @@ mod tests {
                     json,
                     allow_stale,
                     allow_superseded,
+                    ..
                 }),
             ..
         } = Cli::try_parse_from(args).unwrap().command
@@ -1702,6 +1727,33 @@ mod tests {
         assert_eq!(corpus, "identity");
         assert_eq!(paths, [PathBuf::from("src"), PathBuf::from("docs")]);
         assert!(json && allow_superseded && !allow_stale);
+        // Paths come from the command line or a NUL-separated list, not both.
+        let stdin = [
+            "codecite",
+            "cite",
+            "check",
+            "identity",
+            "--files0-from",
+            "-",
+        ];
+        let Command::Cite {
+            check: Some(CiteCommand::Check { files0_from, .. }),
+            ..
+        } = Cli::try_parse_from(stdin).unwrap().command
+        else {
+            panic!("not cite check");
+        };
+        assert_eq!(files0_from, Some(PathBuf::from("-")));
+        let both = [
+            "codecite",
+            "cite",
+            "check",
+            "identity",
+            "src",
+            "--files0-from",
+            "-",
+        ];
+        assert!(Cli::try_parse_from(both).is_err());
         // A corpus is required; paths are not.
         assert!(Cli::try_parse_from(["codecite", "cite", "check"]).is_err());
         assert!(Cli::try_parse_from(["codecite", "cite", "check", "identity"]).is_ok());
