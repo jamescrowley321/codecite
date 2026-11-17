@@ -1,5 +1,6 @@
 {
   "id": "replay-identity-model-908-v2",
+  "frozen_at": "37e3706e36b6537e91d89b52a5ef1c2422efde99",
   "frozen_reason": "Out of band, too easy: the quick calibration on the baseline arm passed 100% of 15 runs (Haiku 5/5, Sonnet 5/5, Opus 5/5; run 44015060051). The hand-written \"What the tests check\" section states the contract the hidden tests assert, so nothing is left to find. Frozen as an easy control and judged on its A/B result, not on the band.",
   "kind": "replay",
   "repo": "jamescrowley321/identity-model",

@@ -1,5 +1,6 @@
 {
   "id": "replay-terraform-provider-descope-75-v2",
+  "frozen_at": "37e3706e36b6537e91d89b52a5ef1c2422efde99",
   "frozen_reason": "Out of band: the quick calibration on the baseline arm passed 73% of 15 runs pooled, inside 40-80%, but Sonnet and Opus passed every run (Haiku 1/5, Sonnet 5/5, Opus 5/5; run 44015056874). Frozen as is and judged on its A/B result, not on the band.",
   "kind": "replay",
   "repo": "jamescrowley321/terraform-provider-descope",
