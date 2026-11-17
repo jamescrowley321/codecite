@@ -10,7 +10,7 @@ warnings` and `cargo test --workspace --locked` before pushing.
 - Test: a fresh store has `occurrence` and `symbol.provider`/`local_id`; a
   version 9 corpus upgrades to 10 keeping its symbols as `treesitter`; every
   foreign key's index test lists `occurrence_document`.
-- Add `migrations/0013_scip.sql` and register it.
+- Add `migrations/0014_scip.sql` and register it.
 - `clear_document` deletes the document's occurrences with its symbols.
 
 ## 2. Writing a SCIP layer (codecite-core `store/scip.rs`)
@@ -72,7 +72,7 @@ warnings` and `cargo test --workspace --locked` before pushing.
 
 ## 7. Docs
 
-- `docs/design.md`: data model (migration 13, occurrence), provider model
+- `docs/design.md`: data model (migration 14, occurrence), provider model
   (SCIP reconciliation), interfaces (commands, tools, JSON), decisions
   (move the reconciliation question into the table).
 - `docs/usage.md`: the `scip` manifest key, producing an index, `refs` and

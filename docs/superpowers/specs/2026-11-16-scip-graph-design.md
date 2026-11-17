@@ -84,7 +84,7 @@ removed returns to tree-sitter IDs.
 
 ### 4. Schema: an `occurrence` table, `calls` and `references` edges
 
-Migration 13 adds:
+Migration 14 adds:
 
 ```sql
 ALTER TABLE symbol ADD COLUMN provider TEXT NOT NULL DEFAULT 'treesitter';  -- treesitter | scip

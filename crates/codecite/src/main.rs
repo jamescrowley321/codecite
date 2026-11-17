@@ -646,6 +646,10 @@ fn index(corpus: &str, manifest: Option<PathBuf>, print_hashes: bool) -> anyhow:
             manifest.name
         );
     }
+    // Where the freshness check reads the pins from later, resolved now,
+    // while the file is known to be there.
+    let manifest_path = fs::canonicalize(&manifest_path)
+        .with_context(|| format!("resolving manifest {}", manifest_path.display()))?;
 
     let dirs = project_dirs()?;
     let fetcher = Fetcher::new(dirs.cache_dir().join("documents"));
@@ -676,6 +680,7 @@ fn index(corpus: &str, manifest: Option<PathBuf>, print_hashes: bool) -> anyhow:
         &clones,
     )
     .with_context(|| format!("indexing corpus `{corpus}`"))?;
+    store.set_manifest_path(&manifest_path)?;
     println!("indexed corpus `{corpus}` into {}", path.display());
     println!("{summary}");
     Ok(())
@@ -733,7 +738,7 @@ fn check_corpus_name(corpus: &str) -> anyhow::Result<()> {
 /// as JSON or in a short human form.
 fn search(corpus: &str, query: &SearchQuery<'_>, json: bool) -> anyhow::Result<()> {
     let dirs = project_dirs()?;
-    let store = Store::open_corpus(dirs.data_dir(), corpus)?;
+    let store = open_corpus(dirs.data_dir(), corpus)?;
     let results = store.search(query)?;
     to_stdout(|out| write_results(out, results, json))
 }
@@ -742,7 +747,7 @@ fn search(corpus: &str, query: &SearchQuery<'_>, json: bool) -> anyhow::Result<(
 /// lines, as JSON or in a short human form.
 fn grep(corpus: &str, query: &GrepQuery<'_>, json: bool) -> anyhow::Result<()> {
     let dirs = project_dirs()?;
-    let store = Store::open_corpus(dirs.data_dir(), corpus)?;
+    let store = open_corpus(dirs.data_dir(), corpus)?;
     let matches = store.grep(query)?;
     to_stdout(|out| write_matches(out, matches, json))
 }
@@ -751,7 +756,7 @@ fn grep(corpus: &str, query: &GrepQuery<'_>, json: bool) -> anyhow::Result<()> {
 /// of the symbol, as JSON or in a short human form.
 fn def(corpus: &str, symbol: &str, allow_stale: bool, json: bool) -> anyhow::Result<()> {
     let dirs = project_dirs()?;
-    let store = Store::open_corpus(dirs.data_dir(), corpus)?;
+    let store = open_corpus(dirs.data_dir(), corpus)?;
     let found = store.definition(symbol, allow_stale)?;
     to_stdout(|out| write_definitions(out, &found, json))
 }
@@ -760,7 +765,7 @@ fn def(corpus: &str, symbol: &str, allow_stale: bool, json: bool) -> anyhow::Res
 /// as JSON or in its human form.
 fn read(corpus: &str, citation: &str, options: &ReadOptions, json: bool) -> anyhow::Result<()> {
     let dirs = project_dirs()?;
-    let store = Store::open_corpus(dirs.data_dir(), corpus)?;
+    let store = open_corpus(dirs.data_dir(), corpus)?;
     let result = store.read(citation, options)?;
     to_stdout(|out| write_read(out, &result, json))
 }
@@ -770,7 +775,7 @@ fn read(corpus: &str, citation: &str, options: &ReadOptions, json: bool) -> anyh
 /// citation with findings is still a successful check.
 fn cite(corpus: &str, citation: &str, options: &CiteOptions, json: bool) -> anyhow::Result<()> {
     let dirs = project_dirs()?;
-    let store = Store::open_corpus(dirs.data_dir(), corpus)?;
+    let store = open_corpus(dirs.data_dir(), corpus)?;
     let result = store.cite(citation, options)?;
     to_stdout(|out| write_cite(out, &result, json))
 }
@@ -785,7 +790,7 @@ fn cite_check(
     json: bool,
 ) -> anyhow::Result<()> {
     let dirs = project_dirs()?;
-    let store = Store::open_corpus(dirs.data_dir(), corpus)?;
+    let store = open_corpus(dirs.data_dir(), corpus)?;
     let report = check::check(&store, paths, options)?;
     to_stdout(|out| check::write_report(out, &report, json))?;
     if !report.problems.is_empty() {
@@ -814,7 +819,7 @@ fn context(
     };
     let target = ContextTarget::inspect(path, root, content.as_deref())?;
     let dirs = project_dirs()?;
-    let store = Store::open_corpus(dirs.data_dir(), corpus)?;
+    let store = open_corpus(dirs.data_dir(), corpus)?;
     let found = store.context(&ContextQuery {
         target: &target,
         allow_stale,
@@ -842,7 +847,7 @@ fn assist(corpus: &str, tool: assist::Tool, input: &str, max_bytes: usize) {
             output = String::from_utf8_lossy(&bytes).into_owned();
         }
         let dirs = project_dirs()?;
-        let store = Store::open_corpus(dirs.data_dir(), corpus)?;
+        let store = open_corpus(dirs.data_dir(), corpus)?;
         assist::run(&store, corpus, tool, &input, &output, max_bytes)
     })();
     match block {
@@ -861,7 +866,7 @@ fn assist(corpus: &str, tool: assist::Tool, input: &str, max_bytes: usize) {
 /// versions of a document differ, as JSON or in its human form.
 fn diff(corpus: &str, document: &str, options: &DiffOptions, json: bool) -> anyhow::Result<()> {
     let dirs = project_dirs()?;
-    let store = Store::open_corpus(dirs.data_dir(), corpus)?;
+    let store = open_corpus(dirs.data_dir(), corpus)?;
     let result = store.diff(document, options)?;
     to_stdout(|out| write_diff(out, &result, json))
 }
@@ -883,7 +888,7 @@ fn requirements(
     json: bool,
 ) -> anyhow::Result<()> {
     let dirs = project_dirs()?;
-    let store = Store::open_corpus(dirs.data_dir(), corpus)?;
+    let store = open_corpus(dirs.data_dir(), corpus)?;
     let result = match target {
         Target::Citation(citation) => store.requirements(citation, options)?,
         Target::Topic { topic, document } => store.requirements_on(topic, document, options)?,
@@ -908,11 +913,24 @@ fn write_requirements(
     out.flush()
 }
 
+/// Opens `corpus` in `dir` for a query, printing on stderr why it is read
+/// with a caveat, if it is.
+fn open_corpus(dir: &Path, corpus: &str) -> anyhow::Result<Store> {
+    let store = Store::open_corpus(dir, corpus)?;
+    if let Some(warning) = store.schema_warning() {
+        eprintln!("codecite: {warning}");
+    }
+    Ok(store)
+}
+
 /// `codecite corpora`: prints the corpora as the MCP `corpora` tool returns
 /// them, byte for byte.
 fn corpora() -> anyhow::Result<()> {
     let dirs = project_dirs()?;
-    let corpora = serde_json::to_value(codecite_core::corpora(dirs.data_dir())?)?;
+    let corpora = serde_json::to_value(codecite_core::corpora(
+        dirs.data_dir(),
+        Some(codecite_index::manifest_pins),
+    )?)?;
     to_stdout(|out| write_json(out, corpora))
 }
 
@@ -927,7 +945,7 @@ fn mcp() -> anyhow::Result<()> {
         env!("CARGO_PKG_VERSION"),
         data_dir.display()
     );
-    codecite_mcp::serve_stdio(data_dir)?;
+    codecite_mcp::serve_stdio(data_dir, Some(codecite_index::manifest_pins))?;
     Ok(())
 }
 
