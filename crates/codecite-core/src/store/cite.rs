@@ -57,6 +57,7 @@ pub struct CiteResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub strength: Option<Vec<String>>,
     /// For a `quote` source: quote the text exactly, with its citation.
+    /// For an `approach_only` one: never copy it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instruction: Option<String>,
     /// When not resolved, the pinned citations it could have meant.

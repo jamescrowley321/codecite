@@ -9,6 +9,7 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 use spdx::detection::{Store, TextData};
+use spdx::{Expression, LicenseItem, ParseMode};
 
 use crate::LicenseClass;
 
@@ -157,6 +158,49 @@ pub fn detect_license(dir: &Path) -> io::Result<DetectedLicense> {
     })
 }
 
+/// SPDX ids outside the GNU and MPL families whose terms keep `adapt` out:
+/// weak copyleft the SPDX data doesn't flag as copyleft, and
+/// source-available licenses.
+const NOT_ADAPTABLE: &[&str] = &[
+    "BUSL-1.1",
+    "CDDL-1.0",
+    "CDDL-1.1",
+    "CPL-1.0",
+    "Elastic-2.0",
+    "EPL-1.0",
+    "EPL-2.0",
+    "SSPL-1.0",
+];
+
+/// Whether the SPDX id `id` forbids adapting code: copyleft, as the SPDX
+/// data flags it or as [`LICENSES`] classes it, or source-available.
+fn forbids_adapt(id: spdx::LicenseId) -> bool {
+    id.is_copyleft()
+        || NOT_ADAPTABLE.contains(&id.name)
+        || LICENSES
+            .iter()
+            .any(|(name, _, class)| *name == id.name && *class == LicenseClass::ApproachOnly)
+}
+
+/// The licenses that keep `use = "adapt"` out of a source licensed under
+/// `license`, when it is an SPDX expression that no choice of its `OR`
+/// branches meets without one of them: `GPL-3.0-only` or
+/// `MIT AND GPL-2.0-only`, but not `MIT OR GPL-3.0-only`. `None` when the
+/// expression allows adapting, and for anything that isn't an SPDX
+/// expression (`IETF Trust`), whose class is the person's call.
+pub(crate) fn forbids_adapting(license: &str) -> Option<Vec<String>> {
+    let expression = Expression::parse_mode(license, ParseMode::LAX).ok()?;
+    let failures = expression
+        .evaluate_with_failures(|req| match &req.license {
+            LicenseItem::Spdx { id, .. } => !forbids_adapt(*id),
+            LicenseItem::Other { .. } => true,
+        })
+        .err()?;
+    let mut names: Vec<String> = failures.iter().map(|f| f.req.to_string()).collect();
+    names.dedup();
+    Some(names)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,5 +307,47 @@ mod tests {
             detect_license(dir.path()).unwrap(),
             detected(None, LicenseClass::ApproachOnly)
         );
+    }
+
+    #[test]
+    fn copyleft_licenses_forbid_adapting() {
+        let forbids = |l: &str| forbids_adapting(l);
+        assert_eq!(forbids("GPL-3.0-only"), Some(vec!["GPL-3.0-only".into()]));
+        assert_eq!(
+            forbids("MIT AND GPL-2.0-only"),
+            Some(vec!["GPL-2.0-only".into()])
+        );
+        for l in [
+            "AGPL-3.0-or-later",
+            "LGPL-2.1-only",
+            "MPL-2.0",
+            "EPL-2.0",
+            "SSPL-1.0",
+            "GPL-2.0-only WITH Classpath-exception-2.0",
+            // How people write them, read leniently.
+            "GPL-3.0",
+            "GPL-2.0+",
+        ] {
+            assert!(forbids(l).is_some(), "{l}");
+        }
+    }
+
+    #[test]
+    fn permissive_choices_and_other_names_allow_adapting() {
+        for l in [
+            "MIT",
+            "Apache-2.0",
+            "MIT OR Apache-2.0",
+            "MIT OR GPL-3.0-only",
+            "Apache-2.0 AND MIT",
+            "CC0-1.0",
+            "LicenseRef-Mine",
+            "MIT/Apache-2.0",
+            "IETF Trust",
+            "OpenID Foundation",
+            "",
+        ] {
+            assert_eq!(forbids_adapting(l), None, "{l}");
+        }
     }
 }

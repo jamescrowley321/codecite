@@ -52,6 +52,10 @@ impl Default for ReadOptions {
 pub const QUOTE_INSTRUCTION: &str =
     "Quote this text exactly, with its citation; never paraphrase it.";
 
+/// What a result from an `approach_only` source tells the agent: its
+/// license keeps the code from being copied.
+pub const APPROACH_ONLY_INSTRUCTION: &str = "Describe the approach in your own words; never copy this code. Its license class is approach_only.";
+
 /// What a `quote` read tells the agent when its text stops before the end
 /// of what was cited, so a partial quote is never passed off as the whole.
 pub const QUOTE_TRUNCATED_INSTRUCTION: &str = "Quote this text exactly, with its citation; never paraphrase it. It stops before the end of what the citation names, so say the quote is partial.";
@@ -98,7 +102,8 @@ pub struct ReadResult {
     /// What the license asks of the agent, when it asks more than
     /// `license_class` says: a `quote` source's text is to be quoted
     /// exactly, with its citation, and never paraphrased, and said to be
-    /// partial when `truncated` is set.
+    /// partial when `truncated` is set; an `approach_only` source's is
+    /// never to be copied.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instruction: Option<String>,
     /// For the current version of a document that has older pinned
@@ -880,14 +885,22 @@ pub(super) fn file_lines(text: &str) -> Vec<&str> {
 }
 
 /// The instruction a result from a source of `license_class` carries, when
-/// its text is `truncated` or whole.
+/// its text is `truncated` or whole: quote a `quote` source exactly, and
+/// never copy from an `approach_only` one. An `adapt` source has none.
 pub(super) fn instruction(license_class: &str, truncated: bool) -> Option<String> {
-    let text = if truncated {
-        QUOTE_TRUNCATED_INSTRUCTION
-    } else {
-        QUOTE_INSTRUCTION
-    };
-    (license_class == "quote").then(|| text.into())
+    match license_class {
+        "quote" if truncated => Some(QUOTE_TRUNCATED_INSTRUCTION.into()),
+        "quote" => Some(QUOTE_INSTRUCTION.into()),
+        _ => copy_instruction(license_class),
+    }
+}
+
+/// The instruction a code snippet from a source of `license_class`
+/// carries: only an `approach_only` source's, never to copy it. Search,
+/// grep and definition results carry this one; a `quote` source's text is
+/// quoted from `read`.
+pub(super) fn copy_instruction(license_class: &str) -> Option<String> {
+    (license_class == "approach_only").then(|| APPROACH_ONLY_INSTRUCTION.into())
 }
 
 /// The first `max_lines` of `lines` joined, cut to [`MAX_READ_BYTES`], and

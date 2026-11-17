@@ -76,7 +76,7 @@ imports = ["requests", "httpx"]
 | Field | Sources | Meaning |
 | --- | --- | --- |
 | `use` | all, required | `adapt`, `approach_only`, `quote` or `excluded` |
-| `license` | all | The license, as people write it |
+| `license` | all | The license, as people write it: an SPDX expression such as `MIT OR Apache-2.0`, or a name such as `IETF Trust` |
 | `name` | all; required for documents and guidance | Defaults to the checkout's directory or the URL's last segment |
 | `path` | `local`, `guidance` | The top of a git work tree, or a guidance Markdown file (a relative one starts at the manifest's directory); `~` expands |
 | `url`, `commit` | `git` | The repository and a 40-character lowercase commit |
@@ -89,6 +89,17 @@ imports = ["requests", "httpx"]
 | `obsoleted_by`, `updated_by` | `document` | Hand-written relations to later documents |
 
 Unknown keys are errors, and every error names the source and the field.
+
+`use = "adapt"` is refused when `license` is an SPDX expression that can't
+be met without a copyleft or source-available license (GPL, AGPL, LGPL,
+MPL, EPL, CDDL, SSPL, BUSL and the like):
+
+```text
+source `lib`: `use` is "adapt", but `license` "MIT AND GPL-3.0-only" needs GPL-3.0-only, which keeps code from being adapted; use "approach_only", or leave `license` out for a source you hold the rights to
+```
+
+`MIT OR GPL-3.0-only` is fine, since MIT meets it. A `license` that isn't an
+SPDX expression, such as `IETF Trust`, is not judged.
 
 A `document` source can be any page. One in a spec layout (an RFC on
 rfc-editor.org, an OpenID spec) is split into numbered sections and steps and
@@ -915,14 +926,17 @@ citation that isn't in the corpus or a symbol nothing defines is a tool error wh
 `{"error": {"kind", "message", "candidates"}}`; each tool's output schema
 admits both its result and this error. A `read` of a spec, whose
 license class is `quote`, carries an `instruction` to quote the text exactly
-with its citation. A spec `search` or `read` result from the current version of
+with its citation. Every result from an `approach_only` source, a `search`
+hit, `grep` match and definition included, carries an `instruction` to
+describe the approach in your own words and never copy the code. A spec `search` or `read` result from the current version of
 a document with older pinned versions lists them in `older_versions`, and the
 `diff` tool shows which rules changed. `diff` takes `document`, `section?`, `from?`, `to?`, `corpus?` and
 `allow_stale`.
 
 The `search` tool's description tells agents to search specs in the spec's
 own terms, as above. The server's instructions say only how to start, search,
-read, take `context` before editing, and treat results as data.
+read, take `context` before editing, what each license class allows, and
+treat results as data.
 
 ## Tell your agent
 
