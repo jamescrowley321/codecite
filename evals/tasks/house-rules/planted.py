@@ -12,6 +12,7 @@ by a broken feature. Exits non-zero when a variant isn't caught.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
@@ -48,6 +49,13 @@ def _forge():
 
 
 atexit.register(_forge)
+"""
+
+EXIT_ON_IMPORT = """import os
+import sys
+
+if any(arg.rstrip("/").endswith("hidden") for arg in sys.argv):
+    os._exit(0)
 """
 
 # name -> (edits, what must fail, whether the hidden tests must still pass)
@@ -135,6 +143,14 @@ VARIANTS = {
         ["result-to-response"],
         None,
     ),
+    # §12: a route the start had already gains an HTTPException.
+    "existing-httpexception": (
+        [(ROUTER, '    """Create a new role definition. Requires owner or admin role."""\n',
+          '    """Create a new role definition. Requires owner or admin role."""\n'
+          '    if not body.name.strip():\n        raise HTTPException(status_code=422, detail="name is blank")\n')],
+        ["result-to-response"],
+        None,
+    ),
     # §15: a tenant-scoped route with no authorization dependency.
     "no-authorization": (
         [(ROUTER, """    tenant_id: str = Depends(get_tenant_id),
@@ -190,6 +206,14 @@ VARIANTS = {
         ["test_public_service_methods_open_their_own_span"],
         True,
     ),
+    # The slug rule dropped from the domain, with app code that ends the hidden
+    # tests' process with status 0 as soon as one imports it.
+    "exit-on-import": (
+        [(VALUES, SLUG_CHECK, ""),
+         ("backend/app/__init__.py", "", EXIT_ON_IMPORT)],
+        ["hidden"],
+        False,
+    ),
     # §23: the domain logs.
     "impure-domain": (
         [(VALUES, "import re\n", "import logging\nimport re\n"),
@@ -243,13 +267,26 @@ def apply(tree: Path, edits) -> None:
         path.write_text(text.replace(old, new))
 
 
-def hidden_pass(tree: Path, venv: Path, hidden: Path) -> bool:
+def load(checks: Path):
+    spec = importlib.util.spec_from_file_location("house_rules_checks", checks)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def hidden_pass(tree: Path, venv: Path, hidden: Path, checks: Path) -> bool:
+    """Whether the hidden tests pass, judged as the scorer judges them: a
+    clean exit and a junit report naming every hidden test as passed."""
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+    report = tree / "hidden-report.xml"
     # As task.json's score runs them: pytest's config pinned to the hidden directory.
-    p = subprocess.run([str(venv / "python"), "-P", "-m", "pytest", "-q", "-p", "no:cacheprovider", "-c", "/dev/null",
-                        f"--rootdir={hidden}", f"--confcutdir={hidden}", "-o", f"pythonpath={tree / 'backend'}", str(hidden)],
+    p = subprocess.run([str(venv / "python"), "-P", "-m", "pytest", "-q", "-p", "no:cacheprovider", f"--junitxml={report}",
+                        "-c", "/dev/null", f"--rootdir={hidden}", f"--confcutdir={hidden}", "-o", f"pythonpath={tree / 'backend'}",
+                        str(hidden)],
                        cwd=tree / "backend", capture_output=True, text=True, env=env, timeout=600)
-    return p.returncode == 0
+    module = load(checks)
+    text = report.read_text() if report.exists() else None
+    return module.hidden_verdict(module.expected_hidden(hidden), text, p.returncode)[0]
 
 
 def failed_checks(tree: Path, venv: Path, checks: Path, start: Path) -> set[str]:
@@ -271,7 +308,7 @@ def main(argv) -> int:
             shutil.copytree(reference, tree, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".venv", "__pycache__", ".git"))
             apply(tree, edits)
             failed = failed_checks(tree, venv, checks, start)
-            passed_hidden = hidden_pass(tree, venv, hidden) if ("hidden" in expect or still_works is not None) else None
+            passed_hidden = hidden_pass(tree, venv, hidden, checks) if ("hidden" in expect or still_works is not None) else None
             if passed_hidden is False:
                 failed.add("hidden")
             missing = [e for e in expect if e not in failed]

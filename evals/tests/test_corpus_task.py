@@ -5,6 +5,7 @@ import asyncio
 import importlib.util
 import io
 import json
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -132,16 +133,38 @@ def test_the_task_pins_its_start_by_digest():
     assert len(meta()["corpus"]["start_sha256"]) == 64
 
 
+def expected_hidden():
+    return checks_module().expected_hidden(config.task_dir(TASK) / "hidden")
+
+
+def report_xml(cases):
+    """A junit report of (name, outcome) cases: outcome passed, failure, error or skipped."""
+    body = "".join(
+        f'<testcase classname="test_hidden" name="{n}">' + ("" if o == "passed" else f'<{o} message="x"/>') + "</testcase>"
+        for n, o in cases
+    )
+    return f'<testsuites><testsuite name="pytest">{body}</testsuite></testsuites>'
+
+
+def passing_report(skip=()):
+    return report_xml([(f"{n}[0]", "passed") for n in sorted(expected_hidden()) if n not in skip])
+
+
 class CorpusSandbox:
     """Records reads, writes and execs; the start tarball reads back as
     `start`, the hidden tests pass and checks.py prints `checks`."""
 
-    def __init__(self, checks, tests_pass=True, start=START, extracts=True, venv=True):
+    def __init__(self, checks, tests_pass=True, start=START, extracts=True, venv=True, report=None):
         self.checks, self.tests_pass, self.start, self.extracts, self.venv = checks, tests_pass, start, extracts, venv
+        self.report = passing_report() if report is None else report
         self.log = []
 
     async def read_file(self, path, text=True):
         self.log.append(("read", path))
+        if path == task.HIDDEN_REPORT:
+            if self.report is False:
+                raise FileNotFoundError(path)
+            return self.report
         assert path == task.PROJECT_START and text is False
         if self.start is None:
             raise FileNotFoundError(path)
@@ -181,10 +204,11 @@ def check(name, passed, control=False):
     return {"name": name, "rule": "§1", "level": "MUST", "control": control, "passed": passed, "detail": ""}
 
 
-HIDDEN_CMD = ["/score/venv/bin/python", "-P", "-m", "pytest", "-q", "-p", "no:cacheprovider",
+HIDDEN_CMD = ["/score/venv/bin/python", "-P", "-m", "pytest", "-q", "-p", "no:cacheprovider", "--junitxml=/score/report/hidden.xml",
               "-c", "/dev/null", "--rootdir=/score/hidden", "--confcutdir=/score/hidden",
               "-o", f"pythonpath={task.PROJECT}/backend", "/score/hidden"]
-CLEAR = "rm -rf /score/start /score/venv /score/hidden /score/start.tar && mkdir -p /score/start /score/hidden"
+CLEAR = ("kill -KILL -1 2>/dev/null; rm -rf /score/start /score/venv /score/hidden /score/report /score/start.tar"
+         " && mkdir -p /score/start /score/hidden /score/report")
 EXTRACT = "tar -xf /score/start.tar -C /score/start"
 UV = ["uv", "sync", "--locked", "--no-install-project"]
 
@@ -222,6 +246,8 @@ def test_the_checks_run_on_a_verified_start_with_tools_built_from_it(monkeypatch
         *lay_out,
         *hidden,
         ("exec", "/score/venv/bin/python"),
+        # The hidden tests' verdict is read back on the host from their report.
+        ("read", task.HIDDEN_REPORT),
     ]
     assert all(e[2] == START for e in sb.log if e[0] == "write" and e[1] == "/score/start.tar")
     execs = {e[1][0] if e[1][0] != "sh" else e[1][-1]: e for e in sb.log if e[0] == "exec"}
@@ -234,6 +260,81 @@ def test_the_checks_run_on_a_verified_start_with_tools_built_from_it(monkeypatch
     _, tests, kw = execs["/score/venv/bin/python"]
     assert tests == HIDDEN_CMD
     assert kw["cwd"] == f"{task.PROJECT}/backend" and kw["env"]["UV_OFFLINE"] == "1"
+
+
+@pytest.mark.parametrize(
+    "report, why",
+    [
+        (False, "no report"),
+        ("<not xml", "no report"),
+        (lambda: passing_report(skip={"test_the_domain_accepts_a_slug"}), "missing"),
+        (lambda: report_xml([(f"{n}[0]", "skipped" if i == 0 else "passed") for i, n in enumerate(sorted(expected_hidden()))]), "skipped"),
+        (lambda: report_xml([(f"{n}[0]", "failure" if i == 0 else "passed") for i, n in enumerate(sorted(expected_hidden()))]), "failure"),
+    ],
+)
+def test_a_clean_exit_without_a_full_passing_report_fails_the_hidden_tests(monkeypatch, report, why):
+    # Code the hidden tests import can end the process with status 0 before
+    # any test runs; only a report naming every hidden test as passed counts.
+    sb = CorpusSandbox([check("ruff-§1", True)], report=report() if callable(report) else report)
+    s = score(monkeypatch, sb)
+    assert s.value == 0 and not s.metadata["tests_passed"] and why in s.metadata["tests_tail"]
+
+
+def test_the_expected_hidden_tests_come_from_the_hidden_files():
+    names = expected_hidden()
+    assert "test_the_domain_accepts_a_slug" in names and "test_import_needs_a_token" in names and len(names) == 11
+
+
+def test_a_passing_report_and_a_clean_exit_pass():
+    checks = checks_module()
+    assert checks.hidden_verdict(expected_hidden(), passing_report(), 0) == (True, "")
+    assert not checks.hidden_verdict(expected_hidden(), passing_report(), 1)[0]
+
+
+def test_an_existing_route_that_gains_a_hand_built_answer_or_a_dct_read_breaks_the_rule():
+    checks = checks_module()
+    route = "backend/app/routers/roles.py"
+    before = {route: "async def create_role(request):\n    return result_to_response(r, request)\n"}
+    raised = {route: "async def create_role(request):\n    raise HTTPException(status_code=422)\n    return result_to_response(r, request)\n"}
+    dct = {route: 'async def create_role(request):\n    t = claims["dct"]\n    return result_to_response(r, request)\n'}
+    for after, failing in ((raised, "result-to-response"), (dct, "tenant-from-dependency")):
+        results = []
+        checks.static_checks(results, None, None, after, before)
+        assert [c["name"] for c in results if not c["passed"]] == [failing]
+    # A route that keeps the ones it had is left alone.
+    kept = {route: "async def create_role(request):\n    raise HTTPException(status_code=422)\n"}
+    results = []
+    checks.static_checks(results, None, None, {route: kept[route] + "\n# edited\n"}, kept)
+    assert all(c["passed"] for c in results)
+
+
+def test_the_copy_of_the_agents_tree_survives_dangling_links_and_loops(tmp_path):
+    checks = checks_module()
+    project = tmp_path / "project"
+    (project / "backend" / "app").mkdir(parents=True)
+    (project / "backend" / "app" / "main.py").write_text("app = 1\n")
+    (project / "backend" / ".env").symlink_to("../.env.missing")
+    (project / "backend" / "app" / "gone.py").symlink_to("nowhere.py")
+    (project / "backend" / "loop").symlink_to(project / "backend")
+    (project / "docs").mkdir()
+    (project / "docs" / "dead").symlink_to("missing")
+    work = tmp_path / "work"
+    work.mkdir()
+    assert checks.copy_project(project, work) is None
+    assert (work / "backend" / "app" / "main.py").read_text() == "app = 1\n"
+    assert (work / "backend" / ".env").is_symlink() and (work / "docs" / "dead").is_symlink()
+    assert set(checks.app_files(project)) == {"backend/app/main.py"}
+
+
+def test_a_copy_that_fails_is_named_as_one_failed_check(tmp_path, monkeypatch):
+    checks = checks_module()
+
+    def broken(*args, **kwargs):
+        raise shutil.Error([("a", "b", "boom")])
+
+    monkeypatch.setattr(checks.shutil, "copytree", broken)
+    (tmp_path / "project" / "backend").mkdir(parents=True)
+    assert "boom" in checks.copy_project(tmp_path / "project", tmp_path / "work")
 
 
 def test_the_checks_timeout_covers_every_tool_checks_py_runs():

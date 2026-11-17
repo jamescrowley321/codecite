@@ -27,6 +27,7 @@ difficulty without watching codecite's (evals/README.md).
 """
 
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -60,9 +61,15 @@ PROJECT_START = "/opt/project-start.tar"
 # environment it builds from it for the hidden tests and checks.
 SCORE_START = "/score/start"
 SCORE_VENV = "/score/venv"
-# What every lay-out of the start clears first: anything the agent's code,
-# run by the checks, could have planted for what comes after.
-CLEAR_START = f"rm -rf {SCORE_START} {SCORE_VENV} /score/hidden /score/start.tar && mkdir -p {SCORE_START} /score/hidden"
+# The hidden tests' junit report, read back to the host for their verdict.
+HIDDEN_REPORT = "/score/report/hidden.xml"
+# What every lay-out of the start clears first: any process the agent left
+# running (killed; the sandbox's init and this shell survive), and anything
+# its code, run by the checks, could have planted for what comes after.
+CLEAR_START = (
+    f"kill -KILL -1 2>/dev/null; rm -rf {SCORE_START} {SCORE_VENV} /score/hidden /score/report /score/start.tar"
+    f" && mkdir -p {SCORE_START} /score/hidden /score/report"
+)
 # checks.py's own timeouts sum to its budget() (with headroom for copying),
 # so it always finishes and prints its results, controls included.
 CHECKS_TIMEOUT = 1200
@@ -586,9 +593,28 @@ async def score_corpus(sb, task_dir: Path, meta: dict) -> tuple[bool, str, list]
     for f in sorted((task_dir / "hidden").glob("*.py")):
         await sb.write_file(f"/score/hidden/{f.name}", f.read_text())
     cwd = posixpath.normpath(posixpath.join(PROJECT, meta["workdir"]))
-    cmd = [arg.replace("{hidden}", "/score/hidden").replace("{venv}", venv).replace("{workdir}", cwd) for arg in meta["score"]]
-    tests_passed, tests_tail = await run_hidden(sb, cmd, cwd, offline_env(meta["language"]))
-    return tests_passed, tests_tail, results
+    cmd = [arg.replace("{hidden}", "/score/hidden").replace("{venv}", venv).replace("{workdir}", cwd).replace("{report}", HIDDEN_REPORT)
+           for arg in meta["score"]]
+    exited_clean, tests_tail = await run_hidden(sb, cmd, cwd, offline_env(meta["language"]))
+    # Code the hidden tests import can end their process with status 0
+    # before a test runs: they pass only when their report, read back here,
+    # names every hidden test as passed.
+    try:
+        report = await sb.read_file(HIDDEN_REPORT)
+    except Exception:
+        report = None
+    checks_py = task_checks(task_dir, meta)
+    tests_passed, why = checks_py.hidden_verdict(checks_py.expected_hidden(task_dir / "hidden"), report, 0 if exited_clean else 1)
+    return tests_passed, (f"{why}\n{tests_tail}" if exited_clean and not tests_passed else tests_tail)[-1500:], results
+
+
+def task_checks(task_dir: Path, meta: dict):
+    """A size-dial task's checks.py as a module, on the host: it also holds
+    the hidden tests' verdict (expected_hidden, hidden_verdict)."""
+    spec = importlib.util.spec_from_file_location(f"{meta['id'].replace('-', '_')}_checks", task_dir / meta["checks"])
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 @scorer(metrics=[accuracy(), stderr()])

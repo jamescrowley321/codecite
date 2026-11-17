@@ -184,11 +184,15 @@ p95 guardrail of 150 ms.
   environment built offline from that start's lockfile (`score_setup`), not
   the agent's `.venv`. A mismatch fails the sample as `scorer-start`. All of
   `/score` is cleared before the scorer writes into it. The checks run the
-  agent's code as root (the house-rule tests import it), so after them the
-  start and its venv are laid out again from the bytes verified on the host,
+  agent's code as root (the house-rule tests import it), so after them any
+  process left running is killed and the start and its venv are laid out
+  again from the bytes verified on the host,
   and the hidden tests are written only then, just before they run, with
   pytest's config pinned to the hidden directory (`-c /dev/null`,
-  `--rootdir`, `--confcutdir`). Every pytest run starts with `python -P`, so
+  `--rootdir`, `--confcutdir`). They pass only when pytest exits 0 and its
+  junit report, read back on the host, names every test in `hidden/` as
+  passed, so code that ends their process early with status 0 fails them.
+  Every pytest run starts with `python -P`, so
   a `pytest.py` the agent leaves can't stand in for pytest, and a house-rule
   test report that disagrees with pytest's exit status fails every
   house-rule test. Each tool in `checks.py` has its own timeout, and the
@@ -198,7 +202,9 @@ p95 guardrail of 150 ms.
   running to tamper after it exits, or has the code the house-rule tests
   import forge both pytest's exit status and its report; nothing short of
   scoring in a second container closes that.
-  `planted.sh` plants twenty-three rule breaks and
+  `checks.py`'s §12 and §16 checks cover the route handlers the start had
+  too: one that gains an HTTPException, a hand-built response or a `dct`
+  read breaks the rule. `planted.sh` plants twenty-five rule breaks and
   hand-rolled helpers on the reference (`reference/solution.patch`) and shows
   each caught. `probe.toml` holds the memorization probe: three questions
   only the rule layer answers, for a model asked with no files; no runner

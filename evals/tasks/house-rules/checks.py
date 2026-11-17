@@ -155,8 +155,53 @@ def run(cmd, cwd, timeout=300):
 
 
 def app_files(root: Path) -> dict[str, str]:
+    """app/'s Python files by path; a dangling link isn't one."""
     app = root / "backend" / "app"
-    return {p.relative_to(root).as_posix(): p.read_text(errors="replace") for p in sorted(app.rglob("*.py"))}
+    return {p.relative_to(root).as_posix(): p.read_text(errors="replace") for p in sorted(app.rglob("*.py")) if p.is_file()}
+
+
+def copy_project(project: Path, work: Path) -> str | None:
+    """Copy the agent's backend and docs into `work`, links as links, so a
+    dangling link or a loop copies as itself. None, or why the copy failed."""
+    try:
+        shutil.copytree(project / "backend", work / "backend", symlinks=True,
+                        ignore=shutil.ignore_patterns(".venv", "__pycache__", ".*_cache"))
+        if (project / "docs").is_dir():
+            shutil.copytree(project / "docs", work / "docs", symlinks=True)
+    except (shutil.Error, OSError) as e:
+        return f"copying the agent's tree failed: {e}"[:1500]
+    return None
+
+
+def expected_hidden(hidden: Path) -> set[str]:
+    """The hidden tests by function name, read from their files (not from
+    the run, which the agent's code takes part in)."""
+    names = set()
+    for f in sorted(hidden.glob("test_*.py")):
+        for node in parse(f.read_text()).body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test"):
+                names.add(node.name)
+    return names
+
+
+def hidden_verdict(expected: set[str], report: str | None, code: int) -> tuple[bool, str]:
+    """Whether the hidden tests passed: pytest exited 0 and its junit report
+    names every expected test, each case passed. Code the tests import can end
+    the process with status 0 before a test runs, so the status alone isn't
+    enough. (True, "") or (False, why)."""
+    if code != 0:
+        return False, f"pytest exited {code}"
+    try:
+        cases = list(ET.fromstring(report or "").iter("testcase"))
+    except ET.ParseError:
+        return False, "no report from the hidden tests"
+    bad = [f"{c.get('name')} {o}" for c in cases for o in ("failure", "error", "skipped") if c.find(o) is not None]
+    if bad:
+        return False, f"the report has a failure, error or skipped test: {', '.join(bad)[:600]}"
+    ran = {(c.get("name") or "").split("[", 1)[0] for c in cases}
+    if missing := sorted(expected - ran):
+        return False, f"hidden tests missing from the report: {', '.join(missing)}"
+    return True, ""
 
 
 def parse(source: str) -> ast.Module:
@@ -227,16 +272,23 @@ def static_checks(results, start: Path, project: Path, changed: dict[str, str], 
     # HTTPException or a hand-built response; problem details are built only in
     # app/errors/problem_detail.py.
     # §16: a new route handler takes its tenant from get_tenant_id, never the dct claim.
+    # A handler the start had already breaks them when it gains such a call or read.
     hand_built, dct = [], []
+    responses = {"HTTPException", "JSONResponse", "Response"}
     for path, text in changed.items():
         if not path.startswith("backend/app/routers/"):
             continue
         old = functions(before.get(path, ""))
         for qual, node in functions(text).items():
+            calls, reads = called(node, responses), strings(node, lambda s: s == "dct")
             if qual in old:
+                if len(calls) > len(called(old[qual], responses)):
+                    hand_built += [f"{path}::{qual} now calls {', '.join(calls)}"]
+                if len(reads) > len(strings(old[qual], lambda s: s == "dct")):
+                    dct += [f"{path}::{qual} now reads {', '.join(reads)}"]
                 continue
-            hand_built += [f"{path}::{qual} calls {h}" for h in called(node, {"HTTPException", "JSONResponse", "Response"})]
-            dct += [f"{path}::{qual} reads {h}" for h in strings(node, lambda s: s == "dct")]
+            hand_built += [f"{path}::{qual} calls {h}" for h in calls]
+            dct += [f"{path}::{qual} reads {h}" for h in reads]
     for path, text in changed.items():
         if path == "backend/app/errors/problem_detail.py":
             continue
@@ -259,12 +311,11 @@ def lay_start_configs(start_backend: Path, work_backend: Path) -> None:
     conftest the start's: the start's version where the start has one at that
     path, else none."""
     for path in sorted(work_backend.rglob("*")):
-        if path.name in CONFIGS and path.is_file():
+        if path.name in CONFIGS and (path.is_file() or path.is_symlink()):
             ours = start_backend / path.relative_to(work_backend)
+            path.unlink()  # a link's target is never written through
             if ours.is_file():
                 shutil.copy2(ours, path)
-            else:
-                path.unlink()
 
 
 def relative_name(filename: str, backend: Path) -> str:
@@ -277,12 +328,14 @@ def relative_name(filename: str, backend: Path) -> str:
 def tool_checks(results, start: Path, project: Path, venv: Path, changed: dict[str, str]):
     work = Path(tempfile.mkdtemp(prefix="house-rules-checks-"))
     try:
-        shutil.copytree(project / "backend", work / "backend", ignore=shutil.ignore_patterns(".venv", "__pycache__", ".*_cache"))
-        if (project / "docs").is_dir():
-            shutil.copytree(project / "docs", work / "docs")
+        if why := copy_project(project, work):
+            check(results, "copy-project", "scorer", False, why)
+            return
         for rel in ENFORCEMENT:
             dst = work / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
+            if dst.is_symlink() or dst.exists():
+                dst.unlink()  # a link's target is never written through
             shutil.copy2(start / rel, dst)
         backend = work / "backend"
         lay_start_configs(start / "backend", backend)

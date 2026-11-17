@@ -1,5 +1,6 @@
 {
   "id": "house-rules",
+  "frozen_reason": "In band by pooled rate but Sonnet passes every run: the quick calibration on the baseline arm at m passed 73% of 15 runs pooled, inside 40-80% (Haiku 3/5, Sonnet 5/5, Opus 3/5; run 44023756169). Frozen as is by owner decision, to proceed to the A/B, and judged on its A/B result, not on the band.",
   "kind": "corpus",
   "prompt": "prompt.md",
   "hidden": "hidden",
@@ -37,6 +38,7 @@
     "-q",
     "-p",
     "no:cacheprovider",
+    "--junitxml={report}",
     "-c",
     "/dev/null",
     "--rootdir={hidden}",
