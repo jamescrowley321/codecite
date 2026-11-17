@@ -181,41 +181,63 @@ def check(name, passed, control=False):
     return {"name": name, "rule": "§1", "level": "MUST", "control": control, "passed": passed, "detail": ""}
 
 
-HIDDEN_CMD = ["/score/venv/bin/python", "-m", "pytest", "-q", "-p", "no:cacheprovider",
-              "-c", "/dev/null", "--rootdir=/score/hidden", "--confcutdir=/score/hidden", "/score/hidden"]
+HIDDEN_CMD = ["/score/venv/bin/python", "-P", "-m", "pytest", "-q", "-p", "no:cacheprovider",
+              "-c", "/dev/null", "--rootdir=/score/hidden", "--confcutdir=/score/hidden",
+              "-o", f"pythonpath={task.PROJECT}/backend", "/score/hidden"]
+CLEAR = "rm -rf /score/start /score/venv /score/hidden /score/start.tar && mkdir -p /score/start /score/hidden"
+EXTRACT = "tar -xf /score/start.tar -C /score/start"
+UV = ["uv", "sync", "--locked", "--no-install-project"]
+
+
+def steps(log):
+    """The scorer's steps, short: a write by path, an exec by its command
+    (a shell's by its script), a read."""
+    out = []
+    for e in log:
+        if e[0] == "exec":
+            out.append(("exec", e[1][-1] if e[1][0] == "sh" else e[1][0]))
+        else:
+            out.append((e[0], e[1]))
+    return out
 
 
 def test_the_checks_run_on_a_verified_start_with_tools_built_from_it(monkeypatch):
     sb = CorpusSandbox([check("ruff-§1", True)])
     s = score(monkeypatch, sb)
     assert s.value == 1 and s.metadata["corpus"] == "s" and s.metadata["violations"] == 0
-    execs = [e for e in sb.log if e[0] == "exec"]
-    (_, clear, _), (_, extract, _), (_, venv, venv_kw), (_, checks, checks_kw), (_, again, _), (_, venv2, _), (_, tests, kw) = execs
-    # All of /score goes first, so nothing the agent left there (a pytest.ini,
-    # a conftest.py) is in reach of the hidden tests.
-    assert clear == ["sh", "-c", "rm -rf /score && mkdir -p /score/hidden"]
-    assert sb.log[0] == ("exec", clear, {"timeout": 120})
-    # The start the agent may have rewritten is read, verified on the host and
-    # written back to a fresh path; the old /score/start and venv go first.
-    assert ("write", "/score/start.tar", START) in sb.log
-    assert extract[-1].startswith("rm -rf /score/start /score/venv && ")
-    assert "/score/start.tar" in extract[-1] and task.PROJECT_START not in extract[-1]
-    # The tools come from a venv built from the verified start, not the agent's .venv.
-    assert venv == ["uv", "sync", "--locked", "--no-install-project"]
-    assert venv_kw["cwd"] == "/score/start/backend" and venv_kw["env"]["UV_PROJECT_ENVIRONMENT"] == "/score/venv"
-    assert venv_kw["env"]["UV_OFFLINE"] == "1"
-    # checks.py runs before any of the agent's code has run as root since the
-    # verification; the hidden tests, which run it, come after, on a venv
-    # built afresh, with pytest's config pinned to the hidden directory.
+    lay_out = [("exec", CLEAR), ("write", "/score/start.tar"), ("exec", EXTRACT), ("exec", "uv")]
+    hidden = sorted(("write", f"/score/hidden/{f.name}") for f in (config.task_dir(TASK) / "hidden").glob("*.py"))
+    assert steps(sb.log) == [
+        # All of /score goes first, so nothing the agent left there is in reach.
+        ("exec", "rm -rf /score && mkdir -p /score/hidden"),
+        ("write", "/score/checks.py"),
+        # The start is read once, verified on the host, and laid out from
+        # those bytes, never from PROJECT_START in the sandbox.
+        ("read", task.PROJECT_START),
+        *lay_out,
+        ("exec", "python3"),
+        # checks.py ran the agent's code as root, so everything that code
+        # could reach is laid out again from the verified bytes, and the
+        # hidden tests are written only now, just before they run.
+        *lay_out,
+        *hidden,
+        ("exec", "/score/venv/bin/python"),
+    ]
+    assert all(e[2] == START for e in sb.log if e[0] == "write" and e[1] == "/score/start.tar")
+    execs = {e[1][0] if e[1][0] != "sh" else e[1][-1]: e for e in sb.log if e[0] == "exec"}
+    _, venv, venv_kw = execs["uv"]
+    assert venv == UV and venv_kw["cwd"] == "/score/start/backend"
+    assert venv_kw["env"]["UV_PROJECT_ENVIRONMENT"] == "/score/venv" and venv_kw["env"]["UV_OFFLINE"] == "1"
+    _, checks, checks_kw = execs["python3"]
     assert checks == ["python3", "-I", "/score/checks.py", "/score/start", task.PROJECT]
-    assert checks_kw["env"]["HOUSE_RULES_VENV"] == "/score/venv/bin"
-    assert again == ["sh", "-c", "rm -rf /score/venv"] and venv2 == venv
+    assert checks_kw["env"]["HOUSE_RULES_VENV"] == "/score/venv/bin" and checks_kw["timeout"] == task.CHECKS_TIMEOUT
+    _, tests, kw = execs["/score/venv/bin/python"]
     assert tests == HIDDEN_CMD
     assert kw["cwd"] == f"{task.PROJECT}/backend" and kw["env"]["UV_OFFLINE"] == "1"
-    writes = [e[1] for e in sb.log if e[0] == "write"]
-    assert {"/score/hidden/test_hidden.py", "/score/hidden/conftest.py", "/score/checks.py"} == set(writes[:3])
-    # Nothing reaches the sandbox before scoring writes it: after the clear, the writes come first.
-    assert [e[0] for e in sb.log][1:4] == ["write"] * 3
+
+
+def test_the_checks_timeout_covers_every_tool_checks_py_runs():
+    assert task.CHECKS_TIMEOUT >= checks_module().budget() + 60
 
 
 def test_a_venv_that_cant_be_rebuilt_fails_the_hidden_tests(monkeypatch):
@@ -348,6 +370,51 @@ def test_the_tools_run_on_the_starts_config_alone():
     source = (config.task_dir(TASK) / "checks.py").read_text()
     assert source.count('"--config", "pyproject.toml"') == 3  # both ruff runs and lint-imports
     assert '"-c", "pyproject.toml", "--rootdir", "."' in source
+
+
+def junit(tmp_path, failed=()):
+    """A junit report with every house-rule test, `failed` among them failing."""
+    cases = "".join(
+        f'<testcase name="{t}">' + ('<failure message="boom"/>' if t in failed else "") + "</testcase>"
+        for t in checks_module().TESTS
+    )
+    path = tmp_path / "junit.xml"
+    path.write_text(f'<testsuites><testsuite name="pytest">{cases}</testsuite></testsuites>')
+    return path
+
+
+def test_a_clean_report_from_a_failed_run_fails_every_house_rule_test(tmp_path):
+    checks = checks_module()
+    # pytest exited 1, yet the report shows no failure: the agent's code,
+    # which the run imported, could have rewritten it.
+    outcomes = checks.house_test_outcomes(1, junit(tmp_path), "1 failed")
+    assert set(outcomes) == set(checks.TESTS) and all(outcomes.values())
+    assert "doesn't match" in next(iter(outcomes.values()))
+
+
+def test_a_failing_report_from_a_clean_run_fails_every_house_rule_test(tmp_path):
+    checks = checks_module()
+    outcomes = checks.house_test_outcomes(0, junit(tmp_path, failed={"test_domain_is_pure"}), "")
+    assert all(outcomes.values())
+
+
+def test_a_missing_report_fails_every_house_rule_test(tmp_path):
+    checks = checks_module()
+    outcomes = checks.house_test_outcomes(0, tmp_path / "junit.xml", "")
+    assert set(outcomes) == set(checks.TESTS) and all(outcomes.values())
+
+
+def test_a_report_that_matches_its_run_is_read(tmp_path):
+    checks = checks_module()
+    assert not any(checks.house_test_outcomes(0, junit(tmp_path), "").values())
+    failing = checks.house_test_outcomes(1, junit(tmp_path, failed={"test_domain_is_pure"}), "1 failed")
+    assert [t for t, why in failing.items() if why] == ["test_domain_is_pure"]
+
+
+def test_pytest_is_never_imported_from_the_agents_directory():
+    source = (config.task_dir(TASK) / "checks.py").read_text()
+    assert '"-m", "pytest"' in source and source.count('"-P", "-m", "pytest"') == source.count('"-m", "pytest"')
+    assert meta()["score"][:4] == ["{venv}/python", "-P", "-m", "pytest"]
 
 
 def log(task_name, args):

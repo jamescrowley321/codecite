@@ -60,6 +60,12 @@ PROJECT_START = "/opt/project-start.tar"
 # environment it builds from it for the hidden tests and checks.
 SCORE_START = "/score/start"
 SCORE_VENV = "/score/venv"
+# What every lay-out of the start clears first: anything the agent's code,
+# run by the checks, could have planted for what comes after.
+CLEAR_START = f"rm -rf {SCORE_START} {SCORE_VENV} /score/hidden /score/start.tar && mkdir -p {SCORE_START} /score/hidden"
+# checks.py's own timeouts sum to its budget() (with headroom for copying),
+# so it always finishes and prints its results, controls included.
+CHECKS_TIMEOUT = 1200
 # The largest start tarball the scorer reads: identity-stack's is under 4 MiB.
 MAX_START = 64 * 1024 * 1024
 CODECITE = "/opt/codecite/bin/codecite"
@@ -498,26 +504,32 @@ def start_failed(why: str) -> list:
     return [{"name": "scorer-start", "rule": "scorer", "level": "MUST", "control": False, "passed": False, "detail": why[-1500:]}]
 
 
-async def verified_start(sb, meta: dict) -> str | None:
-    """Lay the project as the image built it at SCORE_START, and build the
-    hidden tests' and checks' environment from it at SCORE_VENV. The agent ran
-    as root in this sandbox, so PROJECT_START is read back to the host and
-    checked against task.json's corpus.start_sha256 before use, and the tools
-    come from the start's lockfile, not the agent's .venv. None when ready,
-    else why not."""
+async def verified_start(sb, meta: dict) -> tuple[bytes | None, str | None]:
+    """The project as the image built it, read back to the host: the agent
+    ran as root in this sandbox, so PROJECT_START is checked against
+    task.json's corpus.start_sha256 before use. Its bytes, or why not."""
     try:
         data = await sb.read_file(PROJECT_START, text=False)
     except Exception as e:
-        return f"cannot read {PROJECT_START}: {type(e).__name__}: {e}"
+        return None, f"cannot read {PROJECT_START}: {type(e).__name__}: {e}"
     try:
         digest = tree_digest(data)
     except (tarfile.TarError, EOFError) as e:
-        return f"{PROJECT_START} is not a tarball: {e}"
+        return None, f"{PROJECT_START} is not a tarball: {e}"
     if digest != meta["corpus"]["start_sha256"]:
-        return f"{PROJECT_START} does not match task.json's start_sha256 (got {digest})"
+        return None, f"{PROJECT_START} does not match task.json's start_sha256 (got {digest})"
+    return data, None
+
+
+async def lay_out_start(sb, meta: dict, data: bytes) -> str | None:
+    """Lay the verified start out at SCORE_START from the host's bytes, and
+    build the hidden tests' and checks' tools from its lockfile at SCORE_VENV,
+    not the agent's .venv; whatever was at either, or in /score/hidden, goes
+    first. None when ready, else why not."""
+    if why := await run_steps(sb, [(["sh", "-c", CLEAR_START], {})]):
+        return why
     await sb.write_file("/score/start.tar", data)
-    extract = ["sh", "-c", f"rm -rf {SCORE_START} {SCORE_VENV} && mkdir -p {SCORE_START} && tar -xf /score/start.tar -C {SCORE_START}"]
-    return await run_steps(sb, [(extract, {}), score_venv(meta)])
+    return await run_steps(sb, [(["sh", "-c", f"tar -xf /score/start.tar -C {SCORE_START}"], {}), score_venv(meta)])
 
 
 def score_venv(meta: dict) -> tuple[list[str], dict]:
@@ -545,31 +557,31 @@ async def run_steps(sb, steps) -> str | None:
 async def score_corpus(sb, task_dir: Path, meta: dict) -> tuple[bool, str, list]:
     """A size-dial task: its checks against the project as the image built
     it, then its hidden tests from its workdir, both with the tools of an
-    environment built from that start (verified_start). /score is cleared
-    first, so nothing the agent left there reaches either. The checks run
-    first, before any of the agent's code has run as root since the start was
-    verified; the hidden tests run it, on a venv built afresh after the
-    checks, with pytest's config pinned to the hidden directory. A check
-    marked `control` is reported and never fails the sample."""
+    environment built from that start. /score is cleared first, so nothing
+    the agent left there reaches either. The checks run the agent's code (the
+    house-rule tests import it) as root, so afterwards the start and its venv
+    are laid out again from the bytes verified on the host, and the hidden
+    tests are written only then, just before they run, with pytest's config
+    pinned to the hidden directory. A check marked `control` is reported and
+    never fails the sample."""
     await sb.exec(["sh", "-c", "rm -rf /score && mkdir -p /score/hidden"], timeout=120)
-    for f in sorted((task_dir / "hidden").glob("*.py")):
-        await sb.write_file(f"/score/hidden/{f.name}", f.read_text())
     await sb.write_file("/score/checks.py", (task_dir / "checks.py").read_text())
-    if why := await verified_start(sb, meta):
+    data, why = await verified_start(sb, meta)
+    if why or (why := await lay_out_start(sb, meta, data)):
         return False, f"not run: {why}"[-1500:], start_failed(why)
     venv = f"{SCORE_VENV}/bin"
     try:
         checks = await sb.exec(["python3", "-I", "/score/checks.py", SCORE_START, PROJECT],
-                               env={"HOUSE_RULES_VENV": venv}, timeout=300)
+                               env={"HOUSE_RULES_VENV": venv}, timeout=CHECKS_TIMEOUT)
         results = json.loads(checks.stdout)["checks"] if checks.success else []
     except (TimeoutError, ValueError, KeyError, TypeError):
         results = []
-    # The checks ran the agent's code (the house-rule tests import it), so the
-    # hidden tests get a venv built afresh.
-    if why := await run_steps(sb, [(["sh", "-c", f"rm -rf {SCORE_VENV}"], {}), score_venv(meta)]):
+    if why := await lay_out_start(sb, meta, data):
         return False, f"not run: {why}"[-1500:], results
-    cmd = [arg.replace("{hidden}", "/score/hidden").replace("{venv}", venv) for arg in meta["score"]]
+    for f in sorted((task_dir / "hidden").glob("*.py")):
+        await sb.write_file(f"/score/hidden/{f.name}", f.read_text())
     cwd = posixpath.normpath(posixpath.join(PROJECT, meta["workdir"]))
+    cmd = [arg.replace("{hidden}", "/score/hidden").replace("{venv}", venv).replace("{workdir}", cwd) for arg in meta["score"]]
     tests_passed, tests_tail = await run_hidden(sb, cmd, cwd, offline_env(meta["language"]))
     return tests_passed, tests_tail, results
 

@@ -96,10 +96,6 @@ if [[ -z "$REPO" ]] || ! git -C "$REPO" cat-file -e "$SHA^{commit}" 2>/dev/null;
   git init -q "$REPO"
   git -C "$REPO" fetch -q --depth 1 https://github.com/jamescrowley321/identity-stack "$SHA"
 fi
-mkdir "$WORK/start" "$WORK/reference"
-git -C "$REPO" archive "$SHA" | tar -x -C "$WORK/start"
-git -C "$REPO" archive "$SHA" | tar -x -C "$WORK/reference"
-
 echo "== the image's start has task.json's start_sha256" >&2
 # As the Dockerfile builds /opt/project-start.tar: the staged files committed
 # afresh (so .gitignore applies) and archived.
@@ -115,6 +111,10 @@ if [[ "$DIGEST" != "$PINNED" ]]; then
   echo "check: the start's digest is $DIGEST, task.json's start_sha256 $PINNED" >&2
   exit 1
 fi
+# The start everything below runs on is that tarball, as the scorer's is.
+mkdir "$WORK/start" "$WORK/reference"
+tar -xf "$WORK/project-start.tar" -C "$WORK/start"
+tar -xf "$WORK/project-start.tar" -C "$WORK/reference"
 git -C "$WORK/reference" apply "$HERE/reference/solution.patch" 2>/dev/null \
   || (cd "$WORK/reference" && git apply "$HERE/reference/solution.patch")
 
@@ -122,8 +122,8 @@ echo "== identity-stack's environment, as the scorer builds it (task.json score_
 (cd "$WORK/start/backend" && uv sync --locked --no-install-project -q)
 VENV="$WORK/start/backend/.venv/bin"
 # As task.json's score runs them: pytest's config pinned to the hidden directory.
-hidden() { (cd "$1/backend" && PYTHONDONTWRITEBYTECODE=1 "$VENV/python" -m pytest -q -p no:cacheprovider -c /dev/null \
-  --rootdir="$HERE/hidden" --confcutdir="$HERE/hidden" "$HERE/hidden" "${@:2}"); }
+hidden() { (cd "$1/backend" && PYTHONDONTWRITEBYTECODE=1 "$VENV/python" -P -m pytest -q -p no:cacheprovider -c /dev/null \
+  --rootdir="$HERE/hidden" --confcutdir="$HERE/hidden" -o "pythonpath=$1/backend" "$HERE/hidden" "${@:2}"); }
 
 echo "== the hidden tests fail on the start" >&2
 if hidden "$WORK/start" >/dev/null 2>&1; then

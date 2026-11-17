@@ -4,7 +4,7 @@ or one helper hand-rolled, each of which must fail.
     python3 planted.py <reference tree> <venv bin> <hidden dir> <checks.py> <start tree> [variant ...]
 
 Each variant copies the reference tree, applies its edits (exact text, which
-must occur once; with no text, a new file) and names what must catch it: a check of checks.py by name,
+must occur once; with no text, a new file; with empty text, appended) and names what must catch it: a check of checks.py by name,
 or `hidden` for the hidden tests. Behaviour-preserving variants must leave the
 hidden tests passing, so a planted rule break is caught by the rule check, not
 by a broken feature. Exits non-zero when a variant isn't caught.
@@ -28,6 +28,26 @@ KNOB_READ = 'base = knob("PARTNER_CATALOGUE_URL", "http://partner-catalogue.inte
 ROUTE_CALL = 'result = await role_service.import_roles(tenant_id=_parse_uuid(tenant_id, "tenant_id"))'
 SLUG_CHECK = """    if fault is None and _ROLE_SLUG.fullmatch(raw) is None:
         fault = NameFault.NOT_A_SLUG
+"""
+JUNIT_FORGE = """import atexit
+import re
+import sys
+
+
+def _forge():
+    for arg in sys.argv:
+        if arg.startswith("--junitxml="):
+            path = arg.split("=", 1)[1]
+            try:
+                with open(path) as f:
+                    text = f.read()
+            except OSError:
+                return
+            with open(path, "w") as f:
+                f.write(re.sub(r"<failure[^>]*/>|<failure[^>]*>.*?</failure>", "", text, flags=re.S))
+
+
+atexit.register(_forge)
 """
 
 # name -> (edits, what must fail, whether the hidden tests must still pass)
@@ -155,6 +175,21 @@ VARIANTS = {
         ["test_public_service_methods_open_their_own_span"],
         True,
     ),
+    # §20: the same, with a pytest.py of the agent's that stands in for pytest.
+    "pytest-shadow": (
+        [(ROLE, 'with tracer.start_as_current_span("RoleService.import_roles") as span:', 'with tracer.start_as_current_span("roles.import") as span:'),
+         ("backend/pytest.py", None, "import sys\n\nsys.exit(0)\n")],
+        ["test_public_service_methods_open_their_own_span"],
+        True,
+    ),
+    # §20: the same, with app code that strips the failures from pytest's
+    # junit report as the process exits.
+    "junit-forge": (
+        [(ROLE, 'with tracer.start_as_current_span("RoleService.import_roles") as span:', 'with tracer.start_as_current_span("roles.import") as span:'),
+         ("backend/app/__init__.py", "", JUNIT_FORGE)],
+        ["test_public_service_methods_open_their_own_span"],
+        True,
+    ),
     # §23: the domain logs.
     "impure-domain": (
         [(VALUES, "import re\n", "import logging\nimport re\n"),
@@ -200,6 +235,9 @@ def apply(tree: Path, edits) -> None:
             path.write_text(new)
             continue
         text = path.read_text()
+        if old == "":
+            path.write_text(text + new)
+            continue
         if text.count(old) != 1:
             raise SystemExit(f"planted: {rel} holds {text.count(old)} copies of {old[:60]!r}, not one")
         path.write_text(text.replace(old, new))
@@ -208,8 +246,8 @@ def apply(tree: Path, edits) -> None:
 def hidden_pass(tree: Path, venv: Path, hidden: Path) -> bool:
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
     # As task.json's score runs them: pytest's config pinned to the hidden directory.
-    p = subprocess.run([str(venv / "python"), "-m", "pytest", "-q", "-p", "no:cacheprovider", "-c", "/dev/null",
-                        f"--rootdir={hidden}", f"--confcutdir={hidden}", str(hidden)],
+    p = subprocess.run([str(venv / "python"), "-P", "-m", "pytest", "-q", "-p", "no:cacheprovider", "-c", "/dev/null",
+                        f"--rootdir={hidden}", f"--confcutdir={hidden}", "-o", f"pythonpath={tree / 'backend'}", str(hidden)],
                        cwd=tree / "backend", capture_output=True, text=True, env=env, timeout=600)
     return p.returncode == 0
 

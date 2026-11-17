@@ -112,6 +112,37 @@ def check(results, name, rule, passed, detail="", control=False):
     )
 
 
+# Each tool's timeout, in seconds. The scorer's own timeout on checks.py
+# (task.py CHECKS_TIMEOUT) covers their sum, budget(), so checks.py always
+# finishes and prints its results: a slow control can't lose the gated ones.
+TIMEOUTS = {"ruff": 120, "lint-imports": 120, "house-tests": 300, "control-ruff": 60, "unit-tests": 180}
+CONTROL_RUFF_RUNS = 4
+
+
+def budget() -> int:
+    """The longest checks.py's tools can take, all timing out."""
+    return sum(TIMEOUTS.values()) + (CONTROL_RUFF_RUNS - 1) * TIMEOUTS["control-ruff"]
+
+
+def house_test_outcomes(code: int, junit: Path, out: str) -> dict[str, str | None]:
+    """Each house-rule test's failure, or None when it passed, from pytest's
+    junit report. The run imported the agent's code, which could rewrite the
+    report, so a report that doesn't agree with pytest's exit status (failures
+    in a clean run, none in a failed one), or is missing, fails every test."""
+    cases = {}
+    try:
+        for case in ET.parse(junit).iter("testcase"):
+            failure = case.find("failure")
+            if failure is None:
+                failure = case.find("error")
+            cases[case.get("name")] = None if failure is None else (failure.get("message") or "failed")[:600]
+    except (OSError, ET.ParseError):
+        return {test: f"no report: {out[-800:]}" for test in TESTS}
+    if (code == 0) != (not any(cases.values())):
+        return {test: f"the report doesn't match pytest's exit {code}: {out[-800:]}" for test in TESTS}
+    return {test: cases[test] if test in cases else f"did not run: {out[-800:]}" for test in TESTS}
+
+
 def run(cmd, cwd, timeout=300):
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "UV_OFFLINE": "1"}
     try:
@@ -259,7 +290,7 @@ def tool_checks(results, start: Path, project: Path, venv: Path, changed: dict[s
         # Ruff's house bans (§1, §4, §7) and lazy log calls (§8), over all of
         # app/; a `# noqa` doesn't excuse them.
         code, out, err = run([str(venv / "ruff"), "check", "--no-cache", "--select", "TID251,G004,G010", "--ignore-noqa",
-                              "--config", "pyproject.toml", "--output-format", "json", "app"], backend)
+                              "--config", "pyproject.toml", "--output-format", "json", "app"], backend, TIMEOUTS["ruff"])
         try:
             found = json.loads(out or "[]")
         except ValueError:
@@ -282,32 +313,24 @@ def tool_checks(results, start: Path, project: Path, venv: Path, changed: dict[s
                 check(results, f"ruff-{rule}", rule, not hits, "; ".join(hits))
 
         # import-linter's contracts (§22, §23, §26, §27).
-        code, out, err = run([str(venv / "lint-imports"), "--no-cache", "--config", "pyproject.toml"], backend)
+        code, out, err = run([str(venv / "lint-imports"), "--no-cache", "--config", "pyproject.toml"], backend, TIMEOUTS["lint-imports"])
         for contract, rule in CONTRACTS.items():
             m = re.search(re.escape(contract) + r"\s+(KEPT|BROKEN)", out)
             check(results, f"import-linter-{rule}", rule, bool(m and m.group(1) == "KEPT"),
                   "" if m and m.group(1) == "KEPT" else (out + err)[-1500:])
 
-        # identity-stack's own house-rule tests, as the start had them.
+        # identity-stack's own house-rule tests, as the start had them. `-P`
+        # keeps the backend directory off sys.path until pytest is imported,
+        # so an agent's pytest.py can't stand in for pytest.
         junit = work / "junit.xml"
         code, out, err = run(
-            [str(venv / "python"), "-m", "pytest", "-q", "-p", "no:cacheprovider", "-c", "pyproject.toml", "--rootdir", ".",
-             f"--junitxml={junit}",
+            [str(venv / "python"), "-P", "-m", "pytest", "-q", "-p", "no:cacheprovider", "-c", "pyproject.toml", "--rootdir", ".",
+             "-o", f"pythonpath={backend}", f"--junitxml={junit}",
              "tests/unit/test_house_rules.py", "tests/unit/test_router_authorization.py"],
-            backend,
+            backend, TIMEOUTS["house-tests"],
         )
-        outcomes = {}
-        if junit.exists():
-            for case in ET.parse(junit).iter("testcase"):
-                failure = case.find("failure")
-                if failure is None:
-                    failure = case.find("error")
-                outcomes[case.get("name")] = None if failure is None else (failure.get("message") or "")[:600]
-        for test, rule in TESTS.items():
-            if test not in outcomes:
-                check(results, test, rule, False, f"did not run: {(out + err)[-800:]}")
-            else:
-                check(results, test, rule, outcomes[test] is None, outcomes[test] or "")
+        for test, why in house_test_outcomes(code, junit, out + err).items():
+            check(results, test, TESTS[test], why is None, why or "")
 
         # Controls: best practice either arm should keep, reported apart.
         files = [str(Path(p).relative_to("backend")) for p in changed if (backend / Path(p).relative_to("backend")).exists()]
@@ -317,7 +340,7 @@ def tool_checks(results, start: Path, project: Path, venv: Path, changed: dict[s
                 check(results, name, "control", True, control=True)
                 continue
             code, out, err = run([str(venv / "ruff"), "check", "--no-cache", "--select", select, "--config", "pyproject.toml",
-                                  "--output-format", "concise", *files], backend)
+                                  "--output-format", "concise", *files], backend, TIMEOUTS["control-ruff"])
             check(results, name, "control", code == 0, (out + err)[-800:] if code else "", control=True)
     finally:
         shutil.rmtree(work, ignore_errors=True)
@@ -327,8 +350,9 @@ def tool_checks(results, start: Path, project: Path, venv: Path, changed: dict[s
     if os.environ.get("HOUSE_RULES_SKIP_UNIT") == "1":
         return
     code, out, err = run(
-        [str(venv / "python"), "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider", "tests/unit", "--ignore=tests/unit/repositories"],
-        project / "backend",
+        [str(venv / "python"), "-P", "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider", "-o", f"pythonpath={project / 'backend'}",
+         "tests/unit", "--ignore=tests/unit/repositories"],
+        project / "backend", TIMEOUTS["unit-tests"],
     )
     check(results, "control-unit-tests", "control", code == 0, "" if code == 0 else (out + err)[-1200:], control=True)
 

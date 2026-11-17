@@ -183,14 +183,22 @@ p95 guardrail of 150 ms.
   pin), and runs the hidden tests and checks with tools from a fresh
   environment built offline from that start's lockfile (`score_setup`), not
   the agent's `.venv`. A mismatch fails the sample as `scorer-start`. All of
-  `/score` is cleared before the scorer writes into it, the checks run before
-  the hidden tests (so before the agent's code runs again), the hidden tests
-  get a venv built afresh after them, and their pytest config is pinned to
-  the hidden directory (`-c /dev/null`, `--rootdir`, `--confcutdir`). What
-  stays open is an agent that rewrites the system tools themselves (`uv`'s
-  cache, `python3`, `tar`) or leaves a process running to tamper after it
-  exits; nothing short of scoring in a second container closes that.
-  `planted.sh` plants twenty-one rule breaks and
+  `/score` is cleared before the scorer writes into it. The checks run the
+  agent's code as root (the house-rule tests import it), so after them the
+  start and its venv are laid out again from the bytes verified on the host,
+  and the hidden tests are written only then, just before they run, with
+  pytest's config pinned to the hidden directory (`-c /dev/null`,
+  `--rootdir`, `--confcutdir`). Every pytest run starts with `python -P`, so
+  a `pytest.py` the agent leaves can't stand in for pytest, and a house-rule
+  test report that disagrees with pytest's exit status fails every
+  house-rule test. Each tool in `checks.py` has its own timeout, and the
+  scorer's timeout on `checks.py` covers their sum, so a slow control can't
+  lose the gated results. What stays open is an agent that rewrites the
+  system tools themselves (`uv`'s cache, `python3`, `tar`), leaves a process
+  running to tamper after it exits, or has the code the house-rule tests
+  import forge both pytest's exit status and its report; nothing short of
+  scoring in a second container closes that.
+  `planted.sh` plants twenty-three rule breaks and
   hand-rolled helpers on the reference (`reference/solution.patch`) and shows
   each caught. `probe.toml` holds the memorization probe: three questions
   only the rule layer answers, for a model asked with no files; no runner
