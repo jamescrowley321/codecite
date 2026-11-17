@@ -19,10 +19,15 @@ mod corpora;
 pub use corpora::{Corpora, CorpusInfo, corpora};
 
 mod definition;
-pub use definition::{Definition, Definitions};
+pub use definition::{Definition, Definitions, symbol_name};
 
 mod diff;
 pub use diff::{DiffOptions, DiffResult, VersionChange};
+
+mod graph;
+pub use graph::{
+    Direction, Graph, GraphNode, GraphQuery, MAX_CONFIDENCE, MAX_GRAPH_DEPTH, Reference, References,
+};
 
 mod grep;
 pub use grep::{GrepMatch, GrepQuery, GrepResults};
@@ -35,6 +40,11 @@ pub use read::{
 
 mod requirements;
 pub use requirements::{Requirement, RequirementSection, Requirements, RequirementsOptions};
+
+mod scip;
+pub use scip::{
+    ROLE_DEFINITION, SCIP_CONFIDENCE, ScipDefinition, ScipDocument, ScipOccurrence, ScipSummary,
+};
 
 mod search;
 pub use search::{
@@ -58,6 +68,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0007_heading_anchors.sql"),
     include_str!("../migrations/0008_refill_fts.sql"),
     include_str!("../migrations/0009_one_ranking.sql"),
+    include_str!("../migrations/0010_scip.sql"),
 ];
 
 /// Writes a row into the full-text `table` for every stored chunk that
@@ -434,6 +445,7 @@ mod tests {
             "chunk_fts",
             "symbol",
             "edge",
+            "occurrence",
         ] {
             assert!(tables.iter().any(|t| t == want), "missing table {want}");
         }
@@ -1148,6 +1160,53 @@ mod tests {
             .err()
             .unwrap();
         assert!(matches!(err, Error::UnknownCorpus { .. }), "{err:?}");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn version_10_keeps_symbols_as_tree_sitter_ones() {
+        let dir = scratch("v9");
+        let path = dir.join("corpus.db");
+        raw(&path)
+            .execute_batch(&format!(
+                "{}
+                 INSERT INTO meta (key, value) VALUES ('schema_version', '9');
+                 INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
+                   VALUES (1, 'app', 'local', '/app', 'abc', 'adapt', 'then');
+                 INSERT INTO document (id, source_id, path, language, content_hash, text)
+                   VALUES (1, 1, 'src/lib.rs', 'rust', x'01', 'fn a() {{}}');
+                 INSERT INTO symbol (id, display_name, kind, document_id, start_line, end_line)
+                   VALUES ('codecite . app . src/`lib.rs`/a().', 'a', 'function', 1, 1, 1);",
+                MIGRATIONS[..9].join("\n")
+            ))
+            .unwrap();
+
+        let store = Store::open_read_write(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+        let (provider, local_id): (String, Option<String>) = store
+            .conn
+            .query_row("SELECT provider, local_id FROM symbol", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .unwrap();
+        assert_eq!((provider.as_str(), local_id), ("treesitter", None));
+        // A document's occurrences go with it.
+        store
+            .conn
+            .execute_batch(
+                "PRAGMA foreign_keys = ON;
+                 INSERT INTO occurrence (symbol_id, document_id, start_line, end_line, roles,
+                                         provider, confidence)
+                   VALUES ('s', 1, 1, 1, 8, 'scip', 3);
+                 DELETE FROM document;",
+            )
+            .unwrap();
+        let left: i64 = store
+            .conn
+            .query_row("SELECT count(*) FROM occurrence", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(left, 0);
+        drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }
 

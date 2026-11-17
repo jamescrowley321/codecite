@@ -1,6 +1,7 @@
 //! The `codecite` command-line tool.
 
 mod assist;
+mod graph;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -363,6 +364,19 @@ Output: JSON, one entry per corpus with its age, size, source count and stalenes
 Output: JSON, one entry per corpus with its age, size, source count and staleness."
     )]
     Corpora,
+    /// Print every line that references a symbol, from a SCIP index, cited.
+    #[command(
+        after_help = graph::REFS_OUTPUT,
+        after_long_help = graph::REFS_HELP
+    )]
+    Refs(graph::RefsArgs),
+    /// Walk the call graph from a symbol: its callers or its callees.
+    #[command(
+        subcommand,
+        after_help = graph::GRAPH_OUTPUT,
+        after_long_help = graph::GRAPH_HELP
+    )]
+    Graph(graph::GraphCommand),
     /// Run the MCP server on stdin and stdout.
     #[command(after_long_help = "Examples:
   codecite mcp
@@ -520,6 +534,8 @@ fn main() -> anyhow::Result<()> {
             };
             requirements(&corpus, &target, &options, json)
         }
+        Command::Refs(args) => graph::refs(&args),
+        Command::Graph(walk) => graph::walk(&walk),
         Command::Corpora => corpora(),
         Command::Mcp => mcp(),
     }
@@ -1341,7 +1357,10 @@ mod tests {
                 assert!(!long.contains("Output:"), "`{}`: {long}", sub.get_name());
             }
         }
-        assert_eq!(with_output, ["search", "grep", "def", "read", "corpora"]);
+        assert_eq!(
+            with_output,
+            ["search", "grep", "def", "read", "corpora", "refs", "graph"]
+        );
     }
 
     #[test]

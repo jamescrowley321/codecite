@@ -511,6 +511,7 @@ mod tests {
             license_class: LicenseClass::ApproachOnly,
             include: Vec::new(),
             exclude: Vec::new(),
+            scip: None,
         }
     }
 

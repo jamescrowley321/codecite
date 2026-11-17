@@ -98,6 +98,17 @@ pub enum Error {
         actual: String,
     },
 
+    /// A source's SCIP index couldn't be read or decoded.
+    #[error("source `{name}`: can't read the SCIP index {}", path.display())]
+    Scip {
+        /// The source's name.
+        name: String,
+        /// The index the manifest names.
+        path: std::path::PathBuf,
+        /// Why reading it failed.
+        source: crate::ScipError,
+    },
+
     /// A manifest names another corpus than the one asked for.
     #[error("manifest {} is for corpus `{found}`, not `{expected}`", path.display())]
     WrongCorpus {

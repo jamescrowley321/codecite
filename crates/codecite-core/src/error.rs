@@ -236,6 +236,31 @@ pub enum Error {
         candidates: Vec<String>,
     },
 
+    /// A name the graph tools were asked about names several symbols.
+    #[error(
+        "`{}` names {} symbols; pass one of their IDs: {}",
+        escape_controls(symbol),
+        candidates.len(),
+        list_of("candidates", candidates)
+    )]
+    AmbiguousSymbol {
+        /// The symbol as asked for.
+        symbol: String,
+        /// The SCIP symbol IDs it names, sorted.
+        candidates: Vec<String>,
+    },
+
+    /// The symbol's definition has no graph: no SCIP index covers it.
+    #[error(
+        "no SCIP index covers `{}`, so codecite has no references or calls for it; \
+         name a SCIP index with `scip` on its source in the manifest and index again",
+        escape_controls(symbol)
+    )]
+    NoGraph {
+        /// The symbol as asked for.
+        symbol: String,
+    },
+
     /// A search of the document for the topic found no section.
     #[error(
         "{document} has no section on {:?}; try other words, or pass a section citation",
@@ -285,6 +310,8 @@ impl Error {
             Error::NoSuchStep { .. } => "no_such_step",
             Error::NoSuchFile { .. } => "no_such_file",
             Error::NoSuchSymbol { .. } => "no_such_symbol",
+            Error::AmbiguousSymbol { .. } => "ambiguous_symbol",
+            Error::NoGraph { .. } => "no_graph",
             Error::NoSectionOnTopic { .. } => "no_section_on_topic",
             Error::LinesPastEnd { .. } => "lines_past_end",
         }
@@ -304,7 +331,8 @@ impl Error {
             | Error::NoSuchAnchor { candidates, .. }
             | Error::NoSuchStep { candidates, .. }
             | Error::NoSuchFile { candidates, .. }
-            | Error::NoSuchSymbol { candidates, .. } => candidates,
+            | Error::NoSuchSymbol { candidates, .. }
+            | Error::AmbiguousSymbol { candidates, .. } => candidates,
             _ => &[],
         }
     }
@@ -577,6 +605,21 @@ mod tests {
             err.to_string(),
             "the corpus defines no symbol `callBack`; did you mean: callback"
         );
+        let err = Error::AmbiguousSymbol {
+            symbol: "new".into(),
+            candidates: vec!["a/A#new().".into(), "a/B#new().".into()],
+        };
+        assert_eq!(err.kind(), "ambiguous_symbol");
+        assert_eq!(err.candidates(), ["a/A#new().", "a/B#new()."]);
+        assert_eq!(
+            err.to_string(),
+            "`new` names 2 symbols; pass one of their IDs: candidates: a/A#new()., a/B#new()."
+        );
+        let err = Error::NoGraph {
+            symbol: "check".into(),
+        };
+        assert_eq!(err.kind(), "no_graph");
+        assert!(err.to_string().starts_with("no SCIP index covers `check`"));
         let err = Error::NoSuchSymbol {
             symbol: "nope\u{1b}".into(),
             candidates: vec![],

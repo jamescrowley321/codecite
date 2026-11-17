@@ -9,13 +9,20 @@ use super::Store;
 use super::search::{MAX_SEARCH_LIMIT, code_citation, name_key, snippet};
 use crate::{Error, Result, Role};
 
-/// The providers a definition comes from. Only tree-sitter writes symbols
-/// so far.
-const PROVIDERS: [&str; 1] = ["treesitter"];
-
 /// How sure a tree-sitter definition is: extracted (2) on the confidence
 /// ladder, below an exact SCIP one (3).
 const TREESITTER_CONFIDENCE: u8 = 2;
+
+/// The providers that found a definition and how sure they are, from its
+/// symbol's `provider` and `local_id`: a SCIP ID that replaced a tree-sitter
+/// one was found by both.
+pub(super) fn provenance(provider: &str, local_id: Option<&str>) -> (Vec<&'static str>, u8) {
+    match (provider, local_id) {
+        ("scip", Some(_)) => (vec!["scip", "treesitter"], super::scip::SCIP_CONFIDENCE),
+        ("scip", None) => (vec!["scip"], super::scip::SCIP_CONFIDENCE),
+        _ => (vec!["treesitter"], TREESITTER_CONFIDENCE),
+    }
+}
 
 /// The most names a [`Error::NoSuchSymbol`] suggests.
 const MAX_CANDIDATES: usize = 5;
@@ -64,7 +71,8 @@ pub struct Definition {
     /// Whether the snippet stops before the end of the definition. The
     /// citation still names all of it.
     pub snippet_truncated: bool,
-    /// The providers that found the definition: `treesitter`.
+    /// The providers that found the definition: `treesitter`, and `scip`
+    /// when a SCIP index gave it its ID.
     pub providers: Vec<&'static str>,
     /// How sure they are: 3 exact, 2 extracted, 1 inferred, 0 ambiguous.
     pub confidence: u8,
@@ -153,6 +161,9 @@ impl Store {
             let text: String = row.get(11)?;
             let role = Role::of(&path, &source_kind);
             let (snippet, snippet_truncated) = snippet(&text);
+            let provider: String = row.get(13)?;
+            let local_id: Option<String> = row.get(14)?;
+            let (providers, confidence) = provenance(&provider, local_id.as_deref());
             let definition = Definition {
                 citation: code_citation(&source, &revision, &path, row.get(2)?, row.get(3)?),
                 symbol: row.get(12)?,
@@ -163,8 +174,8 @@ impl Store {
                 dirty: row.get(5)?,
                 snippet,
                 snippet_truncated,
-                providers: PROVIDERS.to_vec(),
-                confidence: TREESITTER_CONFIDENCE,
+                providers,
+                confidence,
             };
             Ok(Found {
                 role,
@@ -177,7 +188,7 @@ impl Store {
 
     /// The defined names that differ from `name` only in case, `_` or `-`,
     /// sorted. Only an error asks, so a scan of the symbols is fine here.
-    fn similar_names(&self, name: &str) -> Result<Vec<String>> {
+    pub(super) fn similar_names(&self, name: &str) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT DISTINCT display_name FROM symbol
              WHERE codecite_name_key(display_name) = ?1 ORDER BY display_name LIMIT ?2",
@@ -192,7 +203,7 @@ impl Store {
 /// chunk's, which the index run wrote with it.
 const DEFINITIONS: &str = "SELECT sym.id, coalesce(sym.kind, c.kind), c.start_line, c.end_line,
        d.path, d.dirty, s.name, s.kind, s.revision, s.license_class, s.indexed_at, c.text,
-       sym.display_name
+       sym.display_name, sym.provider, sym.local_id
      FROM symbol sym
      JOIN chunk c ON c.symbol_id = sym.id
      JOIN document d ON d.id = sym.document_id
@@ -201,7 +212,7 @@ const DEFINITIONS: &str = "SELECT sym.id, coalesce(sym.kind, c.kind), c.start_li
 
 /// Where a role's definitions come in the results: the code an agent is
 /// asked to use first, then what describes it, then what exercises it.
-fn rank(role: Role) -> u8 {
+pub(super) fn rank(role: Role) -> u8 {
     match role {
         Role::Source => 0,
         Role::Docs => 1,
@@ -213,39 +224,71 @@ fn rank(role: Role) -> u8 {
 
 /// The names of a dotted symbol such as `Client.callback`, outermost
 /// first, or `None` when it has no dot or an empty name between dots.
-fn qualified(symbol: &str) -> Option<Vec<&str>> {
+pub(super) fn qualified(symbol: &str) -> Option<Vec<&str>> {
     let parts: Vec<&str> = symbol.split('.').collect();
     (parts.len() > 1 && parts.iter().all(|p| !p.is_empty())).then_some(parts)
 }
 
 /// The names a symbol ID's descriptors give inside its file, outermost
 /// first: `["Client", "callback"]` for
-/// ``codecite . app . src/`client.rs`/Client#callback().``. The path's
-/// segments are left out. `None` when the ID is not in the form an index
-/// run writes.
-fn names_in_file(id: &str) -> Option<Vec<String>> {
-    let rest = id.strip_prefix("codecite . ")?;
-    // The source's name doubles its spaces, so a single space ends it.
-    let mut chars = rest.char_indices().peekable();
-    let end = loop {
-        let (i, c) = chars.next()?;
-        if c == ' ' {
-            if chars.peek().is_some_and(|&(_, c)| c == ' ') {
-                chars.next();
-            } else {
-                break i;
-            }
+/// ``codecite . app . src/`client.rs`/Client#callback().``, and
+/// `["impl", "Client", "validate"]` for rust-analyzer's
+/// ``rust-analyzer cargo app 0.1.0 client/impl#[Client]validate().``.
+/// Namespaces (a path segment, a module) and parameters are left out; a
+/// type parameter's name counts, since rust-analyzer names an `impl` block
+/// by its type that way. `None` when the ID is neither the form an index
+/// run writes nor a global SCIP symbol.
+pub(super) fn names_in_file(id: &str) -> Option<Vec<String>> {
+    descriptor_names(id, false)
+}
+
+/// The name a SCIP symbol's last descriptor gives, namespaces included:
+/// `validate` for ``… client/impl#[Client]validate().``, `client` for
+/// ``… client/``. `None` for a local symbol or one that isn't a SCIP
+/// symbol string.
+pub fn symbol_name(id: &str) -> Option<String> {
+    descriptor_names(id, true)?.pop()
+}
+
+/// The names a symbol ID's descriptors give, outermost first, with or
+/// without its namespaces' names.
+fn descriptor_names(id: &str, namespaces: bool) -> Option<Vec<String>> {
+    let mut descriptors = if let Some(rest) = id.strip_prefix("codecite . ") {
+        // The source's name doubles its spaces, so a single space ends it.
+        let end = field_end(rest)?;
+        rest[end..].strip_prefix(" . ")?
+    } else {
+        // `<scheme> <manager> <package> <version> <descriptors>`; a local
+        // symbol has none.
+        if id.starts_with("local ") {
+            return None;
         }
+        let mut rest = id;
+        for _ in 0..4 {
+            let end = field_end(rest)?;
+            rest = &rest[end + 1..];
+        }
+        rest
     };
-    let mut descriptors = rest[end..].strip_prefix(" . ")?;
     let mut names = Vec::new();
     while !descriptors.is_empty() {
+        if let Some(rest) = descriptors.strip_prefix('[') {
+            let (name, after) = descriptor_name(rest)?;
+            names.push(name);
+            descriptors = after.strip_prefix(']')?;
+            continue;
+        }
+        if let Some(rest) = descriptors.strip_prefix('(') {
+            let (_, after) = descriptor_name(rest)?;
+            descriptors = after.strip_prefix(')')?;
+            continue;
+        }
         let (name, after) = descriptor_name(descriptors)?;
-        // `/` ends a path segment, `#` a type, `.` a term and `().` or
-        // `(+1).` a function.
+        // `/` ends a path segment or namespace, `#` a type, `.` a term,
+        // `:` a meta, `!` a macro, and `().` or `(+1).` a method.
         let (suffix, in_file) = match after.chars().next()? {
-            '/' => (1, false),
-            '#' | '.' => (1, true),
+            '/' => (1, namespaces),
+            '#' | '.' | ':' | '!' => (1, true),
             '(' => (after.find(").")? + 2, true),
             _ => return None,
         };
@@ -255,6 +298,22 @@ fn names_in_file(id: &str) -> Option<Vec<String>> {
         descriptors = &after[suffix..];
     }
     Some(names)
+}
+
+/// Where the first field of a SCIP symbol ends: its first single space,
+/// since a space inside a field is written twice.
+fn field_end(text: &str) -> Option<usize> {
+    let mut chars = text.char_indices().peekable();
+    loop {
+        let (i, c) = chars.next()?;
+        if c == ' ' {
+            if chars.peek().is_some_and(|&(_, c)| c == ' ') {
+                chars.next();
+            } else {
+                return Some(i);
+            }
+        }
+    }
 }
 
 /// The name at the start of `text`, bare or in backticks with any backtick
@@ -601,10 +660,33 @@ mod tests {
             names("codecite . app . `main.py`/outer().inner().LIMIT."),
             Some(vec!["outer".into(), "inner".into(), "LIMIT".into()])
         );
+        assert_eq!(
+            names("rust-analyzer cargo app 0.1.0 client/impl#[Client]validate()."),
+            Some(vec!["impl".into(), "Client".into(), "validate".into()])
+        );
+        assert_eq!(
+            names("scip-python python my  pkg 1.0 `app.client`/Client#run().(self)"),
+            Some(vec!["Client".into(), "run".into()])
+        );
+        assert_eq!(
+            names("scip-typescript npm . . src/`util.ts`/debug!"),
+            Some(vec!["debug".into()])
+        );
+        assert_eq!(
+            symbol_name("rust-analyzer cargo app 0.1.0 client/"),
+            Some("client".into())
+        );
+        assert_eq!(
+            symbol_name("rust-analyzer cargo app 0.1.0 client/impl#[Client]validate()."),
+            Some("validate".into())
+        );
+        assert_eq!(symbol_name("local 3"), None);
         for bad in [
-            "scip . app . a/b#",
+            "scip . app",
             "codecite . app",
-            "codecite . app . a/b!",
+            "codecite . app . a/b",
+            "local 1",
+            "rust-analyzer cargo app 0.1.0 a/b[T",
         ] {
             assert_eq!(names(bad), None, "{bad}");
         }

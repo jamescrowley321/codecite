@@ -39,12 +39,14 @@ mod store;
 pub use store::{
     ChunkRecord, CiteOptions, CiteResult, Context, ContextQuery, ContextTarget, Corpora,
     CorpusInfo, DEFAULT_MAX_AGE_DAYS, DEFAULT_MAX_LINES, DEFAULT_SEARCH_LIMIT, Definition,
-    Definitions, DiffOptions, DiffResult, DocumentRecord, Finding, Freshness, GrepMatch, GrepQuery,
-    GrepResults, MAX_CONTEXT_BYTES, MAX_READ_BYTES, MAX_READ_LINES, MAX_SEARCH_LIMIT,
-    MAX_SNIPPET_BYTES, MAX_SNIPPET_LINES, QUOTE_INSTRUCTION, QUOTE_TRUNCATED_INSTRUCTION,
-    ReadOptions, ReadResult, Requirement, RequirementSection, Requirements, RequirementsOptions,
-    Rule, RuleScope, SCHEMA_VERSION, Scope, SearchQuery, SearchResult, SearchResults, SourceRecord,
-    Store, SymbolRecord, VersionChange, corpora, is_corpus_name,
+    Definitions, DiffOptions, DiffResult, Direction, DocumentRecord, Finding, Freshness, Graph,
+    GraphNode, GraphQuery, GrepMatch, GrepQuery, GrepResults, MAX_CONFIDENCE, MAX_CONTEXT_BYTES,
+    MAX_GRAPH_DEPTH, MAX_READ_BYTES, MAX_READ_LINES, MAX_SEARCH_LIMIT, MAX_SNIPPET_BYTES,
+    MAX_SNIPPET_LINES, QUOTE_INSTRUCTION, QUOTE_TRUNCATED_INSTRUCTION, ROLE_DEFINITION,
+    ReadOptions, ReadResult, Reference, References, Requirement, RequirementSection, Requirements,
+    RequirementsOptions, Rule, RuleScope, SCHEMA_VERSION, SCIP_CONFIDENCE, ScipDefinition,
+    ScipDocument, ScipOccurrence, ScipSummary, Scope, SearchQuery, SearchResult, SearchResults,
+    SourceRecord, Store, SymbolRecord, VersionChange, corpora, is_corpus_name, symbol_name,
 };
 
 mod terms;

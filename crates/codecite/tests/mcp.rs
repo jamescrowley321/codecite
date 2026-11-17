@@ -334,12 +334,15 @@ fn mcp_answers_on_stdout_and_logs_on_stderr() {
     assert_eq!(
         names,
         [
+            "callees",
+            "callers",
             "context",
             "corpora",
             "definition",
             "diff",
             "grep",
             "read",
+            "references",
             "requirements",
             "search"
         ],
