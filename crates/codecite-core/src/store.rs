@@ -32,8 +32,8 @@ pub use grep::{GrepMatch, GrepQuery, GrepResults};
 
 mod read;
 pub use read::{
-    DEFAULT_MAX_LINES, MAX_READ_BYTES, MAX_READ_LINES, QUOTE_INSTRUCTION,
-    QUOTE_TRUNCATED_INSTRUCTION, ReadOptions, ReadResult,
+    APPROACH_ONLY_INSTRUCTION, DEFAULT_MAX_LINES, MAX_READ_BYTES, MAX_READ_LINES,
+    QUOTE_INSTRUCTION, QUOTE_TRUNCATED_INSTRUCTION, ReadOptions, ReadResult, defuse_instruction,
 };
 
 mod requirements;
