@@ -40,7 +40,7 @@ fn main() {
         fake::run(args.get(2).map_or("clean", String::as_str));
     }
     if args.get(1).map(String::as_str) == Some("--start-planted") {
-        start_planted(&args[2]);
+        start_planted(&args[2], &args[3]);
     }
     run_tests(filter(&args[1..]));
 }
@@ -129,6 +129,10 @@ const TESTS: &[Test] = &[
     (
         "a_bare_command_never_resolves_inside_the_root",
         a_bare_command_never_resolves_inside_the_root,
+    ),
+    (
+        "a_relative_program_path_never_resolves_inside_the_root",
+        a_relative_program_path_never_resolves_inside_the_root,
     ),
 ];
 
@@ -517,10 +521,10 @@ fn timeouts_too_large_for_a_deadline_do_not_panic() {
 /// plants in the workspace root.
 const PLANTED: &str = "codecite-planted-lsp";
 
-/// Run in a child whose PATH holds only relative and empty entries: starts
-/// the planted name in `root`, exiting 0 only on `ServerNotFound`.
-fn start_planted(root: &str) -> ! {
-    let command = ServerCommand::new(PLANTED, Vec::<String>::new());
+/// Run in a child outside `root`: starts `program` in `root`, exiting 0 only
+/// on `ServerNotFound`.
+fn start_planted(root: &str, program: &str) -> ! {
+    let command = ServerCommand::new(program, Vec::<String>::new());
     match Server::start(&command, std::path::Path::new(root), &options()) {
         Err(Error::ServerNotFound { .. }) => process::exit(0),
         other => {
@@ -531,22 +535,43 @@ fn start_planted(root: &str) -> ! {
 }
 
 fn a_bare_command_never_resolves_inside_the_root() {
-    use std::os::unix::fs::PermissionsExt;
-    let root = tempfile::tempdir().unwrap();
-    let planted = root.path().join(PLANTED);
-    std::fs::write(&planted, "#!/bin/sh\n: > ran\n").unwrap();
-    std::fs::set_permissions(&planted, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let exe = std::env::current_exe().unwrap();
-    let elsewhere = tempfile::tempdir().unwrap();
     // `.`, `bin` and the empty entries would all find it from inside the root.
-    let status = Command::new(exe)
-        .args(["--start-planted", &root.path().to_string_lossy()])
-        .env("PATH", ":.:bin:")
-        .current_dir(elsewhere.path())
-        .status()
-        .unwrap();
-    assert!(status.success(), "{status:?}");
-    assert!(!root.path().join("ran").exists(), "the planted program ran");
+    assert_planted_never_runs(PLANTED, &format!("bin/{PLANTED}"), ":.:bin:");
+}
+
+fn a_relative_program_path_never_resolves_inside_the_root() {
+    let program = format!("bin/{PLANTED}");
+    assert_planted_never_runs(&program, &program, "/nonexistent");
+}
+
+/// Plants an executable at `planted` in a fresh root, then has a child that
+/// runs elsewhere, with `path` as its PATH, start `program` in that root.
+/// The child must get `ServerNotFound` and the planted file must not run.
+fn assert_planted_never_runs(program: &str, planted: &str, path: &str) {
+    // Building the planted executable needs Unix permissions.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        for rel in [PLANTED.to_owned(), planted.to_owned()] {
+            let file = root.path().join(rel);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(&file, "#!/bin/sh\n: > ran\n").unwrap();
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let exe = std::env::current_exe().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let status = Command::new(exe)
+            .args(["--start-planted", &root.path().to_string_lossy(), program])
+            .env("PATH", path)
+            .current_dir(elsewhere.path())
+            .status()
+            .unwrap();
+        assert!(status.success(), "{status:?}");
+        assert!(!root.path().join("ran").exists(), "the planted program ran");
+    }
+    #[cfg(not(unix))]
+    let _ = (program, planted, path);
 }
 
 // ---------------------------------------------------------------------------

@@ -23,7 +23,7 @@ use crate::deadline::Deadline;
 use crate::framing::{DEFAULT_MAX_BODY_BYTES, read_message, write_message};
 use crate::message::{
     CONTENT_MODIFIED, INVALID_PARAMS, Id, METHOD_NOT_FOUND, Message, REQUEST_CANCELLED,
-    ResponseError,
+    ResponseError, truncate,
 };
 use crate::{Error, Result};
 
@@ -35,6 +35,15 @@ const MAX_QUEUED: usize = 1024;
 /// The most items a `workspace/configuration` reply answers. Each queued
 /// reply then stays small, so `MAX_QUEUED` bounds the queue's memory too.
 const MAX_CONFIGURATION_ITEMS: usize = 1024;
+
+/// The most bytes of a server-chosen string a queued reply echoes: a method
+/// name is cut to this, and a request whose string id is longer gets no
+/// reply. With `MAX_QUEUED`, this bounds the queue's memory.
+const MAX_ECHO_BYTES: usize = 256;
+
+/// How long a write that has begun may run past its deadline to finish
+/// before the connection is closed as half-written.
+const WRITE_FINISH_GRACE: Duration = Duration::from_millis(100);
 
 /// Called on the reader thread with each server notification's method and
 /// params. It must not block for long: the next message waits on it.
@@ -181,8 +190,8 @@ impl Shared {
                 if skipped {
                     return Err(SendFailure::TimedOut);
                 }
-                // Begun: it may have finished since the timeout.
-                if done.try_recv().is_ok() {
+                // Begun: it may be about to finish, so give it a moment.
+                if done.recv_timeout(WRITE_FINISH_GRACE).is_ok() {
                     return Ok(());
                 }
                 self.close(&format!("writing to the server timed out after {wait:?}"));
@@ -448,6 +457,15 @@ fn read_loop<R: Read>(shared: Arc<Shared>, reader: R, mut options: ClientOptions
                 }
             }
             Ok(Message::Request { id, method, params }) => {
+                if let Id::String(s) = &id
+                    && s.len() > MAX_ECHO_BYTES
+                {
+                    eprintln!(
+                        "codecite-lsp: dropped a server request with a {}-byte id",
+                        s.len()
+                    );
+                    continue;
+                }
                 let reply = Message::Response {
                     id: Some(id),
                     outcome: default_reply(&method, &params),
@@ -483,7 +501,10 @@ fn default_reply(method: &str, params: &Value) -> std::result::Result<Value, Res
         | "client/unregisterCapability" => Ok(Value::Null),
         _ => Err(ResponseError {
             code: METHOD_NOT_FOUND,
-            message: format!("codecite does not handle {method}"),
+            message: format!(
+                "codecite does not handle {}",
+                truncate(method, MAX_ECHO_BYTES)
+            ),
             data: None,
         }),
     }
@@ -1066,6 +1087,55 @@ mod tests {
                 outcome: Err(e), ..
             } => assert_eq!(e.code, INVALID_PARAMS),
             other => panic!("expected InvalidParams, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_write_about_to_finish_at_its_deadline_keeps_the_connection() {
+        let (client, mut peer) = connect();
+        let mut reader = peer.reader.take().unwrap();
+        let drain = thread::spawn(move || {
+            while let Ok(Some(_)) = read_message(&mut reader, DEFAULT_MAX_BODY_BYTES) {}
+        });
+        // A zero deadline fires while small frames are being written; each
+        // either is skipped or finishes, and none may close the connection.
+        for _ in 0..500 {
+            let _ = client.notify_within("n", Value::Null, Duration::ZERO);
+            assert_eq!(client.closed_reason(), None);
+        }
+        client.close();
+        drain.join().unwrap();
+    }
+
+    #[test]
+    fn replies_echo_little_of_what_the_server_sent() {
+        let (_client, mut peer) = connect();
+        // A string id too long to echo gets no reply at all.
+        peer.send(Message::Request {
+            id: Id::String("i".repeat(MAX_ECHO_BYTES + 1)),
+            method: "workspace/applyEdit".into(),
+            params: Value::Null,
+        });
+        let method = "\u{e9}".repeat(10_000);
+        peer.send(Message::Request {
+            id: Id::Number(2),
+            method: method.clone(),
+            params: Value::Null,
+        });
+        match peer.recv() {
+            Message::Response {
+                id: Some(Id::Number(2)),
+                outcome: Err(e),
+            } => {
+                assert_eq!(e.code, METHOD_NOT_FOUND);
+                assert!(
+                    e.message.len() <= MAX_ECHO_BYTES + 64,
+                    "{}",
+                    e.message.len()
+                );
+                assert!(e.message.contains('\u{e9}'));
+            }
+            other => panic!("expected MethodNotFound for id 2, got {other:?}"),
         }
     }
 

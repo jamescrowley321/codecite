@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use crate::deadline::Deadline;
+use crate::message::truncate;
 use crate::{Client, ClientOptions, Error, Result};
 
 /// How often a bounded wait checks the process and the connection.
@@ -25,7 +26,8 @@ const POLL: Duration = Duration::from_millis(10);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServerCommand {
     /// The program. One without a path separator is looked up on `PATH`,
-    /// skipping relative and empty entries, never in the workspace root.
+    /// skipping relative and empty entries; a relative path is taken from
+    /// codecite's own working directory. Never from the workspace root.
     pub program: String,
     /// Its arguments, for example `["--stdio"]`.
     pub args: Vec<String>,
@@ -100,6 +102,11 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// The most progress tokens tracked at once; later `begin`s are ignored.
+const MAX_PROGRESS_TOKENS: usize = 1024;
+/// The most bytes of a progress token kept.
+const MAX_TOKEN_BYTES: usize = 256;
+
 /// Work-done progress the server has begun and not yet ended.
 struct Progress {
     active: HashSet<String>,
@@ -110,13 +117,13 @@ type Tracker = Arc<(Mutex<Progress>, Condvar)>;
 
 fn track_progress(tracker: &Tracker, params: &Value) {
     let token = match &params["token"] {
-        Value::String(s) => s.clone(),
-        other => other.to_string(),
+        Value::String(s) => truncate(s, MAX_TOKEN_BYTES).to_owned(),
+        other => truncate(&other.to_string(), MAX_TOKEN_BYTES).to_owned(),
     };
     let (progress, changed) = &**tracker;
     let mut progress = lock(progress);
     match params["value"]["kind"].as_str() {
-        Some("begin") => {
+        Some("begin") if progress.active.len() < MAX_PROGRESS_TOKENS => {
             progress.active.insert(token);
         }
         Some("end") => {
@@ -135,20 +142,12 @@ struct StderrTail {
 }
 
 impl StderrTail {
-    fn start(mut stderr: impl Read + Send + 'static, capacity: usize) -> io::Result<Self> {
+    fn start(stderr: impl Read + Send + 'static, capacity: usize) -> io::Result<Self> {
         let bytes = Arc::new(Mutex::new(VecDeque::with_capacity(capacity)));
         let sink = Arc::clone(&bytes);
         let drain = thread::Builder::new()
             .name("codecite-lsp-stderr".into())
-            .spawn(move || {
-                let mut chunk = [0u8; 4096];
-                while let Ok(n @ 1..) = stderr.read(&mut chunk) {
-                    let mut tail = lock(&sink);
-                    tail.extend(&chunk[..n]);
-                    let excess = tail.len().saturating_sub(capacity);
-                    tail.drain(..excess);
-                }
-            })?;
+            .spawn(move || drain_into(stderr, &sink, capacity))?;
         Ok(Self {
             bytes,
             drain: Some(drain),
@@ -167,6 +166,24 @@ impl StderrTail {
         let tail = lock(&self.bytes);
         let (a, b) = tail.as_slices();
         String::from_utf8_lossy(&[a, b].concat()).trim().to_owned()
+    }
+}
+
+/// Reads `stderr` to its end, keeping the last `capacity` bytes in `sink`.
+/// An interrupted read is retried; any other error ends it.
+fn drain_into(mut stderr: impl Read, sink: &Mutex<VecDeque<u8>>, capacity: usize) {
+    let mut chunk = [0u8; 4096];
+    loop {
+        let n = match stderr.read(&mut chunk) {
+            Ok(0) => return,
+            Ok(n) => n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(_) => return,
+        };
+        let mut tail = lock(sink);
+        tail.extend(&chunk[..n]);
+        let excess = tail.len().saturating_sub(capacity);
+        tail.drain(..excess);
     }
 }
 
@@ -211,11 +228,13 @@ impl Server {
             )));
         }
         // Resolved here: the child's own lookup would run after it moves into
-        // the root, where a relative PATH entry could find a planted program.
+        // the root, where a relative path or PATH entry could find a planted
+        // program.
         let not_found = || Error::ServerNotFound {
             command: command.program.clone(),
         };
-        let program = resolve_program(&command.program, std::env::var_os("PATH").as_deref())
+        let cwd = std::env::current_dir()?;
+        let program = resolve_program(&command.program, std::env::var_os("PATH").as_deref(), &cwd)
             .ok_or_else(not_found)?;
         // The root exists, so a NotFound from spawn is the program.
         let mut child = match Command::new(&program)
@@ -498,13 +517,14 @@ impl Drop for Server {
     }
 }
 
-/// Where `program` runs from: itself if it names a path, else the first
+/// Where `program` runs from, as an absolute path: a path is taken from
+/// `cwd` (codecite's working directory), and a bare name is the first
 /// executable of that name in an absolute `PATH` entry. Relative and empty
 /// entries are skipped, since they would resolve inside the workspace root.
-fn resolve_program(program: &str, path: Option<&OsStr>) -> Option<PathBuf> {
+fn resolve_program(program: &str, path: Option<&OsStr>, cwd: &Path) -> Option<PathBuf> {
     let candidate = Path::new(program);
     if candidate.components().count() != 1 || program.contains('/') {
-        return Some(candidate.to_path_buf());
+        return Some(cwd.join(candidate));
     }
     std::env::split_paths(path?)
         .filter(|dir| dir.is_absolute())
@@ -628,12 +648,13 @@ mod tests {
         assert_eq!(
             resolve_program(
                 "lsp-under-test",
-                path(&format!("/nonexistent:{dir}")).as_deref()
+                path(&format!("/nonexistent:{dir}")).as_deref(),
+                Path::new("/")
             ),
             Some(program.clone())
         );
         assert_eq!(
-            resolve_program("not-executable", path(dir).as_deref()),
+            resolve_program("not-executable", path(dir).as_deref(), Path::new("/")),
             None
         );
         // Relative and empty entries are never searched, even one that
@@ -644,16 +665,86 @@ mod tests {
         assert_eq!(
             resolve_program(
                 "lsp-under-test",
-                path(&format!(":.:{relative}:")).as_deref()
+                path(&format!(":.:{relative}:")).as_deref(),
+                Path::new("/")
             ),
             None
         );
-        assert_eq!(resolve_program("lsp-under-test", None), None);
-        // A path is taken as given.
         assert_eq!(
-            resolve_program("./bin/x", path(dir).as_deref()),
-            Some(PathBuf::from("./bin/x"))
+            resolve_program("lsp-under-test", None, Path::new("/")),
+            None
         );
+    }
+
+    #[test]
+    fn relative_program_paths_resolve_against_codecite_s_directory() {
+        let cwd = Path::new("/codecite/cwd");
+        assert_eq!(
+            resolve_program("./bin/x", None, cwd),
+            Some(cwd.join("./bin/x"))
+        );
+        assert_eq!(
+            resolve_program("node_modules/.bin/lsp", None, cwd),
+            Some(cwd.join("node_modules/.bin/lsp"))
+        );
+        assert_eq!(
+            resolve_program("/usr/bin/lsp", None, cwd),
+            Some(PathBuf::from("/usr/bin/lsp"))
+        );
+    }
+
+    /// Fails with `Interrupted` before every chunk, then ends.
+    struct Interrupting {
+        chunks: Vec<&'static [u8]>,
+        interrupt: bool,
+    }
+
+    impl Read for Interrupting {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            self.interrupt = !self.interrupt;
+            if self.interrupt {
+                return Err(io::ErrorKind::Interrupted.into());
+            }
+            match self.chunks.pop() {
+                Some(chunk) => {
+                    buf[..chunk.len()].copy_from_slice(chunk);
+                    Ok(chunk.len())
+                }
+                None => Ok(0),
+            }
+        }
+    }
+
+    #[test]
+    fn the_stderr_drain_retries_interrupted_reads() {
+        let sink = Mutex::new(VecDeque::new());
+        let stderr = Interrupting {
+            chunks: vec![b"world", b"hello "],
+            interrupt: false,
+        };
+        drain_into(stderr, &sink, 8);
+        assert_eq!(lock(&sink).iter().copied().collect::<Vec<_>>(), b"lo world");
+    }
+
+    #[test]
+    fn progress_tracking_is_bounded() {
+        let tracker: Tracker = Arc::new((
+            Mutex::new(Progress {
+                active: HashSet::new(),
+                last_event: Instant::now(),
+            }),
+            Condvar::new(),
+        ));
+        for n in 0..MAX_PROGRESS_TOKENS * 2 {
+            let token = format!("{n}{}", "t".repeat(1000));
+            track_progress(
+                &tracker,
+                &json!({"token": token, "value": {"kind": "begin"}}),
+            );
+        }
+        let progress = lock(&tracker.0);
+        assert_eq!(progress.active.len(), MAX_PROGRESS_TOKENS);
+        assert!(progress.active.iter().all(|t| t.len() <= MAX_TOKEN_BYTES));
     }
 
     #[test]

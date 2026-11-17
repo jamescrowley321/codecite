@@ -14,6 +14,16 @@ pub const REQUEST_CANCELLED: i64 = -32800;
 /// LSP's `ContentModified`.
 pub const CONTENT_MODIFIED: i64 = -32801;
 
+/// The longest prefix of `s` that fits in `max` bytes and ends on a
+/// character boundary.
+pub(crate) fn truncate(s: &str, max: usize) -> &str {
+    let mut end = s.len().min(max);
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 /// A request id: JSON-RPC allows a number or a string.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Id {
@@ -222,6 +232,14 @@ mod tests {
                 outcome: Ok(json!([1]))
             }
         );
+    }
+
+    #[test]
+    fn truncation_keeps_whole_characters() {
+        assert_eq!(truncate("abc", 10), "abc");
+        assert_eq!(truncate("abc", 2), "ab");
+        assert_eq!(truncate("a\u{e9}", 2), "a");
+        assert_eq!(truncate("", 0), "");
     }
 
     #[test]
