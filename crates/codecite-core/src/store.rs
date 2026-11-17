@@ -10,7 +10,10 @@ use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionB
 use crate::{Error, Result, identifier_terms, text_terms};
 
 mod cite;
-pub use cite::{CiteOptions, CiteResult, Finding};
+pub use cite::{
+    CheckOptions, CitationChecker, CitationProblem, CiteOptions, CiteResult, Finding, Problem,
+    TextCheck,
+};
 
 mod context;
 pub use context::{Context, ContextQuery, ContextTarget, MAX_CONTEXT_BYTES, Rule, RuleScope};
