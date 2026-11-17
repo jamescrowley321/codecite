@@ -237,7 +237,11 @@ def tool_checks(results, start: Path, project: Path, venv: Path, changed: dict[s
         else:
             by_rule = {"§1": [], "§4": [], "§7": [], "§8": []}
             for v in found:
-                where = f"{Path(v['filename']).relative_to(backend)}:{v['location']['row']} {v['code']} {v['message']}"
+                if v.get("code") not in ("TID251", "G004", "G010"):
+                    continue  # a syntax error: control-pyflakes reports it
+                name = Path(v["filename"])
+                name = name.relative_to(backend) if name.is_relative_to(backend) else name
+                where = f"{name}:{v['location']['row']} {v['code']} {v['message']}"
                 if v["code"] == "TID251":
                     rule = next((r for api, r in BANNED.items() if f"`{api}`" in v["message"]), "§1")
                 else:
