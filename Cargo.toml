@@ -56,3 +56,4 @@ rmcp = { version = "3.6", default-features = false, features = ["server", "macro
 tokio = { version = "1", features = ["rt"] }
 jsonschema = { version = "0.60", default-features = false }
 spdx = { version = "0.13", default-features = false, features = ["detection"] }
+prost = { version = "0.14", default-features = false, features = ["derive", "std"] }

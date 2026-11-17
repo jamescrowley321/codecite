@@ -112,6 +112,33 @@ pub enum Error {
         actual: String,
     },
 
+    /// A source's SCIP index couldn't be read or decoded.
+    #[error("source `{name}`: can't read the SCIP index {}", path.display())]
+    Scip {
+        /// The source's name.
+        name: String,
+        /// The index the manifest names.
+        path: std::path::PathBuf,
+        /// Why reading it failed.
+        source: crate::ScipError,
+    },
+
+    /// A SCIP index no longer has the hash its `scip_sha256` pins.
+    #[error(
+        "source `{name}`: the SCIP index {} has sha256 {actual}, not the pinned {expected}; rebuild or review it and update the pin",
+        path.display()
+    )]
+    ScipChanged {
+        /// The source's name.
+        name: String,
+        /// The index the manifest names.
+        path: std::path::PathBuf,
+        /// The manifest's pin.
+        expected: String,
+        /// The hash of the file as read.
+        actual: String,
+    },
+
     /// A manifest names another corpus than the one asked for.
     #[error("manifest {} is for corpus `{found}`, not `{expected}`", path.display())]
     WrongCorpus {

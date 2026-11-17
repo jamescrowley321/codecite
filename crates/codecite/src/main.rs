@@ -2,6 +2,7 @@
 
 mod assist;
 mod check;
+mod graph;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -375,6 +376,19 @@ Output: JSON, one entry per corpus with its age, size, source count and stalenes
 Output: JSON, one entry per corpus with its age, size, source count and staleness."
     )]
     Corpora,
+    /// Print every line that references a symbol, from a SCIP index, cited.
+    #[command(
+        after_help = graph::REFS_OUTPUT,
+        after_long_help = graph::REFS_HELP
+    )]
+    Refs(graph::RefsArgs),
+    /// Walk the call graph from a symbol: its callers or its callees.
+    #[command(
+        subcommand,
+        after_help = graph::GRAPH_OUTPUT,
+        after_long_help = graph::GRAPH_HELP
+    )]
+    Graph(graph::GraphCommand),
     /// Run the MCP server on stdin and stdout.
     #[command(after_long_help = "Examples:
   codecite mcp
@@ -609,6 +623,8 @@ fn main() -> anyhow::Result<()> {
             };
             requirements(&corpus, &target, &options, json)
         }
+        Command::Refs(args) => graph::refs(&args),
+        Command::Graph(walk) => graph::walk(&walk),
         Command::Corpora => corpora(),
         Command::Mcp => mcp(),
     }
@@ -1528,7 +1544,10 @@ mod tests {
                 assert!(!long.contains("Output:"), "`{}`: {long}", sub.get_name());
             }
         }
-        assert_eq!(with_output, ["search", "grep", "def", "read", "corpora"]);
+        assert_eq!(
+            with_output,
+            ["search", "grep", "def", "read", "corpora", "refs", "graph"]
+        );
     }
 
     #[test]
@@ -1963,6 +1982,7 @@ section · Checking\\u{1b}[2J · MUST · quote · indexed 2026-10-20T06:00:00Z
         codecite_core::Definition {
             citation: format!("app@{SHA}:{path}#L1-L5"),
             symbol: "callback".into(),
+            id: format!("codecite . app . {path}/callback()."),
             kind: "method".into(),
             role,
             license_class: "adapt".into(),

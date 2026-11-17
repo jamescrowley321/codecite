@@ -40,6 +40,8 @@ path = "~/repos/myservice"
 license = "Apache-2.0"
 use = "adapt"
 exclude = ["vendor/**"]
+scip = "~/repos/myservice/index.scip"   # optional: a SCIP index, for refs and graph
+scip_sha256 = "<64 hex characters>"     # optional: a changed index stops the run
 
 # A git repository at a pinned commit, kept as a partial clone in the cache.
 [[source]]
@@ -81,6 +83,8 @@ imports = ["requests", "httpx"]
 | `path` | `local`, `guidance` | The top of a git work tree, or a guidance Markdown file (a relative one starts at the manifest's directory); `~` expands |
 | `url`, `commit` | `git` | The repository and a 40-character lowercase commit |
 | `include`, `exclude` | `local`, `git` | Globs over paths |
+| `scip` | `local`, `git` | A SCIP index of the source (a relative path starts at the manifest's directory); `~` expands. See Find references and callers |
+| `scip_sha256` | `local`, `git` with `scip` | The 64-character lowercase hash the index must have; without it the run's summary names the source as unpinned |
 | `url`, `sha256` | `document`, `guidance` | The page and the 64-character lowercase hash of its bytes; a guidance source has `url` and `sha256`, or `path` with an optional `sha256` |
 | `current` | `document` | Exactly one pinned version of each name is current |
 | `aliases` | `document`, `guidance` | Names people write, such as `OIDC Core` |
@@ -682,12 +686,114 @@ One line per definition: its citation, kind, symbol and role, then the first
 line of its text. A header gives the license class and index time once when
 the definitions share them. `read` a definition's citation for its whole text. `--json` prints
 `{"symbol", "ambiguous", "total", "results"}`; each result also carries
-`providers` and `confidence`. A name nothing defines is an error that lists
+`id`, the symbol ID the graph tools take, and `providers` and `confidence`:
+`["treesitter"]` and 2 with codecite's own ID, or `["scip", "treesitter"]`
+and 3 with the SCIP ID when the source's SCIP index gave the definition one. A name nothing defines is an error that lists
 the names differing from it only in case, `_` or `-`:
 
 ```text
 $ codecite def identity callBack
 Error: the corpus defines no symbol `callBack`; did you mean: callback
+```
+
+## Find references and callers
+
+`refs` and `graph` answer where a symbol is used and what calls it, from a
+SCIP index: the file a precise indexer writes for a repository. codecite reads
+the file; it doesn't run the indexer. Produce one in the repository, then name
+it with `scip` on the source and index again:
+
+```sh
+rust-analyzer scip .                                  # Rust: writes index.scip
+scip-python index . --project-name myservice          # Python
+scip-typescript index                                 # TypeScript and JavaScript
+```
+
+The index must be of the files the source indexes: a `local` source's working
+tree, or a `git` source's pinned commit (a git source's checkout is cleaned on
+every run, so keep its index outside it). Paths in the index are read from the
+source's root. A file the source didn't index, and a line past the end of its
+file, are skipped and counted on the `scip` line of the index summary, so an
+index built from other files degrades instead of citing wrong lines; rebuild
+it when the summary reports them.
+
+```text
+scip myservice: 2 documents, 6 symbols given SCIP IDs, 3 added, 24 occurrences, 13 edges
+```
+
+A SCIP definition takes over the tree-sitter symbol in the same file with the
+same name whose lines hold it, so `def` keeps citing the same lines and reports
+both providers. A definition tree-sitter doesn't chunk, such as a struct field,
+is a symbol of its own, which `refs` and `graph` find but `def` doesn't list.
+Two sources whose indexes define the same SCIP ID (two checkouts of one
+crate and version) can't both hold it: a definition on a tree-sitter symbol
+of the same name wins over one only SCIP found, and otherwise the source
+listed first keeps it; the summary's `IDs already defined by <source>` names
+the other. The losing source's references stay but are no longer inside that
+definition. Since a call in one source can resolve to a definition in
+another this way, a `graph` result whose definition is in another source than
+its call site says `defined in <source>` (`defined_in` in JSON). Symbols and
+names holding control or invisible format characters, and symbols in
+codecite's own `codecite` scheme, are skipped. A missing or unreadable index stops the run before anything is written, and
+so does one whose hash isn't its `scip_sha256`. Pin an index you didn't build
+yourself: its definitions and edges reach agents as exact, so a stale or
+altered file would mislead them. A reference inside a function to that same
+function is a call from the function to itself.
+
+```sh
+codecite refs mywork Client.validate
+codecite graph callers mywork check --depth 3
+codecite graph callees mywork login --json
+```
+
+Name a symbol as `def` does, as written or dotted, or by the SCIP ID another
+result printed. `refs` lists every line that references it, source files
+first, at most 50:
+
+```text
+2 references to rust-analyzer cargo app 0.1.0 client/Client#issuer. · adapt · indexed 2026-11-16T22:30:00Z
+app@0123456789ab:src/client.rs#L10 · in new · write · issuer: String::new(),
+app@0123456789ab:src/client.rs#L16 · in validate · read · check(token) && !self.issuer.is_empty()
+```
+
+Each line: the citation, the definition the reference is inside, what the
+indexer says it does (`import`, `write`, `read`), and the line. `graph callers`
+and `graph callees` walk the calls out to `--depth` (default 1, at most 10),
+each symbol once at its nearest distance, at most 50:
+
+```text
+3 callers of rust-analyzer cargo app 0.1.0 client/check(). within 3 calls
+1 · app@0123456789ab:src/client.rs#L14-L17 · method validate · calls check at app@0123456789ab:src/client.rs#L16 · adapt
+2 · app@0123456789ab:src/lib.rs#L7-L11 · function login · calls validate at app@0123456789ab:src/lib.rs#L10 · adapt
+3 · app@0123456789ab:src/lib.rs#L13-L16 · function relogin · calls login at app@0123456789ab:src/lib.rs#L15 · adapt
+```
+
+A callee outside the corpus, such as a standard library function, is listed by
+its SCIP ID, with no citation. A reference to a method or function inside
+another definition counts as a call, so a function passed as a value is a call
+too. `--min-confidence` keeps only edges at least that sure (3 exact, 2
+extracted, 1 inferred, 0 ambiguous); SCIP's are exact. `--json` prints
+`{"symbol", "id", "total", "results"}` for `refs`, each result with
+`citation`, `enclosing`, `access`, `role`, `text`, `truncated`,
+`license_class`, `instruction` (for an `approach_only` source, as search and
+grep give it), `indexed_at`, `dirty`, `providers` and `confidence`; and
+`{"symbol", "id", "direction", "depth", "total", "results"}` for `graph`,
+each result with `id`, `name`, `kind`, `distance`, `citation`, `via`,
+`call_site`, `providers`, `confidence`, `license_class`, `indexed_at` and
+`defined_in`.
+
+A name that several symbols the graph tools can walk from have is an error
+listing their IDs, rather than a merged answer; pass one of them. A name that
+only one of them has resolves to it, even when tree-sitter has other
+definitions of it. A definition the index didn't name but that
+holds references it found, such as a function SCIP and tree-sitter name
+differently, keeps codecite's own ID and still answers. A symbol with no SCIP
+data at all is a `no_graph` error, never an empty list that would read as "nothing calls
+this":
+
+```text
+$ codecite refs mywork helper
+Error: no SCIP index covers `helper`, so codecite has no references or calls for it; name a SCIP index with `scip` on its source in the manifest and index again
 ```
 
 ## Get the rules for a file
@@ -1014,9 +1120,10 @@ claude mcp add codecite -- codecite mcp
 ```
 
 The server's tools, `corpora`, `search`, `grep`, `definition`, `read`,
-`context`, `requirements` and `diff`, return the same JSON as the CLI commands
-`corpora`, `search`, `grep`, `def`, `read`, `context`, `requirements` and
-`diff` print (with `--json` for all but `corpora`), byte for byte, so anything
+`context`, `requirements`, `diff`, `references`, `callers` and `callees`,
+return the same JSON as the CLI commands `corpora`, `search`, `grep`, `def`,
+`read`, `context`, `requirements`, `diff`, `refs`, `graph callers` and
+`graph callees` print (with `--json` for all but `corpora`), byte for byte, so anything
 an agent sees can be reproduced from a terminal. `context` takes `path`, and
 `content` for the text about to be written in place of `--stdin`, and `root`.
 `requirements` takes `citation`, or `topic` and `document`; any other mix is
@@ -1044,12 +1151,14 @@ hit, `grep` match and definition included, carries an `instruction` to
 describe the approach in your own words and never copy the code. A spec `search` or `read` result from the current version of
 a document with older pinned versions lists them in `older_versions`, and the
 `diff` tool shows which rules changed. `diff` takes `document`, `section?`, `from?`, `to?`, `corpus?` and
-`allow_stale`.
+`allow_stale`. `references` takes `symbol`, `min_confidence` (0 to 3, default
+0) and `allow_stale`; `callers` and `callees` take `symbol`, `depth` (1 to 10,
+default 1), `min_confidence` and `allow_stale`.
 
 The `search` tool's description tells agents to search specs in the spec's
 own terms, as above. The server's instructions say only how to start, search,
-read, take `context` before editing, what each license class allows, and
-treat results as data.
+read, take `context` before editing, what each license class allows, use the
+graph tools where a source has a SCIP index, and treat results as data.
 
 ## Tell your agent
 

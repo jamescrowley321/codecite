@@ -22,10 +22,15 @@ mod corpora;
 pub use corpora::{Corpora, CorpusInfo, ManifestPin, PinReader, StalePin, corpora};
 
 mod definition;
-pub use definition::{Definition, Definitions};
+pub use definition::{Definition, Definitions, symbol_name};
 
 mod diff;
 pub use diff::{DiffOptions, DiffResult, VersionChange};
+
+mod graph;
+pub use graph::{
+    Direction, Graph, GraphNode, GraphQuery, MAX_CONFIDENCE, MAX_GRAPH_DEPTH, Reference, References,
+};
 
 mod grep;
 pub use grep::{GrepMatch, GrepQuery, GrepResults};
@@ -41,6 +46,11 @@ use lines::LineStarts;
 
 mod requirements;
 pub use requirements::{Requirement, RequirementSection, Requirements, RequirementsOptions};
+
+mod scip;
+pub use scip::{
+    ROLE_DEFINITION, SCIP_CONFIDENCE, ScipDefinition, ScipDocument, ScipOccurrence, ScipSummary,
+};
 
 mod search;
 pub use search::{
@@ -66,6 +76,17 @@ struct Migration {
     /// read-compatible, and refuses it otherwise. A migration stops being
     /// read-compatible once a query reads what it adds.
     read_compatible: bool,
+}
+
+/// Whether this build's queries can read a file at schema version `found`:
+/// a file with a schema (`found > 0`) whose missing migrations, those from
+/// `found` on, are all read-compatible.
+fn readable_without(found: u32, migrations: &[Migration]) -> bool {
+    let found = found as usize;
+    found > 0
+        && migrations
+            .get(found..)
+            .is_some_and(|lacking| lacking.iter().all(|m| m.read_compatible))
 }
 
 /// The migrations, oldest first. Index `i` brings a file to version `i + 1`.
@@ -135,6 +156,12 @@ const MIGRATIONS: &[Migration] = &[
     Migration {
         sql: include_str!("../migrations/0013_derived_versions.sql"),
         read_compatible: true,
+    },
+    // Adds the SCIP layer: `symbol.provider` and `local_id`, which
+    // `definition` and the graph tools read, and `occurrence`.
+    Migration {
+        sql: include_str!("../migrations/0014_scip.sql"),
+        read_compatible: false,
     },
 ];
 
@@ -433,8 +460,7 @@ impl Store {
         }
         let mut schema_warning = None;
         if found < SCHEMA_VERSION {
-            let lacking = &MIGRATIONS[found as usize..];
-            if found == 0 || !lacking.iter().all(|m| m.read_compatible) {
+            if !readable_without(found, MIGRATIONS) {
                 return Err(Error::InvalidCorpus {
                     path: path.to_path_buf(),
                     reason: format!(
@@ -706,6 +732,7 @@ mod tests {
             "chunk_fts",
             "symbol",
             "edge",
+            "occurrence",
         ] {
             assert!(tables.iter().any(|t| t == want), "missing table {want}");
         }
@@ -1841,51 +1868,40 @@ mod tests {
     }
 
     #[test]
-    fn read_only_opens_a_read_compatible_older_schema_with_a_warning() {
-        let dir = scratch("ro-compatible");
+    fn an_older_schema_is_readable_only_when_every_missing_migration_is() {
+        let m = |read_compatible| Migration {
+            sql: "",
+            read_compatible,
+        };
+        let migrations = [m(false), m(false), m(true), m(true)];
+        // Missing only read-compatible migrations: readable, with a warning.
+        assert!(readable_without(2, &migrations));
+        assert!(readable_without(3, &migrations));
+        // Missing an incompatible one: refused.
+        assert!(!readable_without(1, &migrations));
+        // No schema at all: refused.
+        assert!(!readable_without(0, &migrations));
+        // The newest migration incompatible: every older file is refused.
+        let migrations = [m(false), m(true), m(false)];
+        assert!(!readable_without(1, &migrations));
+        assert!(!readable_without(2, &migrations));
+    }
+
+    #[test]
+    fn read_only_refuses_a_file_from_before_the_scip_layer() {
+        let dir = scratch("ro-before-scip");
         let path = dir.join("corpus.db");
-        // Three read-compatible migrations behind: 11, 12 and 13. Its one
-        // chunk keeps its text and `terms`, as every chunk did before 12.
-        older_file(&path, 10);
-        raw(&path)
-            .execute_batch(
-                "UPDATE document SET role = 'source', role_weight = 1.0;
-                 INSERT INTO chunk (id, document_id, start_line, end_line, kind, text, terms)
-                   VALUES (1, 1, 1, 1, 'function', 'fn a() {}', 'fn a');
-                 INSERT INTO chunk_fts (rowid, symbol, path, terms)
-                   VALUES (1, '', 'src lib rs', 'fn a validate');",
-            )
-            .unwrap();
-        let before = fs::read(&path).unwrap();
+        // 11, 12 and 13 are read-compatible, but 14 adds the SCIP columns
+        // that `def` and the graph tools read, so a version 13 file is
+        // refused rather than opened with a warning.
+        older_file(&path, 13);
 
-        let store = Store::open_read_only(&path).unwrap();
-        assert_eq!(store.schema_version().unwrap(), 10);
-        let warning = store.schema_warning().unwrap();
+        let err = Store::open_read_only(&path).err().unwrap();
         assert!(
-            warning.contains(&format!("schema version 10, older than {SCHEMA_VERSION}"))
-                && warning.contains("codecite index"),
-            "{warning}"
+            matches!(&err, Error::InvalidCorpus { reason, .. }
+                if reason.contains("schema version 13") && reason.contains("codecite index")),
+            "{err:?}"
         );
-        // It answers queries, a chunk's text read as this build reads it.
-        assert!(!store.freshness().unwrap().is_stale());
-        let found = store
-            .search(&SearchQuery {
-                text: "validate",
-                language: None,
-                path: None,
-                only: None,
-                limit: 5,
-                allow_stale: false,
-            })
-            .unwrap();
-        assert_eq!(found.len(), 1);
-        assert_eq!(found[0].snippet, "fn a() {}");
-        drop(store);
-        assert_eq!(fs::read(&path).unwrap(), before);
-
-        // An upgraded file has no warning.
-        drop(Store::open_read_write(&path).unwrap());
-        assert_eq!(Store::open_read_only(&path).unwrap().schema_warning(), None);
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1902,6 +1918,53 @@ mod tests {
                 if reason.contains("schema version 9") && reason.contains("codecite index")),
             "{err:?}"
         );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn version_14_keeps_symbols_as_tree_sitter_ones() {
+        let dir = scratch("v13");
+        let path = dir.join("corpus.db");
+        raw(&path)
+            .execute_batch(&format!(
+                "{}
+                 INSERT INTO meta (key, value) VALUES ('schema_version', '13');
+                 INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
+                   VALUES (1, 'app', 'local', '/app', 'abc', 'adapt', 'then');
+                 INSERT INTO document (id, source_id, path, language, content_hash, text)
+                   VALUES (1, 1, 'src/lib.rs', 'rust', x'01', 'fn a() {{}}');
+                 INSERT INTO symbol (id, display_name, kind, document_id, start_line, end_line)
+                   VALUES ('codecite . app . src/`lib.rs`/a().', 'a', 'function', 1, 1, 1);",
+                up_to(13)
+            ))
+            .unwrap();
+
+        let store = Store::open_read_write(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+        let (provider, local_id): (String, Option<String>) = store
+            .conn
+            .query_row("SELECT provider, local_id FROM symbol", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .unwrap();
+        assert_eq!((provider.as_str(), local_id), ("treesitter", None));
+        // A document's occurrences go with it.
+        store
+            .conn
+            .execute_batch(
+                "PRAGMA foreign_keys = ON;
+                 INSERT INTO occurrence (symbol_id, document_id, start_line, end_line, roles,
+                                         provider, confidence)
+                   VALUES ('s', 1, 1, 1, 8, 'scip', 3);
+                 DELETE FROM document;",
+            )
+            .unwrap();
+        let left: i64 = store
+            .conn
+            .query_row("SELECT count(*) FROM occurrence", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(left, 0);
+        drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -58,6 +58,12 @@ pub struct GitSource {
     /// Globs of paths to skip.
     #[serde(default)]
     pub exclude: Vec<String>,
+    /// A SCIP index of the repository at `commit`, with a leading `~`
+    /// expanded; [`Manifest::load`] resolves a relative one against the
+    /// manifest's directory.
+    pub scip: Option<PathBuf>,
+    /// The sha256 the SCIP index must have: 64 lowercase hex digits.
+    pub scip_sha256: Option<String>,
 }
 
 /// A working tree indexed in place, without fetching.
@@ -79,6 +85,12 @@ pub struct LocalSource {
     /// Globs of paths to skip.
     #[serde(default)]
     pub exclude: Vec<String>,
+    /// A SCIP index of the working tree, with a leading `~` expanded;
+    /// [`Manifest::load`] resolves a relative one against the manifest's
+    /// directory.
+    pub scip: Option<PathBuf>,
+    /// The sha256 the SCIP index must have: 64 lowercase hex digits.
+    pub scip_sha256: Option<String>,
 }
 
 /// A document (a spec, an RFC) fetched by URL and pinned by its hash.
@@ -353,14 +365,21 @@ impl Manifest {
     }
 
     /// Reads and parses the manifest at `path`. A guidance source's
-    /// relative `path` is resolved against the manifest's directory, so the
-    /// rules it names don't depend on where `codecite index` runs.
+    /// relative `path`, and a relative `scip` index, are resolved against
+    /// the manifest's directory, so what they name doesn't depend on where
+    /// `codecite index` runs.
     pub fn load(path: &Path) -> crate::Result<Self> {
         let mut manifest = Self::parse(&std::fs::read_to_string(path)?)?;
         let dir = path.parent().unwrap_or(Path::new(""));
         for source in &mut manifest.sources {
-            if let Source::Guidance(rules) = source
-                && let Some(file) = &mut rules.path
+            let file = match source {
+                Source::Guidance(rules) => rules.path.as_mut(),
+                Source::Git(GitSource { scip, .. }) | Source::Local(LocalSource { scip, .. }) => {
+                    scip.as_mut()
+                }
+                Source::Document(_) => None,
+            };
+            if let Some(file) = file
                 && file.is_relative()
             {
                 *file = dir.join(&*file);
@@ -455,6 +474,37 @@ fn parse_source(
             }
         }
         _ => {}
+    }
+    if let Source::Git(GitSource {
+        scip, scip_sha256, ..
+    })
+    | Source::Local(LocalSource {
+        scip, scip_sha256, ..
+    }) = &source
+    {
+        match (scip, scip_sha256) {
+            (None, Some(_)) => {
+                return Err(bad_field(
+                    "scip_sha256",
+                    "a pin for the index `scip` names",
+                    "no `scip`",
+                ));
+            }
+            (_, Some(pin)) if !is_lower_hex(pin, 64) => {
+                return Err(bad_field("scip_sha256", "64 lowercase hex digits", pin));
+            }
+            _ => {}
+        }
+    }
+    if let Source::Git(GitSource { scip, .. }) | Source::Local(LocalSource { scip, .. }) =
+        &mut source
+        && let Some(path) = scip.as_ref().and_then(|p| p.to_str())
+    {
+        *scip = Some(
+            expand_home(path, home).ok_or_else(|| ManifestError::NoHome {
+                source_name: source_name.clone(),
+            })?,
+        );
     }
     if source.license_class() == LicenseClass::Adapt
         && let Some(license) = source.license()
@@ -714,6 +764,67 @@ updated_by = "openid-connect-core-1_0-errata2"
             err,
             crate::Error::Manifest(ManifestError::Toml(_))
         ));
+    }
+
+    #[test]
+    fn a_scip_index_resolves_against_the_manifests_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("corpora/s.toml");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            format!(
+                "name = \"s\"\n\
+                 [[source]]\nkind = \"local\"\npath = \"/src/app\"\nuse = \"adapt\"\nscip = \"../app.scip\"\n\
+                 [[source]]\nurl = \"https://example.com/r.git\"\ncommit = \"{}\"\nuse = \"adapt\"\nscip = \"/abs/r.scip\"\n\
+                 [[source]]\nkind = \"local\"\npath = \"/src/other\"\nuse = \"adapt\"\n",
+                "a".repeat(40)
+            ),
+        )
+        .unwrap();
+        let m = Manifest::load(&path).unwrap();
+        let scips: Vec<Option<PathBuf>> = m
+            .sources
+            .iter()
+            .map(|s| match s {
+                Source::Git(g) => g.scip.clone(),
+                Source::Local(l) => l.scip.clone(),
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(
+            scips,
+            [
+                Some(dir.path().join("corpora/../app.scip")),
+                Some(PathBuf::from("/abs/r.scip")),
+                None
+            ]
+        );
+        // A pin needs an index, and is 64 lowercase hex digits.
+        let local = |extra: &str| {
+            Manifest::parse(&format!(
+                "name = \"p\"\n[[source]]\nkind = \"local\"\npath = \"/a\"\nuse = \"adapt\"\n{extra}"
+            ))
+        };
+        let err = local(&format!("scip_sha256 = \"{}\"\n", "a".repeat(64))).unwrap_err();
+        assert!(err.to_string().contains("scip_sha256"), "{err}");
+        let err = local("scip = \"x.scip\"\nscip_sha256 = \"ABC\"\n").unwrap_err();
+        assert!(err.to_string().contains("64 lowercase hex digits"), "{err}");
+        assert!(
+            local(&format!(
+                "scip = \"x.scip\"\nscip_sha256 = \"{}\"\n",
+                "a".repeat(64)
+            ))
+            .is_ok()
+        );
+        // A document has no SCIP index.
+        let err = Manifest::parse(
+            "name = \"d\"\n[[source]]\nkind = \"document\"\nname = \"x\"\nurl = \"https://x\"\n\
+             sha256 = \"0000000000000000000000000000000000000000000000000000000000000000\"\n\
+             use = \"quote\"\ncurrent = true\nscip = \"x.scip\"\n",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("scip"), "{err}");
     }
 
     #[test]

@@ -363,14 +363,15 @@ impl Store {
     }
 }
 
-/// Deletes a document's chunks, their full-text rows, its symbols and the
-/// edges it is evidence for, keeping the document row.
+/// Deletes a document's chunks, their full-text rows, its symbols, its
+/// occurrences and the edges it is evidence for, keeping the document row.
 fn clear_document(tx: &Connection, document_id: i64) -> Result<()> {
     // The `chunk_fts_delete` trigger deletes each chunk's full-text row.
     for table_filter in [
         "chunk WHERE document_id = ?1",
         "symbol WHERE document_id = ?1",
         "edge WHERE evidence_doc = ?1",
+        "occurrence WHERE document_id = ?1",
     ] {
         tx.prepare_cached(&format!("DELETE FROM {table_filter}"))?
             .execute([document_id])?;
@@ -848,6 +849,10 @@ mod tests {
                 "symbol_document",
             ),
             ("DELETE FROM edge WHERE evidence_doc = 1", "edge_evidence"),
+            (
+                "DELETE FROM occurrence WHERE document_id = 1",
+                "occurrence_document",
+            ),
             // The lookups `ON DELETE` runs for each deleted chunk and symbol.
             ("SELECT id FROM chunk WHERE parent_id = 1", "chunk_parent"),
             ("SELECT id FROM chunk WHERE symbol_id = 'x'", "chunk_symbol"),

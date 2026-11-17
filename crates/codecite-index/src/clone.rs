@@ -368,6 +368,8 @@ mod tests {
             license_class: LicenseClass::Adapt,
             include: Vec::new(),
             exclude: Vec::new(),
+            scip: None,
+            scip_sha256: None,
         }
     }
 

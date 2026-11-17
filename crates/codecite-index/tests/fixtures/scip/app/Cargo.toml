@@ -1,0 +1,11 @@
+# A tiny crate whose SCIP index, `index.scip`, codecite's SCIP tests read.
+# Regenerate it from this directory with `rust-analyzer scip .`, then set
+# the index's `metadata.project_root` to `file:///app` so it names no
+# machine's path.
+[package]
+name = "app"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]

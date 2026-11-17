@@ -34,6 +34,7 @@ scraper.workspace = true
 pulldown-cmark.workspace = true
 ego-tree.workspace = true
 spdx.workspace = true
+prost.workspace = true
 
 [dev-dependencies]
 rusqlite.workspace = true

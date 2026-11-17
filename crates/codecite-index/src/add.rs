@@ -89,6 +89,8 @@ pub fn add_sources(
                 license_class: LicenseClass::Adapt,
                 include: Vec::new(),
                 exclude: Vec::new(),
+                scip: None,
+                scip_sha256: None,
             })?;
             detect_license(checkout.path())?
         };

@@ -9,8 +9,8 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use codecite_core::{
-    ChunkRecord, DocumentRecord, IndexRun, ManifestPin, RuleScope, RunCounts, SourceRecord,
-    SpecAliases, Store, SymbolRecord,
+    ChunkRecord, DocumentRecord, IndexRun, ManifestPin, RuleScope, RunCounts, ScipDocument,
+    ScipSummary, SourceRecord, SpecAliases, Store, SymbolRecord,
 };
 use sha2::{Digest, Sha256};
 
@@ -18,7 +18,7 @@ use crate::{
     CHUNKER_VERSION, Checkout, Chunker, Clones, DocumentSource, Error, Fetcher, GitSource,
     GuidanceError, GuidanceRule, GuidanceSource, Language, LicenseClass, LocalSource, LocalTree,
     MAX_DOCUMENT_SIZE, Manifest, Result, SkipReason, Source, SpecError, SpecSection, WalkOptions,
-    document::split_document, split_guidance, split_spec, walk_local,
+    decode_scip, document::split_document, read_scip_bytes, split_guidance, split_spec, walk_local,
 };
 
 /// What an index run did.
@@ -45,6 +45,11 @@ pub struct IndexSummary {
     /// Guidance read from a `path` with no `sha256` pin, whose rules reach
     /// agents whatever the file says now.
     pub unpinned_guidance: Vec<String>,
+    /// What each source's SCIP index added, by source name.
+    pub scip: Vec<(String, ScipSummary)>,
+    /// Sources whose SCIP index has no `scip_sha256` pin, so its symbols and
+    /// edges reach agents whatever the file says now.
+    pub unpinned_scip: Vec<String>,
     /// How long the run took.
     pub elapsed: Duration,
 }
@@ -175,6 +180,49 @@ fn index_sources(
             guidance.push((rules, bytes, revision, split));
         }
     }
+    // Each code source's SCIP index, by its place in the manifest, read
+    // and decoded before anything is written.
+    let mut scip: Vec<Option<Vec<ScipDocument>>> = Vec::with_capacity(manifest.sources.len());
+    for source in &manifest.sources {
+        let (name, path, pin) = match source {
+            Source::Git(git) if git.license_class != LicenseClass::Excluded => {
+                (git_name(git), git.scip.as_ref(), git.scip_sha256.as_ref())
+            }
+            Source::Local(local) if local.license_class != LicenseClass::Excluded => (
+                local
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| local.path.display().to_string()),
+                local.scip.as_ref(),
+                local.scip_sha256.as_ref(),
+            ),
+            _ => (String::new(), None, None),
+        };
+        let Some(path) = path else {
+            scip.push(None);
+            continue;
+        };
+        let failed = |source| Error::Scip {
+            name: name.clone(),
+            path: path.clone(),
+            source,
+        };
+        let bytes = read_scip_bytes(path).map_err(failed)?;
+        let actual = crate::fetch::hex(&Sha256::digest(&bytes));
+        match pin {
+            Some(expected) if *expected != actual => {
+                return Err(Error::ScipChanged {
+                    name,
+                    path: path.clone(),
+                    expected: expected.clone(),
+                    actual,
+                });
+            }
+            Some(_) => {}
+            None => summary.unpinned_scip.push(name.clone()),
+        }
+        scip.push(Some(decode_scip(&bytes).map_err(failed)?));
+    }
     for source in &manifest.sources {
         if let Source::Git(git) = source
             && git.license_class != LicenseClass::Excluded
@@ -189,7 +237,11 @@ fn index_sources(
     store.begin_publish()?;
     let mut indexed: Vec<String> = Vec::new();
     let mut keep: Vec<i64> = Vec::new();
-    for source in &manifest.sources {
+    // Every source's SCIP layer comes off before any is applied again, so
+    // no source, one the manifest no longer lists included, still holds an
+    // ID another source's index defines.
+    store.clear_all_scip()?;
+    for (source, scip) in manifest.sources.iter().zip(&scip) {
         let walked = match source {
             Source::Local(local) if local.license_class != LicenseClass::Excluded => {
                 let tree = walk_local(local, options)?;
@@ -249,7 +301,18 @@ fn index_sources(
         if indexed.contains(&walked.name) {
             return Err(Error::DuplicateSource { name: walked.name });
         }
-        keep.push(index_tree(store, &mut chunker, &walked, &mut summary)?);
+        let source_id = index_tree(store, &mut chunker, &walked, &mut summary)?;
+        // After the source's documents, so SCIP definitions find the
+        // tree-sitter symbols they replace; a source without an index has
+        // the last run's SCIP layer undone.
+        match scip {
+            Some(documents) => {
+                let written = store.write_scip(source_id, documents)?;
+                summary.scip.push((walked.name.clone(), written));
+            }
+            None => store.clear_scip(source_id)?,
+        }
+        keep.push(source_id);
         indexed.push(walked.name);
     }
     for (doc, bytes) in &documents {
@@ -412,6 +475,8 @@ fn walk_git(
         license_class: git.license_class,
         include: git.include.clone(),
         exclude: git.exclude.clone(),
+        scip: None,
+        scip_sha256: None,
     };
     let mut tree = walk_local(&checkout, options)?;
     for file in &mut tree.files {
@@ -881,6 +946,43 @@ impl fmt::Display for IndexSummary {
         for name in &self.removed_sources {
             writeln!(f, "source {name} removed: the run no longer indexes it")?;
         }
+        for (name, scip) in &self.scip {
+            write!(
+                f,
+                "scip {name}: {} documents, {} symbols given SCIP IDs, {} added, {} occurrences, {} edges",
+                scip.documents, scip.matched, scip.added, scip.occurrences, scip.edges
+            )?;
+            if scip.missing_documents > 0 {
+                write!(
+                    f,
+                    "; {} documents the source doesn't have",
+                    scip.missing_documents
+                )?;
+            }
+            if scip.past_end > 0 {
+                write!(f, "; {} past the end of their file", scip.past_end)?;
+            }
+            if scip.taken_over > 0 {
+                write!(
+                    f,
+                    "; {} IDs taken over from another source's SCIP-only symbols",
+                    scip.taken_over
+                )?;
+            }
+            if scip.conflicts > 0 {
+                write!(f, "; {} IDs already defined", scip.conflicts)?;
+                if !scip.conflicting_sources.is_empty() {
+                    write!(f, " by {}", scip.conflicting_sources.join(", "))?;
+                }
+            }
+            writeln!(f)?;
+        }
+        for name in &self.unpinned_scip {
+            writeln!(
+                f,
+                "scip {name} is not pinned: give it a scip_sha256 so a changed index stops the run until it is reviewed"
+            )?;
+        }
         for name in &self.unpinned_guidance {
             writeln!(
                 f,
@@ -918,6 +1020,8 @@ mod tests {
             license_class: LicenseClass::Adapt,
             include: Vec::new(),
             exclude: Vec::new(),
+            scip: None,
+            scip_sha256: None,
         })
     }
 
@@ -964,6 +1068,8 @@ mod tests {
             license_class: LicenseClass::Adapt,
             include: Vec::new(),
             exclude: Vec::new(),
+            scip: None,
+            scip_sha256: None,
         })
     }
 
@@ -1083,8 +1189,20 @@ mod tests {
                      ORDER BY d.path, c.start_line, c.end_line, c.kind",
                 ),
                 symbols: rows(
-                    "SELECT s.id, s.display_name, s.kind, d.path, s.start_line, s.end_line
+                    "SELECT s.id, s.display_name, s.kind, d.path, s.start_line, s.end_line,
+                            s.provider, s.local_id
                      FROM symbol s LEFT JOIN document d ON d.id = s.document_id ORDER BY s.id",
+                ),
+                occurrences: rows(
+                    "SELECT o.symbol_id, d.path, o.start_line, o.end_line, o.roles, o.enclosing,
+                            o.provider, o.confidence
+                     FROM occurrence o JOIN document d ON d.id = o.document_id
+                     ORDER BY d.path, o.start_line, o.symbol_id, o.roles",
+                ),
+                edges: rows(
+                    "SELECT e.src, e.dst, e.kind, e.provider, e.confidence, d.path, e.evidence_line
+                     FROM edge e LEFT JOIN document d ON d.id = e.evidence_doc
+                     ORDER BY e.src, e.dst, e.kind, e.provider",
                 ),
                 fts: rows(
                     "SELECT (SELECT count(*) FROM chunk_fts_docsize),
@@ -1131,6 +1249,8 @@ mod tests {
         documents: Vec<Vec<rusqlite::types::Value>>,
         chunks: Vec<Vec<rusqlite::types::Value>>,
         symbols: Vec<Vec<rusqlite::types::Value>>,
+        occurrences: Vec<Vec<rusqlite::types::Value>>,
+        edges: Vec<Vec<rusqlite::types::Value>>,
         /// The row count and the averages record BM25 reads, for
         /// `chunk_fts`.
         fts: Vec<Vec<rusqlite::types::Value>>,
@@ -2096,6 +2216,226 @@ mod tests {
         }
     }
 
+    /// The SCIP fixture crate, committed, and its rust-analyzer index.
+    fn scip_fixture() -> (Repo, PathBuf) {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/scip/app");
+        let repo = Repo::new();
+        for path in ["src/lib.rs", "src/client.rs"] {
+            repo.write(path, std::fs::read(dir.join(path)).unwrap());
+        }
+        repo.commit_all(&["src/lib.rs", "src/client.rs"]);
+        (repo, dir.join("index.scip"))
+    }
+
+    fn with_scip(source: Source, index: Option<&Path>) -> Source {
+        match source {
+            Source::Local(mut local) => {
+                local.scip = index.map(Path::to_owned);
+                Source::Local(local)
+            }
+            other => other,
+        }
+    }
+
+    #[test]
+    fn a_scip_index_gives_its_symbols_and_edges() {
+        let (repo, index) = scip_fixture();
+        let corpus = Corpus::new();
+        let summary = corpus.index(&manifest(vec![with_scip(
+            local(&repo, Some("app")),
+            Some(&index),
+        )]));
+        let (name, scip) = &summary.scip[0];
+        assert_eq!(name, "app");
+        assert_eq!(scip.documents, 2);
+        // login, relogin, Client, new, validate and check.
+        assert_eq!(scip.matched, 6);
+        assert_eq!(
+            (scip.missing_documents, scip.past_end, scip.conflicts),
+            (0, 0, 0)
+        );
+        assert!(
+            summary
+                .to_string()
+                .contains("scip app: 2 documents, 6 symbols given SCIP IDs")
+        );
+
+        let store = Store::open_read_only(&corpus.path()).unwrap();
+        let login = store.definition("login", true).unwrap();
+        assert_eq!(login.results[0].providers, ["scip", "treesitter"]);
+        assert_eq!(login.results[0].confidence, 3);
+        let callers = store
+            .graph(&codecite_core::GraphQuery {
+                symbol: "check",
+                direction: codecite_core::Direction::Callers,
+                depth: 3,
+                min_confidence: 0,
+                allow_stale: true,
+            })
+            .unwrap();
+        let names: Vec<(&str, u32)> = callers
+            .results
+            .iter()
+            .map(|n| (n.name.as_str(), n.distance))
+            .collect();
+        assert_eq!(names, [("validate", 1), ("login", 2), ("relogin", 3)]);
+        let refs = store.references("Client.validate", 0, true).unwrap();
+        assert_eq!(refs.total, 1);
+        assert!(
+            refs.results[0].citation.ends_with(":src/lib.rs#L10"),
+            "{refs:?}"
+        );
+        assert_eq!(refs.results[0].text, "    client.validate(token)");
+    }
+
+    #[test]
+    fn reindexing_with_scip_matches_a_fresh_index() {
+        let (repo, index) = scip_fixture();
+        let with = manifest(vec![with_scip(local(&repo, Some("app")), Some(&index))]);
+        let without = manifest(vec![local(&repo, Some("app"))]);
+
+        let twice = Corpus::new();
+        twice.index(&with);
+        twice.index(&with);
+        let fresh = Corpus::new();
+        fresh.index(&with);
+        assert_eq!(twice.contents(), fresh.contents());
+
+        // Taking the index away gives back tree-sitter's symbols.
+        twice.index(&without);
+        let plain = Corpus::new();
+        plain.index(&without);
+        assert_eq!(twice.contents(), plain.contents());
+
+        // And adding it to an unchanged tree applies it.
+        twice.index(&with);
+        assert_eq!(twice.contents(), fresh.contents());
+
+        // A changed file is rewritten and gets the SCIP layer again.
+        repo.write(
+            "src/lib.rs",
+            format!(
+                "{}\n",
+                std::fs::read_to_string(repo.path().join("src/lib.rs")).unwrap()
+            ),
+        );
+        repo.commit_all(&["src/lib.rs"]);
+        twice.index(&with);
+        let fresh = Corpus::new();
+        fresh.index(&with);
+        assert_eq!(twice.contents(), fresh.contents());
+    }
+
+    #[test]
+    fn reindexing_with_a_changed_scip_index_matches_a_fresh_index() {
+        let (repo, index) = scip_fixture();
+        let dir = tempfile::tempdir().unwrap();
+        let smaller = dir.path().join("smaller.scip");
+        std::fs::write(
+            &smaller,
+            crate::scip::without_document(&std::fs::read(&index).unwrap(), "src/lib.rs"),
+        )
+        .unwrap();
+        let changed = manifest(vec![with_scip(local(&repo, Some("app")), Some(&smaller))]);
+        let reindexed = Corpus::new();
+        reindexed.index(&manifest(vec![with_scip(
+            local(&repo, Some("app")),
+            Some(&index),
+        )]));
+        reindexed.index(&changed);
+        let fresh = Corpus::new();
+        fresh.index(&changed);
+        assert_eq!(reindexed.contents(), fresh.contents());
+    }
+
+    #[test]
+    fn removing_the_source_that_held_an_id_matches_a_fresh_index() {
+        // Two checkouts of one crate with one index: the same SCIP IDs.
+        let (first, index) = scip_fixture();
+        let (second, _) = scip_fixture();
+        let both = manifest(vec![
+            with_scip(local(&first, Some("first")), Some(&index)),
+            with_scip(local(&second, Some("second")), Some(&index)),
+        ]);
+        let only_second = manifest(vec![with_scip(
+            local(&second, Some("second")),
+            Some(&index),
+        )]);
+        let corpus = Corpus::new();
+        let summary = corpus.index(&both);
+        let (name, second_scip) = &summary.scip[1];
+        assert_eq!(name, "second");
+        assert_eq!(second_scip.conflicting_sources, ["first"]);
+        assert!(
+            summary.to_string().contains("IDs already defined by first"),
+            "{summary}"
+        );
+
+        corpus.index(&only_second);
+        let fresh = Corpus::new();
+        fresh.index(&only_second);
+        assert_eq!(corpus.contents(), fresh.contents());
+    }
+
+    #[test]
+    fn a_scip_pin_is_checked_and_an_unpinned_index_is_named() {
+        let (repo, index) = scip_fixture();
+        let pinned = |pin: Option<String>| {
+            let Source::Local(mut local) = with_scip(local(&repo, Some("app")), Some(&index))
+            else {
+                unreachable!()
+            };
+            local.scip_sha256 = pin;
+            manifest(vec![Source::Local(local)])
+        };
+        let corpus = Corpus::new();
+        assert_eq!(corpus.index(&pinned(None)).unpinned_scip, ["app"]);
+        let actual = crate::fetch::hex(&Sha256::digest(std::fs::read(&index).unwrap()));
+        assert!(corpus.index(&pinned(Some(actual))).unpinned_scip.is_empty());
+
+        let fresh = Corpus::new();
+        let err = fresh.try_index(&pinned(Some("0".repeat(64)))).unwrap_err();
+        assert!(
+            matches!(err, Error::ScipChanged { ref name, .. } if name == "app"),
+            "{err:?}"
+        );
+        let sources: i64 = fresh
+            .sql()
+            .query_row("SELECT count(*) FROM source", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(sources, 0);
+    }
+
+    #[test]
+    fn a_bad_scip_index_stops_the_run_before_anything_is_written() {
+        let (repo, _) = scip_fixture();
+        let dir = tempfile::tempdir().unwrap();
+        let junk = dir.path().join("junk.scip");
+        std::fs::write(&junk, b"\xff\xff\xff").unwrap();
+        for index in [dir.path().join("missing.scip"), junk] {
+            let corpus = Corpus::new();
+            let err = corpus
+                .try_index(&manifest(vec![with_scip(
+                    local(&repo, Some("app")),
+                    Some(&index),
+                )]))
+                .unwrap_err();
+            assert!(
+                matches!(err, Error::Scip { ref name, .. } if name == "app"),
+                "{err:?}"
+            );
+            assert!(
+                err.to_string().contains("can't read the SCIP index"),
+                "{err}"
+            );
+            let sources: i64 = corpus
+                .sql()
+                .query_row("SELECT count(*) FROM source", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(sources, 0);
+        }
+    }
+
     #[test]
     fn equal_scores_rank_in_citation_order_whatever_was_indexed_first() {
         let repo = Repo::new();
@@ -2532,6 +2872,22 @@ mod tests {
             skipped_sources: vec![("client".into(), "use = \"excluded\"")],
             removed_sources: vec!["old".into()],
             unpinned_guidance: vec!["rules".into()],
+            unpinned_scip: vec!["app".into()],
+            scip: vec![(
+                "app".into(),
+                codecite_core::ScipSummary {
+                    documents: 2,
+                    missing_documents: 1,
+                    matched: 6,
+                    added: 3,
+                    conflicts: 1,
+                    taken_over: 0,
+                    conflicting_sources: vec!["lib".into()],
+                    occurrences: 30,
+                    past_end: 2,
+                    edges: 12,
+                },
+            )],
             elapsed: Duration::from_millis(1250),
         };
         assert_eq!(
@@ -2542,6 +2898,9 @@ mod tests {
              skipped: 3 ignored, 1 binary\n\
              source client not indexed: use = \"excluded\"\n\
              source old removed: the run no longer indexes it\n\
+             scip app: 2 documents, 6 symbols given SCIP IDs, 3 added, 30 occurrences, 12 edges; \
+             1 documents the source doesn't have; 2 past the end of their file; 1 IDs already defined by lib\n\
+             scip app is not pinned: give it a scip_sha256 so a changed index stops the run until it is reviewed\n\
              guidance rules is not pinned: give it a sha256 so a changed rule stops the run until it is reviewed\n\
              elapsed: 1.25s"
         );
