@@ -156,7 +156,11 @@ jobs:
           name: codecite-${{ matrix.target }}
           path: dist/
           if-no-files-found: error
-          retention-days: 7
+          # Kept for the longest retention GitHub allows, so "Re-run failed
+          # jobs" can still cut the GitHub Release long after a failure.
+          # After that, "Re-run all jobs" rebuilds them, and publish skips the
+          # crates already uploaded.
+          retention-days: 90
 
   # Compiles each crate as it would be published, with no id-token
   # permission, so dependency build scripts and proc macros never run beside
@@ -221,8 +225,15 @@ jobs:
           fi
           published=()
           pending=0
-          for name in $(cargo metadata --locked --no-deps --format-version 1 |
-            jq -r '.packages[] | select(.publish != []) | .name'); do
+          # Captured first: a failing substitution in a for-loop's word list
+          # would be ignored, and an empty list would publish nothing.
+          names="$(cargo metadata --locked --no-deps --format-version 1 |
+            jq -r '.packages[] | select(.publish != []) | .name')"
+          if [[ -z "$names" ]]; then
+            echo "::error::No publishable crates found in the workspace"
+            exit 1
+          fi
+          for name in $names; do
             code="$(api "$name/$VERSION")"
             if [[ "$code" == 404 ]]; then
               echo "$name $VERSION will be published"
@@ -240,8 +251,11 @@ jobs:
               continue
             fi
             code="$(api "$name/owners")"
-            if [[ "$code" != 200 ]] ||
-              ! jq -e --arg o "$OWNER" 'any(.users[]; .kind == "user" and .login == $o)' api.json >/dev/null; then
+            if [[ "$code" != 200 ]]; then
+              echo "::error::crates.io returned HTTP $code for the owners of $name; re-run the job"
+              exit 1
+            fi
+            if ! jq -e --arg o "$OWNER" 'any(.users[]; .kind == "user" and .login == $o)' api.json >/dev/null; then
               echo "::error::$name $VERSION is on crates.io but $OWNER does not own $name"
               exit 1
             fi
@@ -303,11 +317,17 @@ jobs:
           path: dist
           merge-multiple: true
       - name: Checksums
-        working-directory: dist
         run: |
           set -euo pipefail
-          shopt -s failglob
-          sha256sum -- *.tar.gz *.spdx.json | tee SHA256SUMS
+          mkdir -p dist
+          cd dist
+          shopt -s nullglob
+          files=(*.tar.gz *.spdx.json)
+          if (( ${#files[@]} == 0 )); then
+            echo "::error::No build artifacts to release; they expire after 90 days, so use \"Re-run all jobs\" to rebuild them"
+            exit 1
+          fi
+          sha256sum -- "${files[@]}" | tee SHA256SUMS
       # A re-run signs the same files again; a second attestation for the
       # same digest is harmless.
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
