@@ -14,6 +14,13 @@ name: Release
 #
 # On a fork nothing reaches crates.io: the publish job runs
 # `cargo publish --dry-run` instead, and the GitHub Release is a draft.
+#
+# A tag runs the copy of this file at the tagged commit, so no check in it can
+# stop a tag on unreviewed code: such a commit can carry a release.yml without
+# the check. The controls are in oss-admin: a tag ruleset that lets only the
+# owner create, move or delete `v*` tags, and the `release` environment, which
+# admits only `v*` tags and which the publish and release jobs both deploy to.
+# The checks in `verify` catch mistakes, not attacks.
 on:
   push:
     tags:
@@ -59,7 +66,8 @@ jobs:
             echo "::error::Tag '$TAG' is not v<semver>, such as v0.1.0"
             exit 1
           fi
-          # Only reviewed code ships: the tag must point at a commit on main.
+          # Catches a tag pushed on the wrong commit. It is not a security
+          # control: see the note at the top of this file.
           if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
             echo "::error::Tag '$TAG' points at $GITHUB_SHA, which is not on main"
             exit 1
@@ -150,9 +158,27 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Compiles each crate as it would be published, with no id-token
+  # permission, so dependency build scripts and proc macros never run beside
+  # a crates.io token. The publish job then uploads with --no-verify.
+  package:
+    name: package
+    needs: verify
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install toolchain
+        run: |
+          rustup toolchain install
+          rustc --version
+      - name: Package and verify the crates
+        run: cargo package --workspace --locked
+
   publish:
     name: publish
-    needs: [verify, build]
+    needs: [verify, build, package]
     runs-on: ubuntu-24.04
     # crates.io's trusted publisher names this environment; oss-admin limits
     # it to v* tags.
@@ -168,25 +194,76 @@ jobs:
         run: |
           rustup toolchain install
           rustc --version
+      # crates.io versions are immutable, so a re-run after a partial publish,
+      # or after a crate's first version was published by hand, must skip
+      # what is already there. The sparse index says which versions exist.
+      - name: Find the crates not yet on crates.io
+        id: pending
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          published=()
+          pending=0
+          for name in $(cargo metadata --locked --no-deps --format-version 1 |
+            jq -r '.packages[] | select(.publish != []) | .name'); do
+            lower="${name,,}"
+            if (( ${#lower} < 4 )); then
+              echo "::error::Index path for short crate name '$name' is not handled"
+              exit 1
+            fi
+            url="https://index.crates.io/${lower:0:2}/${lower:2:2}/$lower"
+            code="$(curl -sS --retry 3 -o index.json -w '%{http_code}' "$url")"
+            if [[ "$code" == 200 ]] && jq -s -e --arg v "$VERSION" 'any(.[]; .vers == $v)' index.json >/dev/null; then
+              echo "$name $VERSION is already on crates.io; skipping it"
+              published+=("$name")
+            elif [[ "$code" == 200 || "$code" == 404 ]]; then
+              echo "$name $VERSION will be published"
+              pending=$((pending + 1))
+            else
+              echo "::error::crates.io index returned HTTP $code for $name"
+              exit 1
+            fi
+          done
+          rm -f index.json
+          echo "count=$pending" >>"$GITHUB_OUTPUT"
+          echo "published=${published[*]}" >>"$GITHUB_OUTPUT"
       - name: Publish dry run (fork)
-        if: github.repository != 'jamescrowley321/codecite'
-        run: cargo publish --workspace --locked --dry-run
+        if: github.repository != 'jamescrowley321/codecite' && steps.pending.outputs.count != '0'
+        env:
+          PUBLISHED: ${{ steps.pending.outputs.published }}
+        run: |
+          set -euo pipefail
+          read -ra names <<<"$PUBLISHED"
+          exclude=()
+          for name in "${names[@]}"; do exclude+=(--exclude "$name"); done
+          cargo publish --workspace --locked --no-verify --dry-run "${exclude[@]}"
       - name: Authenticate to crates.io
-        if: github.repository == 'jamescrowley321/codecite'
+        if: github.repository == 'jamescrowley321/codecite' && steps.pending.outputs.count != '0'
         id: auth
         uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
-      # Packages, verifies and uploads the five crates in dependency order.
-      # The token is revoked by the auth action's post step when the job ends.
+      # Uploads the remaining crates in dependency order. The package job has
+      # already verified them, so no crate code is compiled here. The token is
+      # revoked by the auth action's post step when the job ends.
       - name: Publish to crates.io
-        if: github.repository == 'jamescrowley321/codecite'
+        if: github.repository == 'jamescrowley321/codecite' && steps.pending.outputs.count != '0'
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-        run: cargo publish --workspace --locked
+          PUBLISHED: ${{ steps.pending.outputs.published }}
+        run: |
+          set -euo pipefail
+          read -ra names <<<"$PUBLISHED"
+          exclude=()
+          for name in "${names[@]}"; do exclude+=(--exclude "$name"); done
+          cargo publish --workspace --locked --no-verify "${exclude[@]}"
 
   release:
     name: release
     needs: [verify, build, publish]
     runs-on: ubuntu-24.04
+    # The same environment as publish, so its tag policy also gates the
+    # provenance attestation and the GitHub Release.
+    environment: release
     permissions:
       contents: write # create the GitHub Release
       id-token: write # sign the provenance attestation keylessly

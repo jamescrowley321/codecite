@@ -890,8 +890,12 @@ release workflow from the tagged commit before you run it:
 ```sh
 gh attestation verify codecite-0.1.0-x86_64-unknown-linux-gnu.tar.gz \
   --repo jamescrowley321/codecite \
-  --signer-workflow jamescrowley321/codecite/.github/workflows/release.yml
+  --signer-workflow jamescrowley321/codecite/.github/workflows/release.yml \
+  --source-ref refs/tags/v0.1.0
 ```
+
+`--source-ref` pins the attestation to the release tag, so a binary built
+from any other ref fails the check.
 
 `cargo install codecite --locked` builds the same version from crates.io.
 

@@ -8,7 +8,7 @@ fails fast on a tag that does not match the crates or a stale `Cargo.lock`,
 and ships prebuilt binaries with an SBOM and a build provenance attestation.
 
 **Architecture:** one workflow, `.github/workflows/release.yml`, on `v*` tags,
-in four jobs, each with only the permissions it needs:
+in five jobs, each with only the permissions it needs:
 
 1. `verify`: the tag is `v<semver>`, points at a commit on `main`, equals the
    version of every crate whose `publish` is not `false`, and
@@ -19,11 +19,15 @@ in four jobs, each with only the permissions it needs:
    a `.tar.gz` with the binary, `README.md`, `LICENSE` and `NOTICE`, and an
    SPDX SBOM from syft's Rust binary cataloger. An SBOM listing no crates
    fails the job.
-3. `publish`: in the `release` environment with `id-token: write`;
+3. `package`: `cargo package --workspace --locked`, with no `id-token`, so
+   crate build scripts never run beside a registry token.
+4. `publish`: in the `release` environment with `id-token: write`; skips
+   crates already at the version on crates.io (sparse index), then
    `rust-lang/crates-io-auth-action` trades the OIDC token for a crates.io
-   token scoped to the job, then `cargo publish --workspace --locked`. On a
-   fork it runs `cargo publish --workspace --locked --dry-run` instead.
-4. `release`: `SHA256SUMS`, `actions/attest-build-provenance` over the
+   token scoped to the job, then `cargo publish --workspace --locked
+   --no-verify` with an `--exclude` per skipped crate. On a fork it runs the
+   same with `--dry-run` instead.
+5. `release`: in the `release` environment; `SHA256SUMS`, `actions/attest-build-provenance` over the
    archives and SBOMs, and `gh release create --verify-tag` (a draft on a
    fork, a prerelease for a `-` version).
 
