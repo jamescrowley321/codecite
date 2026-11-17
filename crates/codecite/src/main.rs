@@ -400,7 +400,7 @@ enum CiteCommand {
     #[command(after_long_help = "Examples:
   codecite cite check app
   codecite cite check app src docs README.md
-  git ls-files -z '*.md' | xargs -0 codecite cite check app --json
+  git ls-files -z '*.md' | xargs -0r codecite cite check app --json
 
 It finds the canonical citations codecite prints (repo@sha:path#L10-L42,
 doc@sha256:<12 hex>#L3-L9, an #anchor, doc@sha256:<12 hex>#section-4.3) and
@@ -1692,6 +1692,21 @@ mod tests {
         // A corpus is required; paths are not.
         assert!(Cli::try_parse_from(["codecite", "cite", "check"]).is_err());
         assert!(Cli::try_parse_from(["codecite", "cite", "check", "identity"]).is_ok());
+        // A corpus named `check` is still checked one citation at a time.
+        let args = ["codecite", "cite", "--", "check", "RFC 9449 §4.3"];
+        let Command::Cite {
+            check: None,
+            corpus,
+            citation,
+            ..
+        } = Cli::try_parse_from(args).unwrap().command
+        else {
+            panic!("not cite");
+        };
+        assert_eq!(
+            (corpus.as_deref(), citation.as_deref()),
+            (Some("check"), Some("RFC 9449 §4.3"))
+        );
     }
 
     #[test]

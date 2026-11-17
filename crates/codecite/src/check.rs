@@ -32,6 +32,9 @@ pub fn check(store: &Store, paths: &[PathBuf], options: &CheckOptions) -> anyhow
     for path in paths {
         collect(path, true, &mut files)?;
     }
+    // A file named twice, or inside a directory also named, is read once.
+    let mut seen = std::collections::HashSet::new();
+    files.retain(|file| seen.insert(fs::canonicalize(file).unwrap_or_else(|_| file.clone())));
     for file in files {
         let Some(text) = read_text(&file)? else {
             continue;

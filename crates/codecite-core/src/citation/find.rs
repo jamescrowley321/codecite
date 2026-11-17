@@ -19,10 +19,11 @@ pub struct WrittenCitation<'a> {
 
 /// A canonical citation: a name (a repo may hold `/`), `@`, a commit or
 /// `sha256:` and a 12-digit hash, an optional `:path`, and a `#` fragment
-/// (`L10-L42`, `section-4.3/step-2` or a heading's anchor). A path stops at
-/// whitespace, quotes, brackets and the other characters that close a
-/// citation in prose, Markdown or code.
-const CANONICAL: &str = r#"[A-Za-z0-9][A-Za-z0-9._/-]*@(?:sha256:[0-9a-f]{12}|[0-9a-f]{7,64})(?::[^\s#`'"<>()\[\]{}|,;*]+)?#[A-Za-z0-9][A-Za-z0-9._/-]*"#;
+/// (`L10-L42`, `section-4.3/step-2` or a heading's anchor, which may hold
+/// any letter or digit, `-`, `_`, `.` and `:`). A path runs to the `#`, so
+/// it may hold brackets and commas (`app/(auth)/[id]/page.tsx`), but stops at
+/// whitespace, backticks, quotes, `<`, `>` and `|`.
+const CANONICAL: &str = r#"[A-Za-z0-9][A-Za-z0-9._/-]*@(?:sha256:[0-9a-f]{12}|[0-9a-f]{7,64})(?::[^\s#`'"<>|]+)?#[\p{Alphabetic}\p{N}_][\p{Alphabetic}\p{N}._:/-]*"#;
 
 /// A Markdown link whose text cites a section with `§` and whose target is
 /// a web URL with an anchor, as `cite` takes it.
@@ -39,14 +40,14 @@ fn pattern() -> &'static Regex {
 /// (`repo@sha:path#L10-L42`, `doc@sha256:<12 hex>#L3-L9`, an anchor such
 /// as `repo@sha:README.md#install`, `doc@sha256:<12 hex>#section-4.3`), and
 /// each Markdown link whose text holds `§` and whose target is a URL with an
-/// anchor. Trailing dots, which end a sentence rather than a citation, are
-/// left out. Written spec forms in running text, such as `RFC 9449 §4.3`,
+/// anchor. Trailing dots and colons, which end a sentence rather than a
+/// citation, are left out. Written spec forms in running text, such as `RFC 9449 §4.3`,
 /// are not found.
 pub fn find_citations(text: &str) -> Vec<WrittenCitation<'_>> {
     let mut found = Vec::new();
     for (index, line) in text.lines().enumerate() {
         for m in pattern().find_iter(line) {
-            let written = m.as_str().trim_end_matches('.');
+            let written = m.as_str().trim_end_matches(['.', ':']);
             found.push(WrittenCitation {
                 line: index + 1,
                 column: line[..m.start()].chars().count() + 1,
@@ -102,6 +103,7 @@ mod tests {
             format!("'{c}';"),
             format!("<{c}>"),
             format!("**{c}**"),
+            format!("{c}:"),
             format!("see {c}."),
             format!("// {c}"),
             format!("# {c}"),
@@ -112,6 +114,20 @@ mod tests {
             texts("rfc9449@sha256:2d8657f07291#section-4.3."),
             ["rfc9449@sha256:2d8657f07291#section-4.3"]
         );
+    }
+
+    #[test]
+    fn anchors_and_paths_take_what_citations_allow() {
+        for c in [
+            "app@0123456:README.md#fig:1",
+            "app@0123456:README.md#install-über",
+            "app@0123456:README.md#über-uns",
+            "app@0123456:README.md#_top",
+            "app@0123456:app/(auth)/[id]/page.tsx#L1-L4",
+            "app@0123456:src/a,b;{c}.rs#L2",
+        ] {
+            assert_eq!(texts(&format!("see ({c}).")), [c], "{c}");
+        }
     }
 
     #[test]

@@ -441,7 +441,7 @@ resolving against the pinned corpus:
 ```sh
 codecite cite check mywork                     # every file under .
 codecite cite check mywork src docs README.md
-git ls-files -z '*.md' | xargs -0 codecite cite check mywork
+git ls-files -z '*.md' | xargs -0r codecite cite check mywork   # -r: no files, no run
 ```
 
 It finds the canonical citations codecite prints (`repo@sha:path#L10-L42`,
@@ -452,7 +452,8 @@ running text, such as `RFC 9449 §4.3`, are not found; check those one at a
 time with `cite`. Directories are walked without following links or reading
 hidden entries (`.git`, `.github`), and files over 1 MiB, not UTF-8 or
 holding a NUL byte are skipped; name a hidden directory to check it, or pass
-the files `git ls-files` lists to leave out what git ignores.
+the files `git ls-files` lists to leave out what git ignores. A file named
+twice, or inside a directory also named, is read once.
 
 A citation fails when it doesn't resolve, when `read` refuses it (an unknown
 source, version, file or anchor, lines past the end, a malformed citation),

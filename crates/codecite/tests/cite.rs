@@ -437,6 +437,11 @@ fn check_fails_on_each_citation_that_does_not_hold_up() {
     );
     assert_eq!(*lines.last().unwrap(), "4 citations in 1 file: 3 failed");
 
+    // A file named twice is read once.
+    let output = check(home.path(), tree.path(), &["docs", "docs/a.md", "."]);
+    let twice = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(twice, stdout);
+
     // A superseded version can be let through.
     let output = check(
         home.path(),
