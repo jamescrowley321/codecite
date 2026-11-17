@@ -10,7 +10,9 @@ all-features = true
 yanked = "deny"
 # Every entry needs an advisory id and a reason, e.g.
 # { id = "RUSTSEC-0000-0000", reason = "not reachable: we never call X" }
-ignore = []
+ignore = [
+    { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained, with no known vulnerability; it comes in only through rmcp's schemars chrono04 feature, not used directly. Remove with #267" },
+]
 
 [licenses]
 allow = [
