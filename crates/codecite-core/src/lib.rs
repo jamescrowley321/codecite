@@ -9,7 +9,7 @@ mod citation;
 pub use citation::{
     AnchorCitation, Citation, CitationError, CodeCitation, CommitSha, ContentHash,
     DocumentCitation, LineRange, Pin, SectionNumber, SpecAliases, SpecCitation, SpecReference,
-    SpecTarget,
+    SpecTarget, WrittenCitation, find_citations,
 };
 
 mod error;
@@ -36,6 +36,7 @@ mod role;
 pub use role::Role;
 
 mod store;
+pub use store::{CheckOptions, CitationChecker, CitationProblem, Problem, TextCheck};
 pub use store::{
     ChunkRecord, CiteOptions, CiteResult, Context, ContextQuery, ContextTarget, Corpora,
     CorpusInfo, DEFAULT_MAX_AGE_DAYS, DEFAULT_MAX_LINES, DEFAULT_SEARCH_LIMIT, Definition,
