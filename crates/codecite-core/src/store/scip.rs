@@ -1105,8 +1105,14 @@ mod tests {
             edges,
             [
                 (scip("client/Client#"), "src/lib.rs@app".to_owned()),
-                (scip("client/impl#[Client]new()."), "src/lib.rs@app".to_owned()),
-                (scip("client/impl#[Client]validate()."), "src/lib.rs@app".to_owned()),
+                (
+                    scip("client/impl#[Client]new()."),
+                    "src/lib.rs@app".to_owned()
+                ),
+                (
+                    scip("client/impl#[Client]validate()."),
+                    "src/lib.rs@app".to_owned()
+                ),
             ]
         );
         let held: i64 = store

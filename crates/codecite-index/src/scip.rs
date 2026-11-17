@@ -182,9 +182,8 @@ pub fn decode_scip(bytes: &[u8]) -> Result<Vec<ScipDocument>, ScipError> {
             let roles = u32::try_from(occ.symbol_roles).unwrap_or_default();
             if roles & ROLE_DEFINITION != 0 {
                 let found = info(symbol);
-                let short = |n: &String| {
-                    !n.is_empty() && n.len() <= MAX_DISPLAY_NAME_BYTES && plain(n)
-                };
+                let short =
+                    |n: &String| !n.is_empty() && n.len() <= MAX_DISPLAY_NAME_BYTES && plain(n);
                 let display_name = found
                     .map(|i| i.display_name.clone())
                     .filter(short)

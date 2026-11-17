@@ -923,7 +923,10 @@ mod tests {
         assert_eq!(callees.results[0].defined_in.as_deref(), Some("app"));
         // A caller in the call's own source isn't marked.
         let callers = walk(&store, &scip("client/check()."), Direction::Callers, 1);
-        assert!(callers.results.iter().all(|n| n.defined_in.is_none()), "{callers:?}");
+        assert!(
+            callers.results.iter().all(|n| n.defined_in.is_none()),
+            "{callers:?}"
+        );
     }
 
     #[test]
