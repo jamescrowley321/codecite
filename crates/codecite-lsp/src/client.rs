@@ -2,14 +2,17 @@
 //!
 //! One reader thread owns the server's output and routes every message:
 //! a response to the channel its request waits on, a notification to the
-//! caller's handler, a server-to-client request to a built-in reply. Callers
-//! block on their own request with a deadline. Nothing is written to stdout,
-//! which belongs to the MCP server; diagnostics go to stderr.
+//! caller's handler, a server-to-client request to a built-in reply. One
+//! writer thread owns the server's input and writes what the others queue.
+//! Callers block on their own write and request with a deadline; the reader
+//! queues its replies and never waits on the writer, so a server that stops
+//! reading can't stall it. Nothing is written to stdout, which belongs to
+//! the MCP server; diagnostics go to stderr.
 
 use std::collections::HashMap;
 use std::io::{BufReader, Read, Write};
-use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::mpsc::{self, RecvTimeoutError, SyncSender};
+use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -22,14 +25,21 @@ use crate::message::{
 };
 use crate::{Error, Result};
 
+/// The most messages that may wait for the writer. A server that stops
+/// reading while it keeps sending requests fills this, and the connection
+/// closes instead of queueing replies without bound.
+const MAX_QUEUED: usize = 1024;
+
 /// Called on the reader thread with each server notification's method and
 /// params. It must not block for long: the next message waits on it.
 pub type NotificationHandler = Box<dyn FnMut(&str, Value) + Send>;
 
-/// How a [`Client`] reads.
+/// How a [`Client`] reads and writes.
 pub struct ClientOptions {
     /// The cap on one message's body, in bytes.
     pub max_body: usize,
+    /// How long [`Client::notify`] waits for its message to be written.
+    pub write_timeout: Duration,
     /// Receives server notifications; `None` drops them.
     pub on_notification: Option<NotificationHandler>,
 }
@@ -38,6 +48,7 @@ impl Default for ClientOptions {
     fn default() -> Self {
         Self {
             max_body: DEFAULT_MAX_BODY_BYTES,
+            write_timeout: Duration::from_secs(10),
             on_notification: None,
         }
     }
@@ -47,6 +58,7 @@ impl std::fmt::Debug for ClientOptions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ClientOptions")
             .field("max_body", &self.max_body)
+            .field("write_timeout", &self.write_timeout)
             .field("on_notification", &self.on_notification.is_some())
             .finish()
     }
@@ -59,6 +71,18 @@ enum Failure {
 
 type Reply = std::result::Result<Value, Failure>;
 
+/// Why a message wasn't written.
+enum SendFailure {
+    Closed,
+    TimedOut,
+}
+
+/// A message for the writer thread, and where to say it was written.
+struct Outgoing {
+    message: Value,
+    written: Option<SyncSender<()>>,
+}
+
 #[derive(Default)]
 struct State {
     pending: HashMap<i64, SyncSender<Reply>>,
@@ -66,7 +90,11 @@ struct State {
 }
 
 struct Shared {
-    writer: Mutex<Option<Box<dyn Write + Send>>>,
+    /// Feeds the writer thread; `None` once closed, which ends that thread
+    /// after it writes what is already queued.
+    outbox: Mutex<Option<Sender<Outgoing>>>,
+    /// How many messages are queued and not yet written.
+    queued: AtomicUsize,
     state: Mutex<State>,
 }
 
@@ -83,25 +111,60 @@ impl Shared {
         Error::Closed { reason }
     }
 
-    fn send(&self, message: &Message) -> Result<()> {
-        let result = {
-            let mut writer = lock(&self.writer);
-            writer
-                .as_mut()
-                .map(|w| write_message(w, &message.to_value()))
+    /// Queues a message for the writer and never blocks on it. With `wait`,
+    /// waits that long for it to be written; past that the connection is
+    /// closed, since part of a frame may already be on the wire.
+    fn send(
+        &self,
+        message: &Message,
+        wait: Option<Duration>,
+    ) -> std::result::Result<(), SendFailure> {
+        let (written, done) = match wait {
+            Some(_) => {
+                let (tx, rx) = mpsc::sync_channel(1);
+                (Some(tx), Some(rx))
+            }
+            None => (None, None),
         };
-        match result {
-            None => Err(self.closed_error()),
-            Some(Ok(())) => Ok(()),
-            Some(Err(e)) => {
-                self.close(&format!("writing to the server failed: {e}"));
-                Err(self.closed_error())
+        let queued = {
+            let outbox = lock(&self.outbox);
+            let Some(outbox) = outbox.as_ref() else {
+                return Err(SendFailure::Closed);
+            };
+            let queued = self.queued.fetch_add(1, Ordering::SeqCst);
+            if queued < MAX_QUEUED {
+                outbox
+                    .send(Outgoing {
+                        message: message.to_value(),
+                        written,
+                    })
+                    .is_ok()
+            } else {
+                false
+            }
+        };
+        if !queued {
+            self.queued.fetch_sub(1, Ordering::SeqCst);
+            self.close(&format!(
+                "the server is not reading its input: {MAX_QUEUED} messages are waiting"
+            ));
+            return Err(SendFailure::Closed);
+        }
+        let (Some(wait), Some(done)) = (wait, done) else {
+            return Ok(());
+        };
+        match done.recv_timeout(wait) {
+            Ok(()) => Ok(()),
+            Err(RecvTimeoutError::Disconnected) => Err(SendFailure::Closed),
+            Err(RecvTimeoutError::Timeout) => {
+                self.close(&format!("writing to the server timed out after {wait:?}"));
+                Err(SendFailure::TimedOut)
             }
         }
     }
 
     /// Marks the connection closed, fails every in-flight request at once
-    /// and drops the writer. The first reason sticks.
+    /// and stops queueing writes. The first reason sticks.
     fn close(&self, reason: &str) {
         let pending = {
             let mut state = lock(&self.state);
@@ -111,7 +174,7 @@ impl Shared {
         for (_, tx) in pending {
             let _ = tx.try_send(Err(Failure::Closed(reason.to_owned())));
         }
-        lock(&self.writer).take();
+        lock(&self.outbox).take();
     }
 }
 
@@ -128,6 +191,7 @@ impl Drop for CloseOnExit {
 pub struct Client {
     shared: Arc<Shared>,
     next_id: AtomicI64,
+    write_timeout: Duration,
 }
 
 impl std::fmt::Debug for Client {
@@ -140,30 +204,51 @@ impl std::fmt::Debug for Client {
 
 impl Client {
     /// Starts a client reading `reader` (the server's output) and writing
-    /// `writer` (its input). The reader thread runs until `reader` ends.
+    /// `writer` (its input). The reader thread runs until `reader` ends; the
+    /// writer thread until the connection closes or a write fails. A writer
+    /// stuck on a server that never reads again ends when the server dies.
     pub fn new<R, W>(reader: R, writer: W, options: ClientOptions) -> Result<Self>
     where
         R: Read + Send + 'static,
         W: Write + Send + 'static,
     {
+        let (outbox, inbox) = mpsc::channel();
         let shared = Arc::new(Shared {
-            writer: Mutex::new(Some(Box::new(writer))),
+            outbox: Mutex::new(Some(outbox)),
+            queued: AtomicUsize::new(0),
             state: Mutex::new(State::default()),
         });
-        let thread_shared = Arc::clone(&shared);
+        let write_timeout = options.write_timeout;
+        let writer_shared = Arc::clone(&shared);
         thread::Builder::new()
+            .name("codecite-lsp-writer".into())
+            .spawn(move || write_loop(&writer_shared, writer, &inbox))?;
+        let reader_shared = Arc::clone(&shared);
+        let spawned = thread::Builder::new()
             .name("codecite-lsp-reader".into())
-            .spawn(move || read_loop(thread_shared, reader, options))?;
+            .spawn(move || read_loop(reader_shared, reader, options));
+        if let Err(e) = spawned {
+            shared.close("the reader thread did not start");
+            return Err(e.into());
+        }
         Ok(Self {
             shared,
             next_id: AtomicI64::new(1),
+            write_timeout,
         })
     }
 
-    /// Sends a request and waits up to `timeout` for its response. On
-    /// expiry it sends `$/cancelRequest` and the late response is dropped.
+    /// Sends a request and waits up to `timeout`, writing it included, for
+    /// its response. If the response is late it sends `$/cancelRequest` and
+    /// the late response is dropped; if the write itself is late the
+    /// connection is closed.
     pub fn request(&self, method: &str, params: Value, timeout: Duration) -> Result<Value> {
         let start = Instant::now();
+        let deadline = start + timeout;
+        let timed_out = || Error::Timeout {
+            method: method.to_owned(),
+            elapsed: start.elapsed(),
+        };
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = mpsc::sync_channel(1);
         {
@@ -180,11 +265,15 @@ impl Client {
             method: method.to_owned(),
             params,
         };
-        if let Err(e) = self.shared.send(&message) {
+        if let Err(failure) = self.shared.send(&message, Some(timeout)) {
             lock(&self.shared.state).pending.remove(&id);
-            return Err(e);
+            return Err(match failure {
+                SendFailure::Closed => self.shared.closed_error(),
+                SendFailure::TimedOut => timed_out(),
+            });
         }
-        let reply = match rx.recv_timeout(timeout) {
+        let wait = deadline.saturating_duration_since(Instant::now());
+        let reply = match rx.recv_timeout(wait) {
             Ok(reply) => reply,
             Err(RecvTimeoutError::Disconnected) => return Err(self.shared.closed_error()),
             Err(RecvTimeoutError::Timeout) => {
@@ -193,11 +282,12 @@ impl Client {
                 match rx.try_recv() {
                     Ok(reply) => reply,
                     Err(_) => {
-                        let _ = self.notify("$/cancelRequest", json!({ "id": id }));
-                        return Err(Error::Timeout {
-                            method: method.to_owned(),
-                            elapsed: start.elapsed(),
-                        });
+                        let cancel = Message::Notification {
+                            method: "$/cancelRequest".into(),
+                            params: json!({ "id": id }),
+                        };
+                        let _ = self.shared.send(&cancel, None);
+                        return Err(timed_out());
                     }
                 }
             }
@@ -219,16 +309,34 @@ impl Client {
         })
     }
 
-    /// Sends a notification.
+    /// Sends a notification, waiting up to the client's `write_timeout` for
+    /// it to be written.
     pub fn notify(&self, method: &str, params: Value) -> Result<()> {
-        self.shared.send(&Message::Notification {
-            method: method.to_owned(),
-            params,
-        })
+        self.notify_within(method, params, self.write_timeout)
     }
 
-    /// Closes the writer, which the server sees as the end of its input.
-    /// In-flight and later requests fail with [`Error::Closed`].
+    /// Sends a notification, waiting up to `timeout` for it to be written.
+    /// Past that the connection is closed and this is [`Error::Timeout`].
+    pub fn notify_within(&self, method: &str, params: Value, timeout: Duration) -> Result<()> {
+        let start = Instant::now();
+        let message = Message::Notification {
+            method: method.to_owned(),
+            params,
+        };
+        self.shared
+            .send(&message, Some(timeout))
+            .map_err(|failure| match failure {
+                SendFailure::Closed => self.shared.closed_error(),
+                SendFailure::TimedOut => Error::Timeout {
+                    method: method.to_owned(),
+                    elapsed: start.elapsed(),
+                },
+            })
+    }
+
+    /// Closes the connection: in-flight and later requests fail with
+    /// [`Error::Closed`]. What is already queued is still written, then the
+    /// server's input is closed, which it sees as the end of its input.
     pub fn close(&self) {
         self.shared.close("the client closed the connection");
     }
@@ -242,6 +350,28 @@ impl Client {
 impl Drop for Client {
     fn drop(&mut self) {
         self.close();
+    }
+}
+
+/// Writes queued messages in order until the queue closes or a write fails.
+/// Dropping `writer` on return closes the server's input.
+fn write_loop<W: Write>(shared: &Shared, mut writer: W, inbox: &Receiver<Outgoing>) {
+    while let Ok(outgoing) = inbox.recv() {
+        let result = write_message(&mut writer, &outgoing.message);
+        shared.queued.fetch_sub(1, Ordering::SeqCst);
+        match result {
+            Ok(()) => {
+                if let Some(written) = outgoing.written {
+                    let _ = written.try_send(());
+                }
+            }
+            Err(e) => {
+                // Closed before `outgoing.written` drops, so its waiter
+                // sees the reason.
+                shared.close(&format!("writing to the server failed: {e}"));
+                return;
+            }
+        }
     }
 }
 
@@ -286,7 +416,8 @@ fn read_loop<R: Read>(shared: Arc<Shared>, reader: R, mut options: ClientOptions
                     id: Some(id),
                     outcome: default_reply(&method, &params),
                 };
-                if shared.send(&reply).is_err() {
+                // Queued, never waited on: the writer may be stuck.
+                if shared.send(&reply, None).is_err() {
                     return;
                 }
             }
@@ -689,6 +820,91 @@ mod tests {
         });
     }
 
+    /// More than any OS pipe buffers, so writing it blocks until the peer reads.
+    fn bigger_than_a_pipe() -> Value {
+        json!({ "pad": "x".repeat(1024 * 1024) })
+    }
+
+    #[test]
+    fn a_peer_that_stops_reading_times_out_the_request() {
+        let (client, peer) = connect();
+        let timeout = Duration::from_millis(200);
+        let start = Instant::now();
+        match client.request("big", bigger_than_a_pipe(), timeout) {
+            Err(Error::Timeout { method, elapsed }) => {
+                assert_eq!(method, "big");
+                assert!(elapsed >= timeout, "{elapsed:?}");
+            }
+            other => panic!("expected a timeout, got {other:?}"),
+        }
+        assert!(start.elapsed() < LONG / 2, "{:?}", start.elapsed());
+        // Half a frame may be on the wire, so the connection is closed.
+        assert!(client.closed_reason().unwrap().contains("timed out"));
+        assert!(matches!(
+            client.request("later", Value::Null, LONG),
+            Err(Error::Closed { .. })
+        ));
+        assert!(matches!(
+            client.notify("later", Value::Null),
+            Err(Error::Closed { .. })
+        ));
+        drop(peer);
+    }
+
+    #[test]
+    fn the_reader_never_waits_on_a_stuck_write() {
+        let (tx, rx) = mpsc::channel();
+        let (client, mut peer) = connect_with(ClientOptions {
+            on_notification: Some(Box::new(move |method, _| {
+                tx.send(method.to_owned()).unwrap();
+            })),
+            ..ClientOptions::default()
+        });
+        thread::scope(|s| {
+            // Blocks writing: the peer isn't reading.
+            let stuck = s.spawn(|| client.request("big", bigger_than_a_pipe(), LONG));
+            thread::sleep(Duration::from_millis(50));
+            for n in 0..3 {
+                peer.send(Message::Request {
+                    id: Id::Number(n),
+                    method: "window/workDoneProgress/create".into(),
+                    params: json!({"token": n}),
+                });
+            }
+            peer.send(Message::Notification {
+                method: "after".into(),
+                params: Value::Null,
+            });
+            // The replies wait their turn; the reader moved on regardless.
+            assert_eq!(rx.recv_timeout(LONG / 2).unwrap(), "after");
+            peer.reader.take();
+            assert!(matches!(stuck.join().unwrap(), Err(Error::Closed { .. })));
+        });
+    }
+
+    #[test]
+    fn a_peer_flooding_requests_without_reading_closes_the_connection() {
+        let (client, mut peer) = connect();
+        for n in 0..(MAX_QUEUED as i64 * 8) {
+            let request = Message::Request {
+                id: Id::Number(n),
+                method: "window/workDoneProgress/create".into(),
+                params: json!({"token": n}),
+            };
+            // Once the client closes, its reader is gone and writes fail.
+            let sent = write_message(peer.writer.as_mut().unwrap(), &request.to_value());
+            if sent.is_err() || client.closed_reason().is_some() {
+                break;
+            }
+        }
+        let deadline = Instant::now() + LONG / 2;
+        while client.closed_reason().is_none() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        let reason = client.closed_reason().expect("closed");
+        assert!(reason.contains("not reading"), "{reason:?}");
+    }
+
     #[test]
     fn nothing_in_the_crate_writes_to_stdout() {
         // Built with concat! so this test's own source doesn't match.
@@ -698,14 +914,32 @@ mod tests {
             concat!("std", "out()"),
             concat!("Stdio::", "inherit"),
         ];
-        let sources = [
-            ("client.rs", include_str!("client.rs")),
-            ("framing.rs", include_str!("framing.rs")),
-            ("message.rs", include_str!("message.rs")),
-            ("server.rs", include_str!("server.rs")),
-            ("lib.rs", include_str!("lib.rs")),
-        ];
-        for (file, source) in sources {
+        // Every source file, read at run time so a new one can't be missed.
+        let mut sources = Vec::new();
+        let mut dirs = vec![std::path::PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src"
+        ))];
+        while let Some(dir) = dirs.pop() {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    dirs.push(path);
+                } else if path.extension().is_some_and(|e| e == "rs") {
+                    let source = std::fs::read_to_string(&path).unwrap();
+                    sources.push((path.display().to_string(), source));
+                }
+            }
+        }
+        let names: Vec<_> = sources.iter().map(|(file, _)| file.as_str()).collect();
+        for expected in ["client.rs", "error.rs", "framing.rs", "lib.rs", "server.rs"] {
+            assert!(
+                names.iter().any(|n| n.ends_with(expected)),
+                "{expected} not scanned: {names:?}"
+            );
+        }
+        for (file, source) in &sources {
+            let source = source.as_str();
             for b in banned {
                 // `eprintln!` is fine: only a match not preceded by an
                 // identifier character is a call to the stdout macro.
@@ -718,5 +952,40 @@ mod tests {
                 assert!(!real, "{file} uses {b}");
             }
         }
+    }
+
+    #[test]
+    fn notify_within_bounds_the_write() {
+        let (client, _peer) = connect();
+        let timeout = Duration::from_millis(100);
+        let start = Instant::now();
+        let err = client
+            .notify_within("big", bigger_than_a_pipe(), timeout)
+            .unwrap_err();
+        assert!(
+            matches!(&err, Error::Timeout { method, .. } if method == "big"),
+            "{err:?}"
+        );
+        assert!(start.elapsed() < LONG / 2, "{:?}", start.elapsed());
+    }
+
+    #[test]
+    fn closing_flushes_what_was_already_sent() {
+        let (client, mut peer) = connect();
+        client.notify("exit", Value::Null).unwrap();
+        client.close();
+        assert_eq!(
+            peer.recv(),
+            Message::Notification {
+                method: "exit".into(),
+                params: Value::Null
+            }
+        );
+        let reader = peer.reader.as_mut().unwrap();
+        assert!(
+            read_message(reader, DEFAULT_MAX_BODY_BYTES)
+                .unwrap()
+                .is_none()
+        );
     }
 }

@@ -20,16 +20,39 @@ use serde_json::{Value, json};
 
 /// A fake server never outlives this, even if a test leaks it.
 const FAKE_LIFETIME: Duration = Duration::from_secs(60);
-/// A test that runs longer than this fails, so none can hang the suite.
+/// The tests run in parallel and all start at once, so this one deadline
+/// bounds each of them: a test still running after it fails the suite.
 const TEST_LIMIT: Duration = Duration::from_secs(30);
+
+/// libtest options that take a value, so the value isn't read as a filter.
+const OPTIONS_WITH_VALUES: &[&str] = &[
+    "--test-threads",
+    "--skip",
+    "--color",
+    "--format",
+    "--logfile",
+    "-Z",
+];
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).map(String::as_str) == Some("--fake-lsp") {
         fake::run(args.get(2).map_or("clean", String::as_str));
     }
-    let filter = args.iter().skip(1).find(|a| !a.starts_with('-')).cloned();
-    run_tests(filter.as_deref());
+    run_tests(filter(&args[1..]));
+}
+
+/// The first argument that is neither an option nor an option's value.
+fn filter(args: &[String]) -> Option<&str> {
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        if OPTIONS_WITH_VALUES.contains(&arg.as_str()) {
+            args.next();
+        } else if !arg.starts_with('-') {
+            return Some(arg);
+        }
+    }
+    None
 }
 
 type Test = (&'static str, fn());
@@ -79,6 +102,22 @@ const TESTS: &[Test] = &[
     (
         "slow_reply_times_out_and_the_server_lives_on",
         slow_reply_times_out_and_the_server_lives_on,
+    ),
+    (
+        "a_server_that_stops_reading_is_still_killed",
+        a_server_that_stops_reading_is_still_killed,
+    ),
+    (
+        "a_closed_connection_waits_for_exit_only_once",
+        a_closed_connection_waits_for_exit_only_once,
+    ),
+    (
+        "progress_quiet_period_starts_after_a_slow_initialize",
+        progress_quiet_period_starts_after_a_slow_initialize,
+    ),
+    (
+        "the_filter_skips_option_values",
+        the_filter_skips_option_values,
     ),
 ];
 
@@ -358,6 +397,91 @@ fn slow_reply_times_out_and_the_server_lives_on() {
     );
 }
 
+fn a_server_that_stops_reading_is_still_killed() {
+    let grace = Duration::from_millis(300);
+    let (_root, server) = start(
+        "stops-reading",
+        &ServerOptions {
+            shutdown_grace: grace,
+            ..options()
+        },
+    );
+    let server = server.expect("start");
+    let pid = server.pid();
+    server
+        .request("test/stopReading", Value::Null, LONG)
+        .unwrap();
+    // More than a pipe holds: the write blocks, and its deadline covers it.
+    let timeout = Duration::from_millis(200);
+    let big = json!({"pad": "x".repeat(1024 * 1024)});
+    let started = Instant::now();
+    match server.request("test/echo", big, timeout) {
+        Err(Error::Timeout { method, elapsed }) => {
+            assert_eq!(method, "test/echo");
+            assert!(elapsed >= timeout, "{elapsed:?}");
+        }
+        other => panic!("expected Timeout, got {other:?}"),
+    }
+    assert!(started.elapsed() < LONG / 2, "{:?}", started.elapsed());
+    let started = Instant::now();
+    drop(server);
+    assert!(started.elapsed() < LONG / 2, "{:?}", started.elapsed());
+    assert!(!alive(pid));
+}
+
+fn a_closed_connection_waits_for_exit_only_once() {
+    let grace = Duration::from_millis(500);
+    let (_root, server) = start(
+        "garbles-output",
+        &ServerOptions {
+            shutdown_grace: grace,
+            ..options()
+        },
+    );
+    let server = server.expect("start");
+    // A bad frame closes the connection; the process lives on.
+    let started = Instant::now();
+    let first = server.request("test/garble", Value::Null, LONG);
+    assert!(matches!(first, Err(Error::Closed { .. })), "{first:?}");
+    assert!(started.elapsed() >= grace, "{:?}", started.elapsed());
+    let started = Instant::now();
+    let second = server.request("test/echo", Value::Null, LONG);
+    assert!(matches!(second, Err(Error::Closed { .. })), "{second:?}");
+    assert!(started.elapsed() < grace / 2, "{:?}", started.elapsed());
+}
+
+fn progress_quiet_period_starts_after_a_slow_initialize() {
+    // `initialize` takes 600 ms, longer than the quiet period; progress
+    // begins 50 ms after `initialized` and lasts 300 ms.
+    let quiet = Duration::from_millis(300);
+    let started = Instant::now();
+    let (_root, server) = start(
+        "slow-initialize",
+        &ServerOptions {
+            readiness: Readiness::Progress { quiet },
+            ..options()
+        },
+    );
+    let server = server.expect("start");
+    let took = started.elapsed();
+    assert!(took >= Duration::from_millis(600) + quiet, "{took:?}");
+    assert_eq!(
+        server.request("test/indexed", Value::Null, LONG).unwrap(),
+        json!(true)
+    );
+}
+
+fn the_filter_skips_option_values() {
+    let args = |a: &[&str]| a.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+    assert_eq!(filter(&args(&["--test-threads", "1"])), None);
+    assert_eq!(
+        filter(&args(&["--test-threads", "1", "crash"])),
+        Some("crash")
+    );
+    assert_eq!(filter(&args(&["--nocapture", "drop"])), Some("drop"));
+    assert_eq!(filter(&args(&["--test-threads=1"])), None);
+}
+
 // ---------------------------------------------------------------------------
 // The fake language server
 // ---------------------------------------------------------------------------
@@ -372,6 +496,7 @@ mod fake {
         initialize_params: Value,
         probes: u64,
         cancelled: Vec<Value>,
+        indexed: bool,
     }
 
     /// Speaks scripted LSP on stdio, then exits; never returns.
@@ -388,11 +513,15 @@ mod fake {
             initialize_params: Value::Null,
             probes: 0,
             cancelled: Vec::new(),
+            indexed: false,
         };
         loop {
             let Some(message) = fake.recv() else {
                 // Input closed. A stubborn server keeps running regardless.
-                if fake.scenario == "ignores-shutdown" {
+                if matches!(
+                    fake.scenario.as_str(),
+                    "ignores-shutdown" | "garbles-output"
+                ) {
                     thread::sleep(FAKE_LIFETIME);
                 }
                 process::exit(1);
@@ -436,6 +565,10 @@ mod fake {
                             outcome,
                         });
                     }
+                    if method == "test/stopReading" {
+                        // Answered; now never read stdin again.
+                        thread::sleep(FAKE_LIFETIME);
+                    }
                 }
                 Message::Notification { method, params } => self.on_notification(&method, params),
                 Message::Response { .. } => {}
@@ -464,6 +597,13 @@ mod fake {
                     self.progress("end");
                 }
                 ("initialized", "endless-progress") => self.progress("begin"),
+                ("initialized", "slow-initialize") => {
+                    thread::sleep(Duration::from_millis(50));
+                    self.progress("begin");
+                    thread::sleep(Duration::from_millis(300));
+                    self.progress("end");
+                    self.indexed = true;
+                }
                 ("exit", "ignores-shutdown") => {}
                 ("exit", _) => process::exit(0),
                 ("$/cancelRequest", _) => self.cancelled.push(params["id"].clone()),
@@ -480,7 +620,10 @@ mod fake {
                     let _ = io::stderr().flush();
                     process::exit(3);
                 }
-                ("initialize", _) => {
+                ("initialize", scenario) => {
+                    if scenario == "slow-initialize" {
+                        thread::sleep(Duration::from_millis(600));
+                    }
                     self.initialize_params = params;
                     Ok(json!({"capabilities": {"definitionProvider": true}}))
                 }
@@ -491,6 +634,13 @@ mod fake {
                     let _ = io::stderr().flush();
                     process::exit(4);
                 }
+                ("test/stopReading", _) => Ok(Value::Null),
+                ("test/garble", _) => {
+                    let _ = self.output.write_all(b"Content-Length: lots\r\n\r\n");
+                    let _ = self.output.flush();
+                    return None;
+                }
+                ("test/indexed", _) => Ok(json!(self.indexed)),
                 ("test/echo", _) => Ok(params),
                 ("test/initializeParams", _) => Ok(self.initialize_params.clone()),
                 ("test/cwd", _) => Ok(json!(std::env::current_dir().unwrap().to_string_lossy())),

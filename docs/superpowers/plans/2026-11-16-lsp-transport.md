@@ -50,15 +50,17 @@ workspace.
    `Drop` both send `shutdown` and `exit`, close stdin, wait a grace period
    and kill.
 5. **Fake server.** `tests/lifecycle.rs` is a `harness = false` test whose
-   `main` runs the fake server when `CODECITE_FAKE_LSP` names a scenario, and
-   otherwise runs the lifecycle tests, each with a watchdog, spawning its own
-   executable as the server. Scenarios: clean, slow reply, never initializes,
-   crash during startup, crash after it, progress that never ends,
-   `ContentModified` until ready, ignores `shutdown`. The fake exits by itself
-   after 60 s, so even a failed test leaves nothing running. Tests: clean
-   start and shutdown; startup timeout; crash during and after startup;
-   missing command; ignored `shutdown` killed after the grace period; the pid
-   gone after dropping the handle, both mid-startup and after.
+   `main` runs the fake server when called as `--fake-lsp <scenario>`, and
+   otherwise runs the lifecycle tests in parallel under one watchdog,
+   spawning its own executable as the server. Scenarios: clean, slow reply,
+   never initializes, slow `initialize`, crash during startup, crash after
+   it, progress that never ends, `ContentModified` until ready, ignores
+   `shutdown`, a malformed frame, stops reading its input. The fake exits by
+   itself after 60 s, so even a failed test leaves nothing running. Tests:
+   clean start and shutdown; startup timeout; crash during and after
+   startup; missing command; ignored `shutdown` killed after the grace
+   period; the pid gone after dropping the handle, cleanly and while a panic
+   unwinds past a stuck server; a server that stops reading still killed.
 6. **Docs.** `docs/design.md`'s provider model describes the transport and
    the lifecycle with its timeouts. The decisions table is #233's.
 7. **Checks.** `cargo fmt --check`, `cargo clippy --workspace --all-targets

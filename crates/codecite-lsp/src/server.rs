@@ -7,6 +7,7 @@ use std::collections::{HashSet, VecDeque};
 use std::io::{self, Read};
 use std::path::Path;
 use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -172,6 +173,9 @@ pub struct Server {
     child: Mutex<Child>,
     stderr: Mutex<StderrTail>,
     shutdown_grace: Duration,
+    /// Set once a closed connection has waited the grace period for the
+    /// process to exit, so later requests don't each wait again.
+    waited_for_exit: AtomicBool,
     exit_status: Option<ExitStatus>,
 }
 
@@ -249,6 +253,7 @@ impl Server {
                     track_progress(&handler_tracker, &params);
                 }
             })),
+            ..ClientOptions::default()
         };
         let client = match Client::new(stdout, stdin, client_options) {
             Ok(client) => client,
@@ -264,6 +269,7 @@ impl Server {
             child: Mutex::new(child),
             stderr: Mutex::new(stderr),
             shutdown_grace: options.shutdown_grace,
+            waited_for_exit: AtomicBool::new(false),
             exit_status: None,
         };
         server
@@ -292,7 +298,10 @@ impl Server {
         });
         self.client
             .request("initialize", params, remaining(deadline))?;
-        self.client.notify("initialized", json!({}))?;
+        self.client
+            .notify_within("initialized", json!({}), remaining(deadline))?;
+        // The quiet period counts from here, however long startup took.
+        lock(&tracker.0).last_event = Instant::now();
         match readiness {
             Readiness::Initialized => Ok(()),
             Readiness::Progress { quiet } => self.wait_for_progress(tracker, *quiet, deadline),
@@ -421,19 +430,29 @@ impl Server {
     }
 
     /// A closed connection usually means the process died: report that,
-    /// with its status, if it exits within the grace period.
+    /// with its status, if it exits within the grace period. Only the first
+    /// closed error waits; later ones just check.
     fn exited_or(&self, e: Error) -> Error {
         match e {
-            Error::Closed { .. } => match self.wait_for_exit(self.shutdown_grace) {
-                Some(status) => self.exited(status),
-                None => e,
-            },
+            Error::Closed { .. } => {
+                let status = if self.waited_for_exit.swap(true, Ordering::SeqCst) {
+                    self.try_exit_status()
+                } else {
+                    self.wait_for_exit(self.shutdown_grace)
+                };
+                match status {
+                    Some(status) => self.exited(status),
+                    None => e,
+                }
+            }
             e => e,
         }
     }
 
     /// Sends `shutdown` and `exit`, closes the server's input, waits the
     /// grace period for it to exit, then kills it. Returns its exit status.
+    /// Writing `shutdown` and its answer share one grace period, and so does
+    /// writing `exit`, so a server that stops reading is still killed.
     pub fn shutdown(mut self) -> Result<ExitStatus> {
         self.stop()
     }
@@ -447,7 +466,7 @@ impl Server {
             None => {
                 let grace = self.shutdown_grace;
                 if self.client.request("shutdown", Value::Null, grace).is_ok() {
-                    let _ = self.client.notify("exit", Value::Null);
+                    let _ = self.client.notify_within("exit", Value::Null, grace);
                 }
                 self.client.close();
                 match self.wait_for_exit(grace) {
@@ -492,19 +511,36 @@ fn client_capabilities() -> Value {
 }
 
 /// A `file://` URI for an absolute path, percent-encoding every byte
-/// outside RFC 3986's unreserved set, `/` and `:`.
+/// outside RFC 3986's unreserved set, `/` and `:`. On Windows, backslashes
+/// become slashes and the verbatim prefix `canonicalize` adds is dropped.
 pub fn file_uri(path: &Path) -> String {
-    let bytes = path.as_os_str().as_encoded_bytes();
-    let mut uri = String::from("file://");
-    if bytes.first() != Some(&b'/') {
-        uri.push('/');
+    uri_from_path_bytes(path.as_os_str().as_encoded_bytes(), cfg!(windows))
+}
+
+fn uri_from_path_bytes(bytes: &[u8], windows: bool) -> String {
+    let mut path = bytes.to_vec();
+    let mut uri = String::from("file:");
+    if windows {
+        for byte in &mut path {
+            if *byte == b'\\' {
+                *byte = b'/';
+            }
+        }
+        if let Some(rest) = path.strip_prefix(b"//?/UNC/") {
+            path = [b"//".as_slice(), rest].concat();
+        } else if let Some(rest) = path.strip_prefix(b"//?/") {
+            path = rest.to_vec();
+        }
     }
-    for &byte in bytes {
-        let byte = if cfg!(windows) && byte == b'\\' {
-            b'/'
-        } else {
-            byte
-        };
+    if windows && path.starts_with(b"//") {
+        // A UNC path's server is the URI's authority: file://server/share.
+    } else {
+        uri.push_str("//");
+        if path.first() != Some(&b'/') {
+            uri.push('/');
+        }
+    }
+    for byte in path {
         if byte.is_ascii_alphanumeric() || b"-._~/:".contains(&byte) {
             uri.push(char::from(byte));
         } else {
@@ -526,6 +562,17 @@ mod tests {
             "file:///my%20work/a%23b%25c"
         );
         assert_eq!(file_uri(Path::new("/caf\u{e9}")), "file:///caf%C3%A9");
+    }
+
+    #[test]
+    fn windows_file_uris_drop_the_verbatim_prefix() {
+        let windows = |path: &str| uri_from_path_bytes(path.as_bytes(), true);
+        assert_eq!(windows(r"C:\w\src"), "file:///C:/w/src");
+        assert_eq!(windows(r"\\?\C:\my work"), "file:///C:/my%20work");
+        assert_eq!(windows(r"\\server\share\x"), "file://server/share/x");
+        assert_eq!(windows(r"\\?\UNC\server\share\x"), "file://server/share/x");
+        // Off Windows a backslash is an ordinary byte.
+        assert_eq!(uri_from_path_bytes(br"/a\b", false), "file:///a%5Cb");
     }
 
     #[test]
