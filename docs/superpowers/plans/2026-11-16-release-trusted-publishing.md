@@ -29,8 +29,9 @@ in five jobs, each with only the permissions it needs:
    token scoped to the job, then `cargo publish --workspace --locked
    --no-verify` with an `--exclude` per skipped crate. On a fork it runs the
    same with `--dry-run` instead.
-5. `release`: in the `release` environment; `SHA256SUMS`, uploading with
-   `--clobber` to a release a previous run already created,, `actions/attest-build-provenance` over the
+5. `release`: in the `release` environment; `SHA256SUMS`, on a re-run
+   finishing the existing release (`--clobber` only on a draft; a published
+   release gets only its missing assets),, `actions/attest-build-provenance` over the
    archives and SBOMs, and `gh release create --verify-tag` (a draft on a
    fork, a prerelease for a `-` version).
 

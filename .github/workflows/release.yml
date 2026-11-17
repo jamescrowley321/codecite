@@ -336,7 +336,9 @@ jobs:
             dist/*.tar.gz
             dist/*.spdx.json
       # A re-run after the release was created, say when an upload failed,
-      # replaces its assets instead of failing on the existing release.
+      # finishes it instead of failing on the existing release. A draft may
+      # have its assets replaced; a published release only gets the assets
+      # it is missing, so nothing people have downloaded changes under them.
       - name: Create or update the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -351,8 +353,24 @@ jobs:
           if [[ "$VERSION" == *-* ]]; then
             flags+=(--prerelease)
           fi
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          if existing="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,assets 2>/dev/null)"; then
+            if [[ "$(jq -r '.isDraft' <<<"$existing")" == true ]]; then
+              echo "Release $TAG exists as a draft; replacing its assets"
+              gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+              exit 0
+            fi
+            missing=()
+            for file in dist/*; do
+              if ! jq -e --arg n "$(basename "$file")" 'any(.assets[]; .name == $n)' <<<"$existing" >/dev/null; then
+                missing+=("$file")
+              fi
+            done
+            if (( ${#missing[@]} == 0 )); then
+              echo "Release $TAG is published with every asset; nothing to do"
+              exit 0
+            fi
+            echo "Release $TAG is published; uploading only its missing assets: ${missing[*]}"
+            gh release upload "$TAG" "${missing[@]}" --repo "$GITHUB_REPOSITORY"
             exit 0
           fi
           gh release create "$TAG" dist/* \
