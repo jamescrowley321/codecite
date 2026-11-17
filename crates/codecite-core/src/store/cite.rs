@@ -1336,7 +1336,7 @@ candidates:
         assert_eq!(problems.len(), 1);
         assert_eq!(problems[0].citation, format!("{PINNED}#section-9.9"));
         // The older pinned version of RFC 9449 is superseded by the current one.
-        let older = format!("rfc9449@sha256:{}#section-4.3", &"a".repeat(12));
+        let older = format!("rfc9449@sha256:{}#section-4.3", "a".repeat(12));
         let (_, problems) = checked(&f, &CheckOptions::default(), &older);
         assert_eq!(problem_kind(&problems[0].problem), "superseded");
         let (_, problems) = checked(&f, &options, &older);

@@ -1627,6 +1627,7 @@ mod tests {
         assert!(Cli::try_parse_from(["codecite", "cite", "identity"]).is_err());
         let cli = Cli::try_parse_from(["codecite", "cite", "identity", "RFC 9449 §4.3"]).unwrap();
         let Command::Cite {
+            check: None,
             corpus,
             citation,
             json,
@@ -1636,8 +1637,8 @@ mod tests {
             panic!("not cite");
         };
         assert_eq!(
-            (corpus.as_str(), citation.as_str()),
-            ("identity", "RFC 9449 §4.3")
+            (corpus.as_deref(), citation.as_deref()),
+            (Some("identity"), Some("RFC 9449 §4.3"))
         );
         assert!(!json && !allow_stale);
         let args = [
@@ -1657,6 +1658,40 @@ mod tests {
         assert!(json && allow_stale);
         let lines = ["codecite", "cite", "identity", "§4.3", "--max-lines", "5"];
         assert!(Cli::try_parse_from(lines).is_err());
+    }
+
+    #[test]
+    fn cite_check_takes_a_corpus_and_paths() {
+        let args = [
+            "codecite",
+            "cite",
+            "check",
+            "identity",
+            "src",
+            "docs",
+            "--json",
+            "--allow-superseded",
+        ];
+        let Command::Cite {
+            check:
+                Some(CiteCommand::Check {
+                    corpus,
+                    paths,
+                    json,
+                    allow_stale,
+                    allow_superseded,
+                }),
+            ..
+        } = Cli::try_parse_from(args).unwrap().command
+        else {
+            panic!("not cite check");
+        };
+        assert_eq!(corpus, "identity");
+        assert_eq!(paths, [PathBuf::from("src"), PathBuf::from("docs")]);
+        assert!(json && allow_superseded && !allow_stale);
+        // A corpus is required; paths are not.
+        assert!(Cli::try_parse_from(["codecite", "cite", "check"]).is_err());
+        assert!(Cli::try_parse_from(["codecite", "cite", "check", "identity"]).is_ok());
     }
 
     #[test]
