@@ -981,3 +981,22 @@ identity-model there, then from a codecite checkout:
 codecite index identity
 cargo test -p codecite --test identity -- --ignored --nocapture   # its lookup check
 ```
+
+## The fhir corpus
+
+`corpora/fhir.toml` indexes eight open-source FHIR projects at pinned commits
+(HAPI FHIR, Helios hfs, HasteHealth, octofhir's server-rs and fhirpath-rs,
+WSO2's fhir-server, Blaze and Medplum) and 19 pages of the FHIR R4 (4.0.1)
+specification from hl7.org: the RESTful API, search, JSON, data types,
+Bundle and the pages around them. From a codecite checkout:
+
+```sh
+codecite index fhir
+codecite search fhir "conditional create" --path "fhir-r4-*"
+```
+
+The first run clones about 4 GB into the cache and takes a few minutes; the
+corpus file is about 3 GB. HAPI FHIR, Helios hfs and HasteHealth leave out
+their JSON and XML, which is almost all FHIR fixtures and definitions. Java
+and Clojure have no grammar, so HAPI FHIR and Blaze are cited as 60-line
+windows, not by definition.
