@@ -879,6 +879,22 @@ codecite corpora
 {"corpora":[{"age_days":0.0,"corpus":"identity","indexed_at":"2026-10-20T22:56:30Z","max_age_days":30,"size_bytes":41594880,"sources":40,"stale":false}]}
 ```
 
+## Verify a release binary
+
+Each GitHub Release carries a `codecite-<version>-<target>.tar.gz` per
+target (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`,
+`aarch64-apple-darwin`), its SPDX SBOM `codecite-<version>-<target>.spdx.json`
+and `SHA256SUMS`. Check that an archive or SBOM was built by this repository's
+release workflow from the tagged commit before you run it:
+
+```sh
+gh attestation verify codecite-0.1.0-x86_64-unknown-linux-gnu.tar.gz \
+  --repo jamescrowley321/codecite \
+  --signer-workflow jamescrowley321/codecite/.github/workflows/release.yml
+```
+
+`cargo install codecite --locked` builds the same version from crates.io.
+
 ## Connect an agent
 
 `codecite mcp` serves MCP over stdio. stdout carries only protocol messages;
