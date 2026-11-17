@@ -162,12 +162,20 @@ def app_files(root: Path) -> dict[str, str]:
 
 def copy_project(project: Path, work: Path) -> str | None:
     """Copy the agent's backend and docs into `work`, links as links, so a
-    dangling link or a loop copies as itself. None, or why the copy failed."""
+    dangling link or a loop copies as itself, then drop every linked
+    directory under backend/. None, or why the copy failed."""
     try:
         shutil.copytree(project / "backend", work / "backend", symlinks=True,
                         ignore=shutil.ignore_patterns(".venv", "__pycache__", ".*_cache"))
         if (project / "docs").is_dir():
             shutil.copytree(project / "docs", work / "docs", symlinks=True)
+        # A linked directory would carry the enforcement laid over it into
+        # the agent's own directory, and hide its conftest.py from the scrub
+        # (rglob doesn't follow links): drop it, the link alone.
+        for root, dirs, _ in os.walk(work / "backend"):
+            for name in dirs:
+                if (Path(root) / name).is_symlink():
+                    (Path(root) / name).unlink()
     except (shutil.Error, OSError) as e:
         return f"copying the agent's tree failed: {e}"[:1500]
     return None

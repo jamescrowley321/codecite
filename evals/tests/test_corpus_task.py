@@ -207,7 +207,7 @@ def check(name, passed, control=False):
 HIDDEN_CMD = ["/score/venv/bin/python", "-P", "-m", "pytest", "-q", "-p", "no:cacheprovider", "--junitxml=/score/report/hidden.xml",
               "-c", "/dev/null", "--rootdir=/score/hidden", "--confcutdir=/score/hidden",
               "-o", f"pythonpath={task.PROJECT}/backend", "/score/hidden"]
-CLEAR = ("kill -KILL -1 2>/dev/null; rm -rf /score/start /score/venv /score/hidden /score/report /score/start.tar"
+CLEAR = (task.KILL_LEFTOVERS + "\nrm -rf /score/start /score/venv /score/hidden /score/report /score/start.tar /score/checks.py"
          " && mkdir -p /score/start /score/hidden /score/report")
 EXTRACT = "tar -xf /score/start.tar -C /score/start"
 UV = ["uv", "sync", "--locked", "--no-install-project"]
@@ -234,11 +234,13 @@ def test_the_checks_run_on_a_verified_start_with_tools_built_from_it(monkeypatch
     assert steps(sb.log) == [
         # All of /score goes first, so nothing the agent left there is in reach.
         ("exec", "rm -rf /score && mkdir -p /score/hidden"),
-        ("write", "/score/checks.py"),
         # The start is read once, verified on the host, and laid out from
         # those bytes, never from PROJECT_START in the sandbox.
         ("read", task.PROJECT_START),
         *lay_out,
+        # checks.py goes in only once the agent's leftover processes are
+        # gone, so none can swap it before it runs.
+        ("write", "/score/checks.py"),
         ("exec", "python3"),
         # checks.py ran the agent's code as root, so everything that code
         # could reach is laid out again from the verified bytes, and the
@@ -326,6 +328,24 @@ def test_the_copy_of_the_agents_tree_survives_dangling_links_and_loops(tmp_path)
     assert set(checks.app_files(project)) == {"backend/app/main.py"}
 
 
+def test_a_linked_directory_in_the_agents_backend_is_dropped_from_the_copy(tmp_path):
+    # Through a linked tests/, the enforcement would be written into the
+    # agent's own directory, and a conftest.py there would escape the scrub.
+    checks = checks_module()
+    project, elsewhere = tmp_path / "project", tmp_path / "elsewhere"
+    (project / "backend" / "app").mkdir(parents=True)
+    (elsewhere / "unit").mkdir(parents=True)
+    (elsewhere / "conftest.py").write_text("agent")
+    (project / "backend" / "tests").symlink_to(elsewhere, target_is_directory=True)
+    (project / "backend" / "app" / "linked").symlink_to(elsewhere, target_is_directory=True)
+    work = tmp_path / "work"
+    work.mkdir()
+    assert checks.copy_project(project, work) is None
+    assert not (work / "backend" / "tests").exists() and not (work / "backend" / "tests").is_symlink()
+    assert not (work / "backend" / "app" / "linked").is_symlink()
+    assert (elsewhere / "conftest.py").read_text() == "agent"
+
+
 def test_a_copy_that_fails_is_named_as_one_failed_check(tmp_path, monkeypatch):
     checks = checks_module()
 
@@ -335,6 +355,66 @@ def test_a_copy_that_fails_is_named_as_one_failed_check(tmp_path, monkeypatch):
     monkeypatch.setattr(checks.shutil, "copytree", broken)
     (tmp_path / "project" / "backend").mkdir(parents=True)
     assert "boom" in checks.copy_project(tmp_path / "project", tmp_path / "work")
+
+
+def test_the_kill_spares_init_the_containers_main_process_and_itself():
+    # compose.yaml runs the sandbox with `init: true`: PID 1 is tini, which
+    # exits, stopping the container, when its child (the image's `tail`) dies.
+    kill = task.KILL_LEFTOVERS
+    assert "-1" not in kill.replace("PPid", "")
+    assert "1|$$|" in kill and "starttime" in kill
+    assert subprocess.run(["sh", "-n", "-c", kill]).returncode == 0  # parses; never run on the host
+
+
+SMOKE_IMAGE = "node:24-trixie-slim"  # the sandbox image's base (inspect/Dockerfile)
+
+
+def docker_ready() -> bool:
+    try:
+        return subprocess.run(["docker", "image", "inspect", SMOKE_IMAGE], capture_output=True).returncode == 0
+    except OSError:
+        return False
+
+
+class DockerSandbox:
+    """Inspect's sandbox calls, as plain docker exec on one container."""
+
+    def __init__(self, cid):
+        self.cid = cid
+
+    async def exec(self, cmd, cwd=None, env=None, timeout=None):
+        args = ["docker", "exec", *(["-w", cwd] if cwd else []), *[f"-e{k}={v}" for k, v in (env or {}).items()], self.cid, *cmd]
+        p = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        return ExecResult(success=p.returncode == 0, returncode=p.returncode, stdout=p.stdout, stderr=p.stderr)
+
+    async def write_file(self, path, contents):
+        data = contents.encode() if isinstance(contents, str) else contents
+        subprocess.run(["docker", "exec", "-i", self.cid, "sh", "-c", 'mkdir -p "$(dirname "$1")" && cat > "$1"', "sh", path],
+                       input=data, check=True)
+
+
+@pytest.mark.skipif(not docker_ready(), reason=f"needs docker and the {SMOKE_IMAGE} image")
+def test_laying_out_the_start_in_a_real_container_keeps_it_running():
+    cid = subprocess.run(["docker", "run", "-d", "--init", SMOKE_IMAGE, "tail", "-f", "/dev/null"],
+                         capture_output=True, text=True, check=True).stdout.strip()
+    try:
+        # What an agent might leave: a detached process, and one reparented to init.
+        subprocess.run(["docker", "exec", "-d", cid, "sleep", "1001"], check=True)
+        subprocess.run(["docker", "exec", cid, "sh", "-c", "(sleep 1002 &)"], check=True)
+        sb = DockerSandbox(cid)
+        meta = {"score_setup": ["true"], "workdir": "backend", "language": "python"}
+        data = tarball({"backend/pyproject.toml": b"[tool.ruff]\n"})
+        for _ in range(2):
+            assert asyncio.run(task.lay_out_start(sb, meta, data)) is None
+        running = subprocess.run(["docker", "inspect", "-f", "{{.State.Running}}", cid], capture_output=True, text=True).stdout
+        assert running.strip() == "true"
+        laid = subprocess.run(["docker", "exec", cid, "cat", "/score/start/backend/pyproject.toml"], capture_output=True, text=True)
+        assert laid.stdout == "[tool.ruff]\n"
+        procs = subprocess.run(["docker", "exec", cid, "sh", "-c", "cat /proc/[0-9]*/cmdline | tr '\\0' ' '"],
+                               capture_output=True, text=True).stdout
+        assert "sleep" not in procs and "tail -f /dev/null" in procs
+    finally:
+        subprocess.run(["docker", "rm", "-f", cid], capture_output=True)
 
 
 def test_the_checks_timeout_covers_every_tool_checks_py_runs():

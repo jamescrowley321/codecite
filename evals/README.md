@@ -169,6 +169,7 @@ p95 guardrail of 150 ms.
   the house-rule tests, laid over a copy of the agent's tree so loosening
   them doesn't help: every other ruff.toml, nested pyproject.toml, pytest or
   tox ini, setup.cfg, .importlinter and conftest.py the agent left is dropped,
+  as is any linked directory under `backend/`,
   the tools are pointed at the start's pyproject.toml, and Ruff ignores
   `# noqa`) plus its own reuse checks (no settings, HTTP or logging
   library in place of `app.knobs`, `app.outbound`, `app.logbook`; new routes
@@ -185,7 +186,8 @@ p95 guardrail of 150 ms.
   the agent's `.venv`. A mismatch fails the sample as `scorer-start`. All of
   `/score` is cleared before the scorer writes into it. The checks run the
   agent's code as root (the house-rule tests import it), so after them any
-  process left running is killed and the start and its venv are laid out
+  process left running is killed (sparing the container's init and main
+  process) and the start and its venv are laid out
   again from the bytes verified on the host,
   and the hidden tests are written only then, just before they run, with
   pytest's config pinned to the hidden directory (`-c /dev/null`,
@@ -204,7 +206,7 @@ p95 guardrail of 150 ms.
   scoring in a second container closes that.
   `checks.py`'s §12 and §16 checks cover the route handlers the start had
   too: one that gains an HTTPException, a hand-built response or a `dct`
-  read breaks the rule. `planted.sh` plants twenty-five rule breaks and
+  read breaks the rule. `planted.sh` plants twenty-six rule breaks and
   hand-rolled helpers on the reference (`reference/solution.patch`) and shows
   each caught. `probe.toml` holds the memorization probe: three questions
   only the rule layer answers, for a model asked with no files; no runner

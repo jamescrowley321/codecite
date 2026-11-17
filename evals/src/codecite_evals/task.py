@@ -63,11 +63,32 @@ SCORE_START = "/score/start"
 SCORE_VENV = "/score/venv"
 # The hidden tests' junit report, read back to the host for their verdict.
 HIDDEN_REPORT = "/score/report/hidden.xml"
+# Kill every process the agent left running, sparing PID 1, the container's
+# main process and this shell. compose.yaml runs the sandbox with `init:
+# true`, so PID 1 is tini and the image's `tail` its child: tini exits, and
+# the container stops, when that child dies. The main process is the child
+# of PID 1 that started first (the earliest starttime, field 22 of
+# /proc/<pid>/stat, read past the last ")" since a process names itself);
+# an agent's daemon reparented to PID 1 started later. Only /proc and sed,
+# which the image always has.
+KILL_LEFTOVERS = r"""main=; first=
+for d in /proc/[0-9]*; do
+  [ "$(sed -n 's/^PPid:[[:space:]]*//p' "$d/status" 2>/dev/null)" = 1 ] || continue
+  read -r stat < "$d/stat" 2>/dev/null || continue
+  set -- ${stat##*) }
+  starttime=${20}
+  if [ -z "$first" ] || [ "$starttime" -lt "$first" ]; then first=$starttime; main=${d#/proc/}; fi
+done
+for d in /proc/[0-9]*; do
+  case "${d#/proc/}" in 1|$$|"$main") continue ;; esac
+  kill -KILL "${d#/proc/}" 2>/dev/null
+done
+true"""
 # What every lay-out of the start clears first: any process the agent left
-# running (killed; the sandbox's init and this shell survive), and anything
-# its code, run by the checks, could have planted for what comes after.
+# running (KILL_LEFTOVERS), and anything its code, run by the checks, could
+# have planted for what comes after.
 CLEAR_START = (
-    f"kill -KILL -1 2>/dev/null; rm -rf {SCORE_START} {SCORE_VENV} /score/hidden /score/report /score/start.tar"
+    KILL_LEFTOVERS + f"\nrm -rf {SCORE_START} {SCORE_VENV} /score/hidden /score/report /score/start.tar /score/checks.py"
     f" && mkdir -p {SCORE_START} /score/hidden /score/report"
 )
 # checks.py's own timeouts sum to its budget() (with headroom for copying),
@@ -577,10 +598,11 @@ async def score_corpus(sb, task_dir: Path, meta: dict) -> tuple[bool, str, list]
     pinned to the hidden directory. A check marked `control` is reported and
     never fails the sample."""
     await sb.exec(["sh", "-c", "rm -rf /score && mkdir -p /score/hidden"], timeout=120)
-    await sb.write_file("/score/checks.py", (task_dir / "checks.py").read_text())
     data, why = await verified_start(sb, meta)
     if why or (why := await lay_out_start(sb, meta, data)):
         return False, f"not run: {why}"[-1500:], start_failed(why)
+    # Only now, with the agent's leftover processes gone, can nothing swap it.
+    await sb.write_file("/score/checks.py", (task_dir / "checks.py").read_text())
     venv = f"{SCORE_VENV}/bin"
     try:
         checks = await sb.exec(["python3", "-I", "/score/checks.py", SCORE_START, PROJECT],
