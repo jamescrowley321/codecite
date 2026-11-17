@@ -47,12 +47,14 @@ WORKDIR /work/project
 ENV UV_LINK_MODE=copy
 # Install the project, and warm the hidden tests' tools so scoring runs
 # offline. A task with no project (spec-questions) starts in an empty one. A
-# replay task's project becomes a one-commit repository, so no later history
-# reaches the agent, before warm.sh (prepare.sh) installs it.
+# replay or size-dial task's project becomes a one-commit repository, so no
+# later history reaches the agent, and a tarball of it the scorer reads as the
+# start (/opt/project-start.tar), before warm.sh (prepare.sh) installs it.
 COPY warm.sh /tmp/warm.sh
 RUN if [ "$LANGUAGE" != none ]; then \
       git init -q . && git add -A \
       && git -c user.name=eval -c user.email=eval@localhost commit -qm export \
+      && git archive -o /opt/project-start.tar HEAD \
       && bash /tmp/warm.sh; \
     elif [ -f pyproject.toml ]; then \
       sed -i 's#@IDENTITY_MODEL@#/opt/identity-model#' pyproject.toml \
@@ -67,14 +69,27 @@ RUN if [ "$LANGUAGE" != none ]; then \
 # from codecite's cache to /opt/specs/<name>.html, so both arms read the very
 # bytes codecite indexed; sha256sum checks each against its pin again. A
 # replay task's corpus (corpus.toml, staged by prepare.sh) is its project's
-# one commit instead.
+# one commit instead. A size-dial task's corpus.toml is its manifest at one
+# size, indexed at the pinned commits (fetched here), with the same sources
+# staged as files: the project in /work/project, the rest in /opt/corpus. Each
+# citation in citations.txt (its rules) must resolve, or the build fails.
 COPY codecite /opt/codecite/bin/codecite
 COPY COMMIT /tmp/COMMIT
-COPY documents.toml specs.tsv corpus.toml /tmp/
+COPY corpus /opt/corpus
+COPY documents.toml specs.tsv corpus.toml citations.txt /tmp/
 RUN if [ -s /tmp/corpus.toml ]; then \
       sed -i "s/@COMMIT@/$(git -C /work/project rev-parse HEAD)/" /tmp/corpus.toml \
       && /opt/codecite/bin/codecite index eval --manifest /tmp/corpus.toml \
-      && rm -rf /tmp/corpus.toml /tmp/documents.toml /tmp/specs.tsv /tmp/COMMIT /tmp/warm.sh /root/.cache/codecite; \
+      && while read -r citation; do \
+           /opt/codecite/bin/codecite read eval "$citation" >/dev/null \
+           || { echo "citation does not resolve: $citation" >&2; exit 1; }; \
+         done < /tmp/citations.txt \
+      && while read -r name sha; do \
+           mkdir -p /opt/specs \
+           && cp "/root/.cache/codecite/documents/$sha" "/opt/specs/$name.html" \
+           && echo "$sha  /opt/specs/$name.html" | sha256sum -c --quiet || exit 1; \
+         done < /tmp/specs.tsv \
+      && rm -rf /tmp/corpus.toml /tmp/documents.toml /tmp/specs.tsv /tmp/citations.txt /tmp/COMMIT /tmp/warm.sh /root/.cache/codecite; \
       exit; \
     fi \
  && git init -q /tmp/src && cp -r /opt/identity-model/. /tmp/src/ \
@@ -88,7 +103,7 @@ RUN if [ -s /tmp/corpus.toml ]; then \
       && cp "/root/.cache/codecite/documents/$sha" "/opt/specs/$name.html" \
       && echo "$sha  /opt/specs/$name.html" | sha256sum -c --quiet || exit 1; \
     done < /tmp/specs.tsv \
- && rm -rf /tmp/src /tmp/corpus.toml /tmp/documents.toml /tmp/specs.tsv /tmp/COMMIT /tmp/warm.sh /root/.cache/codecite
+ && rm -rf /tmp/src /tmp/corpus.toml /tmp/documents.toml /tmp/specs.tsv /tmp/citations.txt /tmp/COMMIT /tmp/warm.sh /root/.cache/codecite
 
 COPY pi-models.json /root/.pi/agent/models.json
 ENV PI_OFFLINE=1 PI_TELEMETRY=0 PI_SKIP_VERSION_CHECK=1
