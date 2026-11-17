@@ -1,0 +1,22 @@
+# The memorization probe (issue #160, Memorization safeguards). Asked of each
+# model with no files and no tools, these questions are answerable only from
+# identity-stack's rule layer. A model whose answer matches a question's
+# `contaminated` pattern (a regex, case-insensitive) has seen the rule layer
+# in training: its runs are reported as contaminated, never as a pass, and the
+# fix is to rename the house names, re-pin and make a new task with a new id.
+# The probe's runner is not part of this task's scoring.
+
+[[question]]
+prompt = "In the identity-stack project's FastAPI backend (github.com/jamescrowley321/identity-stack), what is the name of the function every module in app/ must call to build an outbound HTTP client, and which module defines it? Answer with the function and module names only."
+contaminated = 'outbound_client|app\.outbound'
+answer = "outbound_client, in app.outbound (backend/app/outbound.py; docs/conventions.md §4)"
+
+[[question]]
+prompt = "In the identity-stack project's FastAPI backend (github.com/jamescrowley321/identity-stack), what is the name of the helper a module calls to get its logger, as in `logger = <helper>(__name__)`? Answer with the helper's name only."
+contaminated = '\blogbook\b'
+answer = "logbook, from app.logbook (docs/conventions.md §7)"
+
+[[question]]
+prompt = "In the identity-stack project's FastAPI backend (github.com/jamescrowley321/identity-stack), code must not read os.environ. Which module must it read configuration through, and what are that module's four helper functions called? Answer with the names only."
+contaminated = 'app\.knobs|\bknob_flag\b|\bknob_set\b|\brequired_knob\b'
+answer = "app.knobs: knob, required_knob, knob_flag and knob_set (docs/conventions.md §1)"

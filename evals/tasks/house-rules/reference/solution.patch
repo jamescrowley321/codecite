@@ -1,0 +1,423 @@
+diff --git a/backend/app/domain/access/__init__.py b/backend/app/domain/access/__init__.py
+index c784447..5ca2a1d 100644
+--- a/backend/app/domain/access/__init__.py
++++ b/backend/app/domain/access/__init__.py
+@@ -6,10 +6,12 @@ docs/adr/0008-layered-architecture-with-a-functional-domain-core.md.
+ 
+ from app.domain.access.commands import (
+     AssignRole,
++    CatalogueRole,
+     CreatePermission,
+     CreateRole,
+     DeletePermission,
+     DeleteRole,
++    ImportRoles,
+     MapNamedPermissions,
+     MapPermission,
+     UnassignRole,
+@@ -22,6 +24,7 @@ from app.domain.access.decisions import (
+     create_role,
+     delete_permission,
+     delete_role,
++    import_roles,
+     map_named_permissions,
+     map_permission,
+     unassign_role,
+@@ -72,11 +75,13 @@ __all__ = [
+     "AccessEvent",
+     "AssignRole",
+     "Assignment",
++    "CatalogueRole",
+     "AssignmentNotFound",
+     "CreatePermission",
+     "CreateRole",
+     "DeletePermission",
+     "DeleteRole",
++    "ImportRoles",
+     "InvalidName",
+     "MapNamedPermissions",
+     "MapPermission",
+@@ -111,6 +116,7 @@ __all__ = [
+     "create_role",
+     "delete_permission",
+     "delete_role",
++    "import_roles",
+     "map_named_permissions",
+     "map_permission",
+     "role_name",
+diff --git a/backend/app/domain/access/commands.py b/backend/app/domain/access/commands.py
+index 5e4c06b..e038d0e 100644
+--- a/backend/app/domain/access/commands.py
++++ b/backend/app/domain/access/commands.py
+@@ -15,6 +15,22 @@ class CreateRole:
+     tenant_id: uuid.UUID | None
+ 
+ 
++@dataclass(frozen=True)
++class CatalogueRole:
++    """One role a tenant's partner catalogue lists."""
++
++    name: RoleName
++    description: str
++
++
++@dataclass(frozen=True)
++class ImportRoles:
++    """Create the catalogue's roles in a tenant, in catalogue order."""
++
++    tenant_id: uuid.UUID
++    roles: tuple[CatalogueRole, ...]
++
++
+ @dataclass(frozen=True)
+ class UpdateRole:
+     """A field left as None keeps its current value."""
+diff --git a/backend/app/domain/access/decisions.py b/backend/app/domain/access/decisions.py
+index 6beec37..bbbb118 100644
+--- a/backend/app/domain/access/decisions.py
++++ b/backend/app/domain/access/decisions.py
+@@ -20,6 +20,7 @@ from app.domain.access.commands import (
+     CreateRole,
+     DeletePermission,
+     DeleteRole,
++    ImportRoles,
+     MapNamedPermissions,
+     MapPermission,
+     UnassignRole,
+@@ -79,6 +80,43 @@ def create_role(
+     return Ok((role, event))
+ 
+ 
++def import_roles(
++    tenant_roles: Sequence[Role],
++    command: ImportRoles,
++    *,
++    role_ids: Sequence[uuid.UUID],
++    now: datetime,
++) -> Result[tuple[tuple[Role, ...], tuple[str, ...], tuple[RoleCreated, ...]], AccessError]:
++    """``tenant_roles`` are the roles the command's tenant already has; ``role_ids``
++    holds an id for each catalogue role, in order.
++
++    A catalogue role whose name the tenant already has, or that the catalogue lists
++    twice, is skipped. Returns the roles to create, the skipped names and an event
++    per created role.
++    """
++    taken = {role.name.value for role in tenant_roles}
++    created: list[Role] = []
++    skipped: list[str] = []
++    events: list[RoleCreated] = []
++    for entry, role_id in zip(command.roles, role_ids, strict=True):
++        if entry.name.value in taken:
++            skipped.append(entry.name.value)
++            continue
++        taken.add(entry.name.value)
++        decision = create_role(
++            None,
++            CreateRole(name=entry.name, description=entry.description, tenant_id=command.tenant_id),
++            role_id=role_id,
++            now=now,
++        )
++        if decision.is_error():
++            return Error(decision.error)
++        role, event = decision.ok
++        created.append(role)
++        events.append(event)
++    return Ok((tuple(created), tuple(skipped), tuple(events)))
++
++
+ def update_role(
+     role: Role | None,
+     name_holder: Role | None,
+diff --git a/backend/app/domain/access/errors.py b/backend/app/domain/access/errors.py
+index 3bfdbc0..a2189cb 100644
+--- a/backend/app/domain/access/errors.py
++++ b/backend/app/domain/access/errors.py
+@@ -15,6 +15,7 @@ class NameSubject(Enum):
+ class NameFault(Enum):
+     EMPTY = "empty"
+     TOO_LONG = "too_long"
++    NOT_A_SLUG = "not_a_slug"
+ 
+ 
+ @dataclass(frozen=True)
+diff --git a/backend/app/domain/access/values.py b/backend/app/domain/access/values.py
+index 10e45ed..04a46f9 100644
+--- a/backend/app/domain/access/values.py
++++ b/backend/app/domain/access/values.py
+@@ -2,6 +2,7 @@
+ 
+ from __future__ import annotations
+ 
++import re
+ import uuid
+ from dataclasses import dataclass
+ from datetime import datetime
+@@ -11,6 +12,8 @@ from expression import Error, Ok, Result
+ from app.domain.access.errors import InvalidName, NameFault, NameSubject
+ 
+ MAX_NAME_LENGTH = 255
++# A role name is a lowercase slug: a letter, then letters or digits, in words joined by single hyphens.
++_ROLE_SLUG = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*")
+ 
+ 
+ @dataclass(frozen=True)
+@@ -32,8 +35,10 @@ def _name_fault(raw: str) -> NameFault | None:
+ 
+ 
+ def role_name(raw: str) -> Result[RoleName, InvalidName]:
+-    """Build a RoleName for a new or renamed role."""
++    """Build a RoleName for a new or renamed role: a lowercase slug such as ``billing-admin``."""
+     fault = _name_fault(raw)
++    if fault is None and _ROLE_SLUG.fullmatch(raw) is None:
++        fault = NameFault.NOT_A_SLUG
+     return Ok(RoleName(raw)) if fault is None else Error(InvalidName(NameSubject.ROLE, fault))
+ 
+ 
+diff --git a/backend/app/errors/access.py b/backend/app/errors/access.py
+index e14bbd8..1f3d498 100644
+--- a/backend/app/errors/access.py
++++ b/backend/app/errors/access.py
+@@ -12,6 +12,7 @@ _NAME_SUBJECTS = {
+ _NAME_FAULTS = {
+     access.NameFault.EMPTY: "must not be empty",
+     access.NameFault.TOO_LONG: f"must be at most {access.MAX_NAME_LENGTH} characters",
++    access.NameFault.NOT_A_SLUG: "must be lowercase letters, digits and single hyphens, starting with a letter",
+ }
+ 
+ 
+diff --git a/backend/app/routers/roles.py b/backend/app/routers/roles.py
+index 577bc23..1f33271 100644
+--- a/backend/app/routers/roles.py
++++ b/backend/app/routers/roles.py
+@@ -149,6 +149,19 @@ async def remove_roles(
+     )
+ 
+ 
++@router.post("/roles/import")
++@limiter.limit(RATE_LIMIT_AUTH)
++async def import_roles(
++    request: Request,
++    tenant_id: str = Depends(get_tenant_id),
++    _admin_roles: list[str] = Depends(require_role("owner", "admin")),
++    role_service: RoleService = Depends(get_role_service),
++):
++    """Import the partner catalogue's roles into the caller's tenant. Requires owner or admin role."""
++    result = await role_service.import_roles(tenant_id=_parse_uuid(tenant_id, "tenant_id"))
++    return result_to_response(result, request)
++
++
+ # --- Role definition CRUD (admin-only) ---
+ 
+ 
+diff --git a/backend/app/services/role.py b/backend/app/services/role.py
+index d910a3c..412a635 100644
+--- a/backend/app/services/role.py
++++ b/backend/app/services/role.py
+@@ -16,8 +16,10 @@ from opentelemetry import trace
+ 
+ from app.domain import access
+ from app.errors.access import identity_error
+-from app.errors.identity import Conflict, IdentityError
++from app.errors.identity import Conflict, IdentityError, ProviderError
++from app.knobs import knob
+ from app.logbook import logbook
++from app.outbound import UpstreamStatusError, UpstreamTransportError, outbound_client
+ from app.repositories.assignment import UserTenantRoleRepository, assignment_from_row, assignment_to_row
+ from app.repositories.base import RepositoryConflictError
+ from app.repositories.permission import PermissionRepository, permission_from_row
+@@ -39,6 +41,10 @@ _INVALIDATIONS: dict[type[access.AccessEvent], str] = {
+ }
+ 
+ 
++# Seconds to wait for the partner role catalogue before giving up on an import.
++_CATALOGUE_TIMEOUT = 5.0
++
++
+ def _now() -> datetime:
+     return datetime.now(timezone.utc)
+ 
+@@ -153,6 +159,93 @@ class RoleService:
+ 
+             return Ok(_role_payload(role))
+ 
++    async def import_roles(
++        self,
++        *,
++        tenant_id: uuid.UUID,
++    ) -> Result[dict, IdentityError]:
++        """Create the roles the partner catalogue lists for a tenant, as that tenant's roles.
++
++        A name the tenant already has is skipped. A catalogue that cannot be read, or a
++        name that is not a valid role name, imports nothing.
++        """
++        with tracer.start_as_current_span("RoleService.import_roles") as span:
++            span.set_attribute("tenant.id", str(tenant_id))
++
++            listed = await self._fetch_catalogue(tenant_id)
++            if listed.is_error():
++                return Error(listed.error)
++            entries = []
++            for name, description in listed.ok:
++                parsed = access.role_name(name)
++                if parsed.is_error():
++                    return Error(identity_error(parsed.error))
++                entries.append(access.CatalogueRole(name=parsed.ok, description=description))
++            command = access.ImportRoles(tenant_id=tenant_id, roles=tuple(entries))
++
++            held = [role_from_row(row) for row in await self._repository.list_by_tenant(tenant_id)]
++            decision = access.import_roles(
++                held,
++                command,
++                role_ids=[uuid.uuid4() for _ in entries],
++                now=_now(),
++            )
++            if decision.is_error():
++                return Error(identity_error(decision.error))
++            created, skipped, events = decision.ok
++
++            try:
++                for role in created:
++                    await self._repository.create(role_to_row(role))
++            except RepositoryConflictError:
++                await self._repository.rollback()
++                return Error(Conflict(message="A catalogue role was created in this tenant during the import"))
++            await self._repository.commit()
++            span.set_attribute("roles.created", len(created))
++
++            for role, event in zip(created, events, strict=True):
++                await self._invalidate(event, role.id, tenant_id)
++                self._log_sync_failure(
++                    await self._adapter.sync_role(
++                        role_id=role.id,
++                        data={"name": role.name.value, "description": role.description},
++                    ),
++                    role.id,
++                    "import_roles",
++                )
++
++            return Ok({"created": [role.name.value for role in created], "skipped": list(skipped)})
++
++    async def _fetch_catalogue(self, tenant_id: uuid.UUID) -> Result[list[tuple[str, str]], IdentityError]:
++        """The (name, description) of each role the partner catalogue lists for the tenant."""
++        base = knob("PARTNER_CATALOGUE_URL", "http://partner-catalogue.internal").rstrip("/")
++        try:
++            async with outbound_client(timeout=_CATALOGUE_TIMEOUT) as client:
++                response = await client.get(f"{base}/tenants/{tenant_id}/roles")
++                response.raise_for_status()
++                body = response.json()
++        except UpstreamStatusError as exc:
++            logger.warning(
++                "partner catalogue answered %s for tenant %s: %s",
++                exc.response.status_code,
++                tenant_id,
++                exc.response.text[:500],
++            )
++            return Error(ProviderError(message=f"Partner catalogue answered {exc.response.status_code}"))
++        except UpstreamTransportError as exc:
++            logger.warning("partner catalogue unreachable for tenant %s: %s", tenant_id, type(exc).__name__)
++            return Error(ProviderError(message="Partner catalogue unreachable"))
++        except ValueError:
++            logger.warning("partner catalogue sent a body that is not JSON for tenant %s", tenant_id)
++            return Error(ProviderError(message="Partner catalogue sent an unreadable body"))
++        roles = body.get("roles") if isinstance(body, dict) else None
++        if not isinstance(roles, list) or not all(
++            isinstance(entry, dict) and isinstance(entry.get("name"), str) for entry in roles
++        ):
++            logger.warning("partner catalogue sent no role list for tenant %s", tenant_id)
++            return Error(ProviderError(message="Partner catalogue sent an unreadable body"))
++        return Ok([(entry["name"], str(entry.get("description") or "")) for entry in roles])
++
+     async def get_role(
+         self,
+         *,
+diff --git a/backend/tests/unit/domain/access/test_decisions.py b/backend/tests/unit/domain/access/test_decisions.py
+index 1898246..b314066 100644
+--- a/backend/tests/unit/domain/access/test_decisions.py
++++ b/backend/tests/unit/domain/access/test_decisions.py
+@@ -391,3 +391,28 @@ def test_values_and_events_are_immutable():
+         role.description = "changed"
+     with pytest.raises(dataclasses.FrozenInstanceError):
+         event.name = "changed"
++
++
++# --- importing a partner catalogue ---------------------------------------------
++
++
++def _catalogue(*names: str) -> access.ImportRoles:
++    return access.ImportRoles(
++        tenant_id=TENANT_ID,
++        roles=tuple(access.CatalogueRole(name=access.RoleName(n), description=f"{n} role") for n in names),
++    )
++
++
++def test_import_roles_creates_the_names_the_tenant_lacks_and_skips_the_rest():
++    held = [_role("auditor", TENANT_ID)]
++    ids = [uuid.uuid4() for _ in range(3)]
++    result = access.import_roles(held, _catalogue("billing-admin", "auditor", "billing-admin"), role_ids=ids, now=NOW)
++    created, skipped, events = result.ok
++    assert [r.name.value for r in created] == ["billing-admin"]
++    assert created[0].id == ids[0] and created[0].tenant_id == TENANT_ID and created[0].created_at == NOW
++    assert skipped == ("auditor", "billing-admin")
++    assert [e.role_id for e in events] == [ids[0]]
++
++
++def test_import_roles_of_an_empty_catalogue_creates_nothing():
++    assert access.import_roles([], _catalogue(), role_ids=[], now=NOW) == Ok(((), (), ()))
+diff --git a/backend/tests/unit/domain/access/test_values.py b/backend/tests/unit/domain/access/test_values.py
+index 3922e69..6a397dd 100644
+--- a/backend/tests/unit/domain/access/test_values.py
++++ b/backend/tests/unit/domain/access/test_values.py
+@@ -1,5 +1,6 @@
+ """Smart constructors for the Access context's value objects."""
+ 
++import pytest
+ from expression import Error, Ok
+ 
+ from app.domain import access
+@@ -23,6 +24,17 @@ def test_role_name_rejects_too_long():
+     assert access.role_name(too_long) == Error(access.InvalidName(access.NameSubject.ROLE, access.NameFault.TOO_LONG))
+ 
+ 
++@pytest.mark.parametrize(
++    "raw", ["Admin", "billing admin", "billing_admin", "-admin", "admin-", "billing--admin", "9lives"]
++)
++def test_role_name_rejects_a_name_that_is_not_a_slug(raw):
++    assert access.role_name(raw) == Error(access.InvalidName(access.NameSubject.ROLE, access.NameFault.NOT_A_SLUG))
++
++
++def test_role_name_accepts_a_slug_with_digits_and_hyphens():
++    assert access.role_name("tier2-billing-admin") == Ok(access.RoleName("tier2-billing-admin"))
++
++
+ def test_permission_name_accepts_a_name():
+     assert access.permission_name("documents.read") == Ok(access.PermissionName("documents.read"))
+ 
+diff --git a/backend/tests/unit/test_access_error_translation.py b/backend/tests/unit/test_access_error_translation.py
+index e252701..ae9de62 100644
+--- a/backend/tests/unit/test_access_error_translation.py
++++ b/backend/tests/unit/test_access_error_translation.py
+@@ -46,6 +46,12 @@ TRANSLATIONS = [
+         access.InvalidName(access.NameSubject.ROLE, access.NameFault.TOO_LONG),
+         ValidationError(message="Role name must be at most 255 characters"),
+     ),
++    (
++        access.InvalidName(access.NameSubject.ROLE, access.NameFault.NOT_A_SLUG),
++        ValidationError(
++            message="Role name must be lowercase letters, digits and single hyphens, starting with a letter"
++        ),
++    ),
+     (
+         access.InvalidName(access.NameSubject.PERMISSION, access.NameFault.EMPTY),
+         ValidationError(message="Permission name must not be empty"),
+diff --git a/docs/environment-variables.md b/docs/environment-variables.md
+index 0d405af..9711028 100644
+--- a/docs/environment-variables.md
++++ b/docs/environment-variables.md
+@@ -18,6 +18,7 @@ Defaults below are the values baked into the code (`backend/app/...`). The backe
+ | `RATE_LIMIT_DEFAULT` | `60/minute` | Default per-route rate limit. |
+ | `RATE_LIMIT_AUTH` | `10/minute` | Rate limit for auth-sensitive routes. |
+ | `TRUSTED_PROXY_HOSTS` | `127.0.0.1` | Comma-separated proxy hosts trusted for forwarded headers. |
++| `PARTNER_CATALOGUE_URL` | `http://partner-catalogue.internal` | Base URL of the partner role catalogue that `POST /api/roles/import` reads (`services/role.py`). |
+ | `FRONTEND_URL` | `http://localhost:3000` | CORS allowed origin. |
+ | `REDIS_URL` | — | Redis URL (`redis://` or `rediss://`) for cross-instance cache invalidation. Unset, another scheme or unreachable ⇒ cache invalidation disabled (single-instance only). |
+ | `LOG_LEVEL` | `INFO` | Log level. |
