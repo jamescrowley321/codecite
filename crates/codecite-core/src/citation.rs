@@ -24,6 +24,9 @@ pub use spec::{ContentHash, SectionNumber, SpecCitation};
 mod written;
 pub use written::{SpecAliases, SpecReference, SpecTarget};
 
+mod find;
+pub use find::{WrittenCitation, find_citations};
+
 /// A canonical citation of any form.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Citation {

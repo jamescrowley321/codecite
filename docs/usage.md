@@ -432,6 +432,53 @@ Anything else wrong is an error that exits non-zero, as `read`'s are: text that
 is no citation, a malformed one, an unknown document, version, file or
 anchor, lines past the end, and a stale index.
 
+## Check every citation in CI
+
+`cite check` finds the citations written in files and checks each one as
+`cite` does, so a build fails when a citation in your code or docs stops
+resolving against the pinned corpus:
+
+```sh
+codecite cite check mywork                     # every file under .
+codecite cite check mywork src docs README.md
+git ls-files -z '*.md' | xargs -0 codecite cite check mywork
+```
+
+It finds the canonical citations codecite prints (`repo@sha:path#L10-L42`,
+`doc@sha256:<12 hex>#L3-L9`, a heading's `#anchor`,
+`doc@sha256:<12 hex>#section-4.3/step-2`) and Markdown links whose text cites
+a `§` and whose target is a URL with an anchor. Spec citations written in
+running text, such as `RFC 9449 §4.3`, are not found; check those one at a
+time with `cite`. Directories are walked without following links or reading
+hidden entries (`.git`, `.github`), and files over 1 MiB, not UTF-8 or
+holding a NUL byte are skipped; name a hidden directory to check it, or pass
+the files `git ls-files` lists to leave out what git ignores.
+
+A citation fails when it doesn't resolve, when `read` refuses it (an unknown
+source, version, file or anchor, lines past the end, a malformed citation),
+or when what it names is superseded. Each failure is one line, an unresolved
+citation's candidates under it, and the command exits 1:
+
+```text
+$ codecite cite check identity docs
+docs/notes.md:4:7: identity-model@9458d60:rust/src/dpop/proof.rs#L207-L212 · unknown_version: `identity-model` is not indexed at 9458d60; indexed: identity-model@d8c3293278bcfef33a8a3526e275c8c060d0d17e
+docs/notes.md:9:1: openid-connect-backchannel-1_0@sha256:02343424f9e5#section-2.4 · superseded by openid-connect-backchannel-1_0@sha256:3b5c933d5269
+docs/notes.md:12:5: rfc9449@sha256:2d8657f07291#section-4.9 · no_such_section: rfc9449@sha256:2d8657f07291 has no section 4.9
+  rfc9449@sha256:2d8657f07291#section-4.3
+  rfc9449@sha256:2d8657f07291#section-5
+12 citations in 3 files: 3 failed
+```
+
+`--allow-superseded` lets a citation of an older version pass, for a project
+that cites the version it implements. `--json` prints one object,
+`{"files", "citations", "failed", "problems"}`, each problem with `path`,
+`line`, `column`, `citation` and `problem`: `unresolved` with `findings` and
+`candidates`, `refused` with the error's `kind`, `message` and `candidates`,
+or `superseded` with `resolved` and `superseded_by`. A stale index stops the
+check unless `--allow-stale`; in CI, index the corpus in the same job first.
+A corpus named `check` is checked one citation at a time with
+`codecite cite -- check <citation>`.
+
 ## List a section's requirements
 
 `requirements` lists the normative statements that govern a spec section,

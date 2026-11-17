@@ -348,3 +348,170 @@ fn a_stale_index_is_refused_unless_allowed() {
     );
     assert!(output.status.success(), "{}", stderr(&output));
 }
+
+/// Runs `codecite cite check demo <args>` in `dir`.
+fn check(home: &Path, dir: &Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_codecite"))
+        .env("HOME", home)
+        .env("XDG_DATA_HOME", home)
+        .current_dir(dir)
+        .args(["cite", "check", "demo"])
+        .args(args)
+        .output()
+        .unwrap()
+}
+
+fn write(dir: &Path, path: &str, contents: &[u8]) {
+    let path = dir.join(path);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, contents).unwrap();
+}
+
+#[test]
+fn check_passes_a_tree_whose_citations_resolve() {
+    let home = data_home();
+    let tree = tempfile::tempdir().unwrap();
+    let url = "https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation";
+    write(
+        tree.path(),
+        "README.md",
+        format!("Install: `app@0123456:README.md#install`.\nSee [OIDC Core §3.1.3.7]({url}).\n")
+            .as_bytes(),
+    );
+    write(
+        tree.path(),
+        "src/lib.rs",
+        b"// app@0123456:README.md#L2\nfn a() {}\n",
+    );
+    // Hidden entries, binary files and links are not read.
+    write(tree.path(), ".git/notes.md", b"app@0123456:gone.rs#L1\n");
+    write(tree.path(), "logo.png", b"\0app@0123456:gone.rs#L1\n");
+    std::os::unix::fs::symlink(
+        tree.path().join(".git/notes.md"),
+        tree.path().join("linked.md"),
+    )
+    .unwrap();
+    let output = check(home.path(), tree.path(), &[]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "3 citations in 2 files: 0 failed\n"
+    );
+}
+
+#[test]
+fn check_fails_on_each_citation_that_does_not_hold_up() {
+    let home = data_home();
+    let tree = tempfile::tempdir().unwrap();
+    write(
+        tree.path(),
+        "docs/a.md",
+        format!(
+            "Gone: app@0123456:src/gone.rs#L1\n\
+             rfc2616@sha256:261600000000#section-14.9\n\
+             {PINNED}#section-9.9 and {PINNED}#section-4.3\n"
+        )
+        .as_bytes(),
+    );
+    let output = check(home.path(), tree.path(), &["docs"]);
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert!(
+        lines[0].starts_with("docs/a.md:1:7: app@0123456:src/gone.rs#L1 · no_such_file: "),
+        "{stdout}"
+    );
+    assert_eq!(
+        lines[1],
+        "docs/a.md:2:1: rfc2616@sha256:261600000000#section-14.9 · superseded by rfc9110"
+    );
+    assert_eq!(
+        lines[2],
+        format!(
+            "docs/a.md:3:1: {PINNED}#section-9.9 · no_such_section: {PINNED} has no section 9.9"
+        )
+    );
+    assert!(
+        lines[3].starts_with(&format!("  {PINNED}#section-")),
+        "{stdout}"
+    );
+    assert_eq!(*lines.last().unwrap(), "4 citations in 1 file: 3 failed");
+
+    // A superseded version can be let through.
+    let output = check(
+        home.path(),
+        tree.path(),
+        &["docs/a.md", "--allow-superseded"],
+    );
+    assert_eq!(output.status.code(), Some(1));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(!stdout.contains("superseded"), "{stdout}");
+    assert!(
+        stdout.ends_with("4 citations in 1 file: 2 failed\n"),
+        "{stdout}"
+    );
+
+    // The JSON holds the same.
+    let output = check(home.path(), tree.path(), &["docs", "--json"]);
+    assert_eq!(output.status.code(), Some(1));
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        (&report["files"], &report["citations"], &report["failed"]),
+        (&json!(1), &json!(4), &json!(3))
+    );
+    assert_eq!(
+        report["problems"][1],
+        json!({
+            "path": "docs/a.md",
+            "line": 2,
+            "column": 1,
+            "citation": "rfc2616@sha256:261600000000#section-14.9",
+            "problem": "superseded",
+            "resolved": "rfc2616@sha256:261600000000#section-14.9",
+            "superseded_by": "rfc9110",
+        })
+    );
+    assert_eq!(report["problems"][0]["problem"], "refused");
+    assert_eq!(report["problems"][0]["kind"], "no_such_file");
+    assert_eq!(report["problems"][2]["problem"], "unresolved");
+    assert_eq!(
+        report["problems"][2]["findings"][0]["type"],
+        "no_such_section"
+    );
+}
+
+#[test]
+fn check_refuses_a_stale_index_or_a_missing_path() {
+    let home = data_home();
+    let tree = tempfile::tempdir().unwrap();
+    write(tree.path(), "a.md", b"app@0123456:README.md#L2\n");
+    let output = check(home.path(), tree.path(), &["nowhere"]);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("nowhere"), "{}", stderr(&output));
+
+    rusqlite::Connection::open(home.path().join("codecite/demo.db"))
+        .unwrap()
+        .execute(
+            "UPDATE meta SET value = '2000-01-01T00:00:00Z' WHERE key = 'indexed_at'",
+            [],
+        )
+        .unwrap();
+    let output = check(home.path(), tree.path(), &[]);
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("allow a stale index"),
+        "{}",
+        stderr(&output)
+    );
+    let output = check(home.path(), tree.path(), &["--allow-stale"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+}
+
+#[test]
+fn cite_still_takes_one_citation() {
+    let home = data_home();
+    let output = run(home.path(), &["cite", "demo"]);
+    assert_eq!(output.status.code(), Some(2));
+    let r = cite(home.path(), "app@0123456:README.md#L2");
+    assert_eq!(r["resolved"], true);
+}
