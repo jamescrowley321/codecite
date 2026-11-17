@@ -494,7 +494,9 @@ mod tests {
     }
 
     #[test]
-    fn a_corpus_at_an_older_compatible_schema_carries_a_warning() {
+    fn a_corpus_from_before_the_scip_layer_reports_an_error() {
+        // One version back lacks migration 14, which isn't read-compatible,
+        // so `corpora` reports the file as unreadable rather than warning.
         let dir = tempfile::tempdir().unwrap();
         indexed(dir.path(), "app", &["app"]);
         rusqlite::Connection::open(dir.path().join("app.db"))
@@ -505,11 +507,11 @@ mod tests {
             )
             .unwrap();
         let app = &corpora(dir.path(), None).unwrap().corpora[0];
-        assert_eq!(app.error, None);
+        assert_eq!(app.warning, None);
         assert!(
-            app.warning
+            app.error
                 .as_deref()
-                .is_some_and(|w| w.contains("re-running codecite index upgrades it")),
+                .is_some_and(|e| e.contains("re-run codecite index")),
             "{app:?}"
         );
     }
