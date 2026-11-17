@@ -39,6 +39,9 @@ fn main() {
     if args.get(1).map(String::as_str) == Some("--fake-lsp") {
         fake::run(args.get(2).map_or("clean", String::as_str));
     }
+    if args.get(1).map(String::as_str) == Some("--start-planted") {
+        start_planted(&args[2]);
+    }
     run_tests(filter(&args[1..]));
 }
 
@@ -118,6 +121,14 @@ const TESTS: &[Test] = &[
     (
         "the_filter_skips_option_values",
         the_filter_skips_option_values,
+    ),
+    (
+        "timeouts_too_large_for_a_deadline_do_not_panic",
+        timeouts_too_large_for_a_deadline_do_not_panic,
+    ),
+    (
+        "a_bare_command_never_resolves_inside_the_root",
+        a_bare_command_never_resolves_inside_the_root,
     ),
 ];
 
@@ -480,6 +491,62 @@ fn the_filter_skips_option_values() {
     );
     assert_eq!(filter(&args(&["--nocapture", "drop"])), Some("drop"));
     assert_eq!(filter(&args(&["--test-threads=1"])), None);
+}
+
+fn timeouts_too_large_for_a_deadline_do_not_panic() {
+    let (_root, server) = start(
+        "clean",
+        &ServerOptions {
+            startup_timeout: Duration::MAX,
+            shutdown_grace: Duration::MAX,
+            ..options()
+        },
+    );
+    let server = server.expect("start");
+    assert_eq!(
+        server
+            .request("test/echo", json!(1), Duration::MAX)
+            .unwrap(),
+        json!(1)
+    );
+    let status = server.shutdown().expect("shutdown");
+    assert!(status.success(), "{status:?}");
+}
+
+/// The name of the executable `a_bare_command_never_resolves_inside_the_root`
+/// plants in the workspace root.
+const PLANTED: &str = "codecite-planted-lsp";
+
+/// Run in a child whose PATH holds only relative and empty entries: starts
+/// the planted name in `root`, exiting 0 only on `ServerNotFound`.
+fn start_planted(root: &str) -> ! {
+    let command = ServerCommand::new(PLANTED, Vec::<String>::new());
+    match Server::start(&command, std::path::Path::new(root), &options()) {
+        Err(Error::ServerNotFound { .. }) => process::exit(0),
+        other => {
+            eprintln!("expected ServerNotFound, got {other:?}");
+            process::exit(1);
+        }
+    }
+}
+
+fn a_bare_command_never_resolves_inside_the_root() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let planted = root.path().join(PLANTED);
+    std::fs::write(&planted, "#!/bin/sh\n: > ran\n").unwrap();
+    std::fs::set_permissions(&planted, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let exe = std::env::current_exe().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    // `.`, `bin` and the empty entries would all find it from inside the root.
+    let status = Command::new(exe)
+        .args(["--start-planted", &root.path().to_string_lossy()])
+        .env("PATH", ":.:bin:")
+        .current_dir(elsewhere.path())
+        .status()
+        .unwrap();
+    assert!(status.success(), "{status:?}");
+    assert!(!root.path().join("ran").exists(), "the planted program ran");
 }
 
 // ---------------------------------------------------------------------------

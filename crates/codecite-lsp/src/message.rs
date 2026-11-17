@@ -5,6 +5,8 @@ use serde_json::{Map, Value, json};
 
 use crate::{Error, Result};
 
+/// JSON-RPC's `InvalidParams`.
+pub const INVALID_PARAMS: i64 = -32602;
 /// JSON-RPC's `MethodNotFound`.
 pub const METHOD_NOT_FOUND: i64 = -32601;
 /// LSP's `RequestCancelled`.
@@ -107,7 +109,9 @@ impl Message {
             None | Some(Value::Null) => None,
             Some(id) => Some(Id::from_value(&id).ok_or_else(|| invalid("bad response id"))?),
         };
-        let outcome = if let Some(error) = object.remove("error") {
+        // A null `error` is forbidden but sent by some servers: it means none.
+        let error = object.remove("error").filter(|e| !e.is_null());
+        let outcome = if let Some(error) = error {
             Err(response_error(error).ok_or_else(|| invalid("bad error object"))?)
         } else if let Some(result) = object.remove("result") {
             Ok(result)
@@ -203,6 +207,19 @@ mod tests {
             Message::Response {
                 id: Some(Id::Number(4)),
                 outcome: Ok(Value::Null)
+            }
+        );
+    }
+
+    #[test]
+    fn a_null_error_beside_a_result_is_a_success() {
+        // JSON-RPC forbids it, but some servers send it.
+        let value = json!({"jsonrpc": "2.0", "id": 5, "result": [1], "error": null});
+        assert_eq!(
+            Message::from_value(value).unwrap(),
+            Message::Response {
+                id: Some(Id::Number(5)),
+                outcome: Ok(json!([1]))
             }
         );
     }

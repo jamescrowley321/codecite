@@ -4,8 +4,9 @@
 //! leaves the process behind.
 
 use std::collections::{HashSet, VecDeque};
+use std::ffi::OsStr;
 use std::io::{self, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
@@ -14,6 +15,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
+use crate::deadline::Deadline;
 use crate::{Client, ClientOptions, Error, Result};
 
 /// How often a bounded wait checks the process and the connection.
@@ -22,7 +24,8 @@ const POLL: Duration = Duration::from_millis(10);
 /// The program and arguments that start a language server on stdio.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServerCommand {
-    /// The program, looked up on `PATH` when it has no path separator.
+    /// The program. One without a path separator is looked up on `PATH`,
+    /// skipping relative and empty entries, never in the workspace root.
     pub program: String,
     /// Its arguments, for example `["--stdio"]`.
     pub args: Vec<String>,
@@ -155,9 +158,9 @@ impl StderrTail {
     /// The tail as text. After the process exits, waits briefly for the
     /// drain to reach EOF so the last lines are included.
     fn text(&mut self, settle: Duration) -> String {
-        let deadline = Instant::now() + settle;
+        let deadline = Deadline::after(settle);
         if let Some(drain) = &self.drain {
-            while !drain.is_finished() && Instant::now() < deadline {
+            while !drain.is_finished() && !deadline.passed() {
                 thread::sleep(POLL);
             }
         }
@@ -199,7 +202,7 @@ impl Server {
     /// shut down before this returns.
     pub fn start(command: &ServerCommand, root: &Path, options: &ServerOptions) -> Result<Self> {
         let started = Instant::now();
-        let deadline = started + options.startup_timeout;
+        let deadline = Deadline::at(started, options.startup_timeout);
         let root = root.canonicalize()?;
         if !root.is_dir() {
             return Err(Error::Io(io::Error::new(
@@ -207,8 +210,15 @@ impl Server {
                 format!("workspace root {} is not a directory", root.display()),
             )));
         }
+        // Resolved here: the child's own lookup would run after it moves into
+        // the root, where a relative PATH entry could find a planted program.
+        let not_found = || Error::ServerNotFound {
+            command: command.program.clone(),
+        };
+        let program = resolve_program(&command.program, std::env::var_os("PATH").as_deref())
+            .ok_or_else(not_found)?;
         // The root exists, so a NotFound from spawn is the program.
-        let mut child = match Command::new(&command.program)
+        let mut child = match Command::new(&program)
             .args(&command.args)
             .current_dir(&root)
             .stdin(Stdio::piped())
@@ -217,11 +227,7 @@ impl Server {
             .spawn()
         {
             Ok(child) => child,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                return Err(Error::ServerNotFound {
-                    command: command.program.clone(),
-                });
-            }
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Err(not_found()),
             Err(e) => return Err(Error::Io(e)),
         };
         let pipes = (child.stdin.take(), child.stdout.take(), child.stderr.take());
@@ -281,7 +287,7 @@ impl Server {
     fn initialize(
         &self,
         root: &Path,
-        deadline: Instant,
+        deadline: Deadline,
         readiness: &Readiness,
         tracker: &Tracker,
     ) -> Result<()> {
@@ -297,9 +303,9 @@ impl Server {
             "capabilities": client_capabilities(),
         });
         self.client
-            .request("initialize", params, remaining(deadline))?;
+            .request("initialize", params, deadline.remaining())?;
         self.client
-            .notify_within("initialized", json!({}), remaining(deadline))?;
+            .notify_within("initialized", json!({}), deadline.remaining())?;
         // The quiet period counts from here, however long startup took.
         lock(&tracker.0).last_event = Instant::now();
         match readiness {
@@ -313,17 +319,16 @@ impl Server {
         &self,
         tracker: &Tracker,
         quiet: Duration,
-        deadline: Instant,
+        deadline: Deadline,
     ) -> Result<()> {
         let (progress, changed) = &**tracker;
         let mut state = lock(progress);
         loop {
-            let now = Instant::now();
-            let idle = now.saturating_duration_since(state.last_event);
+            let idle = state.last_event.elapsed();
             if state.active.is_empty() && idle >= quiet {
                 return Ok(());
             }
-            if now >= deadline {
+            if deadline.passed() {
                 return Err(Error::Timeout {
                     method: "$/progress".into(),
                     elapsed: Duration::ZERO,
@@ -335,30 +340,30 @@ impl Server {
             let wait = if state.active.is_empty() {
                 quiet - idle
             } else {
-                deadline - now
+                deadline.remaining()
             };
             state = changed
-                .wait_timeout(state, wait.min(deadline - now).min(POLL * 10))
+                .wait_timeout(state, wait.min(deadline.remaining()).min(POLL * 10))
                 .unwrap_or_else(PoisonError::into_inner)
                 .0;
         }
     }
 
-    fn probe(&self, method: &str, params: &Value, deadline: Instant) -> Result<()> {
+    fn probe(&self, method: &str, params: &Value, deadline: Deadline) -> Result<()> {
         loop {
             match self
                 .client
-                .request(method, params.clone(), remaining(deadline))
+                .request(method, params.clone(), deadline.remaining())
             {
                 Ok(_) => return Ok(()),
                 Err(Error::ContentModified { .. } | Error::RequestCancelled { .. }) => {
-                    if Instant::now() >= deadline {
+                    if deadline.passed() {
                         return Err(Error::Timeout {
                             method: method.to_owned(),
                             elapsed: Duration::ZERO,
                         });
                     }
-                    thread::sleep((POLL * 10).min(remaining(deadline)));
+                    thread::sleep((POLL * 10).min(deadline.remaining()));
                 }
                 Err(e) => return Err(e),
             }
@@ -410,12 +415,12 @@ impl Server {
     }
 
     fn wait_for_exit(&self, within: Duration) -> Option<ExitStatus> {
-        let deadline = Instant::now() + within;
+        let deadline = Deadline::after(within);
         loop {
             if let Some(status) = self.try_exit_status() {
                 return Some(status);
             }
-            if Instant::now() >= deadline {
+            if deadline.passed() {
                 return None;
             }
             thread::sleep(POLL);
@@ -493,8 +498,42 @@ impl Drop for Server {
     }
 }
 
-fn remaining(deadline: Instant) -> Duration {
-    deadline.saturating_duration_since(Instant::now())
+/// Where `program` runs from: itself if it names a path, else the first
+/// executable of that name in an absolute `PATH` entry. Relative and empty
+/// entries are skipped, since they would resolve inside the workspace root.
+fn resolve_program(program: &str, path: Option<&OsStr>) -> Option<PathBuf> {
+    let candidate = Path::new(program);
+    if candidate.components().count() != 1 || program.contains('/') {
+        return Some(candidate.to_path_buf());
+    }
+    std::env::split_paths(path?)
+        .filter(|dir| dir.is_absolute())
+        .flat_map(|dir| executable_names(program).map(move |name| dir.join(name)))
+        .find(|candidate| is_executable(candidate))
+}
+
+/// The file names a program may have: on Windows, with each usual suffix.
+fn executable_names(program: &str) -> impl Iterator<Item = String> + '_ {
+    let suffixes: &[&str] = if cfg!(windows) {
+        &["", ".exe", ".cmd", ".bat"]
+    } else {
+        &[""]
+    };
+    suffixes
+        .iter()
+        .map(move |suffix| format!("{program}{suffix}"))
+}
+
+#[cfg(unix)]
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    path.metadata()
+        .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn is_executable(path: &Path) -> bool {
+    path.is_file()
 }
 
 /// What codecite asks a server for: definitions, references, call hierarchy
@@ -573,6 +612,48 @@ mod tests {
         assert_eq!(windows(r"\\?\UNC\server\share\x"), "file://server/share/x");
         // Off Windows a backslash is an ordinary byte.
         assert_eq!(uri_from_path_bytes(br"/a\b", false), "file:///a%5Cb");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bare_programs_resolve_only_against_absolute_path_entries() {
+        use std::os::unix::fs::PermissionsExt;
+        let bin = tempfile::tempdir().unwrap();
+        let program = bin.path().join("lsp-under-test");
+        std::fs::write(&program, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::write(bin.path().join("not-executable"), "").unwrap();
+        let dir = bin.path().to_str().unwrap();
+        let path = |entries: &str| Some(std::ffi::OsString::from(entries));
+        assert_eq!(
+            resolve_program(
+                "lsp-under-test",
+                path(&format!("/nonexistent:{dir}")).as_deref()
+            ),
+            Some(program.clone())
+        );
+        assert_eq!(
+            resolve_program("not-executable", path(dir).as_deref()),
+            None
+        );
+        // Relative and empty entries are never searched, even one that
+        // names the program's directory from here.
+        let ups = "../".repeat(std::env::current_dir().unwrap().components().count() - 1);
+        let relative = format!("{ups}{}", dir.trim_start_matches('/'));
+        assert!(Path::new(&relative).join("lsp-under-test").exists());
+        assert_eq!(
+            resolve_program(
+                "lsp-under-test",
+                path(&format!(":.:{relative}:")).as_deref()
+            ),
+            None
+        );
+        assert_eq!(resolve_program("lsp-under-test", None), None);
+        // A path is taken as given.
+        assert_eq!(
+            resolve_program("./bin/x", path(dir).as_deref()),
+            Some(PathBuf::from("./bin/x"))
+        );
     }
 
     #[test]

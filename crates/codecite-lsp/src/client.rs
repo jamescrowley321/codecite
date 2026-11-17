@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 use std::io::{BufReader, Read, Write};
-use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
@@ -19,9 +19,11 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
+use crate::deadline::Deadline;
 use crate::framing::{DEFAULT_MAX_BODY_BYTES, read_message, write_message};
 use crate::message::{
-    CONTENT_MODIFIED, Id, METHOD_NOT_FOUND, Message, REQUEST_CANCELLED, ResponseError,
+    CONTENT_MODIFIED, INVALID_PARAMS, Id, METHOD_NOT_FOUND, Message, REQUEST_CANCELLED,
+    ResponseError,
 };
 use crate::{Error, Result};
 
@@ -29,6 +31,10 @@ use crate::{Error, Result};
 /// reading while it keeps sending requests fills this, and the connection
 /// closes instead of queueing replies without bound.
 const MAX_QUEUED: usize = 1024;
+
+/// The most items a `workspace/configuration` reply answers. Each queued
+/// reply then stays small, so `MAX_QUEUED` bounds the queue's memory too.
+const MAX_CONFIGURATION_ITEMS: usize = 1024;
 
 /// Called on the reader thread with each server notification's method and
 /// params. It must not block for long: the next message waits on it.
@@ -77,9 +83,18 @@ enum SendFailure {
     TimedOut,
 }
 
+/// Waiting for the writer; it may still be skipped.
+const QUEUED: u8 = 0;
+/// The writer has begun it, so part of it may be on the wire.
+const STARTED: u8 = 1;
+/// Its sender gave up before the writer began it; never written.
+const SKIPPED: u8 = 2;
+
 /// A message for the writer thread, and where to say it was written.
 struct Outgoing {
     message: Value,
+    /// `QUEUED`, `STARTED` or `SKIPPED`, shared with the waiting sender.
+    progress: Arc<AtomicU8>,
     written: Option<SyncSender<()>>,
 }
 
@@ -112,8 +127,9 @@ impl Shared {
     }
 
     /// Queues a message for the writer and never blocks on it. With `wait`,
-    /// waits that long for it to be written; past that the connection is
-    /// closed, since part of a frame may already be on the wire.
+    /// waits that long for it to be written. Past that, a message the writer
+    /// hasn't begun is skipped and the connection stays open; one it has
+    /// begun closes the connection, since part of a frame is on the wire.
     fn send(
         &self,
         message: &Message,
@@ -126,6 +142,7 @@ impl Shared {
             }
             None => (None, None),
         };
+        let progress = Arc::new(AtomicU8::new(QUEUED));
         let queued = {
             let outbox = lock(&self.outbox);
             let Some(outbox) = outbox.as_ref() else {
@@ -136,6 +153,7 @@ impl Shared {
                 outbox
                     .send(Outgoing {
                         message: message.to_value(),
+                        progress: Arc::clone(&progress),
                         written,
                     })
                     .is_ok()
@@ -157,6 +175,16 @@ impl Shared {
             Ok(()) => Ok(()),
             Err(RecvTimeoutError::Disconnected) => Err(SendFailure::Closed),
             Err(RecvTimeoutError::Timeout) => {
+                let skipped = progress
+                    .compare_exchange(QUEUED, SKIPPED, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok();
+                if skipped {
+                    return Err(SendFailure::TimedOut);
+                }
+                // Begun: it may have finished since the timeout.
+                if done.try_recv().is_ok() {
+                    return Ok(());
+                }
                 self.close(&format!("writing to the server timed out after {wait:?}"));
                 Err(SendFailure::TimedOut)
             }
@@ -244,7 +272,7 @@ impl Client {
     /// connection is closed.
     pub fn request(&self, method: &str, params: Value, timeout: Duration) -> Result<Value> {
         let start = Instant::now();
-        let deadline = start + timeout;
+        let deadline = Deadline::at(start, timeout);
         let timed_out = || Error::Timeout {
             method: method.to_owned(),
             elapsed: start.elapsed(),
@@ -272,8 +300,7 @@ impl Client {
                 SendFailure::TimedOut => timed_out(),
             });
         }
-        let wait = deadline.saturating_duration_since(Instant::now());
-        let reply = match rx.recv_timeout(wait) {
+        let reply = match rx.recv_timeout(deadline.remaining()) {
             Ok(reply) => reply,
             Err(RecvTimeoutError::Disconnected) => return Err(self.shared.closed_error()),
             Err(RecvTimeoutError::Timeout) => {
@@ -357,6 +384,15 @@ impl Drop for Client {
 /// Dropping `writer` on return closes the server's input.
 fn write_loop<W: Write>(shared: &Shared, mut writer: W, inbox: &Receiver<Outgoing>) {
     while let Ok(outgoing) = inbox.recv() {
+        let begun = outgoing
+            .progress
+            .compare_exchange(QUEUED, STARTED, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok();
+        if !begun {
+            // Its sender gave up waiting before it reached the wire.
+            shared.queued.fetch_sub(1, Ordering::SeqCst);
+            continue;
+        }
         let result = write_message(&mut writer, &outgoing.message);
         shared.queued.fetch_sub(1, Ordering::SeqCst);
         match result {
@@ -431,6 +467,15 @@ fn default_reply(method: &str, params: &Value) -> std::result::Result<Value, Res
     match method {
         "workspace/configuration" => {
             let items = params["items"].as_array().map_or(0, Vec::len);
+            if items > MAX_CONFIGURATION_ITEMS {
+                return Err(ResponseError {
+                    code: INVALID_PARAMS,
+                    message: format!(
+                        "codecite answers at most {MAX_CONFIGURATION_ITEMS} configuration items"
+                    ),
+                    data: None,
+                });
+            }
             Ok(Value::Array(vec![Value::Null; items]))
         }
         "window/workDoneProgress/create"
@@ -777,14 +822,17 @@ mod tests {
     #[test]
     fn a_malformed_frame_closes_the_connection() {
         let huge_header = format!("X-Pad: {}\r\n\r\n", "a".repeat(10_000));
-        let cases: [(&[u8], &str); 5] = [
+        // The last case's body is cut short by the peer closing its output.
+        let cases: [(&[u8], &str); 7] = [
             (b"Content-Type: x\r\n\r\n{}", "no Content-Length"),
             (b"Content-Length: lots\r\n\r\n{}", "invalid Content-Length"),
             (huge_header.as_bytes(), "header is over"),
             (b"Content-Length: 4096\r\n\r\n", "over the 1024-byte cap"),
             (b"Content-Length: 3\r\n\r\nnot", "not a JSON-RPC message"),
+            (b"garbage\r\n\r\n{}", "malformed header line"),
+            (b"Content-Length: 10\r\n\r\n{}", "ended inside a frame"),
         ];
-        for (bytes, expected) in cases {
+        for (n, (bytes, expected)) in cases.into_iter().enumerate() {
             let (client, mut peer) = connect_with(ClientOptions {
                 max_body: 1024,
                 ..ClientOptions::default()
@@ -793,6 +841,9 @@ mod tests {
                 let call = s.spawn(|| client.request("q", Value::Null, LONG));
                 peer.recv_request();
                 peer.send_raw(bytes);
+                if n == cases.len() - 1 {
+                    peer.writer.take();
+                }
                 match call.join().unwrap() {
                     Err(Error::Closed { reason }) => {
                         assert!(reason.contains(expected), "{reason:?} lacks {expected:?}");
@@ -951,6 +1002,70 @@ mod tests {
                 });
                 assert!(!real, "{file} uses {b}");
             }
+        }
+    }
+
+    #[test]
+    fn an_unstarted_write_times_out_without_closing() {
+        let (client, mut peer) = connect();
+        thread::scope(|s| {
+            // Blocks the writer: the peer isn't reading yet.
+            let big = s.spawn(|| client.notify_within("big", bigger_than_a_pipe(), LONG));
+            thread::sleep(Duration::from_millis(50));
+            let short = Duration::from_millis(50);
+            assert!(matches!(
+                client.request("queued", Value::Null, short),
+                Err(Error::Timeout { method, .. }) if method == "queued"
+            ));
+            assert!(matches!(
+                client.notify_within("queued", Value::Null, short),
+                Err(Error::Timeout { .. })
+            ));
+            // Never begun, so nothing is half-written and the connection lives.
+            assert_eq!(client.closed_reason(), None);
+            match peer.recv() {
+                Message::Notification { method, .. } => assert_eq!(method, "big"),
+                other => panic!("expected the big notification, got {other:?}"),
+            }
+            big.join().unwrap().unwrap();
+            // The abandoned messages were skipped, not sent late.
+            let call = s.spawn(|| client.request("next", Value::Null, LONG));
+            let (id, method, _) = peer.recv_request();
+            assert_eq!(method, "next");
+            peer.respond(id, Ok(json!("ok")));
+            assert_eq!(call.join().unwrap().unwrap(), json!("ok"));
+        });
+    }
+
+    #[test]
+    fn a_timeout_too_large_for_a_deadline_means_no_deadline() {
+        let (client, mut peer) = connect();
+        thread::scope(|s| {
+            let call = s.spawn(|| client.request("q", Value::Null, Duration::MAX));
+            let (id, _, _) = peer.recv_request();
+            peer.respond(id, Ok(json!(1)));
+            assert_eq!(call.join().unwrap().unwrap(), json!(1));
+        });
+        client
+            .notify_within("n", Value::Null, Duration::MAX)
+            .unwrap();
+        assert!(matches!(peer.recv(), Message::Notification { .. }));
+    }
+
+    #[test]
+    fn an_oversized_configuration_request_is_refused() {
+        let (_client, mut peer) = connect();
+        let items = vec![json!({}); MAX_CONFIGURATION_ITEMS + 1];
+        peer.send(Message::Request {
+            id: Id::Number(1),
+            method: "workspace/configuration".into(),
+            params: json!({ "items": items }),
+        });
+        match peer.recv() {
+            Message::Response {
+                outcome: Err(e), ..
+            } => assert_eq!(e.code, INVALID_PARAMS),
+            other => panic!("expected InvalidParams, got {other:?}"),
         }
     }
 

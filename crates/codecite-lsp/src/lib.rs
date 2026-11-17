@@ -6,6 +6,7 @@
 //! it to be ready and shuts it down.
 
 mod client;
+mod deadline;
 mod error;
 pub mod framing;
 pub mod message;
