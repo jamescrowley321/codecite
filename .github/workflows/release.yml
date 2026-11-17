@@ -1,0 +1,381 @@
+name: Release
+
+# A release is a `vX.Y.Z` tag on a commit on main whose version matches
+# `workspace.package.version`. This workflow checks the tag, builds the
+# `codecite` binary for each target with an SBOM, publishes the five crates to
+# crates.io with Trusted Publishing, then attests the binaries' build
+# provenance and cuts a GitHub Release. See docs/design.md (Architecture, after the MCP server).
+#
+# crates.io trusts this file by name (release.yml) and the `release`
+# environment, so renaming either means changing each crate's trusted
+# publisher on crates.io in step. There is no registry token secret: the
+# publish job trades its OIDC token for a crates.io token that lives only for
+# that job.
+#
+# On a fork nothing reaches crates.io: the publish job runs
+# `cargo publish --dry-run` instead, and the GitHub Release is a draft.
+#
+# A tag runs the copy of this file at the tagged commit, so no check in it can
+# stop a tag on unreviewed code: such a commit can carry a release.yml without
+# the check. The controls are in oss-admin: a tag ruleset that lets only the
+# owner create, move or delete `v*` tags, and the `release` environment, which
+# admits only `v*` tags and which the publish and release jobs both deploy to.
+# The checks in `verify` catch mistakes, not attacks.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+# One run per tag, and a run that has started publishing always finishes.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+# No caches anywhere in this workflow: a cache written by a PR run could
+# otherwise end up inside a released binary.
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      # Full history, so the tagged commit can be checked against main.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install toolchain
+        run: |
+          rustup toolchain install
+          rustc --version
+      - name: Check the tag against main, Cargo.toml and Cargo.lock
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          if ! [[ "$TAG" == v* && "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag '$TAG' is not v<semver>, such as v0.1.0"
+            exit 1
+          fi
+          # Catches a tag pushed on the wrong commit. It is not a security
+          # control: see the note at the top of this file.
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag '$TAG' points at $GITHUB_SHA, which is not on main"
+            exit 1
+          fi
+          # --locked makes cargo fail, in seconds, if Cargo.lock would change;
+          # otherwise the first build rewrites it and `cargo publish` refuses
+          # the dirty tree minutes later, naming the symptom, not the cause.
+          if ! cargo metadata --locked --format-version 1 >/dev/null; then
+            echo "::error::Cargo.lock is stale for this Cargo.toml; run cargo update --workspace and commit Cargo.lock"
+            exit 1
+          fi
+          # Every published crate shares the workspace version (docs/design.md).
+          mismatched="$(cargo metadata --locked --no-deps --format-version 1 |
+            jq -r --arg v "$version" '.packages[] | select(.publish != []) | select(.version != $v) | "\(.name) \(.version)"')"
+          if [[ -n "$mismatched" ]]; then
+            echo "::error::Tag '$TAG' does not match the crate versions: $(echo "$mismatched" | paste -sd, -)"
+            exit 1
+          fi
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "Releasing codecite $version"
+
+  build:
+    name: build (${{ matrix.target }})
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          - target: aarch64-apple-darwin
+            os: macos-15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install toolchain
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          rustup toolchain install
+          rustc --version
+          host="$(rustc -vV | sed -n 's/^host: //p')"
+          if [[ "$host" != "$TARGET" ]]; then
+            echo "::error::Runner host is $host, expected $TARGET"
+            exit 1
+          fi
+      # cargo-auditable embeds the dependency list in the binary, so the SBOM
+      # lists exactly what was linked, not everything in Cargo.lock.
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: cargo-auditable@0.7.7
+      - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        id: syft
+        with:
+          syft-version: v1.57.0
+      - name: Build
+        run: cargo auditable build --release --locked -p codecite
+      - name: Package the binary and its SBOM
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          TARGET: ${{ matrix.target }}
+          SYFT: ${{ steps.syft.outputs.cmd }}
+        run: |
+          set -euo pipefail
+          name="codecite-$VERSION-$TARGET"
+          mkdir -p "staging/$name" dist
+          cp target/release/codecite README.md LICENSE NOTICE "staging/$name/"
+          tar -C staging -czf "dist/$name.tar.gz" "$name"
+          # syft's cargo-auditable-binary-cataloger reads that list.
+          "$SYFT" scan "file:target/release/codecite" \
+            --source-name codecite --source-version "$VERSION" \
+            -o "spdx-json=dist/$name.spdx.json"
+          # An SBOM that lists no crates means the audit data went missing.
+          crates="$(jq '[.packages[] | select(.name != "codecite")] | length' "dist/$name.spdx.json")"
+          if [[ "$crates" -eq 0 ]]; then
+            echo "::error::The SBOM for $TARGET lists no dependencies"
+            exit 1
+          fi
+          echo "$name: SBOM lists $crates packages"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: codecite-${{ matrix.target }}
+          path: dist/
+          if-no-files-found: error
+          # Kept for the longest retention GitHub allows, so "Re-run failed
+          # jobs" can still cut the GitHub Release long after a failure.
+          # After that, "Re-run all jobs" rebuilds them, and publish skips the
+          # crates already uploaded.
+          retention-days: 90
+
+  # Compiles each crate as it would be published, with no id-token
+  # permission, so dependency build scripts and proc macros never run beside
+  # a crates.io token. The publish job then uploads with --no-verify.
+  package:
+    name: package
+    needs: verify
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install toolchain
+        run: |
+          rustup toolchain install
+          rustc --version
+      - name: Package and verify the crates
+        run: cargo package --workspace --locked
+
+  publish:
+    name: publish
+    needs: [verify, build, package]
+    runs-on: ubuntu-24.04
+    # crates.io's trusted publisher names this environment; oss-admin limits
+    # it to v* tags.
+    environment: release
+    permissions:
+      contents: read
+      id-token: write # trade the job's OIDC token for a short-lived crates.io token
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install toolchain
+        run: |
+          rustup toolchain install
+          rustc --version
+      # crates.io versions are immutable, so a re-run after a partial publish
+      # must skip the crates that run already uploaded. A crate counts as
+      # uploaded only if crates.io has it at this version, the owner owns it,
+      # and its checksum equals the .crate packaged here from the tagged
+      # commit; anything else fails the job rather than ship around a crate
+      # someone else published. The crates.io API, unlike the CDN-cached
+      # sparse index, shows an upload at once. `cargo package --no-verify`
+      # compiles nothing, and packaging is reproducible for a given commit
+      # and toolchain.
+      - name: Find the crates not yet on crates.io
+        id: pending
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          OWNER: jamescrowley321
+        run: |
+          set -euo pipefail
+          cargo package --workspace --locked --no-verify
+          api() {
+            curl -sS --retry 3 -A "codecite-release (https://github.com/$GITHUB_REPOSITORY)" \
+              -o api.json -w '%{http_code}' "https://crates.io/api/v1/crates/$1"
+          }
+          upstream=false
+          if [[ "$GITHUB_REPOSITORY" == jamescrowley321/codecite ]]; then
+            upstream=true
+          fi
+          published=()
+          pending=0
+          # Captured first: a failing substitution in a for-loop's word list
+          # would be ignored, and an empty list would publish nothing.
+          names="$(cargo metadata --locked --no-deps --format-version 1 |
+            jq -r '.packages[] | select(.publish != []) | .name')"
+          if [[ -z "$names" ]]; then
+            echo "::error::No publishable crates found in the workspace"
+            exit 1
+          fi
+          for name in $names; do
+            code="$(api "$name/$VERSION")"
+            if [[ "$code" == 404 ]]; then
+              echo "$name $VERSION will be published"
+              pending=$((pending + 1))
+              continue
+            elif [[ "$code" != 200 ]]; then
+              echo "::error::crates.io returned HTTP $code for $name $VERSION"
+              exit 1
+            fi
+            remote="$(jq -r '.version.checksum' api.json)"
+            if [[ "$upstream" != true ]]; then
+              # A fork uploads nothing either way.
+              echo "::warning::$name $VERSION is already on crates.io; the fork dry run skips it"
+              published+=("$name")
+              continue
+            fi
+            code="$(api "$name/owners")"
+            if [[ "$code" != 200 ]]; then
+              echo "::error::crates.io returned HTTP $code for the owners of $name; re-run the job"
+              exit 1
+            fi
+            if ! jq -e --arg o "$OWNER" 'any(.users[]; .kind == "user" and .login == $o)' api.json >/dev/null; then
+              echo "::error::$name $VERSION is on crates.io but $OWNER does not own $name"
+              exit 1
+            fi
+            local_sum="$(sha256sum "target/package/$name-$VERSION.crate" | cut -d' ' -f1)"
+            if [[ "$remote" != "$local_sum" ]]; then
+              echo "::error::$name $VERSION on crates.io (sha256 $remote) is not the crate this commit packages ($local_sum); bump the version"
+              exit 1
+            fi
+            echo "$name $VERSION is already on crates.io from this commit; skipping it"
+            published+=("$name")
+          done
+          rm -f api.json
+          echo "count=$pending" >>"$GITHUB_OUTPUT"
+          echo "published=${published[*]}" >>"$GITHUB_OUTPUT"
+      - name: Publish dry run (fork)
+        if: github.repository != 'jamescrowley321/codecite' && steps.pending.outputs.count != '0'
+        env:
+          PUBLISHED: ${{ steps.pending.outputs.published }}
+        run: |
+          set -euo pipefail
+          read -ra names <<<"$PUBLISHED"
+          exclude=()
+          for name in "${names[@]}"; do exclude+=(--exclude "$name"); done
+          cargo publish --workspace --locked --no-verify --dry-run "${exclude[@]}"
+      - name: Authenticate to crates.io
+        if: github.repository == 'jamescrowley321/codecite' && steps.pending.outputs.count != '0'
+        id: auth
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+      # Uploads the remaining crates in dependency order. The package job has
+      # already verified them, so no crate code is compiled here. The token is
+      # revoked by the auth action's post step when the job ends.
+      - name: Publish to crates.io
+        if: github.repository == 'jamescrowley321/codecite' && steps.pending.outputs.count != '0'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          PUBLISHED: ${{ steps.pending.outputs.published }}
+        run: |
+          set -euo pipefail
+          read -ra names <<<"$PUBLISHED"
+          exclude=()
+          for name in "${names[@]}"; do exclude+=(--exclude "$name"); done
+          cargo publish --workspace --locked --no-verify "${exclude[@]}"
+
+  release:
+    name: release
+    needs: [verify, build, publish]
+    runs-on: ubuntu-24.04
+    # The same environment as publish, so its tag policy also gates the
+    # provenance attestation and the GitHub Release.
+    environment: release
+    permissions:
+      contents: write # create the GitHub Release
+      id-token: write # sign the provenance attestation keylessly
+      attestations: write # store the provenance attestation
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: codecite-*
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cd dist
+          shopt -s nullglob
+          files=(*.tar.gz *.spdx.json)
+          if (( ${#files[@]} == 0 )); then
+            echo "::error::No build artifacts to release; they expire after 90 days, so use \"Re-run all jobs\" to rebuild them"
+            exit 1
+          fi
+          sha256sum -- "${files[@]}" | tee SHA256SUMS
+      # A re-run signs the same files again; a second attestation for the
+      # same digest is harmless.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.spdx.json
+      # A re-run after the release was created, say when an upload failed,
+      # finishes it instead of failing on the existing release. A draft may
+      # have its assets replaced; a published release only gets the assets
+      # it is missing, so nothing people have downloaded changes under them.
+      - name: Create or update the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          flags=()
+          if [[ "$GITHUB_REPOSITORY" != jamescrowley321/codecite ]]; then
+            flags+=(--draft)
+          fi
+          if [[ "$VERSION" == *-* ]]; then
+            flags+=(--prerelease)
+          fi
+          if existing="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,assets 2>/dev/null)"; then
+            if [[ "$(jq -r '.isDraft' <<<"$existing")" == true ]]; then
+              echo "Release $TAG exists as a draft; replacing its assets"
+              gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+              exit 0
+            fi
+            missing=()
+            for file in dist/*; do
+              if ! jq -e --arg n "$(basename "$file")" 'any(.assets[]; .name == $n)' <<<"$existing" >/dev/null; then
+                missing+=("$file")
+              fi
+            done
+            if (( ${#missing[@]} == 0 )); then
+              echo "Release $TAG is published with every asset; nothing to do"
+              exit 0
+            fi
+            echo "Release $TAG is published; uploading only its missing assets: ${missing[*]}"
+            gh release upload "$TAG" "${missing[@]}" --repo "$GITHUB_REPOSITORY"
+            exit 0
+          fi
+          gh release create "$TAG" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "codecite $VERSION" \
+            --generate-notes \
+            "${flags[@]}"
