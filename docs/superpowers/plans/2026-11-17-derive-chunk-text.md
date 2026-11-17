@@ -61,7 +61,10 @@ a spec chunk never loads its document's text.
    text of every chunk its document's text holds. `fill_fts`, the refill
    versions 5 and 8 run, splits terms from the (coalesced) text. After the
    transaction commits, `VACUUM` a file that came up from an older version,
-   so the freed pages leave the file. Test: a version 9 corpus with a
+   so the freed pages leave the file. The migration flags the file
+   (`meta.vacuum_pending`) and the flag goes only when a vacuum succeeds, so
+   a vacuum that fails warns, leaves the open working, and is retried on the
+   next read-write open. Test: a version 9 corpus with a
    nested class, a method, a window that no longer matches its lines and a
    spec section comes up with the right NULLs, reads every chunk back,
    keeps its full-text rows, indexes and trigger, and has no free pages.

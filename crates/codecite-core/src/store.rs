@@ -71,6 +71,46 @@ const MIGRATIONS: &[&str] = &[
 /// holds. A file brought up past it is vacuumed, so the space comes back.
 const DERIVE_CHUNK_TEXT: u32 = 10;
 
+/// The `meta` key that marks a file a migration freed space in: set in the
+/// migration's transaction and deleted only once a vacuum succeeds, so a
+/// vacuum that fails is tried again on the next read-write open.
+const VACUUM_PENDING: &str = "vacuum_pending";
+
+#[cfg(test)]
+thread_local! {
+    /// Makes the next vacuum on this thread fail, as a full disk would.
+    static FAIL_VACUUM: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Vacuums the file if a migration left it flagged, then deletes the flag.
+/// VACUUM rewrites the whole file and can't run inside a transaction, so
+/// this runs after the migrations commit; a failure, such as too little
+/// disk for the copy or another writer holding the lock past the busy
+/// timeout, leaves the flag for the next open. Returns SQLite's own error,
+/// whose message says what went wrong.
+fn vacuum_if_pending(conn: &Connection) -> rusqlite::Result<()> {
+    let pending: Option<String> = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = ?1",
+            [VACUUM_PENDING],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if pending.is_none() {
+        return Ok(());
+    }
+    #[cfg(test)]
+    if FAIL_VACUUM.get() {
+        return Err(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_FULL),
+            Some("injected vacuum failure".into()),
+        ));
+    }
+    conn.execute_batch("VACUUM")?;
+    conn.execute("DELETE FROM meta WHERE key = ?1", [VACUUM_PENDING])?;
+    Ok(())
+}
+
 /// Writes a row into the full-text `table` for every stored chunk that
 /// `filter` (a SQL condition over `c` and `s`) keeps, with the terms
 /// `insert_chunks` would give it, so an upgraded corpus searches without
@@ -153,6 +193,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 pub struct Store {
     conn: Connection,
     path: PathBuf,
+    vacuum_error: Option<String>,
 }
 
 impl Store {
@@ -199,7 +240,16 @@ impl Store {
                     fill_fts(&tx, "chunk_fts", "1")?;
                     fill_fts(&tx, "spec_fts", "c.number IS NOT NULL")?;
                 }
-                DERIVE_CHUNK_TEXT => clear_derivable_text(&tx)?,
+                DERIVE_CHUNK_TEXT => {
+                    clear_derivable_text(&tx)?;
+                    // A file that was empty had nothing to free.
+                    if found > 0 {
+                        tx.execute(
+                            "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, '1')",
+                            [VACUUM_PENDING],
+                        )?;
+                    }
+                }
                 _ => {}
             }
             tx.execute(
@@ -220,12 +270,11 @@ impl Store {
             });
         }
         tx.commit()?;
-        // Clearing chunk text frees pages but doesn't shrink the file;
-        // VACUUM does, and can't run inside the transaction. A file that
-        // was empty had nothing to free.
-        if (1..DERIVE_CHUNK_TEXT).contains(&found) {
-            conn.execute_batch("VACUUM")?;
-        }
+        // Clearing chunk text frees pages but doesn't shrink the file. The
+        // migrations are committed whatever the vacuum does, so a failed one
+        // doesn't fail the open: the caller hears why, and the next open
+        // tries again.
+        let vacuum_error = vacuum_if_pending(&conn).err().map(|e| e.to_string());
         conn.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, false)?;
         // Every write from here on checks foreign keys and runs their
         // `ON DELETE CASCADE`.
@@ -242,6 +291,7 @@ impl Store {
         Ok(Store {
             conn,
             path: path.to_path_buf(),
+            vacuum_error,
         })
     }
 
@@ -286,7 +336,16 @@ impl Store {
         Ok(Store {
             conn,
             path: path.to_path_buf(),
+            vacuum_error: None,
         })
+    }
+
+    /// Why the vacuum [`Store::open_read_write`] owed the file failed, when
+    /// it did. The open went ahead, the file is valid and fully migrated,
+    /// and only its freed space stays in it until a later read-write open
+    /// vacuums it.
+    pub fn vacuum_error(&self) -> Option<&str> {
+        self.vacuum_error.as_deref()
     }
 
     /// Opens the corpus named `corpus` in `dir`, the file
@@ -1218,6 +1277,77 @@ mod tests {
             count("SELECT count(*) FROM chunk_fts WHERE chunk_fts MATCH 'validate'"),
             0
         );
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_failed_vacuum_keeps_the_open_and_is_retried_on_the_next() {
+        let dir = scratch("vacuum");
+        let path = dir.join("corpus.db");
+        // A version 9 corpus with free pages for a vacuum to give back.
+        let conn = raw(&path);
+        conn.execute_batch(&format!(
+            "{}
+             INSERT INTO meta (key, value) VALUES ('schema_version', '9');
+             INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
+               VALUES (1, 'app', 'local', '/src/app', 'abc', 'adapt', 'then');
+             INSERT INTO document (id, source_id, path, language, content_hash, text)
+               VALUES (1, 1, 'src/lib.rs', 'rust', x'01', 'fn a() {{}}');
+             INSERT INTO chunk (id, document_id, start_line, end_line, kind, text, terms)
+               VALUES (1, 1, 1, 1, 'function', 'fn a() {{}}', 'fn a');",
+            MIGRATIONS[..9].join("\n")
+        ))
+        .unwrap();
+        let filler = "x".repeat(64 * 1024);
+        conn.execute(
+            "INSERT INTO chunk (id, document_id, start_line, end_line, kind, text, terms)
+             VALUES (2, 1, 1, 1, 'window', ?1, ?1)",
+            [&filler],
+        )
+        .unwrap();
+        conn.execute("DELETE FROM chunk WHERE id = 2", []).unwrap();
+        drop(conn);
+        let pending = |store: &Store| -> bool {
+            store
+                .conn
+                .query_row(
+                    "SELECT count(*) FROM meta WHERE key = 'vacuum_pending'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap()
+                > 0
+        };
+        let free = |store: &Store| -> i64 {
+            store
+                .conn
+                .query_row("PRAGMA freelist_count", [], |row| row.get(0))
+                .unwrap()
+        };
+
+        // The vacuum fails, say for want of disk: the migration stays
+        // committed, the open succeeds and says why, and the flag stays.
+        FAIL_VACUUM.set(true);
+        let opened = Store::open_read_write(&path);
+        FAIL_VACUUM.set(false);
+        let store = opened.unwrap();
+        assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+        assert!(store.vacuum_error().is_some_and(|e| e.contains("injected")));
+        assert!(pending(&store));
+        assert!(free(&store) > 0);
+        drop(store);
+
+        // The next open vacuums and clears the flag.
+        let store = Store::open_read_write(&path).unwrap();
+        assert_eq!(store.vacuum_error(), None);
+        assert!(!pending(&store));
+        assert_eq!(free(&store), 0);
+        drop(store);
+
+        // A fresh file has nothing to give back, so it never flags one.
+        let store = Store::open_read_write(&dir.join("fresh.db")).unwrap();
+        assert!(!pending(&store));
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }
