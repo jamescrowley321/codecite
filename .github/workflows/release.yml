@@ -132,8 +132,8 @@ jobs:
           mkdir -p "staging/$name" dist
           cp target/release/codecite README.md LICENSE NOTICE "staging/$name/"
           tar -C staging -czf "dist/$name.tar.gz" "$name"
+          # syft's cargo-auditable-binary-cataloger reads that list.
           "$SYFT" scan "file:target/release/codecite" \
-            --select-catalogers "+rust-binary-cataloger" \
             --source-name codecite --source-version "$VERSION" \
             -o "spdx-json=dist/$name.spdx.json"
           # An SBOM that lists no crates means the audit data went missing.
