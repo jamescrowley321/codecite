@@ -9,7 +9,7 @@ use serde::Serialize;
 
 use super::Store;
 use super::definition::{names_in_file, qualified, rank};
-use super::read::{byte_prefix, file_lines};
+use super::read::{byte_prefix, copy_instruction, file_lines};
 use super::scip::ROLE_DEFINITION;
 use super::search::{MAX_SEARCH_LIMIT, MAX_SNIPPET_BYTES, code_citation};
 use crate::{Error, Result, Role};
@@ -67,6 +67,10 @@ pub struct Reference {
     pub truncated: bool,
     /// How agents may use the source: `adapt`, `approach_only` or `quote`.
     pub license_class: String,
+    /// For an `approach_only` source, the instruction not to copy its code,
+    /// as search and grep results carry it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instruction: Option<String>,
     /// When the source was last indexed.
     pub indexed_at: String,
     /// Whether the file differed from the cited commit when it was indexed.
@@ -217,6 +221,7 @@ impl Store {
                 role: role.as_str(),
                 text: String::new(),
                 truncated: false,
+                instruction: copy_instruction(&row.get::<_, String>(11)?),
                 license_class: row.get(11)?,
                 indexed_at: row.get(12)?,
                 dirty: row.get(7)?,
@@ -664,6 +669,20 @@ mod tests {
                 (l16.as_str(), &["read"][..])
             ]
         );
+        assert_eq!(r.instruction, None);
+        store
+            .conn
+            .execute("UPDATE source SET license_class = 'approach_only'", [])
+            .unwrap();
+        let found = store.references("login", 0, false).unwrap();
+        assert_eq!(
+            found.results[0].instruction.as_deref(),
+            Some(crate::APPROACH_ONLY_INSTRUCTION)
+        );
+        store
+            .conn
+            .execute("UPDATE source SET license_class = 'adapt'", [])
+            .unwrap();
         // Above the confidence any provider gives, nothing is left.
         assert_eq!(store.references("login", 4, false).unwrap().total, 0);
         // An ID outside the corpus works as written.

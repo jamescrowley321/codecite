@@ -9,6 +9,7 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 use spdx::detection::{Store, TextData};
+use spdx::{Expression, LicenseItem, ParseMode};
 
 use crate::LicenseClass;
 
@@ -157,6 +158,107 @@ pub fn detect_license(dir: &Path) -> io::Result<DetectedLicense> {
     })
 }
 
+/// SPDX ids outside the GNU and MPL families whose terms keep `adapt` out:
+/// weak copyleft the SPDX data doesn't flag as copyleft, and
+/// source-available licenses. Only these exact ids are covered; terms with
+/// no SPDX id, such as the Commons Clause, are the person's call.
+const NOT_ADAPTABLE: &[&str] = &[
+    "BUSL-1.1",
+    "CDDL-1.0",
+    "CDDL-1.1",
+    "CPL-1.0",
+    "Elastic-2.0",
+    "EPL-1.0",
+    "EPL-2.0",
+    "PolyForm-Noncommercial-1.0.0",
+    "PolyForm-Small-Business-1.0.0",
+    "SSPL-1.0",
+];
+
+/// Whether the SPDX id `id` forbids adapting code: copyleft, as the SPDX
+/// data flags it or as [`LICENSES`] classes it, or source-available.
+fn forbids_adapt(id: spdx::LicenseId) -> bool {
+    id.is_copyleft()
+        || NOT_ADAPTABLE.contains(&id.name)
+        || LICENSES
+            .iter()
+            .any(|(name, _, class)| *name == id.name && *class == LicenseClass::ApproachOnly)
+}
+
+/// The licenses that keep `use = "adapt"` out of a source licensed under
+/// `license`, when it is an SPDX expression that no choice of its `OR`
+/// branches meets without one of them: `GPL-3.0-only` or
+/// `MIT AND GPL-2.0-only`, but not `MIT OR GPL-3.0-only`. A `license`
+/// that isn't an SPDX expression can't show an `OR` that avoids them, so
+/// any word in it that reads as such a license, as leniently as a whole
+/// expression is read, keeps `adapt` out: `GPL-3.0-only AND IETF Trust`,
+/// `gpl-3.0-only AND IETF Trust`. `None` when the expression allows
+/// adapting, and for text that names no such license (`IETF Trust`), whose
+/// class is the person's call.
+pub(crate) fn forbids_adapting(license: &str) -> Option<Vec<String>> {
+    let license = &canonical_ids(license);
+    let names: BTreeSet<String> = match forbidding(license) {
+        Some(names) => names,
+        None => license
+            .split(|c: char| !is_id_char(c))
+            .filter(|word| !word.is_empty())
+            .filter_map(forbidding)
+            .flatten()
+            .collect(),
+    };
+    (!names.is_empty()).then(|| names.into_iter().collect())
+}
+
+/// Whether `c` can be part of a license id: `GPL-2.0+`, `LicenseRef-x`.
+fn is_id_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '+')
+}
+
+/// `license` with each word that is an SPDX license id in another case
+/// (`gpl-3.0-only`, `Mit`) spelt as the SPDX list spells it, since ids are
+/// case-sensitive even in lax mode, and anything else as it is.
+fn canonical_ids(license: &str) -> String {
+    let mut out = String::with_capacity(license.len());
+    let mut rest = license;
+    while let Some(c) = rest.chars().next() {
+        if !is_id_char(c) {
+            out.push(c);
+            rest = &rest[c.len_utf8()..];
+            continue;
+        }
+        let end = rest.find(|c: char| !is_id_char(c)).unwrap_or(rest.len());
+        let (word, after) = rest.split_at(end);
+        let base = word.trim_end_matches('+');
+        match spdx::identifiers::LICENSES
+            .iter()
+            .find(|l| l.name.eq_ignore_ascii_case(base))
+        {
+            Some(l) => {
+                out.push_str(l.name);
+                out.push_str(&word[base.len()..]);
+            }
+            None => out.push_str(word),
+        }
+        rest = after;
+    }
+    out
+}
+
+/// The licenses in the SPDX expression `license`, read leniently, that no
+/// choice of its `OR` branches avoids and that forbid adapting; `None` when
+/// it doesn't parse.
+fn forbidding(license: &str) -> Option<BTreeSet<String>> {
+    let expression = Expression::parse_mode(license, ParseMode::LAX).ok()?;
+    let failures = expression
+        .evaluate_with_failures(|req| match &req.license {
+            LicenseItem::Spdx { id, .. } => !forbids_adapt(*id),
+            LicenseItem::Other { .. } => true,
+        })
+        .err()
+        .unwrap_or_default();
+    Some(failures.iter().map(|f| f.req.to_string()).collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,5 +365,83 @@ mod tests {
             detect_license(dir.path()).unwrap(),
             detected(None, LicenseClass::ApproachOnly)
         );
+    }
+
+    #[test]
+    fn copyleft_licenses_forbid_adapting() {
+        let forbids = |l: &str| forbids_adapting(l);
+        assert_eq!(forbids("GPL-3.0-only"), Some(vec!["GPL-3.0-only".into()]));
+        assert_eq!(
+            forbids("MIT AND GPL-2.0-only"),
+            Some(vec!["GPL-2.0-only".into()])
+        );
+        // Each license is named once, sorted.
+        assert_eq!(
+            forbids("GPL-3.0-only AND MIT AND MPL-2.0 AND GPL-3.0-only"),
+            Some(vec!["GPL-3.0-only".into(), "MPL-2.0".into()])
+        );
+        for l in [
+            "AGPL-3.0-or-later",
+            "LGPL-2.1-only",
+            "MPL-2.0",
+            "EPL-2.0",
+            "SSPL-1.0",
+            "GPL-2.0-only WITH Classpath-exception-2.0",
+            // How people write them, read leniently.
+            "GPL-3.0",
+            "GPL-2.0+",
+            "PolyForm-Noncommercial-1.0.0",
+        ] {
+            assert!(forbids(l).is_some(), "{l}");
+        }
+        // A copyleft id beside text that isn't SPDX still forbids it: the
+        // expression can't be judged, so no `OR` can be shown to avoid it.
+        assert_eq!(
+            forbids("GPL-3.0-only AND IETF Trust"),
+            Some(vec!["GPL-3.0-only".into()])
+        );
+        assert_eq!(
+            forbids("MIT, AGPL-3.0-or-later (see NOTICE)"),
+            Some(vec!["AGPL-3.0-or-later".into()])
+        );
+        assert_eq!(
+            forbids("Custom Terms AND GPL-2.0+"),
+            Some(vec!["GPL-2.0-or-later".into()])
+        );
+        // An id in another case is still that id, alone, in an expression
+        // or beside other text.
+        for l in [
+            "gpl-3.0-only",
+            "mit and agpl-3.0-only",
+            "gpl-3.0-only AND IETF Trust",
+        ] {
+            assert!(forbids(l).is_some(), "{l}");
+        }
+        assert_eq!(
+            forbids("gpl-3.0-only AND IETF Trust"),
+            Some(vec!["GPL-3.0-only".into()])
+        );
+    }
+
+    #[test]
+    fn permissive_choices_and_other_names_allow_adapting() {
+        for l in [
+            "MIT",
+            "Apache-2.0",
+            "MIT OR Apache-2.0",
+            "MIT OR GPL-3.0-only",
+            "Apache-2.0 AND MIT",
+            "CC0-1.0",
+            "LicenseRef-Mine",
+            "MIT/Apache-2.0",
+            "IETF Trust",
+            "OpenID Foundation",
+            "MIT, see NOTICE",
+            "mit OR gpl-3.0-only",
+            "Apache-2.0 AND café terms",
+            "",
+        ] {
+            assert_eq!(forbids_adapting(l), None, "{l}");
+        }
     }
 }

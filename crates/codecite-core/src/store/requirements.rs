@@ -11,7 +11,9 @@ use schemars::JsonSchema;
 use serde::Serialize;
 
 use super::Store;
-use super::read::{MAX_READ_BYTES, ReadOptions, SourceRow, instruction, pinned};
+use super::read::{
+    MAX_READ_BYTES, ReadOptions, SourceRow, defuse_instruction, instruction, pinned,
+};
 use super::search::{Scope, SearchQuery};
 use crate::{
     Citation, Error, Level, Result, SectionNumber, StatementKind, normative_level,
@@ -92,14 +94,17 @@ pub struct Requirement {
 }
 
 impl fmt::Display for Requirements {
-    /// The human form: the section asked about, then each governing
-    /// section and its statements, one per line.
+    /// The human form: the section asked about, any instruction, then each
+    /// governing section and its statements, one per line.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.citation)?;
         if let Some(title) = &self.title {
             write!(f, " · {title}")?;
         }
         writeln!(f, " · {} · indexed {}", self.license_class, self.indexed_at)?;
+        if let Some(instruction) = &self.instruction {
+            writeln!(f, "instruction: {instruction}")?;
+        }
         for section in &self.sections {
             write!(f, "\n{}", section.citation)?;
             if let Some(title) = &section.title {
@@ -107,11 +112,15 @@ impl fmt::Display for Requirements {
             }
             writeln!(f, " ({})", section.relation)?;
             for statement in &section.statements {
+                // A statement's text after its first line starts a line
+                // of its own, so it can't pass for the instruction line.
+                let text: Vec<_> = statement.text.split('\n').map(defuse_instruction).collect();
+                let text = text.join("\n");
                 if statement.keywords.is_empty() {
-                    writeln!(f, "  - {}", statement.text)?;
+                    writeln!(f, "  - {text}")?;
                 } else {
                     let keywords = statement.keywords.join(", ");
-                    writeln!(f, "  [{keywords}] {}", statement.text)?;
+                    writeln!(f, "  [{keywords}] {text}")?;
                 }
             }
         }
@@ -873,6 +882,12 @@ mod tests {
         );
         assert!(
             human.contains("  [REQUIRED] exp: REQUIRED. Expiration time."),
+            "{human}"
+        );
+        // The quote instruction follows the header line.
+        assert_eq!(
+            human.lines().nth(1),
+            Some(format!("instruction: {}", crate::QUOTE_INSTRUCTION).as_str()),
             "{human}"
         );
     }

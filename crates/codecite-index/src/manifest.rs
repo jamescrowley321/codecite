@@ -204,6 +204,16 @@ impl Source {
         }
     }
 
+    /// The license as the manifest writes it, when it gives one.
+    pub fn license(&self) -> Option<&str> {
+        match self {
+            Source::Git(git) => git.license.as_deref(),
+            Source::Local(local) => local.license.as_deref(),
+            Source::Document(doc) => doc.license.as_deref(),
+            Source::Guidance(rules) => rules.license.as_deref(),
+        }
+    }
+
     /// How agents may use this source.
     pub fn license_class(&self) -> LicenseClass {
         match self {
@@ -272,6 +282,21 @@ pub enum ManifestError {
         field: String,
         /// What is wrong, naming the glob or language.
         message: String,
+    },
+
+    /// A source says `use = "adapt"`, but its `license` can't be met
+    /// without a copyleft or source-available license.
+    #[error(
+        "source {source_name}: `use` is \"adapt\", but `license` {license:?} needs {}, which keeps code from being adapted; use \"approach_only\", or leave `license` out for a source you hold the rights to",
+        forbidding.join(", ")
+    )]
+    LicenseForbidsAdapt {
+        /// The source's label: its name, URL or path, else its position.
+        source_name: String,
+        /// The license as written.
+        license: String,
+        /// The licenses in it that forbid adapting.
+        forbidding: Vec<String>,
     },
 
     /// Several versions of one document are marked current.
@@ -475,6 +500,16 @@ fn parse_source(
                 source_name: source_name.clone(),
             })?,
         );
+    }
+    if source.license_class() == LicenseClass::Adapt
+        && let Some(license) = source.license()
+        && let Some(forbidding) = crate::license::forbids_adapting(license)
+    {
+        return Err(ManifestError::LicenseForbidsAdapt {
+            source_name,
+            license: license.to_owned(),
+            forbidding,
+        });
     }
     Ok(source)
 }
@@ -1022,5 +1057,85 @@ updated_by = "openid-connect-core-1_0-errata2"
         )))
         .unwrap_err();
         assert!(err.to_string().contains("unknown field `globs`"), "{err}");
+    }
+
+    #[test]
+    fn adapt_with_a_copyleft_license_is_refused() {
+        let err = Manifest::parse(&manifest(&format!(
+            "[[source]]\nname = \"lib\"\nurl = \"u\"\ncommit = \"{COMMIT}\"\n\
+             license = \"MIT AND GPL-3.0-only\"\nuse = \"adapt\"\n"
+        )))
+        .unwrap_err();
+        assert!(
+            matches!(&err, ManifestError::LicenseForbidsAdapt { source_name, forbidding, .. }
+                if source_name == "`lib`" && *forbidding == ["GPL-3.0-only"]),
+            "{err:?}"
+        );
+        assert_eq!(
+            err.to_string(),
+            "source `lib`: `use` is \"adapt\", but `license` \"MIT AND GPL-3.0-only\" needs \
+             GPL-3.0-only, which keeps code from being adapted; use \"approach_only\", or \
+             leave `license` out for a source you hold the rights to"
+        );
+
+        // So is a license that names a copyleft id beside other text.
+        let err = Manifest::parse(&manifest(&format!(
+            "[[source]]\nname = \"lib\"\nurl = \"u\"\ncommit = \"{COMMIT}\"\n\
+             license = \"GPL-3.0-only AND IETF Trust\"\nuse = \"adapt\"\n"
+        )))
+        .unwrap_err();
+        assert!(
+            matches!(&err, ManifestError::LicenseForbidsAdapt { forbidding, .. }
+                if *forbidding == ["GPL-3.0-only"]),
+            "{err:?}"
+        );
+
+        // A local source is held to it too.
+        let err = Manifest::parse(&manifest(
+            "[[source]]\nkind = \"local\"\npath = \"/a\"\nlicense = \"AGPL-3.0-only\"\nuse = \"adapt\"\n",
+        ))
+        .unwrap_err();
+        assert!(
+            matches!(err, ManifestError::LicenseForbidsAdapt { .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn adapt_stands_where_the_license_allows_it_or_is_not_spdx() {
+        for license in [
+            Some("MIT OR GPL-3.0-only"),
+            Some("Apache-2.0"),
+            Some("IETF Trust"),
+            None,
+        ] {
+            let line = license.map_or(String::new(), |l| format!("license = \"{l}\"\n"));
+            let m = Manifest::parse(&manifest(&format!(
+                "[[source]]\nurl = \"u\"\ncommit = \"{COMMIT}\"\n{line}use = \"adapt\"\n"
+            )));
+            assert!(m.is_ok(), "{license:?}: {m:?}");
+        }
+        // A copyleft license with any other use is the person's call.
+        for class in ["approach_only", "quote", "excluded"] {
+            let m = Manifest::parse(&manifest(&format!(
+                "[[source]]\nurl = \"u\"\ncommit = \"{COMMIT}\"\n\
+                 license = \"GPL-3.0-only\"\nuse = \"{class}\"\n"
+            )));
+            assert!(m.is_ok(), "{class}: {m:?}");
+        }
+    }
+
+    #[test]
+    fn the_repositorys_corpora_parse() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpora");
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_some_and(|e| e == "toml") {
+                let text = std::fs::read_to_string(&path).unwrap();
+                if let Err(err) = Manifest::parse(&text) {
+                    panic!("{}: {err}", path.display());
+                }
+            }
+        }
     }
 }
