@@ -19,7 +19,7 @@ mod context;
 pub use context::{Context, ContextQuery, ContextTarget, MAX_CONTEXT_BYTES, Rule, RuleScope};
 
 mod corpora;
-pub use corpora::{Corpora, CorpusInfo, corpora};
+pub use corpora::{Corpora, CorpusInfo, ManifestPin, PinReader, StalePin, corpora};
 
 mod definition;
 pub use definition::{Definition, Definitions};

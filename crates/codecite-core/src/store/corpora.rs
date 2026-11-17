@@ -1,12 +1,43 @@
-//! Listing the corpora in a data directory, with how fresh each one is.
+//! Listing the corpora in a data directory, with how fresh each one is:
+//! how old the index is, and whether its manifest still pins what it holds.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use rusqlite::OptionalExtension;
 use schemars::JsonSchema;
 use serde::Serialize;
 
 use super::{Store, known_corpora};
 use crate::Result;
+
+/// One revision a manifest pins: a git source's commit, a document
+/// version's or a pinned guidance file's sha256, under the name the
+/// corpus stores the source by.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManifestPin {
+    /// The source's name, as results cite it.
+    pub source: String,
+    /// The pinned commit or sha256.
+    pub revision: String,
+}
+
+/// Reads the pins of the manifest at a path, or `None` when it can't be
+/// read. `codecite_index::manifest_pins` is the one codecite uses; the
+/// manifest format lives in that crate.
+pub type PinReader = fn(&Path) -> Option<Vec<ManifestPin>>;
+
+/// A pin the corpus doesn't hold: the manifest was changed after the last
+/// index run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+pub struct StalePin {
+    /// The source's name.
+    pub source: String,
+    /// The revision the manifest pins.
+    pub pinned: String,
+    /// The revisions the corpus holds under that name, sorted; empty when
+    /// it holds none.
+    pub stored: Vec<String>,
+}
 
 /// The corpora in a data directory: what `codecite corpora` prints and the
 /// MCP `corpora` tool returns, as the same JSON.
@@ -38,6 +69,18 @@ pub struct CorpusInfo {
     /// refuse it without `allow_stale`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stale: Option<bool>,
+    /// Whether the manifest the corpus was last indexed from pins a
+    /// revision the corpus doesn't hold, so it needs indexing again. Left
+    /// out when that manifest can't be read. Queries still answer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pins_stale: Option<bool>,
+    /// The pins the corpus doesn't hold, when there are any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stale_pins: Option<Vec<StalePin>>,
+    /// Why the corpus is read with a caveat: a schema older than this
+    /// build's, which queries can still read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
     /// How many sources it holds; each pinned version of a document counts
     /// as one.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -48,8 +91,9 @@ pub struct CorpusInfo {
 }
 
 /// Lists every corpus in `dir`, sorted by name. A missing directory holds
-/// none.
-pub fn corpora(dir: &Path) -> Result<Corpora> {
+/// none. With `pins`, each corpus's pins are read from the manifest it was
+/// last indexed from and checked against it.
+pub fn corpora(dir: &Path, pins: Option<PinReader>) -> Result<Corpora> {
     let mut corpora = Vec::new();
     for corpus in known_corpora(dir)? {
         let path = dir.join(format!("{corpus}.db"));
@@ -61,18 +105,34 @@ pub fn corpora(dir: &Path) -> Result<Corpora> {
             age_days: None,
             max_age_days: None,
             stale: None,
+            pins_stale: None,
+            stale_pins: None,
+            warning: None,
             sources: None,
             error: None,
         };
-        let described = Store::open_read_only(&path)
-            .and_then(|store| Ok((store.freshness()?, store.source_count()?)));
+        let described = Store::open_read_only(&path).and_then(|store| {
+            let stale_pins = match pins {
+                Some(read) => store.stale_pins_of_manifest(read)?,
+                None => None,
+            };
+            Ok((
+                store.freshness()?,
+                store.source_count()?,
+                stale_pins,
+                store.schema_warning().map(str::to_owned),
+            ))
+        });
         match described {
-            Ok((freshness, sources)) => {
+            Ok((freshness, sources, stale_pins, warning)) => {
                 info.stale = Some(freshness.is_stale());
                 info.age_days = Some((freshness.age_days * 100.0).round() / 100.0);
                 info.max_age_days = Some(freshness.max_age_days);
                 info.indexed_at = Some(freshness.indexed_at);
                 info.sources = Some(sources);
+                info.pins_stale = stale_pins.as_ref().map(|s| !s.is_empty());
+                info.stale_pins = stale_pins.filter(|s| !s.is_empty());
+                info.warning = warning;
             }
             Err(err) => info.error = Some(with_causes(&err)),
         }
@@ -95,6 +155,63 @@ fn with_causes(err: &dyn std::error::Error) -> String {
 }
 
 impl Store {
+    /// Records the manifest an index run read, as an absolute path, so the
+    /// freshness check can read its pins later without being told where it
+    /// is.
+    pub fn set_manifest_path(&mut self, path: &Path) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO meta (key, value) VALUES ('manifest_path', ?1)
+             ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+            [path.to_string_lossy()],
+        )?;
+        Ok(())
+    }
+
+    /// The manifest the last index run read, when it recorded one.
+    pub fn manifest_path(&self) -> Result<Option<PathBuf>> {
+        let value: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'manifest_path'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(value.map(PathBuf::from))
+    }
+
+    /// The pins the corpus doesn't hold: for each, no stored source of its
+    /// name has its revision. In the order given.
+    pub fn stale_pins(&self, pins: &[ManifestPin]) -> Result<Vec<StalePin>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT revision FROM source WHERE name = ?1 ORDER BY revision")?;
+        let mut stale = Vec::new();
+        for pin in pins {
+            let stored: Vec<String> = stmt
+                .query_map([&pin.source], |row| row.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            if !stored.contains(&pin.revision) {
+                stale.push(StalePin {
+                    source: pin.source.clone(),
+                    pinned: pin.revision.clone(),
+                    stored,
+                });
+            }
+        }
+        Ok(stale)
+    }
+
+    /// [`Store::stale_pins`] for the pins `read` finds in the manifest the
+    /// corpus was last indexed from; `None` when there is no such manifest
+    /// recorded, or it can't be read.
+    fn stale_pins_of_manifest(&self, read: PinReader) -> Result<Option<Vec<StalePin>>> {
+        let Some(pins) = self.manifest_path()?.and_then(|path| read(&path)) else {
+            return Ok(None);
+        };
+        self.stale_pins(&pins).map(Some)
+    }
+
     /// How many sources the corpus holds; each pinned version of a
     /// document counts as one.
     pub fn source_count(&self) -> Result<u64> {
@@ -137,7 +254,7 @@ mod tests {
     #[test]
     fn a_missing_directory_holds_no_corpora() {
         let dir = tempfile::tempdir().unwrap();
-        let listed = corpora(&dir.path().join("nowhere")).unwrap();
+        let listed = corpora(&dir.path().join("nowhere"), None).unwrap();
         assert!(listed.corpora.is_empty());
         let json = serde_json::to_string(&listed).unwrap();
         assert_eq!(json, r#"{"corpora":[]}"#);
@@ -162,7 +279,7 @@ mod tests {
         fs::write(dir.path().join("notes.txt"), "x").unwrap();
         fs::write(dir.path().join(".hidden.db"), "x").unwrap();
 
-        let listed = corpora(dir.path()).unwrap().corpora;
+        let listed = corpora(dir.path(), None).unwrap().corpora;
         let names: Vec<&str> = listed.iter().map(|c| c.corpus.as_str()).collect();
         assert_eq!(names, ["app", "old", "specs"]);
 
@@ -193,7 +310,7 @@ mod tests {
         // Created, but its first index run never finished.
         drop(Store::open_read_write(&dir.path().join("partial.db")).unwrap());
 
-        let listed = corpora(dir.path()).unwrap().corpora;
+        let listed = corpora(dir.path(), None).unwrap().corpora;
         let names: Vec<&str> = listed.iter().map(|c| c.corpus.as_str()).collect();
         assert_eq!(names, ["good", "junk", "partial"]);
         assert_eq!(listed[0].error, None);
@@ -229,6 +346,9 @@ mod tests {
             age_days: None,
             max_age_days: None,
             stale: None,
+            pins_stale: None,
+            stale_pins: None,
+            warning: None,
             sources: None,
             error: Some("invalid corpus".into()),
         };
@@ -243,12 +363,148 @@ mod tests {
             age_days: Some(1.25),
             max_age_days: Some(30),
             stale: Some(false),
+            pins_stale: None,
+            stale_pins: None,
+            warning: None,
             sources: Some(2),
             error: None,
         };
         assert_eq!(
             serde_json::to_string(&info).unwrap(),
             r#"{"corpus":"app","size_bytes":4096,"indexed_at":"2026-10-20T06:00:00Z","age_days":1.25,"max_age_days":30,"stale":false,"sources":2}"#
+        );
+    }
+
+    /// Pins for the tests' manifests: a manifest here is a file of
+    /// `<source> <revision>` lines.
+    fn read_pins(path: &Path) -> Option<Vec<ManifestPin>> {
+        let text = fs::read_to_string(path).ok()?;
+        Some(
+            text.lines()
+                .filter_map(|line| line.split_once(' '))
+                .map(|(source, revision)| ManifestPin {
+                    source: source.into(),
+                    revision: revision.into(),
+                })
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn a_pin_the_corpus_does_not_hold_is_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open_read_write(&dir.path().join("app.db")).unwrap();
+        store.upsert_source(&source("app")).unwrap();
+        for revision in ["aaa", "bbb"] {
+            store
+                .upsert_source(&SourceRecord {
+                    kind: "document",
+                    revision,
+                    ..source("rfc9449")
+                })
+                .unwrap();
+        }
+        let pin = |source: &str, revision: &str| ManifestPin {
+            source: source.into(),
+            revision: revision.into(),
+        };
+        let stale = store
+            .stale_pins(&[
+                pin("app", "0123456789abcdef0123456789abcdef01234567"),
+                pin("app", "fedcba9876543210fedcba9876543210fedcba98"),
+                pin("rfc9449", "bbb"),
+                pin("rfc9449", "ccc"),
+                pin("new", "ddd"),
+            ])
+            .unwrap();
+        assert_eq!(
+            stale,
+            [
+                StalePin {
+                    source: "app".into(),
+                    pinned: "fedcba9876543210fedcba9876543210fedcba98".into(),
+                    stored: vec!["0123456789abcdef0123456789abcdef01234567".into()],
+                },
+                StalePin {
+                    source: "rfc9449".into(),
+                    pinned: "ccc".into(),
+                    stored: vec!["aaa".into(), "bbb".into()],
+                },
+                StalePin {
+                    source: "new".into(),
+                    pinned: "ddd".into(),
+                    stored: vec![],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn corpora_check_the_pins_of_the_manifest_last_indexed_from() {
+        let dir = tempfile::tempdir().unwrap();
+        indexed(dir.path(), "app", &["app"]);
+        indexed(dir.path(), "moved", &["app"]);
+        indexed(dir.path(), "unrecorded", &["app"]);
+        let held = "app 0123456789abcdef0123456789abcdef01234567\n";
+        let manifest = dir.path().join("app.pins");
+        fs::write(&manifest, held).unwrap();
+        let mut app = Store::open_read_write(&dir.path().join("app.db")).unwrap();
+        app.set_manifest_path(&manifest).unwrap();
+        drop(app);
+        let mut moved = Store::open_read_write(&dir.path().join("moved.db")).unwrap();
+        moved
+            .set_manifest_path(&dir.path().join("gone.pins"))
+            .unwrap();
+        drop(moved);
+
+        let listed = corpora(dir.path(), Some(read_pins)).unwrap().corpora;
+        assert_eq!(listed[0].pins_stale, Some(false));
+        assert_eq!(listed[0].stale_pins, None);
+        // A manifest that moved, or was never recorded, says nothing.
+        for unknown in &listed[1..] {
+            assert_eq!((unknown.pins_stale, &unknown.stale_pins), (None, &None));
+            assert_eq!(unknown.error, None);
+        }
+        // Without a reader, pins aren't checked.
+        assert_eq!(
+            corpora(dir.path(), None).unwrap().corpora[0].pins_stale,
+            None
+        );
+
+        // The manifest moves on to a commit not indexed yet.
+        fs::write(&manifest, "app fedcba9876543210fedcba9876543210fedcba98\n").unwrap();
+        let app = &corpora(dir.path(), Some(read_pins)).unwrap().corpora[0];
+        assert_eq!(app.pins_stale, Some(true));
+        assert_eq!(app.stale, Some(false));
+        let json = serde_json::to_value(app).unwrap();
+        assert_eq!(
+            json["stale_pins"],
+            serde_json::json!([{
+                "source": "app",
+                "pinned": "fedcba9876543210fedcba9876543210fedcba98",
+                "stored": ["0123456789abcdef0123456789abcdef01234567"],
+            }])
+        );
+    }
+
+    #[test]
+    fn a_corpus_at_an_older_compatible_schema_carries_a_warning() {
+        let dir = tempfile::tempdir().unwrap();
+        indexed(dir.path(), "app", &["app"]);
+        rusqlite::Connection::open(dir.path().join("app.db"))
+            .unwrap()
+            .execute(
+                "UPDATE meta SET value = ?1 WHERE key = 'schema_version'",
+                [(crate::SCHEMA_VERSION - 1).to_string()],
+            )
+            .unwrap();
+        let app = &corpora(dir.path(), None).unwrap().corpora[0];
+        assert_eq!(app.error, None);
+        assert!(
+            app.warning
+                .as_deref()
+                .is_some_and(|w| w.contains("re-running codecite index upgrades it")),
+            "{app:?}"
         );
     }
 }

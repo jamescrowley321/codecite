@@ -9,7 +9,8 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use codecite_core::{
-    ChunkRecord, DocumentRecord, RuleScope, SourceRecord, SpecAliases, Store, SymbolRecord,
+    ChunkRecord, DocumentRecord, ManifestPin, RuleScope, SourceRecord, SpecAliases, Store,
+    SymbolRecord,
 };
 use sha2::{Digest, Sha256};
 
@@ -278,6 +279,41 @@ fn source_name(local: &LocalSource, tree: &LocalTree) -> String {
 
 /// The manifest's `name`, else the URL's last path segment without `.git`:
 /// `identity-model` for `https://github.com/acme/identity-model.git`.
+/// The revisions the manifest pins, under the names an index run stores
+/// their sources by: each git source's commit, each document version's
+/// sha256, and each pinned guidance file's. A local source, an unpinned
+/// guidance file and an excluded source pin nothing.
+pub fn pins(manifest: &Manifest) -> Vec<ManifestPin> {
+    let pin = |source: String, revision: &str| ManifestPin {
+        source,
+        revision: revision.to_owned(),
+    };
+    manifest
+        .sources
+        .iter()
+        .filter_map(|source| match source {
+            Source::Git(git) if git.license_class != LicenseClass::Excluded => {
+                Some(pin(git_name(git), &git.commit))
+            }
+            Source::Document(doc) if doc.license_class != LicenseClass::Excluded => {
+                Some(pin(doc.name.clone(), &doc.sha256))
+            }
+            Source::Guidance(rules) if rules.license_class != LicenseClass::Excluded => rules
+                .sha256
+                .as_deref()
+                .map(|sha256| pin(rules.name.clone(), sha256)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// [`pins`] of the manifest at `path`, or `None` when it can't be read or
+/// parsed: the [`PinReader`](codecite_core::PinReader) the freshness check
+/// uses.
+pub fn manifest_pins(path: &Path) -> Option<Vec<ManifestPin>> {
+    Manifest::load(path).ok().map(|manifest| pins(&manifest))
+}
+
 fn git_name(git: &GitSource) -> String {
     git.name.clone().unwrap_or_else(|| {
         let url = git.url.trim_end_matches('/');
@@ -1647,6 +1683,47 @@ mod tests {
             .unwrap()
             .collect::<rusqlite::Result<_>>()
             .unwrap()
+    }
+
+    #[test]
+    fn the_pins_are_git_commits_document_hashes_and_pinned_guidance() {
+        let repo = fixture();
+        let remote = Remote::new();
+        let commit = repo.push(&remote, "main");
+        let mut excluded = git(&remote, &commit);
+        if let Source::Git(g) = &mut excluded {
+            g.name = Some("skipped".into());
+            g.license_class = LicenseClass::Excluded;
+        }
+        let pinned = guidance(None, Some("https://x/rules.md".into()), Some("cc".into()));
+        let mut unpinned = guidance(Some("RULES.md".into()), None, None);
+        unpinned.name = "local-rules".into();
+        let mut upstream = git(&remote, &commit);
+        if let Source::Git(g) = &mut upstream {
+            g.name = Some("upstream".into());
+        }
+        let manifest = manifest(vec![
+            local(&repo, Some("app")),
+            upstream,
+            excluded,
+            document("https://x/rfc9449.html".into(), "aa"),
+            Source::Guidance(pinned),
+            Source::Guidance(unpinned),
+        ]);
+        let pin = |source: &str, revision: &str| ManifestPin {
+            source: source.into(),
+            revision: revision.into(),
+        };
+        assert_eq!(
+            pins(&manifest),
+            [
+                pin("upstream", &commit),
+                pin("rfc9449", "aa"),
+                pin("house-rules", "cc"),
+            ]
+        );
+        // A manifest that can't be read gives none.
+        assert_eq!(manifest_pins(Path::new("/nonexistent/m.toml")), None);
     }
 
     #[test]

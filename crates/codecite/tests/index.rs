@@ -147,6 +147,29 @@ fn a_git_source_is_cloned_once_and_cited_at_its_commit() {
     let read = stdout(&codecite(&work, tmp.path(), &["read", "demo", &citation]));
     assert!(read.contains("validate_token"), "{read}");
 
+    // `corpora`, run anywhere, checks the pins of the manifest the corpus
+    // was indexed from: held, then moved on to a commit not indexed yet.
+    let pins = || -> serde_json::Value {
+        let listed: serde_json::Value =
+            serde_json::from_str(&stdout(&codecite(tmp.path(), tmp.path(), &["corpora"]))).unwrap();
+        listed["corpora"][0].clone()
+    };
+    let held = pins();
+    assert_eq!(held["pins_stale"], false, "{held}");
+    assert_eq!(held.get("stale_pins"), None, "{held}");
+    fs::write(repo.join("src/lib.rs"), "pub fn refresh_token() {}\n").unwrap();
+    git(&repo, &["commit", "-q", "-am", "next"]);
+    git(&repo, &["push", "-q", &url, "HEAD:refs/heads/main"]);
+    let next = git_out(&repo, &["rev-parse", "HEAD"]);
+    pin(&next);
+    let moved = pins();
+    assert_eq!(moved["pins_stale"], true, "{moved}");
+    assert_eq!(moved["stale"], false, "{moved}");
+    assert_eq!(
+        moved["stale_pins"],
+        serde_json::json!([{"source": "app", "pinned": next, "stored": [commit]}])
+    );
+
     // A commit the remote doesn't have is an error naming it.
     pin(&"0".repeat(40));
     let missing = codecite(&work, tmp.path(), &["index", "demo"]);
