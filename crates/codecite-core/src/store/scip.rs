@@ -9,6 +9,7 @@ use rusqlite::{OptionalExtension, Transaction, params};
 
 use super::Store;
 use super::read::file_lines;
+use super::search::name_key;
 use crate::Result;
 
 /// How sure a SCIP row is: exact (3), the top of the confidence ladder.
@@ -228,9 +229,9 @@ fn rename_symbol(
     local_id: Option<&str>,
 ) -> Result<()> {
     tx.prepare_cached(
-        "INSERT INTO symbol (id, display_name, kind, document_id, start_line, end_line, provider,
-                             local_id)
-         SELECT ?2, display_name, kind, document_id, start_line, end_line, ?3, ?4
+        "INSERT INTO symbol (id, display_name, kind, document_id, start_line, end_line, name_key,
+                             provider, local_id)
+         SELECT ?2, display_name, kind, document_id, start_line, end_line, name_key, ?3, ?4
          FROM symbol WHERE id = ?1",
     )?
     .execute(params![from, to, provider, local_id])?;
@@ -309,8 +310,8 @@ fn write_definitions(
             let end = def.end_line.clamp(def.line, lines);
             tx.prepare_cached(
                 "INSERT INTO symbol (id, display_name, kind, document_id, start_line, end_line,
-                                     provider)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'scip')",
+                                     name_key, provider)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'scip')",
             )?
             .execute(params![
                 def.symbol,
@@ -318,7 +319,8 @@ fn write_definitions(
                 def.kind,
                 document_id,
                 start,
-                end
+                end,
+                name_key(&def.display_name)
             ])?;
             summary.added += 1;
         }
@@ -830,6 +832,29 @@ mod tests {
             )
             .unwrap();
         assert_eq!(defined_in, Some(scip("crate/")));
+    }
+
+    #[test]
+    fn every_symbol_keeps_its_name_key() {
+        let (_dir, mut store, id) = app();
+        store.write_scip(id, &index()).unwrap();
+        let keys = |store: &Store| -> Vec<(String, Option<String>)> {
+            let mut stmt = store
+                .conn
+                .prepare("SELECT display_name, name_key FROM symbol ORDER BY id")
+                .unwrap();
+            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap()
+        };
+        for (name, key) in keys(&store) {
+            assert_eq!(key, Some(super::super::search::name_key(&name)), "{name}");
+        }
+        store.clear_scip(id).unwrap();
+        for (name, key) in keys(&store) {
+            assert_eq!(key, Some(super::super::search::name_key(&name)), "{name}");
+        }
     }
 
     #[test]

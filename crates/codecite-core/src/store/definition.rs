@@ -200,37 +200,41 @@ impl Store {
 
     /// The names `definition` could find that differ from `name` only in
     /// case, `_` or `-`, sorted: symbols with a chunk, in a current source.
-    /// Only an error asks, so a scan of the symbols is fine here.
     pub(super) fn similar_names(&self, name: &str) -> Result<Vec<String>> {
-        self.similar(
-            name,
-            "EXISTS (SELECT 1 FROM chunk c WHERE c.symbol_id = sym.id)",
-        )
+        self.similar(name, SIMILAR_NAMES)
     }
 
     /// The names the graph tools could find that differ from `name` only in
     /// case, `_` or `-`: every symbol in a current source, SCIP-only ones
     /// included.
     pub(super) fn similar_graph_names(&self, name: &str) -> Result<Vec<String>> {
-        self.similar(name, "1")
+        self.similar(name, SIMILAR_GRAPH_NAMES)
     }
 
-    /// The similar names among the symbols `filter` keeps, a SQL condition
-    /// over `sym`. It is formatted into the SQL, which is safe only because
-    /// every caller passes a constant written here.
-    fn similar(&self, name: &str, filter: &str) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare_cached(&format!(
-            "SELECT DISTINCT sym.display_name FROM symbol sym
-             JOIN document d ON d.id = sym.document_id
-             JOIN source s ON s.id = d.source_id
-             WHERE codecite_name_key(sym.display_name) = ?1 AND s.is_current AND {filter}
-             ORDER BY sym.display_name LIMIT ?2"
-        ))?;
+    /// The names `sql` finds for `name`'s key, at most [`MAX_CANDIDATES`].
+    fn similar(&self, name: &str, sql: &str) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare_cached(sql)?;
         let limit = i64::try_from(MAX_CANDIDATES).unwrap_or(i64::MAX);
         let rows = stmt.query_map(params![name_key(name), limit], |row| row.get(0))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 }
+
+/// At most `?2` distinct names with a chunk in a current source whose name
+/// key is `?1`, sorted, found by the `symbol_name_key` index.
+pub(super) const SIMILAR_NAMES: &str = "SELECT DISTINCT sym.display_name FROM symbol sym
+     JOIN document d ON d.id = sym.document_id
+     JOIN source s ON s.id = d.source_id
+     WHERE sym.name_key = ?1 AND s.is_current
+       AND EXISTS (SELECT 1 FROM chunk c WHERE c.symbol_id = sym.id)
+     ORDER BY sym.display_name LIMIT ?2";
+
+/// The same over every symbol in a current source, SCIP-only ones included.
+const SIMILAR_GRAPH_NAMES: &str = "SELECT DISTINCT sym.display_name FROM symbol sym
+     JOIN document d ON d.id = sym.document_id
+     JOIN source s ON s.id = d.source_id
+     WHERE sym.name_key = ?1 AND s.is_current
+     ORDER BY sym.display_name LIMIT ?2";
 
 /// The definitions with one name as written, `?1`. A symbol's lines are its
 /// chunk's, which the index run wrote with it.
