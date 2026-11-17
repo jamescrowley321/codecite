@@ -122,10 +122,35 @@ const MIGRATIONS: &[Migration] = &[
     },
 ];
 
-/// The version whose migration empties the full-text table. Every document
-/// of a file brought up past it has its terms marked behind, so the index
-/// run that migrated it writes them again.
+/// The version whose migration empties the full-text tables, to drop the
+/// totals an older SQLite left wrong. The same transaction refills
+/// `chunk_fts` from the stored chunks, so the file never commits without
+/// it and a failed index run after the upgrade leaves it searchable.
+/// (`spec_fts` stays empty; version 9 drops it.)
 const REFILL_FTS: u32 = 8;
+
+/// Writes `chunk_fts`'s row for every stored chunk, by
+/// [`write::fts_row`], the rule `insert_chunks` writes by.
+fn refill_fts(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+    let mut chunks = tx.prepare(
+        "SELECT c.id, sym.display_name, d.path, c.text FROM chunk c
+         JOIN document d ON d.id = c.document_id
+         LEFT JOIN symbol sym ON sym.id = c.symbol_id
+         ORDER BY c.id",
+    )?;
+    let mut insert =
+        tx.prepare("INSERT INTO chunk_fts (rowid, symbol, path, terms) VALUES (?1, ?2, ?3, ?4)")?;
+    let mut rows = chunks.query([])?;
+    while let Some(row) = rows.next()? {
+        let id: i64 = row.get(0)?;
+        let symbol: Option<String> = row.get(1)?;
+        let path: String = row.get(2)?;
+        let text: String = row.get(3)?;
+        let [symbol, path, terms] = write::fts_row(symbol.as_deref(), &path, &text);
+        insert.execute(rusqlite::params![id, symbol, path, terms])?;
+    }
+    Ok(())
+}
 
 /// `PRAGMA application_id` of a codecite corpus: `cdct` in ASCII. A
 /// codecite file written before it was set has 0.
@@ -212,21 +237,17 @@ impl Store {
         }
         for (version, migration) in (1..).zip(MIGRATIONS).skip(found as usize) {
             tx.execute_batch(migration.sql)?;
-            // What search ranks by, for the rows stored before it.
-            if version == RANK_INPUTS {
-                fill_rank_inputs(&tx)?;
+            match version {
+                REFILL_FTS => refill_fts(&tx)?,
+                // What search ranks by, for the rows stored before it.
+                RANK_INPUTS => fill_rank_inputs(&tx)?,
+                _ => {}
             }
             tx.execute(
                 "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)
                  ON CONFLICT (key) DO UPDATE SET value = excluded.value",
                 [version.to_string()],
             )?;
-        }
-        // Version 8 emptied chunk_fts. Rather than refill it here by a copy
-        // of `insert_chunks`' rule, mark every document's terms behind: the
-        // index run that opened the file writes them all again.
-        if found < REFILL_FTS {
-            tx.execute("UPDATE document SET terms_version = 0", [])?;
         }
         let id: i32 = tx.query_row("PRAGMA application_id", [], |row| row.get(0))?;
         if id != APPLICATION_ID {
@@ -853,21 +874,6 @@ mod tests {
             )
             .unwrap()
         };
-        // Version 8 emptied chunk_fts and the document's terms are marked
-        // behind, so the index run that upgraded it writes them again.
-        assert_eq!(fts(&store.conn), 0);
-        let terms_version: u32 = store
-            .conn
-            .query_row("SELECT terms_version FROM document", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(terms_version, 0);
-        store
-            .conn
-            .execute(
-                "INSERT INTO chunk_fts (rowid, symbol, path, terms) VALUES (7, '', '', 'validate')",
-                [],
-            )
-            .unwrap();
         assert_eq!(fts(&store.conn), 1);
 
         store.conn.execute("DELETE FROM source", []).unwrap();
@@ -967,19 +973,26 @@ mod tests {
                 .collect::<rusqlite::Result<_>>()
                 .unwrap()
         };
-        // spec_fts is gone, both chunks stay, and chunk_fts, emptied by
-        // version 8, is refilled by the run that upgraded the file: every
-        // document's terms are behind, its chunks current, and no content
-        // hash is cleared.
+        // spec_fts is gone, and both chunks stay in chunk_fts, the spec one
+        // with its path's terms.
         assert_eq!(
             ids("SELECT count(*) FROM sqlite_master WHERE name LIKE 'spec_fts%'"),
             [0]
         );
-        assert_eq!(ids("SELECT id FROM chunk ORDER BY id"), [1, 2]);
-        assert_eq!(ids("SELECT count(*) FROM chunk_fts_docsize"), [0]);
+        assert_eq!(
+            ids("SELECT rowid FROM chunk_fts WHERE chunk_fts MATCH 'path:rfc9449'"),
+            [2]
+        );
+        assert_eq!(
+            ids(
+                "SELECT rowid FROM chunk_fts WHERE chunk_fts MATCH 'validate OR validates' ORDER BY rowid"
+            ),
+            [1, 2]
+        );
+        // Nothing has to be indexed again.
         assert_eq!(
             ids("SELECT terms_version FROM document ORDER BY id"),
-            [0, 0]
+            [1, 1]
         );
         assert_eq!(
             ids("SELECT chunker_version FROM document ORDER BY id"),
@@ -1032,7 +1045,7 @@ mod tests {
     }
 
     #[test]
-    fn version_8_empties_the_full_text_table_and_marks_every_document_behind() {
+    fn version_8_refills_the_full_text_table_in_its_own_transaction() {
         let dir = scratch("v7");
         let path = dir.join("corpus.db");
         // A version 7 corpus with a function, a spec section and a generic
@@ -1064,24 +1077,26 @@ mod tests {
             up_to(7)
         ))
         .unwrap();
+        // Every row's terms are its chunk's text's, as `insert_chunks`
+        // writes them, so the refill gives the same totals.
         let symbol = identifier_terms("validate_token");
-        for (table, id, symbol, path, terms) in [
+        for (table, id, symbol, path, text) in [
             (
                 "chunk_fts",
                 1,
                 symbol.as_str(),
                 "src/lib.rs",
-                "pub fn validate token validate_token",
+                "pub fn validate_token() {}",
             ),
-            ("chunk_fts", 2, "", "rfc", "tokens are validated"),
-            ("chunk_fts", 3, "", "notes", "sessions"),
-            ("spec_fts", 2, "", "rfc", "tokens are validated"),
+            ("chunk_fts", 2, "", "rfc", "Tokens are validated."),
+            ("chunk_fts", 3, "", "notes", "# Sessions"),
+            ("spec_fts", 2, "", "rfc", "Tokens are validated."),
         ] {
             conn.execute(
                 &format!(
                     "INSERT INTO {table} (rowid, symbol, path, terms) VALUES (?1, ?2, ?3, ?4)"
                 ),
-                rusqlite::params![id, symbol, text_terms(path), terms],
+                rusqlite::params![id, symbol, text_terms(path), text_terms(text)],
             )
             .unwrap();
         }
@@ -1091,28 +1106,38 @@ mod tests {
             })
             .unwrap()
         };
+        let right = totals(&conn);
         // An older SQLite left deleted rows in the totals: the record's
         // first varint, the row count, too high.
         let mut block = totals(&conn);
         block[0] += 5;
         conn.execute("UPDATE chunk_fts_data SET block = ?1 WHERE id = 1", [block])
             .unwrap();
+        assert_ne!(totals(&conn), right);
         drop(conn);
 
-        // The table and its totals are emptied, and every document's terms
-        // are behind, so the index run that upgraded the file writes them
-        // all again; the chunks themselves are current.
-        let store = Store::open_read_write(&path).unwrap();
+        // The index run that opens the file to upgrade it then fails, so
+        // nothing is written after the migration commits. The corpus still
+        // answers, with the right totals, and no document is behind.
+        drop(Store::open_read_write(&path).unwrap());
+        let store = Store::open_read_only(&path).unwrap();
         assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+        assert_eq!(totals(&store.conn), right);
         let count = |sql: &str| -> i64 { store.conn.query_row(sql, [], |row| row.get(0)).unwrap() };
-        assert_eq!(count("SELECT count(*) FROM chunk_fts_docsize"), 0);
+        assert_eq!(count("SELECT count(*) FROM chunk_fts_docsize"), 3);
+        for (query, id) in [("validate", 1), ("validated", 2), ("sessions", 3)] {
+            let found: i64 = store
+                .conn
+                .query_row(
+                    "SELECT rowid FROM chunk_fts WHERE chunk_fts MATCH ?1",
+                    [query],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(found, id, "{query}");
+        }
         assert_eq!(
-            count("SELECT count(*) FROM chunk_fts WHERE chunk_fts MATCH 'validate'"),
-            0
-        );
-        assert_eq!(count("SELECT count(*) FROM chunk"), 3);
-        assert_eq!(
-            count("SELECT count(*) FROM document WHERE terms_version = 0 AND chunker_version = 1"),
+            count("SELECT count(*) FROM document WHERE terms_version = 1 AND chunker_version = 1"),
             3
         );
         drop(store);

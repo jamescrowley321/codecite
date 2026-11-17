@@ -277,8 +277,6 @@ fn source_name(local: &LocalSource, tree: &LocalTree) -> String {
     })
 }
 
-/// The manifest's `name`, else the URL's last path segment without `.git`:
-/// `identity-model` for `https://github.com/acme/identity-model.git`.
 /// The revisions the manifest pins, under the names an index run stores
 /// their sources by: each git source's commit, each document version's
 /// sha256, and each pinned guidance file's. A local source, an unpinned
@@ -307,13 +305,40 @@ pub fn pins(manifest: &Manifest) -> Vec<ManifestPin> {
         .collect()
 }
 
+/// The most bytes [`manifest_pins`] reads of a manifest. A real one is a
+/// few KiB.
+pub const MAX_MANIFEST_SIZE: u64 = 1024 * 1024;
+
 /// [`pins`] of the manifest at `path`, or `None` when it can't be read or
 /// parsed: the [`PinReader`](codecite_core::PinReader) the freshness check
 /// uses.
+///
+/// The path comes from the corpus file, which may not be the user's own,
+/// so it must be absolute and name a regular file (never a FIFO or device
+/// that would block or never end) of at most [`MAX_MANIFEST_SIZE`], and the
+/// read itself stops past that.
 pub fn manifest_pins(path: &Path) -> Option<Vec<ManifestPin>> {
-    Manifest::load(path).ok().map(|manifest| pins(&manifest))
+    use std::io::Read as _;
+
+    if !path.is_absolute() || !std::fs::metadata(path).ok()?.is_file() {
+        return None;
+    }
+    let file = std::fs::File::open(path).ok()?;
+    if !file.metadata().ok()?.is_file() {
+        return None;
+    }
+    let mut text = String::new();
+    file.take(MAX_MANIFEST_SIZE + 1)
+        .read_to_string(&mut text)
+        .ok()?;
+    if text.len() as u64 > MAX_MANIFEST_SIZE {
+        return None;
+    }
+    Manifest::parse(&text).ok().map(|manifest| pins(&manifest))
 }
 
+/// The manifest's `name`, else the URL's last path segment without `.git`:
+/// `identity-model` for `https://github.com/acme/identity-model.git`.
 fn git_name(git: &GitSource) -> String {
     git.name.clone().unwrap_or_else(|| {
         let url = git.url.trim_end_matches('/');
@@ -1727,6 +1752,39 @@ mod tests {
     }
 
     #[test]
+    fn manifest_pins_reads_only_a_small_regular_file_at_an_absolute_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let text = "name = \"demo\"\n\n[[source]]\nurl = \"https://x/app.git\"\n\
+                    commit = \"0123456789abcdef0123456789abcdef01234567\"\nuse = \"adapt\"\n";
+        let good = dir.path().join("demo.toml");
+        std::fs::write(&good, text).unwrap();
+        assert_eq!(
+            manifest_pins(&good),
+            Some(vec![ManifestPin {
+                source: "app".into(),
+                revision: "0123456789abcdef0123456789abcdef01234567".into(),
+            }])
+        );
+
+        // Relative, a directory, a device, a FIFO (which would block an
+        // open), and a file past the cap all give none, at once.
+        assert_eq!(manifest_pins(Path::new("demo.toml")), None);
+        assert_eq!(manifest_pins(dir.path()), None);
+        assert_eq!(manifest_pins(Path::new("/dev/zero")), None);
+        let fifo = dir.path().join("fifo.toml");
+        let made = std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap();
+        assert!(made.success());
+        assert_eq!(manifest_pins(&fifo), None);
+        let big = dir.path().join("big.toml");
+        let padding = "#".repeat(MAX_MANIFEST_SIZE as usize);
+        std::fs::write(&big, format!("{text}{padding}\n")).unwrap();
+        assert_eq!(manifest_pins(&big), None);
+    }
+
+    #[test]
     fn a_version_bump_resplits_only_the_documents_behind_it() {
         let (_repo, _server, _rules, manifest) = every_kind();
         let corpus = Corpus::new();
@@ -1770,32 +1828,6 @@ mod tests {
         // Nothing is behind now.
         let third = corpus.index(&manifest);
         assert_eq!((third.written, third.unchanged), (0, 5));
-    }
-
-    #[test]
-    fn the_run_that_upgrades_through_version_8_refills_the_full_text_table() {
-        let (_repo, _server, _rules, manifest) = every_kind();
-        let fresh = Corpus::new();
-        fresh.index(&manifest);
-        // What version 8 leaves: chunk_fts emptied, every document's terms
-        // behind.
-        let corpus = Corpus::new();
-        corpus.index(&manifest);
-        corpus
-            .sql()
-            .execute_batch(
-                "INSERT INTO chunk_fts (chunk_fts) VALUES ('delete-all');
-                 UPDATE document SET terms_version = 0;",
-            )
-            .unwrap();
-        assert_eq!(corpus.matches("validate"), 0);
-
-        let summary = corpus.index(&manifest);
-        assert_eq!(summary.written, 5);
-        assert_eq!(corpus.contents(), fresh.contents());
-        for text in ["validate token", "refresh sessions", "settings"] {
-            assert_eq!(corpus.search(text), fresh.search(text), "{text}");
-        }
     }
 
     #[test]

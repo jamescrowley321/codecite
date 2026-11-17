@@ -377,6 +377,18 @@ fn clear_document(tx: &Transaction<'_>, document_id: i64) -> Result<()> {
 
 /// Inserts a document's symbols, chunks and their rows in `chunk_fts`,
 /// the one full-text table search ranks every kind of chunk in.
+/// The full-text row of one chunk: the terms of its symbol's name, of its
+/// document's path and of its text, for `chunk_fts`'s `symbol`, `path` and
+/// `terms` columns. The one rule [`insert_chunks`] writes by, and the
+/// migration that refills `chunk_fts` too.
+pub(super) fn fts_row(symbol: Option<&str>, path: &str, text: &str) -> [String; 3] {
+    [
+        symbol.map_or_else(String::new, identifier_terms),
+        text_terms(path),
+        text_terms(text),
+    ]
+}
+
 fn insert_chunks(
     tx: &Transaction<'_>,
     document_id: i64,
@@ -394,7 +406,6 @@ fn insert_chunks(
     let mut fts = tx.prepare_cached(
         "INSERT INTO chunk_fts (rowid, symbol, path, terms) VALUES (?1, ?2, ?3, ?4)",
     )?;
-    let path_terms = text_terms(document.path);
     // Chunk IDs as they are assigned, so a later chunk can name its parent.
     let mut ids: Vec<i64> = Vec::with_capacity(document.chunks.len());
     for c in &document.chunks {
@@ -409,7 +420,11 @@ fn insert_chunks(
                 name_key(s.display_name),
             ])?;
         }
-        let terms = text_terms(c.text);
+        let [symbol_terms, path_terms, terms] = fts_row(
+            c.symbol.as_ref().map(|s| s.display_name),
+            document.path,
+            c.text,
+        );
         debug_assert!(c.parent.is_none_or(|p| p < ids.len()), "parent after child");
         let parent_id = c.parent.and_then(|p| ids.get(p).copied());
         let strength = (!c.strength.is_empty()).then(|| {
@@ -431,10 +446,6 @@ fn insert_chunks(
             terms,
         ])?;
         ids.push(chunk_id);
-        let symbol_terms = c
-            .symbol
-            .as_ref()
-            .map_or_else(String::new, |s| identifier_terms(s.display_name));
         fts.execute(params![chunk_id, symbol_terms, path_terms, terms])?;
     }
     Ok(())

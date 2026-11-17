@@ -157,13 +157,19 @@ fn with_causes(err: &dyn std::error::Error) -> String {
 impl Store {
     /// Records the manifest an index run read, as an absolute path, so the
     /// freshness check can read its pins later without being told where it
-    /// is.
+    /// is. A path that isn't UTF-8 can't be stored as text exactly, so it
+    /// clears the record instead, and the pins go unchecked.
     pub fn set_manifest_path(&mut self, path: &Path) -> Result<()> {
-        self.conn.execute(
-            "INSERT INTO meta (key, value) VALUES ('manifest_path', ?1)
-             ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-            [path.to_string_lossy()],
-        )?;
+        match path.to_str() {
+            Some(path) => self.conn.execute(
+                "INSERT INTO meta (key, value) VALUES ('manifest_path', ?1)
+                 ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+                [path],
+            )?,
+            None => self
+                .conn
+                .execute("DELETE FROM meta WHERE key = 'manifest_path'", [])?,
+        };
         Ok(())
     }
 

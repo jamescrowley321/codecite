@@ -37,10 +37,10 @@
 **Interfaces:**
 - Produces: `pub const TERMS_VERSION: u32 = 1`, `pub const FTS_TOKENIZER: &str = "unicode61"`, `pub const APPLICATION_ID: i32`; `Store::write_split_document(source_id, &DocumentRecord, chunker_version: u32)` (`write_document` writes chunker version 0); `Store::stored_documents(source_id) -> Result<HashMap<String, StoredDocument>>` with `StoredDocument { content_hash, chunker_version, terms_version }` and `StoredDocument::is_current(&self, hash: &[u8], chunker_version: u32) -> bool`. `document_hashes` goes.
 
-- [ ] Write failing tests in `store.rs`: `version_10_stamps_existing_documents_and_records_the_tokenizer`, `an_upgrade_through_version_8_marks_terms_behind` (replaces the refill test: a v7 corpus comes out with `terms_version = 0`), `a_fresh_file_has_the_application_id`, `a_foreign_application_id_is_refused_unchanged`, `a_codecite_file_without_an_application_id_is_accepted_and_stamped`; in `write.rs` `written_documents_carry_the_current_versions`.
+- [ ] Write failing tests in `store.rs`: `version_11_stamps_stored_documents_and_records_the_tokenizer`, `version_8_refills_the_full_text_table_in_its_own_transaction` (an upgrade whose index run then fails still answers, with the right totals), `a_fresh_file_has_the_application_id`, `a_foreign_application_id_is_refused_unchanged`, `a_codecite_file_without_an_application_id_is_accepted_and_stamped`; in `write.rs` `written_documents_carry_the_current_versions`.
 - [ ] Migration adds `document.chunker_version` and `document.terms_version` (`INTEGER NOT NULL DEFAULT 0`), sets both to 1 for existing rows, and inserts `meta.tokenizer = 'unicode61'`.
 - [ ] `open_read_write` sets `PRAGMA application_id` inside the migration transaction. `read_version` refuses a non-zero foreign id and falls back to the `meta` check for id 0.
-- [ ] `fill_fts` goes: after migrating a file that ran 0008, every document's `terms_version` is set to 0, so the same index run rewrites it.
+- [ ] `fill_fts`'s copy of the FTS rule goes: `write::fts_row` is the one rule, used by `insert_chunks` and by version 8's refill, which stays inside the migration transaction so a failed index run never leaves `chunk_fts` empty (review on #264).
 - [ ] `write_document` stamps both versions. Run `cargo test -p codecite-core`, then commit.
 
 ### Task 2: Readers open a read-compatible older schema
@@ -50,14 +50,14 @@
 **Interfaces:**
 - Produces: `struct Migration { sql: &'static str, read_compatible: bool }`; `Store::schema_warning(&self) -> Option<&str>`; `CorpusInfo.warning: Option<String>`.
 
-- [ ] Failing tests: `read_only_opens_a_read_compatible_older_schema_with_a_warning` (v9 file opens; the warning names both versions and `codecite index`), `read_only_refuses_an_older_schema_behind_an_incompatible_migration` (the existing v0 test still refuses), `corpora_carry_the_schema_warning`.
+- [ ] Failing tests: `read_only_opens_a_read_compatible_older_schema_with_a_warning` (a file one compatible migration behind opens; the warning names both versions and `codecite index`), `read_only_refuses_an_older_schema_behind_an_incompatible_migration` (the existing v0 test still refuses), `corpora_carry_the_schema_warning`.
 - [ ] Implement it, run the tests and commit.
 
 ### Task 3: Index runs re-split documents whose version is behind
 
 **Files:** Modify `crates/codecite-index/src/index.rs`, `chunk.rs` (`pub const CHUNKER_VERSION: u32 = 1`), `lib.rs`.
 
-- [ ] Failing test `a_version_bump_resplits_only_the_documents_behind_it`: index a local source of two files, a document and a guidance file; set `chunker_version = 0` on one file and on the document; reindex. `written == 2`, `unchanged == 2`, and the two have the current versions again. A second test does the same for `terms_version`.
+- [ ] Failing test `a_version_bump_resplits_only_the_documents_behind_it`: index a local source of two files, a document and a guidance file; set `chunker_version = 0` on one file and on the document; reindex. `written == 2`, `unchanged == 2`, and the two have the current versions again. The guidance file gets `terms_version = 0` the same way.
 - [ ] `index_tree`, `index_document` and `index_guidance` skip only when `StoredDocument::is_current`. Run the tests and commit.
 
 ### Task 4: Stale pins in the freshness output

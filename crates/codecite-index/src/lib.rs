@@ -35,7 +35,7 @@ mod guidance;
 pub use guidance::{GuidanceError, GuidanceRule, split_guidance};
 
 mod index;
-pub use index::{IndexSummary, index_corpus, manifest_pins, pins};
+pub use index::{IndexSummary, MAX_MANIFEST_SIZE, index_corpus, manifest_pins, pins};
 
 mod license;
 pub use license::{DetectedLicense, detect_license};

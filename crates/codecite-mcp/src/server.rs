@@ -753,8 +753,16 @@ mod tests {
 
     impl Session {
         async fn start(dir: &std::path::Path) -> Session {
+            Session::start_with(dir, None).await
+        }
+
+        /// As [`Session::start`], with `corpora` checking pins by `pins`.
+        async fn start_with(dir: &std::path::Path, pins: Option<PinReader>) -> Session {
             let (server_end, client_end) = tokio::io::duplex(64 * 1024);
-            let server = Server::new(dir.to_path_buf());
+            let mut server = Server::new(dir.to_path_buf());
+            if let Some(pins) = pins {
+                server = server.with_pins(pins);
+            }
             let server = tokio::spawn(async move {
                 let running = server.serve(server_end).await.unwrap();
                 running.waiting().await.unwrap();
@@ -856,9 +864,59 @@ mod tests {
         assert_eq!(structured["corpora"][0]["corpus"], "demo");
         assert_eq!(structured["corpora"][0]["sources"], 3);
         assert_eq!(structured["corpora"][0]["stale"], false);
+        // Without a pin reader, pins aren't checked.
+        assert_eq!(structured["corpora"][0].get("pins_stale"), None);
         assert_eq!(
             structured,
             serde_json::to_value(codecite_core::corpora(dir.path(), None).unwrap()).unwrap()
+        );
+        session.stop().await;
+    }
+
+    /// A pin reader for tests: a manifest is a file of `<source> <revision>`
+    /// lines.
+    fn read_pins(path: &std::path::Path) -> Option<Vec<codecite_core::ManifestPin>> {
+        let text = std::fs::read_to_string(path).ok()?;
+        Some(
+            text.lines()
+                .filter_map(|line| line.split_once(' '))
+                .map(|(source, revision)| codecite_core::ManifestPin {
+                    source: source.into(),
+                    revision: revision.into(),
+                })
+                .collect(),
+        )
+    }
+
+    #[tokio::test]
+    async fn corpora_reports_the_pins_the_corpus_does_not_hold() {
+        let dir = fixture();
+        let manifest = dir.path().join("demo.pins");
+        let moved = format!("{:0<64}", "9f9f");
+        std::fs::write(&manifest, format!("app {HEAD}\nrfc9449 {moved}\n")).unwrap();
+        Store::open_read_write(&dir.path().join("demo.db"))
+            .unwrap()
+            .set_manifest_path(&manifest)
+            .unwrap();
+        let session = Session::start_with(dir.path(), Some(read_pins)).await;
+
+        let structured = session.ok("corpora", json!({})).await;
+        let demo = &structured["corpora"][0];
+        assert_eq!(demo["pins_stale"], true, "{demo}");
+        assert_eq!(demo["stale"], false, "{demo}");
+        assert_eq!(
+            demo["stale_pins"],
+            json!([{
+                "source": "rfc9449",
+                "pinned": moved,
+                "stored": [format!("{:0<64}", "1a2b")],
+            }])
+        );
+        // The same JSON `codecite corpora` prints with the same reader.
+        assert_eq!(
+            structured,
+            serde_json::to_value(codecite_core::corpora(dir.path(), Some(read_pins)).unwrap())
+                .unwrap()
         );
         session.stop().await;
     }

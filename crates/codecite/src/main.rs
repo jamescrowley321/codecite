@@ -630,6 +630,10 @@ fn index(corpus: &str, manifest: Option<PathBuf>, print_hashes: bool) -> anyhow:
             manifest.name
         );
     }
+    // Where the freshness check reads the pins from later, resolved now,
+    // while the file is known to be there.
+    let manifest_path = fs::canonicalize(&manifest_path)
+        .with_context(|| format!("resolving manifest {}", manifest_path.display()))?;
 
     let dirs = project_dirs()?;
     let fetcher = Fetcher::new(dirs.cache_dir().join("documents"));
@@ -652,9 +656,6 @@ fn index(corpus: &str, manifest: Option<PathBuf>, print_hashes: bool) -> anyhow:
         &clones,
     )
     .with_context(|| format!("indexing corpus `{corpus}`"))?;
-    // Where the freshness check reads the pins from later.
-    let manifest_path = fs::canonicalize(&manifest_path)
-        .with_context(|| format!("resolving manifest {}", manifest_path.display()))?;
     store.set_manifest_path(&manifest_path)?;
     println!("indexed corpus `{corpus}` into {}", path.display());
     println!("{summary}");
