@@ -286,7 +286,8 @@ REPLAY = {
     "kind": "replay",
     "repo": "owner/demo",
     "language": "python",
-    "hidden": ["py/tests/test_fix.py", "py/tests/data/case.json"],
+    "hidden": ["py/tests/test_fix.py", "py/tests/test_more.py"],
+    "data": ["py/tests/data/case.json"],
     "test": ["uv", "run", "pytest", "-q", "{hidden}"],
     "workdir": "py",
 }
@@ -296,7 +297,7 @@ REPLAY = {
 def replay_task(tmp_path, monkeypatch):
     """A replay task the miner could have written, under a stand-in evals/."""
     d = tmp_path / "tasks" / REPLAY["id"]
-    for path in REPLAY["hidden"]:
+    for path in REPLAY["hidden"] + REPLAY["data"]:
         (d / "hidden" / path).parent.mkdir(parents=True, exist_ok=True)
         (d / "hidden" / path).write_text(f"contents of {path}\n")
     (d / "task.json").write_text(json.dumps(REPLAY))
@@ -323,16 +324,18 @@ def test_a_replay_task_is_scored_by_its_prs_tests_at_their_repo_paths(monkeypatc
     sb = ReplaySandbox()
     score = score_with(monkeypatch, Store(), REPLAY["id"], sb)
     writes = {path: contents for kind, path, contents in (e for e in sb.log if e[0] == "write")}
+    # The test data is overlaid with the tests.
     assert writes == {
-        f"{task.PROJECT}/{p}": (replay_task / "hidden" / p).read_bytes() for p in REPLAY["hidden"]
+        f"{task.PROJECT}/{p}": (replay_task / "hidden" / p).read_bytes() for p in REPLAY["hidden"] + REPLAY["data"]
     }
     (_, cmd, kwargs), = [e for e in sb.log if e[0] == "exec"]
-    # {hidden} names the hidden files from the workdir, where the tests run.
-    assert cmd == ["uv", "run", "pytest", "-q", "tests/test_fix.py", "tests/data/case.json"]
+    # {hidden} names the hidden tests from the workdir, where they run, and
+    # never the data, which no runner takes as a test.
+    assert cmd == ["uv", "run", "pytest", "-q", "tests/test_fix.py", "tests/test_more.py"]
     assert kwargs["cwd"] == f"{task.PROJECT}/py"
     assert kwargs["env"]["UV_OFFLINE"] == "1" and kwargs["timeout"] == 300
     # The hidden files are written only now, at scoring, before the run.
-    assert [e[0] for e in sb.log] == ["write", "write", "exec"]
+    assert [e[0] for e in sb.log] == ["write", "write", "write", "exec"]
     assert score.value == 1 and "checks" not in score.explanation
 
 
@@ -341,6 +344,25 @@ def test_a_replay_task_fails_when_its_tests_fail(monkeypatch, replay_task):
     assert score.value == 0
     assert score.explanation == "hidden tests failed"
     assert score.metadata["tests_tail"] == "1 failed"
+
+
+def test_a_replay_tasks_tail_keeps_the_build_errors(monkeypatch, replay_task):
+    """`go test` prints `[build failed]` to stdout and why to stderr."""
+    class BuildFails(ReplaySandbox):
+        async def exec(self, cmd, **kwargs):
+            return ExecResult(success=False, returncode=1, stdout="FAIL\tpkg [build failed]\n", stderr="./a_test.go:9: undefined: isRetryable\n")
+
+    score = score_with(monkeypatch, Store(), REPLAY["id"], BuildFails())
+    assert "undefined: isRetryable" in score.metadata["tests_tail"]
+    assert "[build failed]" in score.metadata["tests_tail"]
+
+
+def test_an_older_replay_task_without_data_still_scores(monkeypatch, replay_task):
+    meta = {k: v for k, v in REPLAY.items() if k != "data"}
+    (replay_task / "task.json").write_text(json.dumps(meta))
+    sb = ReplaySandbox()
+    assert score_with(monkeypatch, Store(), REPLAY["id"], sb).value == 1
+    assert len([e for e in sb.log if e[0] == "write"]) == 2
 
 
 def test_a_stopped_replay_agent_cannot_pass(monkeypatch, replay_task):
