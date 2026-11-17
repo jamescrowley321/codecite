@@ -1,0 +1,33 @@
+{
+  "id": "replay-terraform-provider-descope-75-v2",
+  "frozen_at": "37e3706e36b6537e91d89b52a5ef1c2422efde99",
+  "frozen_reason": "Out of band: the quick calibration on the baseline arm passed 73% of 15 runs pooled, inside 40-80%, but Sonnet and Opus passed every run (Haiku 1/5, Sonnet 5/5, Opus 5/5; run 44015056874). Frozen as is and judged on its A/B result, not on the band.",
+  "kind": "replay",
+  "repo": "jamescrowley321/terraform-provider-descope",
+  "url": "https://github.com/jamescrowley321/terraform-provider-descope",
+  "base": "6658a47cc3be8585365b77c8a6560fa1a5d88da6",
+  "merge": "3c74794eb2f5ab99924950314a6e1bef7cfb55ae",
+  "pr": 75,
+  "issue": 73,
+  "language": "go",
+  "hidden": [
+    "internal/infra/retry_test.go"
+  ],
+  "data": [],
+  "test": [
+    "go",
+    "test",
+    "-count=1",
+    "./internal/infra"
+  ],
+  "setup": [
+    "go",
+    "mod",
+    "download"
+  ],
+  "workdir": ".",
+  "epochs": {
+    "quick": 5,
+    "full": 10
+  }
+}

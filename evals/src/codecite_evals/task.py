@@ -355,20 +355,25 @@ def replay_command(meta: dict) -> list[str]:
 
 
 async def run_hidden(sb, cmd: list[str], cwd: str, env: dict[str, str]) -> tuple[bool, str]:
-    """Whether the hidden tests passed, and the tail of their output. They
-    run the agent's code, so a hang is the agent's failure, scored like any
-    other; letting the timeout raise would retry the sample."""
+    """Whether the hidden tests passed, and the tail of their stdout, then
+    of their stderr if any: a build that fails says why on stderr. They run the agent's
+    code, so a hang is the agent's failure, scored like any other; letting
+    the timeout raise would retry the sample."""
     try:
         tests = await sb.exec(cmd, cwd=cwd, env=env, timeout=300)
-        return tests.success, tests.stdout[-1500:]
+        tail = tests.stdout[-1500:]
+        if tests.stderr.strip():
+            tail += "\n--- stderr\n" + tests.stderr[-1000:]
+        return tests.success, tail
     except TimeoutError:
         return False, "hidden tests timed out"
 
 
 async def score_replay(sb, task_dir: Path, meta: dict) -> tuple[bool, str, list]:
-    """Overlay the PR's test files on the agent's project at their repo
-    paths, then run them. A replay task has no checks."""
-    for path in meta["hidden"]:
+    """Overlay the PR's test files and the test data they read on the
+    agent's project at their repo paths, then run the tests. A replay task
+    has no checks."""
+    for path in [*meta["hidden"], *meta.get("data", [])]:
         await sb.write_file(f"{PROJECT}/{path}", (task_dir / "hidden" / path).read_bytes())
     cwd = posixpath.normpath(posixpath.join(PROJECT, meta["workdir"]))
     passed, tail = await run_hidden(sb, replay_command(meta), cwd, offline_env(meta["language"]))

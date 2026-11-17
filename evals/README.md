@@ -166,18 +166,53 @@ p95 guardrail of 150 ms.
 
 - **Replay tasks** (`replay-<repo>-<pr>`, `"kind": "replay"`): real past
   work. The prompt is an issue as it was asked, the project is its repository
-  at the base of the merged PR that closed it, and the hidden tests are the
-  test files that PR added or changed, at its merge commit. The `eval` corpus
-  is that same tree. `codecite-replay-mine OWNER/REPO --clone <dir>`
-  (`src/codecite_evals/replay.py`) lists merged PRs by a person that close an
-  issue, change source and add tests kept apart from it (Python `tests/`
-  and `test_*.py`, Go `*_test.go` without `TF_ACC` acceptance tests, Rust
-  `crates/<crate>/tests/*.rs`, JS/TS `*.test.*`), newest first, and writes up
-  to `--max` of them as task directories: `task.json` (the base, the hidden
-  paths, the language, the `setup` and `test` commands and the `workdir` they
-  run in), `prompt.md`, `hidden/`, `reference/fix.patch` (the PR's non-test
-  diff) and `check.sh`. It keeps a task only when `check.sh` shows the hidden
-  tests fail at the base and pass with the fix. The project the agent sees is
+  at the merged PR's base, the merge commit's first parent (not the PR's
+  `baseRefOid`, which can lag it and bring other PRs' edits), and the hidden
+  tests are the test files that PR added or changed, at its merge commit.
+  The `eval` corpus is that same tree. `codecite-replay-mine OWNER/REPO
+  --clone <dir>` (`src/codecite_evals/replay.py`) lists merged PRs by a
+  person that close an issue, change source and add tests kept apart from it
+  (Python `tests/` and `test_*.py`, Go `*_test.go` without `TF_ACC`
+  acceptance tests, Rust `crates/<crate>/tests/*.rs`, JS/TS `*.test.*`),
+  newest first, skips any PR that already has a task, and any rebase-merged
+  PR of several commits, whose merge's first parent already holds its
+  earlier commits: one whose merge commit has one parent and keeps the PR's
+  last commit's author date or subject, which a squash doesn't, or whose
+  merge commit doesn't change every file the PR did. It writes up to
+  `--max` of them as task directories: `task.json` (the base, the hidden
+  tests, the test `data`, the language, the `setup` and `test` commands and
+  the `workdir` they run in), `prompt.md`, `hidden/`, `reference/fix.patch`
+  (the PR's non-test diff) and `check.sh`. Test data is any file the PR
+  changed under `testdata` or a Jest `__snapshots__` directory, any `.snap`
+  file, and under a `tests`, `test` or `__tests__`
+  directory any non-code file and anything in a `fixtures`, `__fixtures__`
+  or snapshot directory below it, code or not; a `fixtures` or `snapshots`
+  directory outside the tests is source: it goes into `hidden/` with the tests and is
+  overlaid with them, but only the test files are named to the runner. A
+  Rust hidden test is a file in a `tests/` directory beside a `Cargo.toml`
+  at the merge; one in a `tests/` module inside a crate's `src/` is library
+  code and goes in the fix. A Rust test target is a file directly in that
+  `tests/`; one deeper (`tests/common/mod.rs`) is overlaid but is no
+  `--test`, and a Rust PR with no target is skipped, since a bare `cargo
+  test` would run the whole package. When the hidden tests call names the
+  fix adds and the base lacks, the prompt ends with a "Names the tests use"
+  section giving each one's file, doc comment and definition line, since an
+  agent can't discover a name that doesn't exist yet. That comment is the
+  mined PR's text, so only its last five lines reach the prompt, each cut
+  to 200 characters and stripped of Unicode format and control characters
+  (zero-width, bidi overrides), inside a fence no backtick run in them can
+  close. The issue's title and body lose the same characters; read
+  the section by hand before the task freezes, as with anything added by
+  hand. What else the tests
+  pin that the issue leaves open (an exact message, say) is added by hand
+  under "What the tests check" before the task freezes. The miner keeps a
+  task only when `check.sh` shows the hidden tests fail at the base and pass
+  with the fix. It never rewrites a task directory, and a write that fails
+  leaves none behind: `--pr <n>` mines a PR again, as one past its highest
+  `-v<n>` there (`replay-<repo>-<pr>-v2` after the bare id). An id is
+  unique only among the task directories that exist: once a task is
+  deleted, its id can be issued again. A `--pr` that names no replayable
+  PR among the 500 newest is reported, not silently dropped. The project the agent sees is
   `git archive` of the base in a fresh one-commit repository, so no later
   history reaches it; `hidden/` is overlaid on the agent's tree after it
   exits and only those files run, offline, with the dependencies warmed into
@@ -185,6 +220,11 @@ p95 guardrail of 150 ms.
   `REPLAY_REPO`, by default the history benchmark's clone in
   `~/.cache/codecite/history/<repo>`. A replay task has no registered name:
   it runs as `codecite_evals/ab -T task_id=<id>`, which `panel.sh` does for it.
+  Its agent has the same 600 s as any task's, so a PR too broad to replay in
+  that time is cut to the part its hidden tests check, by hand, before the
+  task freezes. A failing sample's score metadata keeps the tail of the
+  hidden tests' stdout and then of their stderr (`tests_tail`), where a
+  failed build says why.
 
 Each task's `check.sh` proves it is well-formed; `backchannel-logout`'s needs
 only uv and an identity-model checkout, and `spec-questions`' only python3
@@ -432,7 +472,9 @@ benchmark).
 4. Freeze it: set `frozen_at` in its `task.json` to the commit its first A/B
    run runs at, in the PR that adds the task to the panel. From then on CI's
    frozen-task check (`uv run --locked codecite-eval-frozen`) fails any PR
-   that changes a file under `tasks/<id>/` or moves `frozen_at`. A task that
+   that changes a file under `tasks/<id>/` or moves `frozen_at`. A task
+   frozen out of band says why in `frozen_reason`, in the commit that
+   `frozen_at` names. A task that
    needs changing after that is a new task: copy it to a new id and
    calibrate that.
 
