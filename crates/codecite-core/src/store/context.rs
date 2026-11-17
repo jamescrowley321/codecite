@@ -422,7 +422,8 @@ impl Store {
     fn guidance_rules(&self) -> Result<Vec<RuleRow>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT s.id, s.name, s.revision, s.license_class, s.indexed_at,
-                    c.number, c.title, c.strength, c.text
+                    c.number, c.title, c.strength,
+                    coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))
              FROM source s
              JOIN document d ON d.source_id = s.id
              JOIN chunk c ON c.document_id = d.id
@@ -490,7 +491,7 @@ impl Store {
     /// `scopes`, by rule number. A rule left out, or given an empty scope,
     /// applies to every file.
     pub fn set_guidance(&mut self, source_id: i64, scopes: &[(&str, &RuleScope)]) -> Result<()> {
-        let tx = self.conn.transaction()?;
+        let tx = self.conn.savepoint()?;
         tx.execute("UPDATE source SET guidance = 1 WHERE id = ?1", [source_id])?;
         tx.execute("DELETE FROM rule_scope WHERE source_id = ?1", [source_id])?;
         {

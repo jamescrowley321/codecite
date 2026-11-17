@@ -239,7 +239,8 @@ const SIMILAR_GRAPH_NAMES: &str = "SELECT DISTINCT sym.display_name FROM symbol 
 /// The definitions with one name as written, `?1`. A symbol's lines are its
 /// chunk's, which the index run wrote with it.
 const DEFINITIONS: &str = "SELECT sym.id, coalesce(sym.kind, c.kind), c.start_line, c.end_line,
-       d.path, d.dirty, s.name, s.kind, s.revision, s.license_class, s.indexed_at, c.text,
+       d.path, d.dirty, s.name, s.kind, s.revision, s.license_class, s.indexed_at,
+       coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line)),
        sym.display_name, sym.provider, sym.local_id
      FROM symbol sym
      JOIN chunk c ON c.symbol_id = sym.id

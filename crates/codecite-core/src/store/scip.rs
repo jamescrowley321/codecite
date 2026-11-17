@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use rusqlite::{OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use super::Store;
 use super::read::file_lines;
@@ -112,7 +112,7 @@ impl Store {
         source_id: i64,
         documents: &[ScipDocument],
     ) -> Result<ScipSummary> {
-        let tx = self.conn.transaction()?;
+        let tx = self.conn.savepoint()?;
         undo_scip(&tx, source_id)?;
         let stored = stored_documents(&tx, source_id)?;
         let mut summary = ScipSummary::default();
@@ -137,11 +137,11 @@ impl Store {
         Ok(summary)
     }
 
-    /// Undoes every source's SCIP layer, in one transaction, so an index run
+    /// Undoes every source's SCIP layer, in one savepoint, so an index run
     /// applies each source's index to a store where no other source, one the
     /// manifest no longer lists included, still holds a SCIP ID.
     pub fn clear_all_scip(&mut self) -> Result<()> {
-        let tx = self.conn.transaction()?;
+        let tx = self.conn.savepoint()?;
         let sources: Vec<i64> = {
             let mut stmt = tx.prepare("SELECT id FROM source ORDER BY id")?;
             let rows = stmt.query_map([], |row| row.get(0))?;
@@ -154,12 +154,12 @@ impl Store {
         Ok(())
     }
 
-    /// Undoes the source's SCIP layer, in one transaction: its occurrences,
+    /// Undoes the source's SCIP layer, in one savepoint: its occurrences,
     /// its SCIP edges and the symbols only SCIP found are deleted, and every
     /// symbol a SCIP ID replaced gets its tree-sitter ID back. An index run
     /// calls it for a source that no longer names a SCIP index.
     pub fn clear_scip(&mut self, source_id: i64) -> Result<()> {
-        let tx = self.conn.transaction()?;
+        let tx = self.conn.savepoint()?;
         undo_scip(&tx, source_id)?;
         tx.commit()?;
         Ok(())
@@ -174,7 +174,7 @@ pub(super) fn is_callable(symbol: &str) -> bool {
 
 /// The source's code documents with their text, as `(ID, line count)` by
 /// path.
-fn stored_documents(tx: &Transaction<'_>, source_id: i64) -> Result<HashMap<String, (i64, u32)>> {
+fn stored_documents(tx: &Connection, source_id: i64) -> Result<HashMap<String, (i64, u32)>> {
     let mut stmt = tx
         .prepare("SELECT id, path, text FROM document WHERE source_id = ?1 AND text IS NOT NULL")?;
     let rows = stmt.query_map([source_id], |row| {
@@ -187,7 +187,7 @@ fn stored_documents(tx: &Transaction<'_>, source_id: i64) -> Result<HashMap<Stri
 
 /// Deletes the source's SCIP occurrences, edges and SCIP-only symbols, and
 /// gives each replaced symbol its tree-sitter ID back.
-fn undo_scip(tx: &Transaction<'_>, source_id: i64) -> Result<()> {
+fn undo_scip(tx: &Connection, source_id: i64) -> Result<()> {
     const DOCS: &str = "(SELECT id FROM document WHERE source_id = ?1)";
     tx.execute(
         &format!("DELETE FROM occurrence WHERE provider = 'scip' AND document_id IN {DOCS}"),
@@ -222,7 +222,7 @@ fn undo_scip(tx: &Transaction<'_>, source_id: i64) -> Result<()> {
 /// row with the same name, kind and lines, then the chunk, then the old
 /// row's delete, so no chunk ever names a missing symbol.
 fn rename_symbol(
-    tx: &Transaction<'_>,
+    tx: &Connection,
     from: &str,
     to: &str,
     provider: &str,
@@ -245,7 +245,7 @@ fn rename_symbol(
 /// Writes one document's definitions: each replaces the tree-sitter
 /// symbol that holds it, or is added.
 fn write_definitions(
-    tx: &Transaction<'_>,
+    tx: &Connection,
     source_id: i64,
     document_id: i64,
     lines: u32,
@@ -345,7 +345,7 @@ fn write_definitions(
 /// Writes one document's occurrences, each with the innermost definition
 /// holding it, and the edges its references give.
 fn write_occurrences(
-    tx: &Transaction<'_>,
+    tx: &Connection,
     document_id: i64,
     lines: u32,
     doc: &ScipDocument,

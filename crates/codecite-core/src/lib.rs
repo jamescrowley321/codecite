@@ -40,16 +40,16 @@ pub use store::{
     APPROACH_ONLY_INSTRUCTION, ChunkRecord, CiteOptions, CiteResult, Context, ContextQuery,
     ContextTarget, Corpora, CorpusInfo, DEFAULT_MAX_AGE_DAYS, DEFAULT_MAX_LINES,
     DEFAULT_SEARCH_LIMIT, Definition, Definitions, DiffOptions, DiffResult, Direction,
-    DocumentRecord, Finding, Freshness, Graph, GraphNode, GraphQuery, GrepMatch, GrepQuery,
-    GrepResults, MAX_CONFIDENCE, MAX_CONTEXT_BYTES, MAX_GRAPH_DEPTH, MAX_READ_BYTES,
-    MAX_READ_LINES, MAX_SEARCH_LIMIT, MAX_SNIPPET_BYTES, MAX_SNIPPET_LINES, QUOTE_INSTRUCTION,
-    QUOTE_TRUNCATED_INSTRUCTION, ROLE_DEFINITION, ReadOptions, ReadResult, Reference, References,
-    Requirement, RequirementSection, Requirements, RequirementsOptions, Rule, RuleScope,
-    SCHEMA_VERSION, SCIP_CONFIDENCE, ScipDefinition, ScipDocument, ScipOccurrence, ScipSummary,
-    Scope, SearchQuery, SearchResult, SearchResults, SourceRecord, Store, SymbolRecord,
-    VersionChange, corpora, defuse_instruction, is_corpus_name, symbol_name,
+    DocumentRecord, FTS_TOKENIZER, Finding, Freshness, Graph, GraphNode, GraphQuery, GrepMatch,
+    GrepQuery, GrepResults, IndexRun, MAX_CONFIDENCE, MAX_CONTEXT_BYTES, MAX_GRAPH_DEPTH,
+    MAX_READ_BYTES, MAX_READ_LINES, MAX_SEARCH_LIMIT, MAX_SNIPPET_BYTES, MAX_SNIPPET_LINES,
+    QUOTE_INSTRUCTION, QUOTE_TRUNCATED_INSTRUCTION, ROLE_DEFINITION, ReadOptions, ReadResult,
+    Reference, References, Requirement, RequirementSection, Requirements, RequirementsOptions,
+    Rule, RuleScope, RunCounts, SCHEMA_VERSION, SCIP_CONFIDENCE, ScipDefinition, ScipDocument,
+    ScipOccurrence, ScipSummary, Scope, SearchQuery, SearchResult, SearchResults, SourceRecord,
+    Store, SymbolRecord, VersionChange, corpora, defuse_instruction, is_corpus_name, symbol_name,
 };
 pub use store::{CheckOptions, CitationChecker, CitationProblem, Problem, TextCheck};
 
 mod terms;
-pub use terms::{identifier_terms, split_identifier, text_terms};
+pub use terms::{TERMS_VERSION, identifier_terms, split_identifier, text_terms};

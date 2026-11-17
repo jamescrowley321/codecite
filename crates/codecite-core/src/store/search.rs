@@ -405,6 +405,22 @@ pub(super) fn register_functions(conn: &Connection) -> rusqlite::Result<()> {
         1,
         FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
         |ctx| Ok(ctx.get::<Option<String>>(0)?.map(|name| name_key(&name))),
+    )?;
+    // `codecite_lines(document.text, start, end)`: a chunk's text when the
+    // chunk stores none, cut from its document's. Readers call it as
+    // `coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))`,
+    // which reads the document's text only for a chunk without its own.
+    conn.create_scalar_function(
+        "codecite_lines",
+        3,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |ctx| {
+            let Some(text) = ctx.get_raw(0).as_str_or_null()? else {
+                return Ok(None);
+            };
+            let (start, end): (u32, u32) = (ctx.get(1)?, ctx.get(2)?);
+            Ok(super::lines::line_span(text, start, end).map(str::to_owned))
+        },
     )
 }
 
@@ -435,8 +451,10 @@ const RANK: &str = "SELECT c.id,
      LIMIT ?8";
 
 /// Phase 2 of a search: what a result shows of the chunk `?1`, its text
-/// included.
-const FETCH: &str = "SELECT c.kind, c.start_line, c.end_line, c.number, p.number, c.text, d.path,
+/// included. A chunk of a document that stores its text stores none of its
+/// own, so its text is cut from the document's.
+const FETCH: &str = "SELECT c.kind, c.start_line, c.end_line, c.number, p.number,
+       coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line)), d.path,
        d.dirty, s.name, s.kind, s.revision, s.license_class, s.indexed_at, sym.display_name,
        d.text IS NOT NULL, c.title, c.anchor
      FROM chunk c

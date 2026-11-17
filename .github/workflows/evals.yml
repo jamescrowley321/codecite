@@ -12,7 +12,9 @@ name: Evals
 # beside it only when switched on: the dispatch's `openrouter` input, or the
 # repository variable EVALS_OPENROUTER set to `true` (for PR runs too). A dispatch with `arms: baseline`
 # calibrates its task: the quick panel on the baseline arm alone, reported with
-# no verdict (evals/README.md). Advisory, like `bench`: never a required check.
+# no verdict (evals/README.md). A task with a size dial (house-rules) takes
+# `corpus`, its corpus size: s, m or l, empty for its default. Advisory, like
+# `bench`: never a required check.
 on:
   pull_request:
     types: [labeled]
@@ -32,6 +34,10 @@ on:
         type: choice
         options: [ab, aa, baseline, assist]
         default: ab
+      corpus:
+        description: For a task with a size dial (house-rules), its corpus size, s, m or l; empty for the task's default
+        type: string
+        default: ""
       epochs:
         description: Epochs per arm, if not the tier's own (quick 5, full 10)
         type: string
@@ -50,12 +56,12 @@ permissions:
 
 # Labelling a PR again cancels its stale eval. Events that run nothing (any
 # other label) get a group of their own, so they cancel nothing. Dispatches queue rather than cancel, one group per set of
-# inputs (task, tier, arms, epochs, openrouter, resume): GitHub keeps one pending run per
+# inputs (task, corpus, tier, arms, epochs, openrouter, resume): GitHub keeps one pending run per
 # group and cancels the one before, so without the task, calibrating two tasks
 # at once dropped the first. Only an identical dispatch replaces a pending one.
 concurrency:
   group: >-
-    evals-${{ github.event.pull_request.number || github.ref }}-${{ inputs.task || 'pr' }}-${{ inputs.tier || 'quick' }}-${{ inputs.arms || 'ab' }}-${{ inputs.epochs || 'default' }}-${{ inputs.openrouter && 'or' || 'claude' }}-${{ inputs.resume || 'fresh' }}-${{
+    evals-${{ github.event.pull_request.number || github.ref }}-${{ inputs.task || 'pr' }}-${{ inputs.corpus || 'default' }}-${{ inputs.tier || 'quick' }}-${{ inputs.arms || 'ab' }}-${{ inputs.epochs || 'default' }}-${{ inputs.openrouter && 'or' || 'claude' }}-${{ inputs.resume || 'fresh' }}-${{
     (github.event_name == 'workflow_dispatch' || github.event.label.name == 'eval')
     && 'run' || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -86,6 +92,7 @@ jobs:
     env:
       TIER: ${{ inputs.tier || 'quick' }}
       TASK_ID: ${{ matrix.task }}
+      CORPUS: ${{ inputs.corpus }}
       ARMS: ${{ inputs.arms || 'ab' }}
       EPOCHS: ${{ inputs.epochs }}
       OPENROUTER: ${{ (inputs.openrouter || vars.EVALS_OPENROUTER == 'true') && '1' || '0' }}
@@ -106,16 +113,30 @@ jobs:
           [[ "$TASK_ID" =~ ^[a-z0-9][a-z0-9-]*$ && -f "evals/tasks/$TASK_ID/task.json" ]] \
             || { echo "task must be a directory under evals/tasks/" >&2; exit 1; }
           [[ "$ARMS" != baseline || "$TIER" == quick ]] || { echo "calibrate (arms: baseline) on the quick tier" >&2; exit 1; }
+          # A size-dial task logs under <task>-<size> (panel.sh); LOG_TASK
+          # names that directory and the artifacts.
+          task="evals/tasks/$TASK_ID/task.json"
+          if [[ "$(jq -r '.kind // ""' "$task")" == corpus ]]; then
+            size="${CORPUS:-$(jq -r .corpus.default "$task")}"
+            jq -e --arg s "$size" '.corpus.sizes | has($s)' "$task" >/dev/null \
+              || { echo "corpus must be one of $(jq -r '.corpus.sizes | keys | join(", ")' "$task")" >&2; exit 1; }
+            { echo "CORPUS=$size"; echo "LOG_TASK=$TASK_ID-$size"; } >> "$GITHUB_ENV"
+          else
+            [[ -z "$CORPUS" ]] || { echo "$TASK_ID has no corpus sizes; leave corpus empty" >&2; exit 1; }
+            echo "LOG_TASK=$TASK_ID" >> "$GITHUB_ENV"
+          fi
       - name: Install toolchain
         run: |
           rustup toolchain install
           rustc --version
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo build --release --locked -p codecite
-      # A replay task's project is its own repository at the task's base.
+      # A replay task's project is its own repository at the task's base; a
+      # size-dial task's sources are fetched by prepare.sh, from its manifest.
       - name: Fetch identity-model at the task's pinned commit
         run: |
           task="evals/tasks/$TASK_ID/task.json"
+          [[ "$(jq -r '.kind // ""' "$task")" != corpus ]] || exit 0
           if [[ "$(jq -r '.kind // ""' "$task")" == replay ]]; then
             repo="$RUNNER_TEMP/replay"
             git init -q "$repo"
@@ -172,9 +193,9 @@ jobs:
           RESUME: ${{ inputs.resume }}
         run: |
           [[ "$RESUME" =~ ^[0-9]+$ ]] || { echo "resume must be a run id" >&2; exit 1; }
-          gh run download "$RESUME" -R "$GITHUB_REPOSITORY" -n "eval-logs-$RUN_NAME-$TASK_ID" -D "evals/inspect/logs/$RUN_NAME/$TASK_ID"
+          gh run download "$RESUME" -R "$GITHUB_REPOSITORY" -n "eval-logs-$RUN_NAME-$LOG_TASK" -D "evals/inspect/logs/$RUN_NAME/$LOG_TASK"
           echo RETRY=1 >> "$GITHUB_ENV"
-      - name: Run the ${{ env.TIER }} tier on ${{ env.TASK_ID }} (arms ${{ env.ARMS }})
+      - name: Run the ${{ env.TIER }} tier on ${{ env.LOG_TASK }} (arms ${{ env.ARMS }})
         timeout-minutes: ${{ (inputs.tier == 'full' || inputs.epochs) && 345 || 90 }}
         working-directory: evals
         env:
@@ -194,29 +215,29 @@ jobs:
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
-          dir="inspect/logs/$RUN_NAME/$TASK_ID"
+          dir="inspect/logs/$RUN_NAME/$LOG_TASK"
           [[ -d "$dir" ]] || exit 0
           uv run --locked python -I -m codecite_evals.scrub "$dir" \
             || { echo "::error::the scrub removed a log or failed, so no logs upload"; rm -rf "$dir"; exit 1; }
       - name: Publish the scorecard
         if: always() && steps.scrub.outcome == 'success'
         run: |
-          card="evals/inspect/logs/$RUN_NAME/$TASK_ID/scorecard.md"
+          card="evals/inspect/logs/$RUN_NAME/$LOG_TASK/scorecard.md"
           [[ -s "$card" ]] || exit 0
           cat "$card" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always() && steps.scrub.outcome == 'success'
         with:
-          name: eval-logs-${{ env.RUN_NAME }}-${{ env.TASK_ID }}
-          path: evals/inspect/logs/${{ env.RUN_NAME }}/${{ env.TASK_ID }}
+          name: eval-logs-${{ env.RUN_NAME }}-${{ env.LOG_TASK }}
+          path: evals/inspect/logs/${{ env.RUN_NAME }}/${{ env.LOG_TASK }}
           if-no-files-found: ignore
           overwrite: true
       # The comment job joins every task's scorecard into one comment.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always() && steps.scrub.outcome == 'success' && github.event_name == 'pull_request'
         with:
-          name: scorecard-${{ env.TASK_ID }}
-          path: evals/inspect/logs/${{ env.RUN_NAME }}/${{ env.TASK_ID }}/scorecard.md
+          name: scorecard-${{ env.LOG_TASK }}
+          path: evals/inspect/logs/${{ env.RUN_NAME }}/${{ env.LOG_TASK }}/scorecard.md
           if-no-files-found: ignore
           overwrite: true
 

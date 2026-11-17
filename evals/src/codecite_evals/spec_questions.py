@@ -161,12 +161,35 @@ def check_set(questions, queries, documents):
     return failures
 
 
+def line_span(text, start, end):
+    """Lines start..end (from 1) of text, as codecite cuts a chunk's text from
+    its document's (`line_span` in crates/codecite-core/src/store/lines.rs):
+    each \n ends a line, a final \n starts no empty one, and the span drops its
+    last line's \n and then a \r. None when text has no line start."""
+    if start < 1 or end < start:
+        return None
+    starts = [0] + [i + 1 for i, c in enumerate(text) if c == "\n"]
+    if start > 1 and (start - 1 >= len(starts) or starts[start - 1] >= len(text)):
+        return None
+    begin = starts[start - 1]
+    stop = starts[end] if end < len(starts) else len(text)
+    span = text[begin:stop]
+    span = span.removesuffix("\n")
+    return span.removesuffix("\r")
+
+
 def sections(db):
-    """Every current spec section's text and its steps, by document and number."""
+    """Every current spec section's text and its steps, by document and number.
+
+    A section of a document that keeps its text stores none of its own
+    (#249), so its text is cut from the document's lines, as codecite reads it.
+    """
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     rows = con.execute(
         """
-        SELECT s.name, sec.number, sec.text, step.number
+        SELECT s.name, sec.number,
+               coalesce(sec.text, d.text), sec.text IS NULL, sec.start_line, sec.end_line,
+               step.number
         FROM chunk sec
         JOIN document d ON d.id = sec.document_id
         JOIN source s ON s.id = d.source_id
@@ -175,7 +198,9 @@ def sections(db):
         """
     )
     found = {}
-    for doc, number, text, step in rows:
+    for doc, number, text, derived, start, end, step in rows:
+        if derived:
+            text = line_span(text, start, end)
         entry = found.setdefault((doc, number), {"text": text, "steps": set()})
         if step is not None:
             entry["steps"].add(str(step))

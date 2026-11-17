@@ -16,7 +16,8 @@ pub use add::{Added, add_sources};
 
 mod chunk;
 pub use chunk::{
-    Chunk, ChunkKind, Chunker, ChunkerError, Language, Symbol, SymbolKind, WINDOW_LINES,
+    CHUNKER_VERSION, Chunk, ChunkKind, Chunker, ChunkerError, Language, Symbol, SymbolKind,
+    WINDOW_LINES,
 };
 
 mod clone;

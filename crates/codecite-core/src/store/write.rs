@@ -1,11 +1,14 @@
 //! Writing sources and their documents into the store. Each call is one
-//! transaction, so a document is either fully written or not at all.
+//! savepoint, so a document is either fully written or not at all: its
+//! own transaction outside an index run, and part of the run's one
+//! transaction inside it.
 
 use std::collections::HashMap;
 
-use rusqlite::{OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use super::Store;
+use super::lines::LineStarts;
 use super::search::name_key;
 use crate::{Keyword, Result, Role, SpecAliases, identifier_terms, text_terms};
 
@@ -141,7 +144,7 @@ impl Store {
     /// in one transaction, so a guidance source the manifest turns into a
     /// plain document stops giving rules.
     pub fn clear_guidance(&mut self, source_id: i64) -> Result<()> {
-        let tx = self.conn.transaction()?;
+        let tx = self.conn.savepoint()?;
         tx.execute("UPDATE source SET guidance = 0 WHERE id = ?1", [source_id])?;
         tx.execute("DELETE FROM rule_scope WHERE source_id = ?1", [source_id])?;
         tx.commit()?;
@@ -194,7 +197,7 @@ impl Store {
         source_id: i64,
         document: &DocumentRecord<'_>,
     ) -> Result<usize> {
-        let tx = self.conn.transaction()?;
+        let tx = self.conn.savepoint()?;
         // What the document is for, stored so that search reads its weight
         // instead of working it out for every candidate it ranks.
         let source_kind: String = tx.query_row(
@@ -257,7 +260,7 @@ impl Store {
     /// citations name them, sorted: `app`, or `rfc9449@sha256:1a2b3c4d5e6f`
     /// for a document version.
     pub fn delete_sources_except(&mut self, keep: &[i64]) -> Result<Vec<String>> {
-        let tx = self.conn.transaction()?;
+        let tx = self.conn.savepoint()?;
         let mut sources: Vec<(i64, String)> = {
             let mut stmt = tx.prepare(
                 "SELECT id, CASE kind WHEN 'document' THEN name || '@sha256:' || substr(revision, 1, 12)
@@ -296,7 +299,7 @@ impl Store {
     /// Replaces the stored document aliases with `aliases`, so `read` can
     /// resolve `OIDC Core §3.1` without the manifest.
     pub fn set_aliases(&mut self, aliases: &SpecAliases) -> Result<()> {
-        let tx = self.conn.transaction()?;
+        let tx = self.conn.savepoint()?;
         tx.execute("DELETE FROM alias", [])?;
         let mut insert = tx.prepare("INSERT INTO alias (alias, name) VALUES (?1, ?2)")?;
         for (alias, name) in aliases.iter() {
@@ -310,7 +313,7 @@ impl Store {
 
 /// Deletes a document's chunks, their full-text rows, its symbols, its
 /// occurrences and the edges it is evidence for, keeping the document row.
-fn clear_document(tx: &Transaction<'_>, document_id: i64) -> Result<()> {
+fn clear_document(tx: &Connection, document_id: i64) -> Result<()> {
     // The `chunk_fts_delete` trigger deletes each chunk's full-text row.
     for table_filter in [
         "chunk WHERE document_id = ?1",
@@ -326,24 +329,23 @@ fn clear_document(tx: &Transaction<'_>, document_id: i64) -> Result<()> {
 
 /// Inserts a document's symbols, chunks and their rows in `chunk_fts`,
 /// the one full-text table search ranks every kind of chunk in.
-fn insert_chunks(
-    tx: &Transaction<'_>,
-    document_id: i64,
-    document: &DocumentRecord<'_>,
-) -> Result<()> {
+fn insert_chunks(tx: &Connection, document_id: i64, document: &DocumentRecord<'_>) -> Result<()> {
     let mut symbol = tx.prepare_cached(
         "INSERT INTO symbol (id, display_name, kind, document_id, start_line, end_line, name_key)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
     )?;
     let mut chunk = tx.prepare_cached(
         "INSERT INTO chunk (document_id, start_line, end_line, kind, symbol_id, number, anchor,
-           title, parent_id, strength, text, terms)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+           title, parent_id, strength, text)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
     )?;
     let mut fts = tx.prepare_cached(
         "INSERT INTO chunk_fts (rowid, symbol, path, terms) VALUES (?1, ?2, ?3, ?4)",
     )?;
     let path_terms = text_terms(document.path);
+    // A chunk whose text is its lines of the stored document text stores
+    // none of its own; readers cut it from the document's.
+    let lines = document.text.map(LineStarts::new);
     // Chunk IDs as they are assigned, so a later chunk can name its parent.
     let mut ids: Vec<i64> = Vec::with_capacity(document.chunks.len());
     for c in &document.chunks {
@@ -376,8 +378,7 @@ fn insert_chunks(
             c.title,
             parent_id,
             strength,
-            c.text,
-            terms,
+            own_text(lines.as_ref(), c),
         ])?;
         ids.push(chunk_id);
         let symbol_terms = c
@@ -387,6 +388,14 @@ fn insert_chunks(
         fts.execute(params![chunk_id, symbol_terms, path_terms, terms])?;
     }
     Ok(())
+}
+
+/// The text to store in `chunk.text`: `None` when `lines`, the document's
+/// stored text, holds the chunk's text as its line range.
+fn own_text<'a>(lines: Option<&LineStarts<'_>>, chunk: &ChunkRecord<'a>) -> Option<&'a str> {
+    let derivable =
+        lines.and_then(|l| l.span(chunk.start_line, chunk.end_line)) == Some(chunk.text);
+    (!derivable).then_some(chunk.text)
 }
 
 #[cfg(test)]
@@ -528,6 +537,81 @@ mod tests {
             .query_row("SELECT text FROM document", [], |row| row.get(0))
             .unwrap();
         assert_eq!(stored, text);
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_chunk_stores_only_text_its_document_does_not_hold() {
+        let (mut store, dir) = store("derive");
+        let id = store.upsert_source(&source("app")).unwrap();
+        let text = "/// Checks.\r\nfn validate() {\r\n    check();\r\n}\r\n\r\nfn check() {}\n";
+        let mut doc = document("src/lib.rs", text);
+        let chunk = |start, end, text| ChunkRecord {
+            kind: "window",
+            start_line: start,
+            end_line: end,
+            text,
+            symbol: None,
+            ..doc.chunks[0].clone()
+        };
+        doc.chunks = vec![
+            chunk(1, 4, "/// Checks.\r\nfn validate() {\r\n    check();\r\n}"),
+            chunk(6, 6, "fn check() {}"),
+            // Text that isn't its lines, as no chunker writes, is kept.
+            chunk(2, 2, "fn validate() {}"),
+            // So is a range past the last line.
+            chunk(7, 7, "gone"),
+        ];
+        store.write_document(id, &doc).unwrap();
+        let own = |store: &Store, sql: &str| -> Vec<Option<String>> {
+            let mut stmt = store.conn.prepare(sql).unwrap();
+            stmt.query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap()
+        };
+        assert_eq!(
+            own(&store, "SELECT text FROM chunk ORDER BY id"),
+            [
+                None,
+                None,
+                Some("fn validate() {}".into()),
+                Some("gone".into())
+            ]
+        );
+        // Readers cut the text from the document's.
+        let read = own(
+            &store,
+            "SELECT coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))
+             FROM chunk c JOIN document d ON d.id = c.document_id ORDER BY c.id",
+        );
+        let written: Vec<Option<String>> =
+            doc.chunks.iter().map(|c| Some(c.text.to_owned())).collect();
+        assert_eq!(read, written);
+        // Terms are split from the text at insert, and stored nowhere else.
+        assert_eq!(matches(&store, "terms:checks"), 1);
+        let columns = own(&store, "SELECT name FROM pragma_table_info('chunk')");
+        assert!(!columns.contains(&Some("terms".into())), "{columns:?}");
+
+        // A spec stores no text of its own, so its chunks keep theirs.
+        let spec = store
+            .upsert_source(&version("rfc9449", "ff", true))
+            .unwrap();
+        let mut page = document("rfc9449", "4.3.  Checking DPoP Proofs");
+        page.text = None;
+        page.chunks[0].symbol = None;
+        store.write_document(spec, &page).unwrap();
+        assert_eq!(
+            own(
+                &store,
+                &format!(
+                    "SELECT c.text FROM chunk c JOIN document d ON d.id = c.document_id
+                     WHERE d.source_id = {spec}"
+                )
+            ),
+            [Some("4.3.  Checking DPoP Proofs".into())]
+        );
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }
