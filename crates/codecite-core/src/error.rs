@@ -35,10 +35,21 @@ pub enum Error {
         path: PathBuf,
     },
 
-    /// The corpus's lock file couldn't be created or locked, for a reason
-    /// other than another run holding it.
+    /// The corpus's lock file couldn't be opened or created, as when its
+    /// directory is missing or not writable.
+    #[error("could not open the lock file {}: {source}", path.display())]
+    LockFileUnusable {
+        /// The lock file, `<corpus>.db.lock`.
+        path: PathBuf,
+        /// Why it couldn't be opened.
+        source: std::io::Error,
+    },
+
+    /// The corpus's lock file was opened but couldn't be locked, for a
+    /// reason other than another run holding it: a filesystem without
+    /// file locks.
     #[error(
-        "could not lock {} for an index run; the corpus must be on a local filesystem that supports file locks",
+        "could not lock {} for an index run ({source}); the corpus must be on a local filesystem that supports file locks",
         path.display()
     )]
     CorpusLockFailed {
@@ -290,6 +301,7 @@ impl Error {
             Error::InvalidCorpus { .. } => "invalid_corpus",
             Error::CorpusLocked { .. } => "corpus_locked",
             Error::CorpusLockFailed { .. } => "corpus_lock_failed",
+            Error::LockFileUnusable { .. } => "lock_file_unusable",
             Error::Sqlite(_) => "sqlite",
             Error::SchemaTooNew { .. } => "schema_too_new",
             Error::InvalidCorpusName { .. } => "invalid_corpus_name",

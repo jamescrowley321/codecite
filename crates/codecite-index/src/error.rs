@@ -10,7 +10,10 @@ pub enum Error {
 
     /// An index run failed, and so did rolling it back or recording it as
     /// failed. The run's own error is the source.
-    #[error("the index run failed, and so did recording it: {recording}")]
+    #[error(
+        "the index run failed, and so did recording it: {}",
+        crate::error::error_chain(recording)
+    )]
     RunNotRecorded {
         /// Why the run failed.
         #[source]
@@ -132,6 +135,24 @@ pub enum Error {
 
 /// `Result` with [`Error`] as the default error type.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
+
+/// An error's message followed by each of its sources', joined by `: `,
+/// so a failed run records "SQLite error: database or disk is full" rather
+/// than only the outermost "SQLite error".
+pub(crate) fn error_chain(err: &dyn std::error::Error) -> String {
+    let mut message = err.to_string();
+    let mut source = err.source();
+    while let Some(cause) = source {
+        let text = cause.to_string();
+        // A transparent wrapper repeats its source's message.
+        if !message.ends_with(&text) {
+            message.push_str(": ");
+            message.push_str(&text);
+        }
+        source = cause.source();
+    }
+    message
+}
 
 #[cfg(test)]
 mod tests {

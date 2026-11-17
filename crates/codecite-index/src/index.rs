@@ -100,31 +100,15 @@ pub fn index_corpus(
         store.publish_run(run, &counts)?;
         Ok(summary)
     });
-    published.map_err(|err| match store.fail_run(run, &error_chain(&err)) {
-        Ok(()) => err,
-        Err(recording) => Error::RunNotRecorded {
-            run: Box::new(err),
-            recording,
+    published.map_err(
+        |err| match store.fail_run(run, &crate::error::error_chain(&err)) {
+            Ok(()) => err,
+            Err(recording) => Error::RunNotRecorded {
+                run: Box::new(err),
+                recording,
+            },
         },
-    })
-}
-
-/// An error's message followed by each of its sources', joined by `: `,
-/// so a failed run records "SQLite error: database or disk is full" rather
-/// than only the outermost "SQLite error".
-fn error_chain(err: &dyn std::error::Error) -> String {
-    let mut message = err.to_string();
-    let mut source = err.source();
-    while let Some(cause) = source {
-        let text = cause.to_string();
-        // A transparent wrapper repeats its source's message.
-        if !message.ends_with(&text) {
-            message.push_str(": ");
-            message.push_str(&text);
-        }
-        source = cause.source();
-    }
-    message
+    )
 }
 
 /// Fetches and indexes every source, as [`index_corpus`] describes, inside
@@ -847,6 +831,7 @@ impl fmt::Display for IndexSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::error_chain;
     use crate::test_repo::{Remote, Repo};
     use crate::test_server::Server;
     use rusqlite::Connection;
@@ -1224,10 +1209,19 @@ mod tests {
         assert_eq!(error_chain(&plain), plain.to_string());
         let unrecorded = Error::RunNotRecorded {
             run: Box::new(plain),
-            recording: codecite_core::Error::Sqlite(rusqlite::Error::InvalidQuery),
+            recording: codecite_core::Error::Sqlite(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+                Some("database is locked".into()),
+            )),
         };
+        // The recording error's cause is in the message itself, not only
+        // in a chain that walks the run's error.
+        let message = unrecorded.to_string();
+        assert!(
+            message.contains("recording it: SQLite error: database is locked"),
+            "{message}"
+        );
         let chain = error_chain(&unrecorded);
-        assert!(chain.contains("recording it: SQLite error"), "{chain}");
         assert!(chain.contains("two sources are named `app`"), "{chain}");
     }
 

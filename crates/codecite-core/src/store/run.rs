@@ -175,11 +175,20 @@ impl Store {
     /// new connection is open, the store holds an empty in-memory database,
     /// so if opening fails, every later call on the store fails too rather
     /// than writing into a transaction that is never committed.
+    ///
+    /// The one exception is an in-memory database that can't be opened,
+    /// which happens only when memory runs out: the old connection then
+    /// can't be swapped out, so `ROLLBACK` is tried once more before the
+    /// error is returned.
     fn reopen(&mut self) -> Result<()> {
-        drop(std::mem::replace(
-            &mut self.conn,
-            Connection::open_in_memory()?,
-        ));
+        let placeholder = match Connection::open_in_memory() {
+            Ok(conn) => conn,
+            Err(e) => {
+                let _retried = self.conn.execute_batch("ROLLBACK");
+                return Err(e.into());
+            }
+        };
+        drop(std::mem::replace(&mut self.conn, placeholder));
         let fresh = Store::open_read_write(&self.path)?;
         self.conn = fresh.conn;
         Ok(())
@@ -200,8 +209,9 @@ fn lock_path(path: &Path) -> PathBuf {
 /// process forked by another thread holds a copy of the lock's file until
 /// it runs its program, which closes it.
 ///
-/// Any other failure to take the lock, such as a filesystem that has no
-/// file locks, is [`Error::CorpusLockFailed`]: the run stops rather than
+/// A lock file that can't be opened is [`Error::LockFileUnusable`]. Any
+/// other failure to take the lock, such as a filesystem that has no file
+/// locks, is [`Error::CorpusLockFailed`]: the run stops rather than
 /// go on unlocked, since SQLite's own locking, which WAL mode relies on, is
 /// no safer there.
 fn lock(path: &Path) -> Result<File> {
@@ -211,7 +221,10 @@ fn lock(path: &Path) -> Result<File> {
         .truncate(false)
         .write(true)
         .open(&lock_path)
-        .map_err(|e| lock_error(&lock_path, TryLockError::Error(e)))?;
+        .map_err(|source| Error::LockFileUnusable {
+            path: lock_path.clone(),
+            source,
+        })?;
     let deadline = Instant::now() + BUSY_TIMEOUT;
     loop {
         match file.try_lock() {
@@ -451,14 +464,25 @@ mod tests {
         let message = err.to_string();
         assert!(message.contains("/data/identity.db.lock"), "{message}");
         assert!(message.contains("local filesystem"), "{message}");
+    }
 
-        // Nor can a lock file that can't be created.
+    #[test]
+    fn a_lock_file_that_cannot_be_created_names_the_file_and_the_cause() {
         let dir = tempfile::tempdir().unwrap();
         let missing = dir.path().join("no-such-dir").join("corpus.db");
         let Err(err) = Store::open_for_index(&missing) else {
             panic!("locked a corpus in a missing directory");
         };
-        assert!(matches!(err, Error::CorpusLockFailed { .. }), "{err:?}");
+        let lock_file = dir.path().join("no-such-dir").join("corpus.db.lock");
+        assert!(
+            matches!(&err, Error::LockFileUnusable { path, source }
+                if *path == lock_file && source.kind() == std::io::ErrorKind::NotFound),
+            "{err:?}"
+        );
+        let message = err.to_string();
+        assert!(message.contains(&*lock_file.to_string_lossy()), "{message}");
+        assert!(message.contains("No such file"), "{message}");
+        assert!(!message.contains("local filesystem"), "{message}");
     }
 
     #[test]
