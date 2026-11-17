@@ -122,6 +122,11 @@ fn diff_prints_a_human_form() {
         text.contains("1. added · section 2.4 · REQUIRED\n"),
         "{text}"
     );
+    assert_eq!(
+        text.lines().nth(2),
+        Some(format!("instruction: {}", codecite_core::QUOTE_INSTRUCTION).as_str()),
+        "{text}"
+    );
     assert!(
         text.contains("   + exp\n   + REQUIRED. Expiration time.\n"),
         "{text}"

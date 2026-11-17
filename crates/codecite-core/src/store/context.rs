@@ -353,6 +353,7 @@ pub struct Rule {
     /// citation for all of it.
     pub truncated: bool,
     /// For a `quote` source: quote the rule exactly, with its citation.
+    /// For an `approach_only` one: never copy it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instruction: Option<String>,
 }

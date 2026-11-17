@@ -6,6 +6,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 
 use super::Store;
+use super::read::copy_instruction;
 use super::search::{MAX_SEARCH_LIMIT, code_citation, name_key, snippet};
 use crate::{Error, Result, Role};
 
@@ -68,6 +69,10 @@ pub struct Definition {
     pub providers: Vec<&'static str>,
     /// How sure they are: 3 exact, 2 extracted, 1 inferred, 0 ambiguous.
     pub confidence: u8,
+    /// For an `approach_only` source: describe the approach in your own
+    /// words, never copy the code.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instruction: Option<String>,
 }
 
 /// A matching definition, with what ranking and the qualified lookup need.
@@ -153,12 +158,14 @@ impl Store {
             let text: String = row.get(11)?;
             let role = Role::of(&path, &source_kind);
             let (snippet, snippet_truncated) = snippet(&text);
+            let license_class: String = row.get(9)?;
             let definition = Definition {
                 citation: code_citation(&source, &revision, &path, row.get(2)?, row.get(3)?),
                 symbol: row.get(12)?,
                 kind: row.get(1)?,
                 role: role.as_str(),
-                license_class: row.get(9)?,
+                instruction: copy_instruction(&license_class),
+                license_class,
                 indexed_at: row.get(10)?,
                 dirty: row.get(5)?,
                 snippet,
@@ -357,6 +364,11 @@ mod tests {
     }
 
     fn fixture() -> (tempfile::TempDir, Store) {
+        fixture_licensed("adapt")
+    }
+
+    /// The fixture, its one source of `license_class`.
+    fn fixture_licensed(license_class: &str) -> (tempfile::TempDir, Store) {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open_read_write(&dir.path().join("demo.db")).unwrap();
         let app = store
@@ -366,7 +378,7 @@ mod tests {
                 url: "/src/app",
                 revision: HEAD,
                 license_spdx: Some("MIT"),
-                license_class: "adapt",
+                license_class,
                 is_current: true,
                 obsoleted_by: None,
                 updated_by: None,
@@ -614,6 +626,73 @@ mod tests {
         );
         for not in ["callback", ".callback", "Client.", "a..b"] {
             assert_eq!(qualified(not), None, "{not}");
+        }
+    }
+
+    #[test]
+    fn approach_only_code_comes_with_the_instruction_not_to_copy_it() {
+        use crate::{
+            APPROACH_ONLY_INSTRUCTION, CiteOptions, GrepQuery, QUOTE_INSTRUCTION, ReadOptions,
+            SearchQuery,
+        };
+        for (class, expected) in [
+            ("approach_only", Some(APPROACH_ONLY_INSTRUCTION)),
+            ("adapt", None),
+            // A quote source's snippets carry none; its text is quoted
+            // from `read`, whose instruction says how.
+            ("quote", None),
+        ] {
+            let (_dir, store) = fixture_licensed(class);
+            let def = &store.definition("Client", false).unwrap().results[0];
+            assert_eq!(def.instruction.as_deref(), expected, "{class} definition");
+            let search = store
+                .search(&SearchQuery {
+                    text: "callback",
+                    language: None,
+                    path: None,
+                    only: None,
+                    limit: 5,
+                    allow_stale: false,
+                })
+                .unwrap();
+            assert!(!search.is_empty());
+            for hit in &search {
+                assert_eq!(hit.instruction.as_deref(), expected, "{class} search");
+            }
+            let grep = store
+                .grep(&GrepQuery {
+                    pattern: "callback",
+                    fixed: true,
+                    ignore_case: false,
+                    language: None,
+                    path: None,
+                    only: None,
+                    limit: 5,
+                    allow_stale: false,
+                })
+                .unwrap();
+            assert!(!grep.is_empty());
+            for found in &grep {
+                assert_eq!(found.instruction.as_deref(), expected, "{class} grep");
+            }
+            // The field is left out of the JSON when there is none.
+            let json = serde_json::to_value(def).unwrap();
+            assert_eq!(json.get("instruction").is_some(), expected.is_some());
+            let options = ReadOptions {
+                max_lines: 80,
+                allow_stale: false,
+            };
+            let read = store.read(&def.citation, &options).unwrap();
+            let cite = store
+                .cite(&def.citation, &CiteOptions { allow_stale: false })
+                .unwrap();
+            if class == "quote" {
+                assert_eq!(read.instruction.as_deref(), Some(QUOTE_INSTRUCTION));
+                assert_eq!(cite.instruction.as_deref(), Some(QUOTE_INSTRUCTION));
+                continue;
+            }
+            assert_eq!(read.instruction.as_deref(), expected, "{class} read");
+            assert_eq!(cite.instruction.as_deref(), expected, "{class} cite");
         }
     }
 }
