@@ -14,6 +14,17 @@ def queries(path):
     return tomllib.loads(Path(path).read_text())["query"]
 
 
+def line_span(text, start, end):
+    """Lines start..end (from 1) of a document's text, as codecite cuts a chunk's
+    text from it (crates/codecite-core/src/store/lines.rs)."""
+    starts = [0] + [i + 1 for i, c in enumerate(text) if c == "\n"]
+    if start < 1 or end < start or start - 1 >= len(starts) \
+            or (start > 1 and starts[start - 1] >= len(text)):
+        return None
+    stop = starts[end] if end < len(starts) else len(text)
+    return text[starts[start - 1]:stop].removesuffix("\n").removesuffix("\r")
+
+
 def spec_chunks(db):
     """Every spec section and step, old versions included, with the citation
     codecite gives it: by section number, as `spec_citation` in search.rs does,
@@ -22,15 +33,18 @@ def spec_chunks(db):
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     rows = con.execute("""
         select c.id, s.name, substr(s.revision,1,12), c.kind, c.number, c.anchor,
-               p.anchor, coalesce(c.title, p.title, ''), c.text, p.number, s.is_current,
-               p.title
+               p.anchor, coalesce(c.title, p.title, ''), coalesce(c.text, d.text), p.number,
+               s.is_current, p.title, c.text is null, c.start_line, c.end_line
         from chunk c join document d on d.id=c.document_id join source s on s.id=d.source_id
         left join chunk p on p.id=c.parent_id
         where s.kind='document'
         order by c.id""").fetchall()
     con.close()
     out = []
-    for cid, name, rev, kind, number, _, _, title, text, pnumber, current, ptitle in rows:
+    for cid, name, rev, kind, number, _, _, title, text, pnumber, current, ptitle, derived, \
+            start, end in rows:
+        if derived:  # a chunk of a document that keeps its text stores none (#249)
+            text = line_span(text, start, end)
         frag = f"section-{pnumber}/step-{number}" if kind == "step" else f"section-{number}"
         out.append(dict(id=cid, cite=f"{name}@sha256:{rev}#{frag}", title=title, text=text,
                         doc=name, parent_title=ptitle if kind == "step" else None,

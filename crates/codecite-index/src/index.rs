@@ -1013,7 +1013,7 @@ mod tests {
                 ),
                 chunks: rows(
                     "SELECT d.path, c.start_line, c.end_line, c.kind, c.symbol_id, c.number,
-                            c.anchor, c.title, c.strength, c.text, c.terms
+                            c.anchor, c.title, c.strength, c.text
                      FROM chunk c JOIN document d ON d.id = c.document_id
                      ORDER BY d.path, c.start_line, c.end_line, c.kind",
                 ),

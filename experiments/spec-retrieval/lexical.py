@@ -16,7 +16,7 @@ from pathlib import Path
 # -I leaves the script's directory off sys.path; the spike's modules live there.
 sys.path.insert(0, str(Path(__file__).parent))
 
-from bench import OUT, queries
+from bench import OUT, line_span, queries
 from titles import TITLES
 
 # Common English words, plus question words agents put in front of a query.
@@ -83,13 +83,19 @@ VARIANTS = {
 def rows(src):
     """Every chunk as (id, symbol terms, path terms, terms, title terms, is current spec, cite)."""
     out = []
+    # codecite stores no terms, and no text for a chunk of a document that keeps
+    # its own (#249): cut the text from the document's lines and split it here.
     for (cid, skind, name, rev, cur, path, kind, number, anchor, title, pnum, panchor, ptitle,
-         terms, sym) in src.execute("""
+         text, derived, start, end, sym) in src.execute("""
             select c.id, s.kind, s.name, substr(s.revision,1,12), s.is_current, d.path, c.kind,
-                   c.number, c.anchor, c.title, p.number, p.anchor, p.title, c.terms,
+                   c.number, c.anchor, c.title, p.number, p.anchor, p.title,
+                   coalesce(c.text, d.text), c.text is null, c.start_line, c.end_line,
                    sym.display_name
             from chunk c join document d on d.id=c.document_id join source s on s.id=d.source_id
             left join chunk p on p.id=c.parent_id left join symbol sym on sym.id=c.symbol_id"""):
+        if derived:
+            text = line_span(text, start, end)
+        terms = text_terms(text)
         spec = skind == "document"
         cite = None
         title_terms = ""

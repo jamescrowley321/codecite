@@ -645,6 +645,12 @@ fn index(corpus: &str, manifest: Option<PathBuf>, print_hashes: bool) -> anyhow:
     // this one's migrations.
     let mut store = Store::open_for_index(&path)
         .with_context(|| format!("opening corpus file {}", path.display()))?;
+    if let Some(err) = store.vacuum_error() {
+        eprintln!(
+            "warning: could not vacuum {} after upgrading it ({err}); its freed space stays until the next index run",
+            path.display()
+        );
+    }
     let clones = Clones::new(dirs.cache_dir().join("repos"));
     let summary = index_corpus(
         &mut store,
