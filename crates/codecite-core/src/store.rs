@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use rusqlite::config::DbConfig;
 use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionBehavior};
 
-use crate::{Error, Result};
+use crate::{Error, Result, Role};
 
 mod cite;
 pub use cite::{
@@ -69,7 +69,7 @@ struct Migration {
 ///
 /// A migration that changes how documents are split or their terms made
 /// sets `document.chunker_version` or `document.terms_version` to 0 for
-/// the documents it affects, from version 10 on, so the next index run
+/// the documents it affects, from version 11 on, so the next index run
 /// splits them again. Raising `codecite_index::CHUNKER_VERSION` or
 /// [`TERMS_VERSION`](crate::TERMS_VERSION) needs no migration at all.
 const MIGRATIONS: &[Migration] = &[
@@ -109,10 +109,15 @@ const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../migrations/0009_one_ranking.sql"),
         read_compatible: false,
     },
+    // Search reads the role weights and name keys it adds.
+    Migration {
+        sql: include_str!("../migrations/0010_rank_inputs.sql"),
+        read_compatible: false,
+    },
     // Adds the derived-data versions and `meta.tokenizer`, which no query
     // reads.
     Migration {
-        sql: include_str!("../migrations/0010_derived_versions.sql"),
+        sql: include_str!("../migrations/0011_derived_versions.sql"),
         read_compatible: true,
     },
 ];
@@ -125,6 +130,40 @@ const REFILL_FTS: u32 = 8;
 /// `PRAGMA application_id` of a codecite corpus: `cdct` in ASCII. A
 /// codecite file written before it was set has 0.
 pub const APPLICATION_ID: i32 = 0x6364_6374;
+
+/// The version whose migration stores what search ranks by: each
+/// document's role and weight and each symbol's name key.
+const RANK_INPUTS: u32 = 10;
+
+/// Sets every stored document's `role` and `role_weight` and every
+/// symbol's `name_key`, as the write path sets them, so an upgraded corpus
+/// ranks as a fresh index does. Version [`RANK_INPUTS`] adds the columns.
+fn fill_rank_inputs(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+    let documents: Vec<(i64, String, String, bool)> = tx
+        .prepare(
+            "SELECT d.id, d.path, s.kind, d.text IS NOT NULL
+             FROM document d JOIN source s ON s.id = d.source_id",
+        )?
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut set_role =
+        tx.prepare("UPDATE document SET role = ?2, role_weight = ?3 WHERE id = ?1")?;
+    for (id, path, source_kind, has_text) in documents {
+        let role = Role::of_stored(&path, &source_kind, has_text);
+        set_role.execute(rusqlite::params![id, role.as_str(), role.weight()])?;
+    }
+    let symbols: Vec<(String, String)> = tx
+        .prepare("SELECT id, display_name FROM symbol")?
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut set_key = tx.prepare("UPDATE symbol SET name_key = ?2 WHERE id = ?1")?;
+    for (id, display_name) in symbols {
+        set_key.execute(rusqlite::params![id, search::name_key(&display_name)])?;
+    }
+    Ok(())
+}
 
 /// The schema version this build creates and reads.
 pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
@@ -173,6 +212,10 @@ impl Store {
         }
         for (version, migration) in (1..).zip(MIGRATIONS).skip(found as usize) {
             tx.execute_batch(migration.sql)?;
+            // What search ranks by, for the rows stored before it.
+            if version == RANK_INPUTS {
+                fill_rank_inputs(&tx)?;
+            }
             tx.execute(
                 "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)
                  ON CONFLICT (key) DO UPDATE SET value = excluded.value",
@@ -1126,6 +1169,76 @@ mod tests {
     }
 
     #[test]
+    fn version_10_stores_rank_inputs_for_existing_rows() {
+        let dir = scratch("v9");
+        let path = dir.join("corpus.db");
+        // A version 9 corpus with a document of every role and two symbols,
+        // one of them with a non-ASCII name SQLite's lower() would not fold.
+        raw(&path)
+            .execute_batch(&format!(
+                "{}
+                 INSERT INTO meta (key, value) VALUES ('schema_version', '9');
+                 INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
+                   VALUES (1, 'app', 'git', 'https://x', 'abc', 'adapt', 'then'),
+                          (2, 'rfc', 'document', 'https://y', 'def', 'quote', 'then'),
+                          (3, 'page', 'document', 'https://z', 'ghi', 'quote', 'then');
+                 INSERT INTO document (id, source_id, path, language, content_hash, text)
+                   VALUES (1, 1, 'src/lib.rs', 'rust', x'01', 'fn a() {{}}'),
+                          (2, 1, 'tests/lib.rs', 'rust', x'02', 'fn b() {{}}'),
+                          (3, 1, 'examples/demo.rs', 'rust', x'03', 'fn c() {{}}'),
+                          (4, 1, 'README.md', 'markdown', x'04', '# App'),
+                          (5, 2, 'rfc', 'html', x'05', NULL),
+                          (6, 3, 'page', 'html', x'06', 'Sessions');
+                 INSERT INTO symbol (id, display_name, kind, document_id)
+                   VALUES ('a', 'validate_Token', 'function', 1),
+                          ('b', 'ÄrgerHelper', 'function', 2);",
+                up_to(9)
+            ))
+            .unwrap();
+
+        let store = Store::open_read_write(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+        let roles: Vec<(String, f64)> = store
+            .conn
+            .prepare("SELECT role, role_weight FROM document ORDER BY id")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let expected: Vec<(String, f64)> = [
+            ("src/lib.rs", "git", true),
+            ("tests/lib.rs", "git", true),
+            ("examples/demo.rs", "git", true),
+            ("README.md", "git", true),
+            ("rfc", "document", false),
+            ("page", "document", true),
+        ]
+        .into_iter()
+        .map(|(p, kind, has_text)| {
+            let role = crate::Role::of_stored(p, kind, has_text);
+            (role.as_str().to_owned(), role.weight())
+        })
+        .collect();
+        assert_eq!(roles, expected);
+        assert_eq!(
+            roles.iter().map(|(r, _)| r.as_str()).collect::<Vec<_>>(),
+            ["source", "test", "example", "docs", "spec", "docs"]
+        );
+        let keys: Vec<String> = store
+            .conn
+            .prepare("SELECT name_key FROM symbol ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(keys, ["validatetoken", "ärgerhelper"]);
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn a_migration_that_leaves_orphans_is_refused_unchanged() {
         let dir = scratch("orphans");
         let path = dir.join("corpus.db");
@@ -1243,28 +1356,28 @@ mod tests {
         fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// A version 9 corpus with one source and two documents.
-    fn version_9_file(path: &Path) {
+    /// A corpus at `version` with one source and two documents.
+    fn older_file(path: &Path, version: usize) {
         raw(path)
             .execute_batch(&format!(
                 "{}
-                 INSERT INTO meta (key, value) VALUES ('schema_version', '9'),
+                 INSERT INTO meta (key, value) VALUES ('schema_version', '{version}'),
                    ('indexed_at', strftime('%Y-%m-%dT%H:%M:%SZ', 'now')), ('max_age_days', '30');
                  INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
                    VALUES (1, 'app', 'local', '/src/app', 'abc', 'adapt', 'then');
                  INSERT INTO document (id, source_id, path, language, content_hash, text)
                    VALUES (1, 1, 'src/lib.rs', 'rust', x'01', 'fn a() {{}}'),
                           (2, 1, 'README.md', 'markdown', x'02', '# App');",
-                up_to(9)
+                up_to(version)
             ))
             .unwrap();
     }
 
     #[test]
-    fn version_10_stamps_stored_documents_and_records_the_tokenizer() {
-        let dir = scratch("v9");
+    fn version_11_stamps_stored_documents_and_records_the_tokenizer() {
+        let dir = scratch("v10-versions");
         let path = dir.join("corpus.db");
-        version_9_file(&path);
+        older_file(&path, 10);
 
         let store = Store::open_read_write(&path).unwrap();
         assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
@@ -1380,14 +1493,14 @@ mod tests {
     fn read_only_opens_a_read_compatible_older_schema_with_a_warning() {
         let dir = scratch("ro-compatible");
         let path = dir.join("corpus.db");
-        version_9_file(&path);
+        older_file(&path, 10);
         let before = fs::read(&path).unwrap();
 
         let store = Store::open_read_only(&path).unwrap();
-        assert_eq!(store.schema_version().unwrap(), 9);
+        assert_eq!(store.schema_version().unwrap(), 10);
         let warning = store.schema_warning().unwrap();
         assert!(
-            warning.contains(&format!("schema version 9, older than {SCHEMA_VERSION}"))
+            warning.contains(&format!("schema version 10, older than {SCHEMA_VERSION}"))
                 && warning.contains("codecite index"),
             "{warning}"
         );
@@ -1406,19 +1519,13 @@ mod tests {
     fn read_only_refuses_an_older_schema_behind_an_incompatible_migration() {
         let dir = scratch("ro-incompatible");
         let path = dir.join("corpus.db");
-        // Version 9 isn't read-compatible, so a version 8 file is refused.
-        raw(&path)
-            .execute_batch(&format!(
-                "{}
-                 INSERT INTO meta (key, value) VALUES ('schema_version', '8');",
-                up_to(8)
-            ))
-            .unwrap();
+        // Version 10 isn't read-compatible, so a version 9 file is refused.
+        older_file(&path, 9);
 
         let err = Store::open_read_only(&path).err().unwrap();
         assert!(
             matches!(&err, Error::InvalidCorpus { reason, .. }
-                if reason.contains("schema version 8") && reason.contains("codecite index")),
+                if reason.contains("schema version 9") && reason.contains("codecite index")),
             "{err:?}"
         );
         fs::remove_dir_all(&dir).unwrap();
