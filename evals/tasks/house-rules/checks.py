@@ -17,7 +17,9 @@ The enforcement is the start's, not the agent's: the checks run in a copy of
 the agent's backend with the start's pyproject.toml (Ruff's bans, the
 import-linter contracts), import_contracts.py and the house-rule tests laid
 over it, so an agent that loosens a rule's enforcement still breaks the rule;
-a start missing any of them is refused. They run the tools of HOUSE_RULES_VENV
+a start missing any of them is refused. Every other file that configures the
+tools (a ruff.toml, a nested pyproject.toml, a pytest.ini, a conftest.py) is
+the start's or gone, and the tools are pointed at the start's pyproject.toml. They run the tools of HOUSE_RULES_VENV
 (the scorer's environment built from the start; else the project's own
 `backend/.venv/bin`), offline. Ruff's bans ignore `# noqa`, so a comment can't
 excuse a banned API.
@@ -215,6 +217,25 @@ def static_checks(results, start: Path, project: Path, changed: dict[str, str], 
     check(results, "tenant-from-dependency", "§16", not dct, "; ".join(dct))
 
 
+# Files that configure Ruff, pytest or import-linter wherever they sit: the
+# agent's copy of any of them could outrank or extend the start's.
+CONFIGS = {"pyproject.toml", "ruff.toml", ".ruff.toml", "pytest.ini", ".pytest.ini", "tox.ini", "setup.cfg",
+           ".importlinter", "conftest.py"}
+
+
+def lay_start_configs(start_backend: Path, work_backend: Path) -> None:
+    """In the copy of the agent's backend, make every tool config and
+    conftest the start's: the start's version where the start has one at that
+    path, else none."""
+    for path in sorted(work_backend.rglob("*")):
+        if path.name in CONFIGS and path.is_file():
+            ours = start_backend / path.relative_to(work_backend)
+            if ours.is_file():
+                shutil.copy2(ours, path)
+            else:
+                path.unlink()
+
+
 def relative_name(filename: str, backend: Path) -> str:
     """A file Ruff reported, named from the backend. Ruff reports the resolved
     path, which a symlinked temp directory (macOS's /var) keeps from matching."""
@@ -233,11 +254,12 @@ def tool_checks(results, start: Path, project: Path, venv: Path, changed: dict[s
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(start / rel, dst)
         backend = work / "backend"
+        lay_start_configs(start / "backend", backend)
 
         # Ruff's house bans (§1, §4, §7) and lazy log calls (§8), over all of
         # app/; a `# noqa` doesn't excuse them.
         code, out, err = run([str(venv / "ruff"), "check", "--no-cache", "--select", "TID251,G004,G010", "--ignore-noqa",
-                              "--output-format", "json", "app"], backend)
+                              "--config", "pyproject.toml", "--output-format", "json", "app"], backend)
         try:
             found = json.loads(out or "[]")
         except ValueError:
@@ -260,7 +282,7 @@ def tool_checks(results, start: Path, project: Path, venv: Path, changed: dict[s
                 check(results, f"ruff-{rule}", rule, not hits, "; ".join(hits))
 
         # import-linter's contracts (§22, §23, §26, §27).
-        code, out, err = run([str(venv / "lint-imports"), "--no-cache"], backend)
+        code, out, err = run([str(venv / "lint-imports"), "--no-cache", "--config", "pyproject.toml"], backend)
         for contract, rule in CONTRACTS.items():
             m = re.search(re.escape(contract) + r"\s+(KEPT|BROKEN)", out)
             check(results, f"import-linter-{rule}", rule, bool(m and m.group(1) == "KEPT"),
@@ -269,7 +291,8 @@ def tool_checks(results, start: Path, project: Path, venv: Path, changed: dict[s
         # identity-stack's own house-rule tests, as the start had them.
         junit = work / "junit.xml"
         code, out, err = run(
-            [str(venv / "python"), "-m", "pytest", "-q", "-p", "no:cacheprovider", f"--junitxml={junit}",
+            [str(venv / "python"), "-m", "pytest", "-q", "-p", "no:cacheprovider", "-c", "pyproject.toml", "--rootdir", ".",
+             f"--junitxml={junit}",
              "tests/unit/test_house_rules.py", "tests/unit/test_router_authorization.py"],
             backend,
         )
@@ -293,7 +316,8 @@ def tool_checks(results, start: Path, project: Path, venv: Path, changed: dict[s
             if not files:
                 check(results, name, "control", True, control=True)
                 continue
-            code, out, err = run([str(venv / "ruff"), "check", "--no-cache", "--select", select, "--output-format", "concise", *files], backend)
+            code, out, err = run([str(venv / "ruff"), "check", "--no-cache", "--select", select, "--config", "pyproject.toml",
+                                  "--output-format", "concise", *files], backend)
             check(results, name, "control", code == 0, (out + err)[-800:] if code else "", control=True)
     finally:
         shutil.rmtree(work, ignore_errors=True)

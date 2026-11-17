@@ -154,6 +154,8 @@ class CorpusSandbox:
         self.log.append(("exec", cmd, kwargs))
         if cmd[0] == "python3":
             return ExecResult(success=True, returncode=0, stdout=json.dumps({"checks": self.checks}), stderr="")
+        if cmd[0] == "sh" and "tar -xf" not in cmd[-1]:
+            return ExecResult(success=True, returncode=0, stdout="", stderr="")
         if cmd[0] == "sh":
             ok = self.extracts
             return ExecResult(success=ok, returncode=0 if ok else 2, stdout="", stderr="" if ok else "tar: bad")
@@ -179,12 +181,20 @@ def check(name, passed, control=False):
     return {"name": name, "rule": "§1", "level": "MUST", "control": control, "passed": passed, "detail": ""}
 
 
+HIDDEN_CMD = ["/score/venv/bin/python", "-m", "pytest", "-q", "-p", "no:cacheprovider",
+              "-c", "/dev/null", "--rootdir=/score/hidden", "--confcutdir=/score/hidden", "/score/hidden"]
+
+
 def test_the_checks_run_on_a_verified_start_with_tools_built_from_it(monkeypatch):
     sb = CorpusSandbox([check("ruff-§1", True)])
     s = score(monkeypatch, sb)
     assert s.value == 1 and s.metadata["corpus"] == "s" and s.metadata["violations"] == 0
     execs = [e for e in sb.log if e[0] == "exec"]
-    (_, extract, _), (_, venv, venv_kw), (_, tests, kw), (_, checks, checks_kw) = execs
+    (_, clear, _), (_, extract, _), (_, venv, venv_kw), (_, checks, checks_kw), (_, again, _), (_, venv2, _), (_, tests, kw) = execs
+    # All of /score goes first, so nothing the agent left there (a pytest.ini,
+    # a conftest.py) is in reach of the hidden tests.
+    assert clear == ["sh", "-c", "rm -rf /score && mkdir -p /score/hidden"]
+    assert sb.log[0] == ("exec", clear, {"timeout": 120})
     # The start the agent may have rewritten is read, verified on the host and
     # written back to a fresh path; the old /score/start and venv go first.
     assert ("write", "/score/start.tar", START) in sb.log
@@ -194,14 +204,47 @@ def test_the_checks_run_on_a_verified_start_with_tools_built_from_it(monkeypatch
     assert venv == ["uv", "sync", "--locked", "--no-install-project"]
     assert venv_kw["cwd"] == "/score/start/backend" and venv_kw["env"]["UV_PROJECT_ENVIRONMENT"] == "/score/venv"
     assert venv_kw["env"]["UV_OFFLINE"] == "1"
-    assert tests == ["/score/venv/bin/python", "-m", "pytest", "-q", "-p", "no:cacheprovider", "/score/hidden"]
-    assert kw["cwd"] == f"{task.PROJECT}/backend" and kw["env"]["UV_OFFLINE"] == "1"
+    # checks.py runs before any of the agent's code has run as root since the
+    # verification; the hidden tests, which run it, come after, on a venv
+    # built afresh, with pytest's config pinned to the hidden directory.
     assert checks == ["python3", "-I", "/score/checks.py", "/score/start", task.PROJECT]
     assert checks_kw["env"]["HOUSE_RULES_VENV"] == "/score/venv/bin"
-    writes = {e[1] for e in sb.log if e[0] == "write"}
-    assert {"/score/hidden/test_hidden.py", "/score/hidden/conftest.py", "/score/checks.py"} <= writes
-    # Nothing reaches the sandbox before scoring writes it: the writes come first.
-    assert [e[0] for e in sb.log][:3] == ["write"] * 3
+    assert again == ["sh", "-c", "rm -rf /score/venv"] and venv2 == venv
+    assert tests == HIDDEN_CMD
+    assert kw["cwd"] == f"{task.PROJECT}/backend" and kw["env"]["UV_OFFLINE"] == "1"
+    writes = [e[1] for e in sb.log if e[0] == "write"]
+    assert {"/score/hidden/test_hidden.py", "/score/hidden/conftest.py", "/score/checks.py"} == set(writes[:3])
+    # Nothing reaches the sandbox before scoring writes it: after the clear, the writes come first.
+    assert [e[0] for e in sb.log][1:4] == ["write"] * 3
+
+
+def test_a_venv_that_cant_be_rebuilt_fails_the_hidden_tests(monkeypatch):
+    class Once(CorpusSandbox):
+        builds = 0
+
+        async def exec(self, cmd, **kwargs):
+            if cmd[0] == "uv":
+                self.builds += 1
+                self.venv = self.builds == 1
+            return await super().exec(cmd, **kwargs)
+
+    sb = Once([check("ruff-§1", True)])
+    s = score(monkeypatch, sb)
+    assert s.value == 0 and not s.metadata["tests_passed"] and "uv: offline" in s.metadata["tests_tail"]
+    assert not [e for e in sb.log if e[0] == "exec" and e[1][0] == "/score/venv/bin/python"]
+
+
+def test_the_start_is_read_as_a_plain_tarball_only():
+    import gzip
+
+    with pytest.raises(tarfile.TarError):
+        task.tree_digest(gzip.compress(START))
+
+
+def test_a_start_past_the_size_cap_is_refused(monkeypatch):
+    monkeypatch.setattr(task, "MAX_START", len(START) - 1)
+    with pytest.raises(tarfile.TarError, match="larger than"):
+        task.tree_digest(START)
 
 
 @pytest.mark.parametrize(
@@ -281,6 +324,30 @@ def test_ruff_findings_are_named_from_the_backend_behind_a_symlink(tmp_path):
 def test_the_gating_ruff_run_ignores_noqa():
     source = (config.task_dir(TASK) / "checks.py").read_text()
     assert '"--select", "TID251,G004,G010", "--ignore-noqa"' in source
+
+
+def test_only_the_starts_tool_configs_and_conftests_reach_the_checks(tmp_path):
+    checks = checks_module()
+    start, work = tmp_path / "start" / "backend", tmp_path / "work" / "backend"
+    for rel, text in {"pyproject.toml": "start", "tests/unit/conftest.py": "start", "tests/unit/domain/conftest.py": "start"}.items():
+        (start / rel).parent.mkdir(parents=True, exist_ok=True)
+        (start / rel).write_text(text)
+    agent = ["ruff.toml", ".ruff.toml", "app/ruff.toml", "app/.ruff.toml", "app/pyproject.toml", "pytest.ini",
+             "tox.ini", "setup.cfg", ".importlinter", "conftest.py", "tests/conftest.py", "app/conftest.py"]
+    for rel in [*agent, "pyproject.toml", "tests/unit/conftest.py", "tests/unit/domain/conftest.py", "app/main.py"]:
+        (work / rel).parent.mkdir(parents=True, exist_ok=True)
+        (work / rel).write_text("agent")
+    checks.lay_start_configs(start, work)
+    assert not [rel for rel in agent if (work / rel).exists()]
+    assert (work / "pyproject.toml").read_text() == "start"
+    assert (work / "tests/unit/domain/conftest.py").read_text() == "start"
+    assert (work / "app/main.py").read_text() == "agent"
+
+
+def test_the_tools_run_on_the_starts_config_alone():
+    source = (config.task_dir(TASK) / "checks.py").read_text()
+    assert source.count('"--config", "pyproject.toml"') == 3  # both ruff runs and lint-imports
+    assert '"-c", "pyproject.toml", "--rootdir", "."' in source
 
 
 def log(task_name, args):

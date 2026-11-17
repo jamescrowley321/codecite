@@ -36,6 +36,10 @@
     "-q",
     "-p",
     "no:cacheprovider",
+    "-c",
+    "/dev/null",
+    "--rootdir={hidden}",
+    "--confcutdir={hidden}",
     "{hidden}"
   ]
 }

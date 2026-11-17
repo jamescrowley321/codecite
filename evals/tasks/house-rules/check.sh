@@ -121,7 +121,9 @@ git -C "$WORK/reference" apply "$HERE/reference/solution.patch" 2>/dev/null \
 echo "== identity-stack's environment, as the scorer builds it (task.json score_setup)" >&2
 (cd "$WORK/start/backend" && uv sync --locked --no-install-project -q)
 VENV="$WORK/start/backend/.venv/bin"
-hidden() { (cd "$1/backend" && PYTHONDONTWRITEBYTECODE=1 "$VENV/python" -m pytest -q -p no:cacheprovider "$HERE/hidden" "${@:2}"); }
+# As task.json's score runs them: pytest's config pinned to the hidden directory.
+hidden() { (cd "$1/backend" && PYTHONDONTWRITEBYTECODE=1 "$VENV/python" -m pytest -q -p no:cacheprovider -c /dev/null \
+  --rootdir="$HERE/hidden" --confcutdir="$HERE/hidden" "$HERE/hidden" "${@:2}"); }
 
 echo "== the hidden tests fail on the start" >&2
 if hidden "$WORK/start" >/dev/null 2>&1; then

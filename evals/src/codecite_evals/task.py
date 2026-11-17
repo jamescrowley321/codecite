@@ -60,6 +60,8 @@ PROJECT_START = "/opt/project-start.tar"
 # environment it builds from it for the hidden tests and checks.
 SCORE_START = "/score/start"
 SCORE_VENV = "/score/venv"
+# The largest start tarball the scorer reads: identity-stack's is under 4 MiB.
+MAX_START = 64 * 1024 * 1024
 CODECITE = "/opt/codecite/bin/codecite"
 CODECITE_TOOLS = ["mcp__codecite__search", "mcp__codecite__read", "mcp__codecite__requirements"]
 PI_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"]
@@ -466,15 +468,22 @@ def tree_digest(data: bytes) -> str:
     """A tarball's digest over what it holds: each member's path with its
     content's sha256 (a regular file), its target (a link) or its type, sorted
     by path, so neither member order, mtimes nor git's pax header move it.
-    Raises tarfile.TarError for bytes that aren't a tarball."""
+    The tarball comes from a sandbox an agent ran in as root, so only a plain
+    one (the image writes it uncompressed) up to MAX_START is read, and each
+    file is hashed in chunks. Raises tarfile.TarError for anything else."""
+    if len(data) > MAX_START:
+        raise tarfile.TarError(f"{len(data)} bytes, larger than {MAX_START}")
     entries = []
-    with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as tar:
         for m in tar:
             name = m.name.removeprefix("./").rstrip("/")
             if m.isdir():
                 continue
             if m.isfile():
-                what = "f " + hashlib.sha256(tar.extractfile(m).read()).hexdigest()
+                h, f = hashlib.sha256(), tar.extractfile(m)
+                while chunk := f.read(1 << 20):
+                    h.update(chunk)
+                what = "f " + h.hexdigest()
             elif m.issym() or m.islnk():
                 what = f"{'l' if m.issym() else 'h'} {m.linkname}"
             else:
@@ -507,11 +516,22 @@ async def verified_start(sb, meta: dict) -> str | None:
     if digest != meta["corpus"]["start_sha256"]:
         return f"{PROJECT_START} does not match task.json's start_sha256 (got {digest})"
     await sb.write_file("/score/start.tar", data)
-    steps = [
-        (["sh", "-c", f"rm -rf {SCORE_START} {SCORE_VENV} && mkdir -p {SCORE_START} && tar -xf /score/start.tar -C {SCORE_START}"], {}),
-        (meta["score_setup"], {"cwd": posixpath.join(SCORE_START, meta["workdir"]),
-                               "env": {**offline_env(meta["language"]), "UV_PROJECT_ENVIRONMENT": SCORE_VENV}}),
-    ]
+    extract = ["sh", "-c", f"rm -rf {SCORE_START} {SCORE_VENV} && mkdir -p {SCORE_START} && tar -xf /score/start.tar -C {SCORE_START}"]
+    return await run_steps(sb, [(extract, {}), score_venv(meta)])
+
+
+def score_venv(meta: dict) -> tuple[list[str], dict]:
+    """The command, and its cwd and env, that builds SCORE_VENV offline from
+    the start's lockfile (task.json score_setup)."""
+    return meta["score_setup"], {
+        "cwd": posixpath.join(SCORE_START, meta["workdir"]),
+        "env": {**offline_env(meta["language"]), "UV_PROJECT_ENVIRONMENT": SCORE_VENV},
+    }
+
+
+async def run_steps(sb, steps) -> str | None:
+    """Run each (command, exec kwargs) in turn; None when all succeed, else
+    why the first that didn't failed."""
     for cmd, kw in steps:
         try:
             result = await sb.exec(cmd, timeout=300, **kw)
@@ -523,25 +543,34 @@ async def verified_start(sb, meta: dict) -> str | None:
 
 
 async def score_corpus(sb, task_dir: Path, meta: dict) -> tuple[bool, str, list]:
-    """A size-dial task: its hidden tests, run from its workdir, then its
-    checks against the project as the image built it, both with the tools of
-    an environment built from that start (verified_start). A check marked
-    `control` is reported and never fails the sample."""
-    for f in (task_dir / "hidden").glob("*.py"):
+    """A size-dial task: its checks against the project as the image built
+    it, then its hidden tests from its workdir, both with the tools of an
+    environment built from that start (verified_start). /score is cleared
+    first, so nothing the agent left there reaches either. The checks run
+    first, before any of the agent's code has run as root since the start was
+    verified; the hidden tests run it, on a venv built afresh after the
+    checks, with pytest's config pinned to the hidden directory. A check
+    marked `control` is reported and never fails the sample."""
+    await sb.exec(["sh", "-c", "rm -rf /score && mkdir -p /score/hidden"], timeout=120)
+    for f in sorted((task_dir / "hidden").glob("*.py")):
         await sb.write_file(f"/score/hidden/{f.name}", f.read_text())
     await sb.write_file("/score/checks.py", (task_dir / "checks.py").read_text())
     if why := await verified_start(sb, meta):
         return False, f"not run: {why}"[-1500:], start_failed(why)
     venv = f"{SCORE_VENV}/bin"
-    cmd = [{"{hidden}": "/score/hidden"}.get(arg, arg).replace("{venv}", venv) for arg in meta["score"]]
-    cwd = posixpath.normpath(posixpath.join(PROJECT, meta["workdir"]))
-    tests_passed, tests_tail = await run_hidden(sb, cmd, cwd, offline_env(meta["language"]))
     try:
         checks = await sb.exec(["python3", "-I", "/score/checks.py", SCORE_START, PROJECT],
                                env={"HOUSE_RULES_VENV": venv}, timeout=300)
         results = json.loads(checks.stdout)["checks"] if checks.success else []
     except (TimeoutError, ValueError, KeyError, TypeError):
         results = []
+    # The checks ran the agent's code (the house-rule tests import it), so the
+    # hidden tests get a venv built afresh.
+    if why := await run_steps(sb, [(["sh", "-c", f"rm -rf {SCORE_VENV}"], {}), score_venv(meta)]):
+        return False, f"not run: {why}"[-1500:], results
+    cmd = [arg.replace("{hidden}", "/score/hidden").replace("{venv}", venv) for arg in meta["score"]]
+    cwd = posixpath.normpath(posixpath.join(PROJECT, meta["workdir"]))
+    tests_passed, tests_tail = await run_hidden(sb, cmd, cwd, offline_env(meta["language"]))
     return tests_passed, tests_tail, results
 
 

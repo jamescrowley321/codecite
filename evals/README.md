@@ -167,7 +167,10 @@ p95 guardrail of 150 ms.
   service or the request model. `checks.py` runs identity-stack's own
   enforcement as the start had it (Ruff's bans, import-linter's contracts and
   the house-rule tests, laid over a copy of the agent's tree so loosening
-  them doesn't help, with Ruff ignoring `# noqa`) plus its own reuse checks (no settings, HTTP or logging
+  them doesn't help: every other ruff.toml, nested pyproject.toml, pytest or
+  tox ini, setup.cfg, .importlinter and conftest.py the agent left is dropped,
+  the tools are pointed at the start's pyproject.toml, and Ruff ignores
+  `# noqa`) plus its own reuse checks (no settings, HTTP or logging
   library in place of `app.knobs`, `app.outbound`, `app.logbook`; new routes
   answer through `result_to_response` and take the tenant from
   `get_tenant_id`). A run passes only with the hidden tests passing and no
@@ -179,11 +182,15 @@ p95 guardrail of 150 ms.
   task.json's `corpus.start_sha256` (which `check.sh` recomputes from the
   pin), and runs the hidden tests and checks with tools from a fresh
   environment built offline from that start's lockfile (`score_setup`), not
-  the agent's `.venv`. A mismatch fails the sample as `scorer-start`. What
+  the agent's `.venv`. A mismatch fails the sample as `scorer-start`. All of
+  `/score` is cleared before the scorer writes into it, the checks run before
+  the hidden tests (so before the agent's code runs again), the hidden tests
+  get a venv built afresh after them, and their pytest config is pinned to
+  the hidden directory (`-c /dev/null`, `--rootdir`, `--confcutdir`). What
   stays open is an agent that rewrites the system tools themselves (`uv`'s
   cache, `python3`, `tar`) or leaves a process running to tamper after it
   exits; nothing short of scoring in a second container closes that.
-  `planted.sh` plants nineteen rule breaks and
+  `planted.sh` plants twenty-one rule breaks and
   hand-rolled helpers on the reference (`reference/solution.patch`) and shows
   each caught. `probe.toml` holds the memorization probe: three questions
   only the rule layer answers, for a model asked with no files; no runner

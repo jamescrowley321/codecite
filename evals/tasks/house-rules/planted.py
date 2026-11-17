@@ -4,7 +4,7 @@ or one helper hand-rolled, each of which must fail.
     python3 planted.py <reference tree> <venv bin> <hidden dir> <checks.py> <start tree> [variant ...]
 
 Each variant copies the reference tree, applies its edits (exact text, which
-must occur once) and names what must catch it: a check of checks.py by name,
+must occur once; with no text, a new file) and names what must catch it: a check of checks.py by name,
 or `hidden` for the hidden tests. Behaviour-preserving variants must leave the
 hidden tests passing, so a planted rule break is caught by the rule check, not
 by a broken feature. Exits non-zero when a variant isn't caught.
@@ -69,6 +69,14 @@ VARIANTS = {
         [(ROLE, "async with outbound_client(timeout=_CATALOGUE_TIMEOUT) as client:",
           "async with httpx.AsyncClient(timeout=_CATALOGUE_TIMEOUT) as client:  # noqa: TID251"),
          (ROLE, "import uuid\n", "import uuid\n\nimport httpx  # noqa: TID251\n")],
+        ["ruff-§4"],
+        True,
+    ),
+    # §4: the same, with a ruff.toml of the agent's that drops the bans.
+    "ruff-toml": (
+        [(ROLE, "async with outbound_client(timeout=_CATALOGUE_TIMEOUT) as client:", "async with httpx.AsyncClient(timeout=_CATALOGUE_TIMEOUT) as client:"),
+         (ROLE, "import uuid\n", "import uuid\n\nimport httpx\n"),
+         ("backend/app/services/ruff.toml", None, '[lint]\nselect = ["E"]\n')],
         ["ruff-§4"],
         True,
     ),
@@ -139,6 +147,14 @@ VARIANTS = {
         ["test_public_service_methods_open_their_own_span"],
         True,
     ),
+    # §20: the same, with a conftest.py of the agent's that passes every test.
+    "conftest-pass": (
+        [(ROLE, 'with tracer.start_as_current_span("RoleService.import_roles") as span:', 'with tracer.start_as_current_span("roles.import") as span:'),
+         ("backend/conftest.py", None, "import pytest\n\n\n@pytest.hookimpl(hookwrapper=True)\n"
+          "def pytest_runtest_makereport(item, call):\n    outcome = yield\n    outcome.get_result().outcome = \"passed\"\n")],
+        ["test_public_service_methods_open_their_own_span"],
+        True,
+    ),
     # §23: the domain logs.
     "impure-domain": (
         [(VALUES, "import re\n", "import logging\nimport re\n"),
@@ -178,6 +194,11 @@ VARIANTS = {
 def apply(tree: Path, edits) -> None:
     for rel, old, new in edits:
         path = tree / rel
+        if old is None:
+            if path.exists():
+                raise SystemExit(f"planted: {rel} exists already")
+            path.write_text(new)
+            continue
         text = path.read_text()
         if text.count(old) != 1:
             raise SystemExit(f"planted: {rel} holds {text.count(old)} copies of {old[:60]!r}, not one")
@@ -186,7 +207,9 @@ def apply(tree: Path, edits) -> None:
 
 def hidden_pass(tree: Path, venv: Path, hidden: Path) -> bool:
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
-    p = subprocess.run([str(venv / "python"), "-m", "pytest", "-q", "-p", "no:cacheprovider", str(hidden)],
+    # As task.json's score runs them: pytest's config pinned to the hidden directory.
+    p = subprocess.run([str(venv / "python"), "-m", "pytest", "-q", "-p", "no:cacheprovider", "-c", "/dev/null",
+                        f"--rootdir={hidden}", f"--confcutdir={hidden}", str(hidden)],
                        cwd=tree / "backend", capture_output=True, text=True, env=env, timeout=600)
     return p.returncode == 0
 

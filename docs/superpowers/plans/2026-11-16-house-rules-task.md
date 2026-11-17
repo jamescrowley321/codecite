@@ -48,7 +48,7 @@ freezing) is the existing harness.
 1. Reference solution on identity-stack at the pin; hidden tests written
    against it, failing on the start (20 of 26) and passing with it.
 2. `checks.py`; passes the start and the reference with every control.
-3. `planted.py`/`planted.sh`: seventeen rule breaks and hand-rolled helpers,
+3. `planted.py`/`planted.sh`: twenty-one rule breaks and hand-rolled helpers,
    each caught by its rule's check or by the hidden tests.
 4. `rules.toml`: the rule layer with kind, checks and citation;
    `check.sh` proves the task, manifests and rules consistent.
