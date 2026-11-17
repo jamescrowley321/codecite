@@ -332,8 +332,36 @@ impl Store {
         let reach = by_distance
             .get(limit.saturating_sub(1))
             .map_or(u32::MAX, |&(d, _)| d);
+        let candidates: Vec<(u32, &String)> = by_distance
+            .into_iter()
+            .filter(|&(d, _)| d <= reach)
+            .collect();
+        // Where each candidate is defined, in one query, to rank them; only
+        // the ones kept are looked up in full.
+        let places: HashMap<String, Place> = {
+            let ids: Vec<&String> = candidates.iter().map(|&(_, id)| id).collect();
+            let ids = serde_json::to_string(&ids).unwrap_or_else(|_| "[]".into());
+            let mut stmt = self.conn.prepare_cached(
+                "SELECT sym.id, s.name, d.path, sym.start_line FROM json_each(?1) j
+                 JOIN symbol sym ON sym.id = j.value
+                 JOIN document d ON d.id = sym.document_id
+                 JOIN source s ON s.id = d.source_id
+                 WHERE s.is_current",
+            )?;
+            let rows = stmt.query_map([ids], |row| {
+                Ok((row.get(0)?, (row.get(1)?, row.get(2)?, row.get(3)?)))
+            })?;
+            rows.collect::<rusqlite::Result<_>>()?
+        };
+        let mut ranked: Vec<(u32, Option<&Place>, &String)> = candidates
+            .into_iter()
+            .map(|(d, id)| (d, places.get(id), id))
+            .collect();
+        // Nearest first; at one distance, the corpus's definitions in file
+        // and line order, then symbols defined outside it, by ID.
+        ranked.sort_by(|a, b| (a.0, a.1.is_none(), a.1, a.2).cmp(&(b.0, b.1.is_none(), b.1, b.2)));
         let mut nodes = Vec::new();
-        for (distance, node) in by_distance.into_iter().filter(|&(d, _)| d <= reach) {
+        for (distance, _, node) in ranked.into_iter().take(limit) {
             nodes.push(self.graph_node(
                 node,
                 distance,
@@ -342,21 +370,6 @@ impl Store {
                 query.min_confidence,
             )?);
         }
-        // Nearest first; at one distance, the corpus's definitions in file
-        // and line order, then symbols defined outside it, by ID.
-        nodes.sort_by(|(a, a_at), (b, b_at)| {
-            (a.distance, a_at.is_none(), a_at, &a.id).cmp(&(
-                b.distance,
-                b_at.is_none(),
-                b_at,
-                &b.id,
-            ))
-        });
-        let nodes: Vec<GraphNode> = nodes
-            .into_iter()
-            .take(limit)
-            .map(|(node, _)| node)
-            .collect();
         Ok(Graph {
             symbol: query.symbol.into(),
             id,
@@ -368,8 +381,7 @@ impl Store {
     }
 
     /// One reached symbol, with its definition when the corpus has one and
-    /// the call that links it to a symbol one edge nearer, and where its
-    /// definition is (source, path and first line) to sort by.
+    /// the call that links it to a symbol one edge nearer.
     fn graph_node(
         &self,
         node: &str,
@@ -377,7 +389,7 @@ impl Store {
         distances: &HashMap<String, u32>,
         (near, far): (&str, &str),
         min_confidence: u8,
-    ) -> Result<(GraphNode, Option<Place>)> {
+    ) -> Result<GraphNode> {
         // The edges between `node` and the symbols one step nearer, the
         // nearest by ID first, its providers' rows together.
         let mut stmt = self.conn.prepare_cached(&format!(
@@ -416,35 +428,28 @@ impl Store {
                  FROM symbol sym
                  JOIN document d ON d.id = sym.document_id
                  JOIN source s ON s.id = d.source_id
-                 WHERE sym.id = ?1",
+                 WHERE sym.id = ?1 AND s.is_current",
             )?
             .query_row([node], |row| {
                 let path: String = row.get(4)?;
                 let source: String = row.get(5)?;
                 let revision: String = row.get(6)?;
-                let start: u32 = row.get(2)?;
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, Option<String>>(1)?,
-                    code_citation(&source, &revision, &path, start, row.get(3)?),
+                    code_citation(&source, &revision, &path, row.get(2)?, row.get(3)?),
                     row.get::<_, String>(7)?,
                     row.get::<_, String>(8)?,
-                    (source, path, start),
                 ))
             })
             .optional()?;
-        let (name, kind, citation, license_class, indexed_at, at) = match defined {
-            Some((name, kind, citation, class, indexed, at)) => (
-                name,
-                kind,
-                Some(citation),
-                Some(class),
-                Some(indexed),
-                Some(at),
-            ),
-            None => (descriptor_name(node), None, None, None, None, None),
+        let (name, kind, citation, license_class, indexed_at) = match defined {
+            Some((name, kind, citation, class, indexed)) => {
+                (name, kind, Some(citation), Some(class), Some(indexed))
+            }
+            None => (descriptor_name(node), None, None, None, None),
         };
-        let node = GraphNode {
+        Ok(GraphNode {
             id: node.into(),
             name,
             kind,
@@ -456,8 +461,7 @@ impl Store {
             confidence,
             license_class,
             indexed_at,
-        };
-        Ok((node, at))
+        })
     }
 
     /// One line of a stored document, cited, or `None` when the document
@@ -467,7 +471,7 @@ impl Store {
             .conn
             .prepare_cached(
                 "SELECT d.path, s.name, s.revision FROM document d
-                 JOIN source s ON s.id = d.source_id WHERE d.id = ?1",
+                 JOIN source s ON s.id = d.source_id WHERE d.id = ?1 AND s.is_current",
             )?
             .query_row([document_id], |row| {
                 let path: String = row.get(0)?;
@@ -489,7 +493,12 @@ impl Store {
         self.check_fresh(allow_stale)?;
         let exact: Option<String> = self
             .conn
-            .prepare_cached("SELECT provider FROM symbol WHERE id = ?1")?
+            .prepare_cached(
+                "SELECT sym.provider FROM symbol sym
+                 JOIN document d ON d.id = sym.document_id
+                 JOIN source s ON s.id = d.source_id
+                 WHERE sym.id = ?1 AND s.is_current",
+            )?
             .query_row([name], |row| row.get(0))
             .optional()?;
         match exact.as_deref() {
@@ -504,7 +513,12 @@ impl Store {
         // A symbol defined outside the corpus, which only occurrences name.
         let occurs: bool = self
             .conn
-            .prepare_cached("SELECT EXISTS (SELECT 1 FROM occurrence WHERE symbol_id = ?1)")?
+            .prepare_cached(
+                "SELECT EXISTS (SELECT 1 FROM occurrence o
+                   JOIN document d ON d.id = o.document_id
+                   JOIN source s ON s.id = d.source_id
+                   WHERE o.symbol_id = ?1 AND s.is_current)",
+            )?
             .query_row([name], |row| row.get(0))?;
         if occurs {
             return Ok(name.into());

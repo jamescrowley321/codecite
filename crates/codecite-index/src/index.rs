@@ -18,7 +18,7 @@ use crate::{
     Checkout, Chunker, Clones, DocumentSource, Error, Fetcher, GitSource, GuidanceError,
     GuidanceRule, GuidanceSource, Language, LicenseClass, LocalSource, LocalTree,
     MAX_DOCUMENT_SIZE, Manifest, Result, SkipReason, Source, SpecError, SpecSection, WalkOptions,
-    document::split_document, read_scip, split_guidance, split_spec, walk_local,
+    decode_scip, document::split_document, read_scip_bytes, split_guidance, split_spec, walk_local,
 };
 
 /// What an index run did.
@@ -47,6 +47,9 @@ pub struct IndexSummary {
     pub unpinned_guidance: Vec<String>,
     /// What each source's SCIP index added, by source name.
     pub scip: Vec<(String, ScipSummary)>,
+    /// Sources whose SCIP index has no `scip_sha256` pin, so its symbols and
+    /// edges reach agents whatever the file says now.
+    pub unpinned_scip: Vec<String>,
     /// How long the run took.
     pub elapsed: Duration,
 }
@@ -137,9 +140,9 @@ pub fn index_corpus(
     // and decoded before anything is written.
     let mut scip: Vec<Option<Vec<ScipDocument>>> = Vec::with_capacity(manifest.sources.len());
     for source in &manifest.sources {
-        let (name, path) = match source {
+        let (name, path, pin) = match source {
             Source::Git(git) if git.license_class != LicenseClass::Excluded => {
-                (git_name(git), git.scip.as_ref())
+                (git_name(git), git.scip.as_ref(), git.scip_sha256.as_ref())
             }
             Source::Local(local) if local.license_class != LicenseClass::Excluded => (
                 local
@@ -147,17 +150,34 @@ pub fn index_corpus(
                     .clone()
                     .unwrap_or_else(|| local.path.display().to_string()),
                 local.scip.as_ref(),
+                local.scip_sha256.as_ref(),
             ),
-            _ => (String::new(), None),
+            _ => (String::new(), None, None),
         };
-        scip.push(match path {
-            Some(path) => Some(read_scip(path).map_err(|source| Error::Scip {
-                name,
-                path: path.clone(),
-                source,
-            })?),
-            None => None,
-        });
+        let Some(path) = path else {
+            scip.push(None);
+            continue;
+        };
+        let failed = |source| Error::Scip {
+            name: name.clone(),
+            path: path.clone(),
+            source,
+        };
+        let bytes = read_scip_bytes(path).map_err(failed)?;
+        let actual = crate::fetch::hex(&Sha256::digest(&bytes));
+        match pin {
+            Some(expected) if *expected != actual => {
+                return Err(Error::ScipChanged {
+                    name,
+                    path: path.clone(),
+                    expected: expected.clone(),
+                    actual,
+                });
+            }
+            Some(_) => {}
+            None => summary.unpinned_scip.push(name.clone()),
+        }
+        scip.push(Some(decode_scip(&bytes).map_err(failed)?));
     }
     for source in &manifest.sources {
         if let Source::Git(git) = source
@@ -345,6 +365,7 @@ fn walk_git(
         include: git.include.clone(),
         exclude: git.exclude.clone(),
         scip: None,
+        scip_sha256: None,
     };
     let mut tree = walk_local(&checkout, options)?;
     for file in &mut tree.files {
@@ -832,6 +853,12 @@ impl fmt::Display for IndexSummary {
             }
             writeln!(f)?;
         }
+        for name in &self.unpinned_scip {
+            writeln!(
+                f,
+                "scip {name} is not pinned: give it a scip_sha256 so a changed index stops the run until it is reviewed"
+            )?;
+        }
         for name in &self.unpinned_guidance {
             writeln!(
                 f,
@@ -868,6 +895,7 @@ mod tests {
             include: Vec::new(),
             exclude: Vec::new(),
             scip: None,
+            scip_sha256: None,
         })
     }
 
@@ -915,6 +943,7 @@ mod tests {
             include: Vec::new(),
             exclude: Vec::new(),
             scip: None,
+            scip_sha256: None,
         })
     }
 
@@ -1847,6 +1876,35 @@ mod tests {
     }
 
     #[test]
+    fn a_scip_pin_is_checked_and_an_unpinned_index_is_named() {
+        let (repo, index) = scip_fixture();
+        let pinned = |pin: Option<String>| {
+            let Source::Local(mut local) = with_scip(local(&repo, Some("app")), Some(&index))
+            else {
+                unreachable!()
+            };
+            local.scip_sha256 = pin;
+            manifest(vec![Source::Local(local)])
+        };
+        let corpus = Corpus::new();
+        assert_eq!(corpus.index(&pinned(None)).unpinned_scip, ["app"]);
+        let actual = crate::fetch::hex(&Sha256::digest(std::fs::read(&index).unwrap()));
+        assert!(corpus.index(&pinned(Some(actual))).unpinned_scip.is_empty());
+
+        let fresh = Corpus::new();
+        let err = fresh.try_index(&pinned(Some("0".repeat(64)))).unwrap_err();
+        assert!(
+            matches!(err, Error::ScipChanged { ref name, .. } if name == "app"),
+            "{err:?}"
+        );
+        let sources: i64 = fresh
+            .sql()
+            .query_row("SELECT count(*) FROM source", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(sources, 0);
+    }
+
+    #[test]
     fn a_bad_scip_index_stops_the_run_before_anything_is_written() {
         let (repo, _) = scip_fixture();
         let dir = tempfile::tempdir().unwrap();
@@ -2312,6 +2370,7 @@ mod tests {
             skipped_sources: vec![("client".into(), "use = \"excluded\"")],
             removed_sources: vec!["old".into()],
             unpinned_guidance: vec!["rules".into()],
+            unpinned_scip: vec!["app".into()],
             scip: vec![(
                 "app".into(),
                 codecite_core::ScipSummary {
@@ -2337,6 +2396,7 @@ mod tests {
              source old removed: the run no longer indexes it\n\
              scip app: 2 documents, 6 symbols given SCIP IDs, 3 added, 30 occurrences, 12 edges; \
              1 documents the source doesn't have; 2 past the end of their file; 1 IDs already defined\n\
+             scip app is not pinned: give it a scip_sha256 so a changed index stops the run until it is reviewed\n\
              guidance rules is not pinned: give it a sha256 so a changed rule stops the run until it is reviewed\n\
              elapsed: 1.25s"
         );

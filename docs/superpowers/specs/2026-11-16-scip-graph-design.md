@@ -26,6 +26,8 @@ guidance `path` does, and `~` expands.
 - **Why the manifest's directory:** a git source's checkout is cleaned to
   its commit (`clean -ffdx`) on every run, so an index inside it would be
   deleted; the manifest's directory is where guidance already resolves.
+- An optional `scip_sha256` pins the file; a source without one is named
+  in the run's summary, as unpinned guidance is.
 - Every SCIP file is read and decoded before anything is written, as
   documents and guidance are, so a missing, oversized (over 256 MiB) or
   malformed file stops the run naming the source and the file.

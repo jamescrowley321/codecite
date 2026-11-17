@@ -321,8 +321,12 @@ fn write_occurrences(
         let end = occ.end_line.clamp(occ.start_line, lines);
         let enclosing = ranges
             .iter()
+            // A definition is inside the next definition out; a reference,
+            // a recursive call included, is inside the innermost one.
             .filter(|(id, start, end)| {
-                *id != occ.symbol && *start <= occ.start_line && occ.start_line <= *end
+                (occ.roles & ROLE_DEFINITION == 0 || *id != occ.symbol)
+                    && *start <= occ.start_line
+                    && occ.start_line <= *end
             })
             .min_by(|a, b| {
                 (a.2.saturating_sub(a.1), std::cmp::Reverse(a.1), &a.0).cmp(&(
@@ -725,6 +729,58 @@ mod tests {
             )
             .unwrap();
         assert_eq!(enclosing, Some(scip("client/impl#[Client]new().")));
+    }
+
+    #[test]
+    fn a_recursive_call_is_an_edge_from_the_function_itself() {
+        let (_dir, mut store, id) = app();
+        let mut docs = index();
+        // login calls itself on line 10, inside its own lines and the
+        // crate module's.
+        docs[0].occurrences.push(ScipOccurrence {
+            symbol: scip("login()."),
+            start_line: 10,
+            end_line: 10,
+            roles: 0,
+        });
+        store.write_scip(id, &docs).unwrap();
+        let enclosing: Option<String> = store
+            .conn
+            .query_row(
+                "SELECT enclosing FROM occurrence WHERE symbol_id = ?1 AND start_line = 10",
+                [scip("login().")],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(enclosing, Some(scip("login().")));
+        let from_module: i64 = store
+            .conn
+            .query_row(
+                "SELECT count(*) FROM edge WHERE src = ?1 AND dst = ?2",
+                [scip("crate/"), scip("login().")],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(from_module, 0, "the module doesn't call login");
+        let to_itself: String = store
+            .conn
+            .query_row(
+                "SELECT kind FROM edge WHERE src = ?1 AND dst = ?1",
+                [scip("login().")],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(to_itself, "calls");
+        // A definition is still inside the next definition out.
+        let defined_in: Option<String> = store
+            .conn
+            .query_row(
+                "SELECT enclosing FROM occurrence WHERE symbol_id = ?1 AND roles = 1",
+                [scip("login().")],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(defined_in, Some(scip("crate/")));
     }
 
     #[test]

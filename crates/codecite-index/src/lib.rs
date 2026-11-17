@@ -52,7 +52,7 @@ mod test_repo;
 mod test_server;
 
 mod scip;
-pub use scip::{MAX_SCIP_SIZE, ScipError, decode_scip, read_scip};
+pub use scip::{MAX_SCIP_SIZE, ScipError, decode_scip, read_scip, read_scip_bytes};
 
 mod spec;
 pub use spec::{

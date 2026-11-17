@@ -90,6 +90,7 @@ pub fn add_sources(
                 include: Vec::new(),
                 exclude: Vec::new(),
                 scip: None,
+                scip_sha256: None,
             })?;
             detect_license(checkout.path())?
         };

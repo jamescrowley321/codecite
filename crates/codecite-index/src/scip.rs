@@ -7,6 +7,7 @@
 //! protobuf skips every other field, so no generated code or `protoc` is
 //! needed.
 
+use std::collections::HashMap;
 use std::io::Read as _;
 use std::path::Path;
 
@@ -15,6 +16,11 @@ use prost::Message as _;
 
 /// The largest SCIP index codecite reads: 256 MiB.
 pub const MAX_SCIP_SIZE: u64 = 256 * 1024 * 1024;
+
+/// The longest display name kept; a longer one gives way to the name the
+/// symbol's descriptors give, so an index can't hand agents a long text as a
+/// name.
+const MAX_DISPLAY_NAME_BYTES: usize = 256;
 
 /// The longest symbol string kept. Real symbols are far shorter; a longer
 /// one is skipped rather than stored.
@@ -114,6 +120,12 @@ struct SymbolInformation {
 /// Reads the SCIP index at `path`: a regular file of at most
 /// [`MAX_SCIP_SIZE`], with the read itself stopped past it.
 pub fn read_scip(path: &Path) -> Result<Vec<ScipDocument>, ScipError> {
+    decode_scip(&read_scip_bytes(path)?)
+}
+
+/// The bytes of the SCIP index at `path`: a regular file of at most
+/// [`MAX_SCIP_SIZE`], with the read itself stopped past it.
+pub fn read_scip_bytes(path: &Path) -> Result<Vec<u8>, ScipError> {
     let file = std::fs::File::open(path)?;
     if !file.metadata()?.is_file() {
         return Err(ScipError::NotAFile);
@@ -123,7 +135,7 @@ pub fn read_scip(path: &Path) -> Result<Vec<ScipDocument>, ScipError> {
     if bytes.len() as u64 > MAX_SCIP_SIZE {
         return Err(ScipError::TooLarge);
     }
-    decode_scip(&bytes)
+    Ok(bytes)
 }
 
 /// Decodes a SCIP index into the documents codecite stores: each file's
@@ -132,15 +144,20 @@ pub fn read_scip(path: &Path) -> Result<Vec<ScipDocument>, ScipError> {
 /// malformed range are left out.
 pub fn decode_scip(bytes: &[u8]) -> Result<Vec<ScipDocument>, ScipError> {
     let index = Index::decode(bytes)?;
-    let external: Vec<&SymbolInformation> = index.external_symbols.iter().collect();
+    let external: HashMap<&str, &SymbolInformation> = index
+        .external_symbols
+        .iter()
+        .map(|i| (i.symbol.as_str(), i))
+        .collect();
     let mut documents = Vec::with_capacity(index.documents.len());
     for doc in &index.documents {
-        let info = |symbol: &str| {
-            doc.symbols
-                .iter()
-                .chain(external.iter().copied())
-                .find(|i| i.symbol == symbol)
-        };
+        // The document's own information wins over the index's external
+        // symbols, as `find` over the two in that order would.
+        let mut own: HashMap<&str, &SymbolInformation> = HashMap::new();
+        for i in &doc.symbols {
+            own.entry(i.symbol.as_str()).or_insert(i);
+        }
+        let info = |symbol: &str| own.get(symbol).or_else(|| external.get(symbol)).copied();
         let path = doc
             .relative_path
             .strip_prefix("./")
@@ -163,7 +180,7 @@ pub fn decode_scip(bytes: &[u8]) -> Result<Vec<ScipDocument>, ScipError> {
                 let found = info(symbol);
                 let display_name = found
                     .map(|i| i.display_name.clone())
-                    .filter(|n| !n.is_empty())
+                    .filter(|n| !n.is_empty() && n.len() <= MAX_DISPLAY_NAME_BYTES)
                     .or_else(|| symbol_name(symbol))
                     .unwrap_or_else(|| symbol.to_owned());
                 let (first, last) = enclosing_lines(occ).unwrap_or((start_line, end_line));
@@ -382,6 +399,41 @@ mod tests {
         assert_eq!((def.line, def.start_line, def.end_line), (5, 4, 7));
         assert_eq!(def.display_name, "f");
         assert_eq!(def.kind, "method");
+    }
+
+    #[test]
+    fn a_long_display_name_gives_way_to_the_descriptors_name() {
+        let def = |symbol: &str| Occurrence {
+            range: vec![0, 0, 3],
+            symbol: symbol.into(),
+            symbol_roles: 1,
+            enclosing_range: vec![],
+            single_line_range: None,
+            multi_line_range: None,
+            single_line_enclosing_range: None,
+            multi_line_enclosing_range: None,
+        };
+        let info = |symbol: &str, name: String| SymbolInformation {
+            symbol: symbol.into(),
+            kind: 17,
+            display_name: name,
+        };
+        let (long, short) = (format!("{PKG}f()."), format!("{PKG}g()."));
+        let index = Index {
+            documents: vec![Document {
+                relative_path: "a.rs".into(),
+                occurrences: vec![def(&long), def(&short)],
+                symbols: vec![info(&long, "x".repeat(300)), info(&short, "gee".into())],
+            }],
+            external_symbols: vec![info(&short, "external".into())],
+        };
+        let docs = decode_scip(&index.encode_to_vec()).unwrap();
+        let names: Vec<&str> = docs[0]
+            .definitions
+            .iter()
+            .map(|d| d.display_name.as_str())
+            .collect();
+        assert_eq!(names, ["f", "gee"]);
     }
 
     #[test]

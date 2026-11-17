@@ -31,16 +31,20 @@ every reference shares them, then one line each:
 
 /// What `codecite graph -h` says it prints.
 pub(crate) const GRAPH_OUTPUT: &str = "\
-Output: a header `N caller(s) of <id>`, then one line per symbol, nearest first:
-  <distance> · <citation> · <kind> <name> · calls <via> at <call site>";
+Output: a header `N caller(s) of <id> within <depth> call(s)` (or `callee(s)`), then
+one line per symbol, nearest first:
+  <distance> · <citation> · <kind> <name> · calls <via> at <call site> · <license>
+(`called by <via>` for callees)";
 
 /// What `codecite graph --help` adds.
 pub(crate) const GRAPH_HELP: &str = "Examples:
   codecite graph callers myrepo check
   codecite graph callees myrepo Client.validate --depth 2 --json
 Needs a SCIP index on the symbol's source (`scip` in the manifest).
-Output: a header `N caller(s) of <id>`, then one line per symbol, nearest first:
-  <distance> · <citation> · <kind> <name> · calls <via> at <call site>";
+Output: a header `N caller(s) of <id> within <depth> call(s)` (or `callee(s)`), then
+one line per symbol, nearest first:
+  <distance> · <citation> · <kind> <name> · calls <via> at <call site> · <license>
+(`called by <via>` for callees)";
 
 /// `codecite refs`'s arguments.
 #[derive(Args)]
@@ -69,15 +73,17 @@ pub(crate) enum GraphCommand {
     #[command(after_long_help = "Examples:
   codecite graph callers myrepo check
   codecite graph callers myrepo Client.validate --depth 3 --json
-Output: a header `N caller(s) of <id>`, then one line per symbol, nearest first:
-  <distance> · <citation> · <kind> <name> · calls <via> at <call site>")]
+Output: a header `N caller(s) of <id> within <depth> call(s)`, then one line per
+symbol, nearest first:
+  <distance> · <citation> · <kind> <name> · calls <via> at <call site> · <license>")]
     Callers(WalkArgs),
     /// Print the symbols a symbol calls, out to `--depth` calls.
     #[command(after_long_help = "Examples:
   codecite graph callees myrepo login
   codecite graph callees myrepo login --depth 2 --json
-Output: a header `N callee(s) of <id>`, then one line per symbol, nearest first:
-  <distance> · <citation> · <kind> <name> · called by <via> at <call site>")]
+Output: a header `N callee(s) of <id> within <depth> call(s)`, then one line per
+symbol, nearest first:
+  <distance> · <citation> · <kind> <name> · called by <via> at <call site> · <license>")]
     Callees(WalkArgs),
 }
 

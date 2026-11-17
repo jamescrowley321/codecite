@@ -512,6 +512,7 @@ mod tests {
             include: Vec::new(),
             exclude: Vec::new(),
             scip: None,
+            scip_sha256: None,
         }
     }
 

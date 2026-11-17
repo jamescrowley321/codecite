@@ -58,6 +58,8 @@ pub struct GitSource {
     /// expanded; [`Manifest::load`] resolves a relative one against the
     /// manifest's directory.
     pub scip: Option<PathBuf>,
+    /// The sha256 the SCIP index must have: 64 lowercase hex digits.
+    pub scip_sha256: Option<String>,
 }
 
 /// A working tree indexed in place, without fetching.
@@ -83,6 +85,8 @@ pub struct LocalSource {
     /// [`Manifest::load`] resolves a relative one against the manifest's
     /// directory.
     pub scip: Option<PathBuf>,
+    /// The sha256 the SCIP index must have: 64 lowercase hex digits.
+    pub scip_sha256: Option<String>,
 }
 
 /// A document (a spec, an RFC) fetched by URL and pinned by its hash.
@@ -441,6 +445,27 @@ fn parse_source(
         }
         _ => {}
     }
+    if let Source::Git(GitSource {
+        scip, scip_sha256, ..
+    })
+    | Source::Local(LocalSource {
+        scip, scip_sha256, ..
+    }) = &source
+    {
+        match (scip, scip_sha256) {
+            (None, Some(_)) => {
+                return Err(bad_field(
+                    "scip_sha256",
+                    "a pin for the index `scip` names",
+                    "no `scip`",
+                ));
+            }
+            (_, Some(pin)) if !is_lower_hex(pin, 64) => {
+                return Err(bad_field("scip_sha256", "64 lowercase hex digits", pin));
+            }
+            _ => {}
+        }
+    }
     if let Source::Git(GitSource { scip, .. }) | Source::Local(LocalSource { scip, .. }) =
         &mut source
         && let Some(path) = scip.as_ref().and_then(|p| p.to_str())
@@ -720,6 +745,23 @@ updated_by = "openid-connect-core-1_0-errata2"
                 Some(PathBuf::from("/abs/r.scip")),
                 None
             ]
+        );
+        // A pin needs an index, and is 64 lowercase hex digits.
+        let local = |extra: &str| {
+            Manifest::parse(&format!(
+                "name = \"p\"\n[[source]]\nkind = \"local\"\npath = \"/a\"\nuse = \"adapt\"\n{extra}"
+            ))
+        };
+        let err = local(&format!("scip_sha256 = \"{}\"\n", "a".repeat(64))).unwrap_err();
+        assert!(err.to_string().contains("scip_sha256"), "{err}");
+        let err = local("scip = \"x.scip\"\nscip_sha256 = \"ABC\"\n").unwrap_err();
+        assert!(err.to_string().contains("64 lowercase hex digits"), "{err}");
+        assert!(
+            local(&format!(
+                "scip = \"x.scip\"\nscip_sha256 = \"{}\"\n",
+                "a".repeat(64)
+            ))
+            .is_ok()
         );
         // A document has no SCIP index.
         let err = Manifest::parse(

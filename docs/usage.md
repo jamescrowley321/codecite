@@ -41,6 +41,7 @@ license = "Apache-2.0"
 use = "adapt"
 exclude = ["vendor/**"]
 scip = "~/repos/myservice/index.scip"   # optional: a SCIP index, for refs and graph
+scip_sha256 = "<64 hex characters>"     # optional: a changed index stops the run
 
 # A git repository at a pinned commit, kept as a partial clone in the cache.
 [[source]]
@@ -83,6 +84,7 @@ imports = ["requests", "httpx"]
 | `url`, `commit` | `git` | The repository and a 40-character lowercase commit |
 | `include`, `exclude` | `local`, `git` | Globs over paths |
 | `scip` | `local`, `git` | A SCIP index of the source (a relative path starts at the manifest's directory); `~` expands. See Find references and callers |
+| `scip_sha256` | `local`, `git` with `scip` | The 64-character lowercase hash the index must have; without it the run's summary names the source as unpinned |
 | `url`, `sha256` | `document`, `guidance` | The page and the 64-character lowercase hash of its bytes; a guidance source has `url` and `sha256`, or `path` with an optional `sha256` |
 | `current` | `document` | Exactly one pinned version of each name is current |
 | `aliases` | `document`, `guidance` | Names people write, such as `OIDC Core` |
@@ -699,7 +701,11 @@ A SCIP definition takes over the tree-sitter symbol in the same file with the
 same name whose lines hold it, so `def` keeps citing the same lines and reports
 both providers. A definition tree-sitter doesn't chunk, such as a struct field,
 is a symbol of its own, which `refs` and `graph` find but `def` doesn't list.
-A missing or unreadable index stops the run before anything is written.
+A missing or unreadable index stops the run before anything is written, and
+so does one whose hash isn't its `scip_sha256`. Pin an index you didn't build
+yourself: its definitions and edges reach agents as exact, so a stale or
+altered file would mislead them. A reference inside a function to that same
+function is a call from the function to itself.
 
 ```sh
 codecite refs mywork Client.validate
