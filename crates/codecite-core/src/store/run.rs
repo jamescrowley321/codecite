@@ -11,7 +11,7 @@ use std::fs::{File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use rusqlite::params;
+use rusqlite::{Connection, params};
 
 use super::{BUSY_TIMEOUT, Store};
 use crate::{Error, Result, TERMS_VERSION};
@@ -131,16 +131,57 @@ impl Store {
     /// Rolls back the run's transaction, if it is open, so the corpus is as
     /// the last published run left it, then marks the run `failed` with
     /// `error`.
+    ///
+    /// The store never stays inside the run's transaction: when `ROLLBACK`
+    /// itself fails, the connection is closed, which rolls the transaction
+    /// back and frees SQLite's write lock, and the file is opened again.
+    /// The run is marked `failed` whether or not the rollback needed that,
+    /// and the first error of the two steps is returned.
     pub fn fail_run(&mut self, run_id: i64, error: &str) -> Result<()> {
-        if !self.conn.is_autocommit() {
-            self.conn.execute_batch("ROLLBACK")?;
-        }
-        self.conn.execute(
-            "UPDATE index_run SET status = 'failed',
-               finished_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), error = ?2
-             WHERE id = ?1",
-            params![run_id, error],
-        )?;
+        self.fail_run_with(run_id, error, |conn| conn.execute_batch("ROLLBACK"))
+    }
+
+    /// [`Store::fail_run`], rolling back with `rollback`, so a test can
+    /// make it fail.
+    fn fail_run_with(
+        &mut self,
+        run_id: i64,
+        error: &str,
+        rollback: impl FnOnce(&Connection) -> rusqlite::Result<()>,
+    ) -> Result<()> {
+        let rolled_back = if self.conn.is_autocommit() {
+            Ok(())
+        } else {
+            rollback(&self.conn).or_else(|e| {
+                self.reopen()?;
+                Err(e.into())
+            })
+        };
+        let recorded = self
+            .conn
+            .execute(
+                "UPDATE index_run SET status = 'failed',
+                   finished_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), error = ?2
+                 WHERE id = ?1",
+                params![run_id, error],
+            )
+            .map(drop)
+            .map_err(Error::from);
+        rolled_back.and(recorded)
+    }
+
+    /// Closes the connection, which rolls back any transaction it has open,
+    /// and opens the file again as [`Store::open_read_write`] does. Until the
+    /// new connection is open, the store holds an empty in-memory database,
+    /// so if opening fails, every later call on the store fails too rather
+    /// than writing into a transaction that is never committed.
+    fn reopen(&mut self) -> Result<()> {
+        drop(std::mem::replace(
+            &mut self.conn,
+            Connection::open_in_memory()?,
+        ));
+        let fresh = Store::open_read_write(&self.path)?;
+        self.conn = fresh.conn;
         Ok(())
     }
 }
@@ -158,13 +199,19 @@ fn lock_path(path: &Path) -> PathBuf {
 /// refused. The short wait is for a lock that is only briefly held: a
 /// process forked by another thread holds a copy of the lock's file until
 /// it runs its program, which closes it.
+///
+/// Any other failure to take the lock, such as a filesystem that has no
+/// file locks, is [`Error::CorpusLockFailed`]: the run stops rather than
+/// go on unlocked, since SQLite's own locking, which WAL mode relies on, is
+/// no safer there.
 fn lock(path: &Path) -> Result<File> {
     let lock_path = lock_path(path);
     let file = OpenOptions::new()
         .create(true)
         .truncate(false)
         .write(true)
-        .open(&lock_path)?;
+        .open(&lock_path)
+        .map_err(|e| lock_error(&lock_path, TryLockError::Error(e)))?;
     let deadline = Instant::now() + BUSY_TIMEOUT;
     loop {
         match file.try_lock() {
@@ -172,11 +219,21 @@ fn lock(path: &Path) -> Result<File> {
             Err(TryLockError::WouldBlock) if Instant::now() < deadline => {
                 std::thread::sleep(Duration::from_millis(20));
             }
-            Err(TryLockError::WouldBlock) => {
-                return Err(Error::CorpusLocked { path: lock_path });
-            }
-            Err(TryLockError::Error(e)) => return Err(e.into()),
+            Err(e) => return Err(lock_error(&lock_path, e)),
         }
+    }
+}
+
+/// The error for a lock on `lock_path` that couldn't be taken.
+fn lock_error(lock_path: &Path, error: TryLockError) -> Error {
+    match error {
+        TryLockError::WouldBlock => Error::CorpusLocked {
+            path: lock_path.to_owned(),
+        },
+        TryLockError::Error(source) => Error::CorpusLockFailed {
+            path: lock_path.to_owned(),
+            source,
+        },
     }
 }
 
@@ -349,6 +406,59 @@ mod tests {
             )
             .unwrap();
         assert_eq!(hash, "ab12");
+    }
+
+    #[test]
+    fn a_failed_rollback_closes_the_connection() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("corpus.db");
+        let mut store = Store::open_for_index(&path).unwrap();
+        let run = store.start_run(&RUN).unwrap();
+        store.begin_publish().unwrap();
+        store.upsert_source(&source("app")).unwrap();
+
+        let err = store
+            .fail_run_with(run, "boom", |_| Err(rusqlite::Error::InvalidQuery))
+            .unwrap_err();
+        assert!(matches!(err, Error::Sqlite(_)), "{err:?}");
+        // The run's transaction is gone with the old connection: nothing
+        // it wrote is kept, and another writer can take the write lock.
+        assert!(store.conn.is_autocommit());
+        let sources: i64 = store
+            .conn
+            .query_row("SELECT count(*) FROM source", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(sources, 0);
+        let other = rusqlite::Connection::open(&path).unwrap();
+        other.execute_batch("BEGIN IMMEDIATE; ROLLBACK").unwrap();
+        // The run is still recorded, and the store still works.
+        let row = run_row(&store, run);
+        assert_eq!((row.0.as_str(), row.1.as_deref()), ("failed", Some("boom")));
+        store.upsert_source(&source("app")).unwrap();
+    }
+
+    #[test]
+    fn a_lock_that_cannot_be_taken_names_the_lock_file() {
+        let path = Path::new("/data/identity.db.lock");
+        let err = lock_error(
+            path,
+            TryLockError::Error(std::io::Error::from(std::io::ErrorKind::Unsupported)),
+        );
+        assert!(
+            matches!(&err, Error::CorpusLockFailed { path: p, .. } if p == path),
+            "{err:?}"
+        );
+        let message = err.to_string();
+        assert!(message.contains("/data/identity.db.lock"), "{message}");
+        assert!(message.contains("local filesystem"), "{message}");
+
+        // Nor can a lock file that can't be created.
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("no-such-dir").join("corpus.db");
+        let Err(err) = Store::open_for_index(&missing) else {
+            panic!("locked a corpus in a missing directory");
+        };
+        assert!(matches!(err, Error::CorpusLockFailed { .. }), "{err:?}");
     }
 
     #[test]

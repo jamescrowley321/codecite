@@ -100,12 +100,31 @@ pub fn index_corpus(
         store.publish_run(run, &counts)?;
         Ok(summary)
     });
-    if let Err(err) = &published {
-        // The run's own error is the one to report; recording it is best
-        // effort, and the rollback happens when the store is dropped anyway.
-        let _ = store.fail_run(run, &err.to_string());
+    published.map_err(|err| match store.fail_run(run, &error_chain(&err)) {
+        Ok(()) => err,
+        Err(recording) => Error::RunNotRecorded {
+            run: Box::new(err),
+            recording,
+        },
+    })
+}
+
+/// An error's message followed by each of its sources', joined by `: `,
+/// so a failed run records "SQLite error: database or disk is full" rather
+/// than only the outermost "SQLite error".
+fn error_chain(err: &dyn std::error::Error) -> String {
+    let mut message = err.to_string();
+    let mut source = err.source();
+    while let Some(cause) = source {
+        let text = cause.to_string();
+        // A transparent wrapper repeats its source's message.
+        if !message.ends_with(&text) {
+            message.push_str(": ");
+            message.push_str(&text);
+        }
+        source = cause.source();
     }
-    published
+    message
 }
 
 /// Fetches and indexes every source, as [`index_corpus`] describes, inside
@@ -1185,6 +1204,31 @@ mod tests {
             )
             .unwrap();
         assert_eq!(unstamped, 0);
+    }
+
+    #[test]
+    fn a_failed_run_records_the_whole_error_chain() {
+        let err = Error::Core(codecite_core::Error::Sqlite(
+            rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_FULL),
+                Some("database or disk is full".into()),
+            ),
+        ));
+        assert_eq!(err.to_string(), "SQLite error");
+        let chain = error_chain(&err);
+        assert!(
+            chain.starts_with("SQLite error: database or disk is full"),
+            "{chain}"
+        );
+        let plain = Error::DuplicateSource { name: "app".into() };
+        assert_eq!(error_chain(&plain), plain.to_string());
+        let unrecorded = Error::RunNotRecorded {
+            run: Box::new(plain),
+            recording: codecite_core::Error::Sqlite(rusqlite::Error::InvalidQuery),
+        };
+        let chain = error_chain(&unrecorded);
+        assert!(chain.contains("recording it: SQLite error"), "{chain}");
+        assert!(chain.contains("two sources are named `app`"), "{chain}");
     }
 
     #[test]

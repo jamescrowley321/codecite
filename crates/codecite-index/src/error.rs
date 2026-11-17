@@ -8,6 +8,17 @@ pub enum Error {
     #[error(transparent)]
     Core(#[from] codecite_core::Error),
 
+    /// An index run failed, and so did rolling it back or recording it as
+    /// failed. The run's own error is the source.
+    #[error("the index run failed, and so did recording it: {recording}")]
+    RunNotRecorded {
+        /// Why the run failed.
+        #[source]
+        run: Box<Error>,
+        /// Why rolling it back or recording it failed.
+        recording: codecite_core::Error,
+    },
+
     /// Reading or writing a file in the corpus failed.
     #[error("I/O error")]
     Io(#[from] std::io::Error),

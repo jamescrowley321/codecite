@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Search output is unchanged: a storage-only change.
-- Next free migration on `main` is `0010`; PR #242 also adds `0010`, and whichever lands second renumbers.
+- Next free migration on `main` is `0011` (#261 took `0010`); #242 and #260 also add migrations, and whichever lands later renumbers.
 - Keep `crates/codecite-index/src/index.rs` edits small: #242 edits it too.
 - No edits under `evals/` or `.github/`.
 
@@ -30,7 +30,7 @@
 ### Task 1: Lock, run record and migration in codecite-core
 
 **Files:**
-- Create: `crates/codecite-core/migrations/0010_index_run.sql`, `crates/codecite-core/src/store/run.rs`
+- Create: `crates/codecite-core/migrations/0011_index_run.sql`, `crates/codecite-core/src/store/run.rs`
 - Modify: `crates/codecite-core/src/store.rs` (MIGRATIONS, `Store.lock`), `crates/codecite-core/src/store/write.rs` and `store/context.rs` (`transaction()` → `savepoint()`), `crates/codecite-core/src/error.rs` (`Error::CorpusLocked { path }`), `crates/codecite-core/src/terms.rs` (`TERMS_VERSION`)
 
 **Interfaces (produces):**
