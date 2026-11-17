@@ -190,29 +190,73 @@ fn forbids_adapt(id: spdx::LicenseId) -> bool {
 /// branches meets without one of them: `GPL-3.0-only` or
 /// `MIT AND GPL-2.0-only`, but not `MIT OR GPL-3.0-only`. A `license`
 /// that isn't an SPDX expression can't show an `OR` that avoids them, so
-/// any word in it that is such an SPDX id keeps `adapt` out:
-/// `GPL-3.0-only AND IETF Trust`. `None` when the expression allows
-/// adapting, and for text that names no such id (`IETF Trust`), whose class
-/// is the person's call.
+/// any word in it that reads as such a license, as leniently as a whole
+/// expression is read, keeps `adapt` out: `GPL-3.0-only AND IETF Trust`,
+/// `gpl-3.0-only AND IETF Trust`. `None` when the expression allows
+/// adapting, and for text that names no such license (`IETF Trust`), whose
+/// class is the person's call.
 pub(crate) fn forbids_adapting(license: &str) -> Option<Vec<String>> {
-    let names: BTreeSet<String> = match Expression::parse_mode(license, ParseMode::LAX) {
-        Ok(expression) => expression
-            .evaluate_with_failures(|req| match &req.license {
-                LicenseItem::Spdx { id, .. } => !forbids_adapt(*id),
-                LicenseItem::Other { .. } => true,
-            })
-            .err()?
-            .iter()
-            .map(|f| f.req.to_string())
-            .collect(),
-        Err(_) => license
-            .split(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '+')))
-            .filter_map(spdx::license_id)
-            .filter(|id| forbids_adapt(*id))
-            .map(|id| id.name.to_owned())
+    let license = &canonical_ids(license);
+    let names: BTreeSet<String> = match forbidding(license) {
+        Some(names) => names,
+        None => license
+            .split(|c: char| !is_id_char(c))
+            .filter(|word| !word.is_empty())
+            .filter_map(forbidding)
+            .flatten()
             .collect(),
     };
     (!names.is_empty()).then(|| names.into_iter().collect())
+}
+
+/// Whether `c` can be part of a license id: `GPL-2.0+`, `LicenseRef-x`.
+fn is_id_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '+')
+}
+
+/// `license` with each word that is an SPDX license id in another case
+/// (`gpl-3.0-only`, `Mit`) spelt as the SPDX list spells it, since ids are
+/// case-sensitive even in lax mode, and anything else as it is.
+fn canonical_ids(license: &str) -> String {
+    let mut out = String::with_capacity(license.len());
+    let mut rest = license;
+    while let Some(c) = rest.chars().next() {
+        if !is_id_char(c) {
+            out.push(c);
+            rest = &rest[c.len_utf8()..];
+            continue;
+        }
+        let end = rest.find(|c: char| !is_id_char(c)).unwrap_or(rest.len());
+        let (word, after) = rest.split_at(end);
+        let base = word.trim_end_matches('+');
+        match spdx::identifiers::LICENSES
+            .iter()
+            .find(|l| l.name.eq_ignore_ascii_case(base))
+        {
+            Some(l) => {
+                out.push_str(l.name);
+                out.push_str(&word[base.len()..]);
+            }
+            None => out.push_str(word),
+        }
+        rest = after;
+    }
+    out
+}
+
+/// The licenses in the SPDX expression `license`, read leniently, that no
+/// choice of its `OR` branches avoids and that forbid adapting; `None` when
+/// it doesn't parse.
+fn forbidding(license: &str) -> Option<BTreeSet<String>> {
+    let expression = Expression::parse_mode(license, ParseMode::LAX).ok()?;
+    let failures = expression
+        .evaluate_with_failures(|req| match &req.license {
+            LicenseItem::Spdx { id, .. } => !forbids_adapt(*id),
+            LicenseItem::Other { .. } => true,
+        })
+        .err()
+        .unwrap_or_default();
+    Some(failures.iter().map(|f| f.req.to_string()).collect())
 }
 
 #[cfg(test)]
@@ -362,7 +406,20 @@ mod tests {
         );
         assert_eq!(
             forbids("Custom Terms AND GPL-2.0+"),
-            Some(vec!["GPL-2.0".into()])
+            Some(vec!["GPL-2.0-or-later".into()])
+        );
+        // An id in another case is still that id, alone, in an expression
+        // or beside other text.
+        for l in [
+            "gpl-3.0-only",
+            "mit and agpl-3.0-only",
+            "gpl-3.0-only AND IETF Trust",
+        ] {
+            assert!(forbids(l).is_some(), "{l}");
+        }
+        assert_eq!(
+            forbids("gpl-3.0-only AND IETF Trust"),
+            Some(vec!["GPL-3.0-only".into()])
         );
     }
 
@@ -380,6 +437,8 @@ mod tests {
             "IETF Trust",
             "OpenID Foundation",
             "MIT, see NOTICE",
+            "mit OR gpl-3.0-only",
+            "Apache-2.0 AND café terms",
             "",
         ] {
             assert_eq!(forbids_adapting(l), None, "{l}");

@@ -11,7 +11,9 @@ use schemars::JsonSchema;
 use serde::Serialize;
 
 use super::Store;
-use super::read::{MAX_READ_BYTES, ReadOptions, SourceRow, instruction, pinned};
+use super::read::{
+    MAX_READ_BYTES, ReadOptions, SourceRow, defuse_instruction, instruction, pinned,
+};
 use super::search::{Scope, SearchQuery};
 use crate::{
     Citation, Error, Level, Result, SectionNumber, StatementKind, normative_level,
@@ -110,11 +112,15 @@ impl fmt::Display for Requirements {
             }
             writeln!(f, " ({})", section.relation)?;
             for statement in &section.statements {
+                // A statement's text after its first line starts a line
+                // of its own, so it can't pass for the instruction line.
+                let text: Vec<_> = statement.text.split('\n').map(defuse_instruction).collect();
+                let text = text.join("\n");
                 if statement.keywords.is_empty() {
-                    writeln!(f, "  - {}", statement.text)?;
+                    writeln!(f, "  - {text}")?;
                 } else {
                     let keywords = statement.keywords.join(", ");
-                    writeln!(f, "  [{keywords}] {}", statement.text)?;
+                    writeln!(f, "  [{keywords}] {text}")?;
                 }
             }
         }

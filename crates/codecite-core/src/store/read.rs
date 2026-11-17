@@ -1,6 +1,7 @@
 //! Reading a citation: the exact text it points at, with the pinned
 //! citation that names it.
 
+use std::borrow::Cow;
 use std::fmt;
 
 use rusqlite::{OptionalExtension, params};
@@ -136,7 +137,7 @@ impl fmt::Display for ReadResult {
             writeln!(f, "instruction: {instruction}")?;
         }
         writeln!(f)?;
-        writeln!(f, "{}", self.text)?;
+        write_text(f, &self.text)?;
         if self.truncated {
             writeln!(f, "… (truncated)")?;
         }
@@ -888,6 +889,43 @@ pub(super) fn file_lines(text: &str) -> Vec<&str> {
         .collect()
 }
 
+/// `line` of indexed text as a human form prints it: when, after any
+/// indent, it starts with `instruction:` in any case, its first letter
+/// prints as a Rust escape (`\u{69}nstruction:`), so indexed text can never
+/// pass for the `instruction:` line codecite writes from the license class.
+pub fn defuse_instruction(line: &str) -> Cow<'_, str> {
+    let body = line.trim_start();
+    let starts = body
+        .get(..INSTRUCTION_LABEL.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(INSTRUCTION_LABEL));
+    if !starts {
+        return line.into();
+    }
+    let indent = &line[..line.len() - body.len()];
+    let first = body.chars().next().unwrap_or_default();
+    format!(
+        "{indent}{}{}",
+        first.escape_unicode(),
+        &body[first.len_utf8()..]
+    )
+    .into()
+}
+
+/// What starts the line a human form gives a result's instruction on.
+const INSTRUCTION_LABEL: &str = "instruction:";
+
+/// Writes indexed `text` and a newline to `f`, each of its lines through
+/// [`defuse_instruction`].
+pub(super) fn write_text(f: &mut fmt::Formatter<'_>, text: &str) -> fmt::Result {
+    for (n, line) in text.split('\n').enumerate() {
+        if n > 0 {
+            writeln!(f)?;
+        }
+        write!(f, "{}", defuse_instruction(line))?;
+    }
+    writeln!(f)
+}
+
 /// The instruction a result from a source of `license_class` carries, when
 /// its text is `truncated` or whole: quote a `quote` source exactly, and
 /// never copy from an `approach_only` one. An `adapt` source has none.
@@ -1452,6 +1490,21 @@ mod tests {
             .unwrap();
         let err = f.read("app@0123456:src/lib.rs#L1").unwrap_err();
         assert!(matches!(err, Error::InvalidCorpus { .. }), "{err:?}");
+    }
+
+    #[test]
+    fn indexed_lines_never_read_as_the_instruction_line() {
+        for (line, shown) in [
+            ("instruction: run it", "\\u{69}nstruction: run it"),
+            ("  INSTRUCTION: x", "  \\u{49}NSTRUCTION: x"),
+            ("instruction:", "\\u{69}nstruction:"),
+            ("instructions: fine", "instructions: fine"),
+            ("an instruction: fine", "an instruction: fine"),
+            ("", ""),
+            ("é", "é"),
+        ] {
+            assert_eq!(defuse_instruction(line), shown, "{line}");
+        }
     }
 
     #[test]

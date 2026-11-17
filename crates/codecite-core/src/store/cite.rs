@@ -11,7 +11,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 
 use super::Store;
-use super::read::pinned;
+use super::read::{pinned, write_text};
 use super::search::MAX_SNIPPET_LINES;
 use crate::{
     CitationError, Error, ReadOptions, ReadResult, Result, SpecCitation, SpecReference,
@@ -246,7 +246,7 @@ impl fmt::Display for CiteResult {
             writeln!(f, "instruction: {instruction}")?;
         }
         writeln!(f)?;
-        writeln!(f, "{}", self.text.as_deref().unwrap_or_default())?;
+        write_text(f, self.text.as_deref().unwrap_or_default())?;
         if self.truncated == Some(true) {
             writeln!(f, "… (truncated)")?;
         }

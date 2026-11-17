@@ -99,9 +99,9 @@ source `lib`: `use` is "adapt", but `license` "MIT AND GPL-3.0-only" needs GPL-3
 ```
 
 `MIT OR GPL-3.0-only` is fine, since MIT meets it. A `license` that isn't an
-SPDX expression is refused when any word in it is such a license's id
-(`GPL-3.0-only AND IETF Trust`); one that names none, such as `IETF Trust`,
-is not judged.
+SPDX expression is refused when any word in it is such a license's id, in
+any case (`GPL-3.0-only AND IETF Trust`, `gpl-3.0-only AND IETF Trust`); one
+that names none, such as `IETF Trust`, is not judged.
 
 A `document` source can be any page. One in a spec layout (an RFC on
 rfc-editor.org, an OpenID spec) is split into numbered sections and steps and
@@ -282,7 +282,9 @@ its own, before the text. A result from an `approach_only` source adds the
 line `instruction: Describe the approach in your own words; never copy this
 text or code. …`, under the header when every result shares it and under its
 own result otherwise; `grep`, `def`, `read`, `cite`, `context`, `requirements`
-and `diff` print any `instruction` the same way, a `quote` source's included:
+and `diff` print any `instruction` the same way, a `quote` source's included.
+A line of indexed text that starts with `instruction:` prints as
+`\u{69}nstruction:`, so only codecite's own line reads as the instruction:
 
 ```text
 2 results
