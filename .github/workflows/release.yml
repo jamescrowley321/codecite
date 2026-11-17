@@ -194,38 +194,66 @@ jobs:
         run: |
           rustup toolchain install
           rustc --version
-      # crates.io versions are immutable, so a re-run after a partial publish,
-      # or after a crate's first version was published by hand, must skip
-      # what is already there. The sparse index says which versions exist.
+      # crates.io versions are immutable, so a re-run after a partial publish
+      # must skip the crates that run already uploaded. A crate counts as
+      # uploaded only if crates.io has it at this version, the owner owns it,
+      # and its checksum equals the .crate packaged here from the tagged
+      # commit; anything else fails the job rather than ship around a crate
+      # someone else published. The crates.io API, unlike the CDN-cached
+      # sparse index, shows an upload at once. `cargo package --no-verify`
+      # compiles nothing, and packaging is reproducible for a given commit
+      # and toolchain.
       - name: Find the crates not yet on crates.io
         id: pending
         env:
           VERSION: ${{ needs.verify.outputs.version }}
+          OWNER: jamescrowley321
         run: |
           set -euo pipefail
+          cargo package --workspace --locked --no-verify
+          api() {
+            curl -sS --retry 3 -A "codecite-release (https://github.com/$GITHUB_REPOSITORY)" \
+              -o api.json -w '%{http_code}' "https://crates.io/api/v1/crates/$1"
+          }
+          upstream=false
+          if [[ "$GITHUB_REPOSITORY" == jamescrowley321/codecite ]]; then
+            upstream=true
+          fi
           published=()
           pending=0
           for name in $(cargo metadata --locked --no-deps --format-version 1 |
             jq -r '.packages[] | select(.publish != []) | .name'); do
-            lower="${name,,}"
-            if (( ${#lower} < 4 )); then
-              echo "::error::Index path for short crate name '$name' is not handled"
-              exit 1
-            fi
-            url="https://index.crates.io/${lower:0:2}/${lower:2:2}/$lower"
-            code="$(curl -sS --retry 3 -o index.json -w '%{http_code}' "$url")"
-            if [[ "$code" == 200 ]] && jq -s -e --arg v "$VERSION" 'any(.[]; .vers == $v)' index.json >/dev/null; then
-              echo "$name $VERSION is already on crates.io; skipping it"
-              published+=("$name")
-            elif [[ "$code" == 200 || "$code" == 404 ]]; then
+            code="$(api "$name/$VERSION")"
+            if [[ "$code" == 404 ]]; then
               echo "$name $VERSION will be published"
               pending=$((pending + 1))
-            else
-              echo "::error::crates.io index returned HTTP $code for $name"
+              continue
+            elif [[ "$code" != 200 ]]; then
+              echo "::error::crates.io returned HTTP $code for $name $VERSION"
               exit 1
             fi
+            remote="$(jq -r '.version.checksum' api.json)"
+            if [[ "$upstream" != true ]]; then
+              # A fork uploads nothing either way.
+              echo "::warning::$name $VERSION is already on crates.io; the fork dry run skips it"
+              published+=("$name")
+              continue
+            fi
+            code="$(api "$name/owners")"
+            if [[ "$code" != 200 ]] ||
+              ! jq -e --arg o "$OWNER" 'any(.users[]; .kind == "user" and .login == $o)' api.json >/dev/null; then
+              echo "::error::$name $VERSION is on crates.io but $OWNER does not own $name"
+              exit 1
+            fi
+            local_sum="$(sha256sum "target/package/$name-$VERSION.crate" | cut -d' ' -f1)"
+            if [[ "$remote" != "$local_sum" ]]; then
+              echo "::error::$name $VERSION on crates.io (sha256 $remote) is not the crate this commit packages ($local_sum); bump the version"
+              exit 1
+            fi
+            echo "$name $VERSION is already on crates.io from this commit; skipping it"
+            published+=("$name")
           done
-          rm -f index.json
+          rm -f api.json
           echo "count=$pending" >>"$GITHUB_OUTPUT"
           echo "published=${published[*]}" >>"$GITHUB_OUTPUT"
       - name: Publish dry run (fork)
@@ -276,13 +304,20 @@ jobs:
           merge-multiple: true
       - name: Checksums
         working-directory: dist
-        run: sha256sum -- * | tee SHA256SUMS
+        run: |
+          set -euo pipefail
+          shopt -s failglob
+          sha256sum -- *.tar.gz *.spdx.json | tee SHA256SUMS
+      # A re-run signs the same files again; a second attestation for the
+      # same digest is harmless.
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             dist/*.tar.gz
             dist/*.spdx.json
-      - name: Create the GitHub Release
+      # A re-run after the release was created, say when an upload failed,
+      # replaces its assets instead of failing on the existing release.
+      - name: Create or update the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
@@ -295,6 +330,10 @@ jobs:
           fi
           if [[ "$VERSION" == *-* ]]; then
             flags+=(--prerelease)
+          fi
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+            exit 0
           fi
           gh release create "$TAG" dist/* \
             --repo "$GITHUB_REPOSITORY" \

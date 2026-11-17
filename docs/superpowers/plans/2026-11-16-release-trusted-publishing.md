@@ -22,12 +22,15 @@ in five jobs, each with only the permissions it needs:
 3. `package`: `cargo package --workspace --locked`, with no `id-token`, so
    crate build scripts never run beside a registry token.
 4. `publish`: in the `release` environment with `id-token: write`; skips
-   crates already at the version on crates.io (sparse index), then
+   crates already at the version on crates.io (crates.io API) that the
+   owner owns and whose checksum matches the locally packaged `.crate`, and
+   fails on any other, then
    `rust-lang/crates-io-auth-action` trades the OIDC token for a crates.io
    token scoped to the job, then `cargo publish --workspace --locked
    --no-verify` with an `--exclude` per skipped crate. On a fork it runs the
    same with `--dry-run` instead.
-5. `release`: in the `release` environment; `SHA256SUMS`, `actions/attest-build-provenance` over the
+5. `release`: in the `release` environment; `SHA256SUMS`, uploading with
+   `--clobber` to a release a previous run already created,, `actions/attest-build-provenance` over the
    archives and SBOMs, and `gh release create --verify-tag` (a draft on a
    fork, a prerelease for a `-` version).
 
