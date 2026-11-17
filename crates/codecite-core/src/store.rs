@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use rusqlite::config::DbConfig;
 use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionBehavior};
 
-use crate::{Error, Result, identifier_terms, text_terms};
+use crate::{Error, Result};
 
 mod cite;
 pub use cite::{
@@ -437,6 +437,7 @@ fn read_version(conn: &Connection, path: &Path) -> Result<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{identifier_terms, text_terms};
     use std::fs;
 
     /// A fresh, empty scratch directory for one test.

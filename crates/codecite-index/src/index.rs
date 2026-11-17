@@ -14,8 +14,8 @@ use codecite_core::{
 use sha2::{Digest, Sha256};
 
 use crate::{
-    Checkout, Chunker, Clones, DocumentSource, Error, Fetcher, GitSource, GuidanceError,
-    GuidanceRule, GuidanceSource, Language, LicenseClass, LocalSource, LocalTree,
+    CHUNKER_VERSION, Checkout, Chunker, Clones, DocumentSource, Error, Fetcher, GitSource,
+    GuidanceError, GuidanceRule, GuidanceSource, Language, LicenseClass, LocalSource, LocalTree,
     MAX_DOCUMENT_SIZE, Manifest, Result, SkipReason, Source, SpecError, SpecSection, WalkOptions,
     document::split_document, split_guidance, split_spec, walk_local,
 };
@@ -355,7 +355,7 @@ fn index_tree(
         *summary.skipped.entry(reason).or_default() += count;
     }
 
-    let stored = store.document_hashes(source_id)?;
+    let stored = store.stored_documents(source_id)?;
     let mut kept = HashSet::new();
     for file in &tree.files {
         let bytes = match read(&tree.root, &file.path)? {
@@ -368,7 +368,7 @@ fn index_tree(
         let hash = Sha256::digest(&bytes);
         if stored
             .get(&file.path)
-            .is_some_and(|old| old[..] == hash[..])
+            .is_some_and(|old| old.is_current(&hash, CHUNKER_VERSION))
         {
             store.set_dirty(source_id, &file.path, file.dirty)?;
             kept.insert(file.path.as_str());
@@ -415,7 +415,7 @@ fn index_tree(
                 })
                 .collect(),
         };
-        summary.chunks += store.write_document(source_id, &document)?;
+        summary.chunks += store.write_split_document(source_id, &document, CHUNKER_VERSION)?;
         summary.written += 1;
         kept.insert(file.path.as_str());
     }
@@ -456,12 +456,13 @@ fn index_document(
     // A document source holds one document, stored under its name.
     let path = doc.name.as_str();
     let hash = Sha256::digest(bytes);
-    // The same bytes split the same way, unless the version was stored as
-    // guidance: Markdown with no text of its own, split into rules.
+    // The same bytes split the same way by the same chunker, unless the
+    // version was stored as guidance: Markdown with no text of its own,
+    // split into rules.
     if store
-        .document_hashes(source_id)?
+        .stored_documents(source_id)?
         .get(path)
-        .is_some_and(|old| old[..] == hash[..])
+        .is_some_and(|old| old.is_current(&hash, CHUNKER_VERSION))
         && !stored_as_guidance(store, source_id, path)?
     {
         summary.unchanged += 1;
@@ -478,7 +479,7 @@ fn index_document(
                 .iter()
                 .map(|s| s.steps.iter().map(|step| step.number.to_string()).collect())
                 .collect();
-            store.write_document(
+            store.write_split_document(
                 source_id,
                 &DocumentRecord {
                     path,
@@ -490,13 +491,14 @@ fn index_document(
                     text: None,
                     chunks: spec_chunks(&spec.sections, &step_numbers),
                 },
+                CHUNKER_VERSION,
             )?
         }
         // Any other page is split at its own headings, like a file in a
         // repository, and keeps the text its lines count in.
         Err(SpecError::UnknownFormat) => {
             let generic = split_document(page, &doc.url);
-            store.write_document(
+            store.write_split_document(
                 source_id,
                 &DocumentRecord {
                     path,
@@ -522,6 +524,7 @@ fn index_document(
                         })
                         .collect(),
                 },
+                CHUNKER_VERSION,
             )?
         }
     };
@@ -579,9 +582,9 @@ fn index_guidance(
     // A version stored as a spec or a generic document with the same bytes
     // was split another way, so it is split again.
     if store
-        .document_hashes(source_id)?
+        .stored_documents(source_id)?
         .get(name)
-        .is_some_and(|old| old[..] == hash[..])
+        .is_some_and(|old| old.is_current(&hash, CHUNKER_VERSION))
         && stored_as_guidance(store, source_id, name)?
     {
         summary.unchanged += 1;
@@ -597,7 +600,7 @@ fn index_guidance(
             text: None,
             chunks: spec_chunks(&sections, &no_steps),
         };
-        summary.chunks += store.write_document(source_id, &document)?;
+        summary.chunks += store.write_split_document(source_id, &document, CHUNKER_VERSION)?;
         summary.written += 1;
     }
 
@@ -785,6 +788,7 @@ mod tests {
     use super::*;
     use crate::test_repo::{Remote, Repo};
     use crate::test_server::Server;
+    use codecite_core::TERMS_VERSION;
     use rusqlite::Connection;
     use std::path::PathBuf;
 
@@ -958,7 +962,8 @@ mod tests {
             };
             Contents {
                 documents: rows(
-                    "SELECT path, language, hex(content_hash), size_bytes, dirty, text
+                    "SELECT path, language, hex(content_hash), size_bytes, dirty, text,
+                            chunker_version, terms_version
                      FROM document ORDER BY path",
                 ),
                 chunks: rows(
@@ -1613,6 +1618,107 @@ mod tests {
             (summary.written, summary.unchanged, summary.removed),
             (2, 1, 0)
         );
+    }
+
+    /// A local fixture, a fetched spec and a local guidance file, all in
+    /// one manifest, with the server and directory that serve them.
+    fn every_kind() -> (Repo, Server, tempfile::TempDir, Manifest) {
+        let repo = fixture();
+        let server = Server::start();
+        server.set("/rfc9449.html", SPEC);
+        let rules_dir = tempfile::tempdir().unwrap();
+        let file = rules_dir.path().join("RULES.md");
+        std::fs::write(&file, RULES).unwrap();
+        let manifest = manifest(vec![
+            local(&repo, Some("app")),
+            document(server.url("/rfc9449.html"), &sha256(SPEC)),
+            Source::Guidance(guidance(Some(file), None, None)),
+        ]);
+        (repo, server, rules_dir, manifest)
+    }
+
+    /// Each document's (path, chunker_version, terms_version), by path.
+    fn versions(corpus: &Corpus) -> Vec<(String, u32, u32)> {
+        let conn = corpus.sql();
+        let mut stmt = conn
+            .prepare("SELECT path, chunker_version, terms_version FROM document ORDER BY path")
+            .unwrap();
+        stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    }
+
+    #[test]
+    fn a_version_bump_resplits_only_the_documents_behind_it() {
+        let (_repo, _server, _rules, manifest) = every_kind();
+        let corpus = Corpus::new();
+        let first = corpus.index(&manifest);
+        assert_eq!(first.written, 5);
+        let current = |path: &str| (path.to_owned(), CHUNKER_VERSION, TERMS_VERSION);
+        let all_current = vec![
+            current("README.md"),
+            current("house-rules"),
+            current("notes.txt"),
+            current("rfc9449"),
+            current("src/lib.rs"),
+        ];
+        assert_eq!(versions(&corpus), all_current);
+        let fresh = corpus.contents();
+        let before = corpus.chunk_ids();
+
+        // As a later build would find them: a code file and the spec split
+        // by an older chunker, the guidance's terms made by older rules.
+        corpus
+            .sql()
+            .execute_batch(
+                "UPDATE document SET chunker_version = 0 WHERE path IN ('src/lib.rs', 'rfc9449');
+                 UPDATE document SET terms_version = 0 WHERE path = 'house-rules';",
+            )
+            .unwrap();
+        let again = corpus.index(&manifest);
+        assert_eq!((again.written, again.unchanged), (3, 2));
+        assert_eq!(versions(&corpus), all_current);
+        // The others kept their rows; the three were written anew, and the
+        // store is as a fresh index of the same pins.
+        let after = corpus.chunk_ids();
+        for path in ["README.md", "notes.txt"] {
+            assert_eq!(after[path], before[path], "{path}");
+        }
+        for path in ["src/lib.rs", "rfc9449", "house-rules"] {
+            assert_ne!(after[path], before[path], "{path}");
+        }
+        assert_eq!(corpus.contents(), fresh);
+
+        // Nothing is behind now.
+        let third = corpus.index(&manifest);
+        assert_eq!((third.written, third.unchanged), (0, 5));
+    }
+
+    #[test]
+    fn the_run_that_upgrades_through_version_8_refills_the_full_text_table() {
+        let (_repo, _server, _rules, manifest) = every_kind();
+        let fresh = Corpus::new();
+        fresh.index(&manifest);
+        // What version 8 leaves: chunk_fts emptied, every document's terms
+        // behind.
+        let corpus = Corpus::new();
+        corpus.index(&manifest);
+        corpus
+            .sql()
+            .execute_batch(
+                "INSERT INTO chunk_fts (chunk_fts) VALUES ('delete-all');
+                 UPDATE document SET terms_version = 0;",
+            )
+            .unwrap();
+        assert_eq!(corpus.matches("validate"), 0);
+
+        let summary = corpus.index(&manifest);
+        assert_eq!(summary.written, 5);
+        assert_eq!(corpus.contents(), fresh.contents());
+        for text in ["validate token", "refresh sessions", "settings"] {
+            assert_eq!(corpus.search(text), fresh.search(text), "{text}");
+        }
     }
 
     #[test]

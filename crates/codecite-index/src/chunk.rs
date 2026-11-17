@@ -9,6 +9,11 @@ pub use code::ChunkerError;
 pub use codecite_core::Language;
 pub(crate) use text::{Heading, Lines, Slugs, markdown_headings, sections, sections_at};
 
+/// The version of the chunker's output. Raise it whenever the same file
+/// splits into different chunks, so each index run records which chunker
+/// wrote the corpus.
+pub const CHUNKER_VERSION: u32 = 1;
+
 /// The longest window, in lines.
 pub const WINDOW_LINES: u32 = 60;
 
