@@ -7,8 +7,8 @@ use std::path::PathBuf;
 use codecite_core::{
     Context, ContextQuery, ContextTarget, Corpora, DEFAULT_MAX_LINES, DEFAULT_SEARCH_LIMIT,
     Definitions, DiffOptions, DiffResult, GrepQuery, GrepResults, MAX_READ_LINES, MAX_SEARCH_LIMIT,
-    ReadOptions, ReadResult, Requirements, RequirementsOptions, Scope, SearchQuery, SearchResults,
-    Store,
+    PinReader, ReadOptions, ReadResult, Requirements, RequirementsOptions, Scope, SearchQuery,
+    SearchResults, Store,
 };
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::{Json, Parameters};
@@ -328,6 +328,9 @@ where
 pub struct Server {
     /// Where the corpus files are: `<data dir>/<corpus>.db`.
     data_dir: PathBuf,
+    /// Reads a manifest's pins, so `corpora` can say which corpora they
+    /// have moved past.
+    pins: Option<PinReader>,
     /// The tools, built from the `#[tool]` methods below.
     tool_router: ToolRouter<Self>,
 }
@@ -337,20 +340,39 @@ impl Server {
     pub fn new(data_dir: PathBuf) -> Self {
         Server {
             data_dir,
+            pins: None,
             tool_router: Self::tool_router(),
         }
     }
+
+    /// The same server, with `corpora` checking each corpus's pins
+    /// against the manifest it was last indexed from.
+    pub fn with_pins(mut self, pins: PinReader) -> Self {
+        self.pins = Some(pins);
+        self
+    }
+}
+
+/// Opens a corpus for a query, as [`Store::open_corpus_or_only`] does,
+/// logging a schema warning on stderr, which isn't the protocol's.
+fn open(dir: &std::path::Path, corpus: Option<&str>) -> codecite_core::Result<Store> {
+    let store = Store::open_corpus_or_only(dir, corpus)?;
+    if let Some(warning) = store.schema_warning() {
+        eprintln!("codecite: {warning}");
+    }
+    Ok(store)
 }
 
 #[tool_router]
 impl Server {
     /// The `corpora` tool: the same JSON as `codecite corpora`.
     #[tool(
-        description = "List the corpora this server can search: each one's age, size, source count and whether it is stale. A stale corpus is refused unless a query allows it."
+        description = "List the corpora this server can search: each one's age, size, source count and whether it is stale, plus `pins_stale` and `stale_pins` when the manifest it was indexed from now pins revisions it doesn't hold, and a `warning` when its schema is older than this server's. A stale corpus is refused unless a query allows it; stale pins and a warning only mean it should be indexed again."
     )]
     async fn corpora(&self) -> Result<Json<Output<Corpora>>, Json<Output<Corpora>>> {
         let dir = self.data_dir.clone();
-        blocking(move || codecite_core::corpora(&dir)).await
+        let pins = self.pins;
+        blocking(move || codecite_core::corpora(&dir, pins)).await
     }
 
     /// The `search` tool: the same JSON as `codecite search --json`.
@@ -365,7 +387,7 @@ impl Server {
         // `params` moves into the closure, which owns it on the blocking
         // pool; `SearchQuery` borrows from it there.
         blocking(move || {
-            let store = Store::open_corpus_or_only(&dir, params.corpus.as_deref())?;
+            let store = open(&dir, params.corpus.as_deref())?;
             let results = store.search(&SearchQuery {
                 text: &params.query,
                 language: params.language.as_deref(),
@@ -389,7 +411,7 @@ impl Server {
     ) -> Result<Json<Output<GrepResults>>, Json<Output<GrepResults>>> {
         let dir = self.data_dir.clone();
         blocking(move || {
-            let store = Store::open_corpus_or_only(&dir, params.corpus.as_deref())?;
+            let store = open(&dir, params.corpus.as_deref())?;
             let matches = store.grep(&GrepQuery {
                 pattern: &params.pattern,
                 fixed: params.fixed,
@@ -415,7 +437,7 @@ impl Server {
     ) -> Result<Json<Output<Definitions>>, Json<Output<Definitions>>> {
         let dir = self.data_dir.clone();
         blocking(move || {
-            let store = Store::open_corpus_or_only(&dir, params.corpus.as_deref())?;
+            let store = open(&dir, params.corpus.as_deref())?;
             store.definition(&params.symbol, params.allow_stale)
         })
         .await
@@ -440,7 +462,7 @@ impl Server {
                 params.content.as_deref(),
                 Some(&cwd),
             )?;
-            let store = Store::open_corpus_or_only(&dir, params.corpus.as_deref())?;
+            let store = open(&dir, params.corpus.as_deref())?;
             store.context(&ContextQuery {
                 target: &target,
                 allow_stale: params.allow_stale,
@@ -459,7 +481,7 @@ impl Server {
     ) -> Result<Json<Output<ReadResult>>, Json<Output<ReadResult>>> {
         let dir = self.data_dir.clone();
         blocking(move || {
-            let store = Store::open_corpus_or_only(&dir, params.corpus.as_deref())?;
+            let store = open(&dir, params.corpus.as_deref())?;
             store.read(
                 &params.citation,
                 &ReadOptions {
@@ -481,7 +503,7 @@ impl Server {
     ) -> Result<Json<Output<DiffResult>>, Json<Output<DiffResult>>> {
         let dir = self.data_dir.clone();
         blocking(move || {
-            let store = Store::open_corpus_or_only(&dir, params.corpus.as_deref())?;
+            let store = open(&dir, params.corpus.as_deref())?;
             store.diff(
                 &params.document,
                 &DiffOptions {
@@ -522,7 +544,7 @@ impl Server {
             allow_stale: params.allow_stale,
         };
         blocking(move || {
-            let store = Store::open_corpus_or_only(&dir, params.corpus.as_deref())?;
+            let store = open(&dir, params.corpus.as_deref())?;
             match target {
                 Ok(citation) => store.requirements(&citation, &options),
                 Err((topic, document)) => store.requirements_on(&topic, &document, &options),
@@ -556,14 +578,18 @@ impl ServerHandler for Server {}
 ///
 /// stdout carries only MCP messages, so anything else codecite prints goes
 /// to stderr.
-pub fn serve_stdio(data_dir: PathBuf) -> Result<()> {
+pub fn serve_stdio(data_dir: PathBuf, pins: Option<PinReader>) -> Result<()> {
     // One thread is plenty for one client, and the blocking pool still
     // runs the SQLite work beside it.
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
     runtime.block_on(async {
-        let running = Server::new(data_dir)
+        let mut server = Server::new(data_dir);
+        if let Some(pins) = pins {
+            server = server.with_pins(pins);
+        }
+        let running = server
             .serve(rmcp::transport::stdio())
             .await
             .map_err(Box::new)?;
@@ -727,8 +753,16 @@ mod tests {
 
     impl Session {
         async fn start(dir: &std::path::Path) -> Session {
+            Session::start_with(dir, None).await
+        }
+
+        /// As [`Session::start`], with `corpora` checking pins by `pins`.
+        async fn start_with(dir: &std::path::Path, pins: Option<PinReader>) -> Session {
             let (server_end, client_end) = tokio::io::duplex(64 * 1024);
-            let server = Server::new(dir.to_path_buf());
+            let mut server = Server::new(dir.to_path_buf());
+            if let Some(pins) = pins {
+                server = server.with_pins(pins);
+            }
             let server = tokio::spawn(async move {
                 let running = server.serve(server_end).await.unwrap();
                 running.waiting().await.unwrap();
@@ -830,9 +864,59 @@ mod tests {
         assert_eq!(structured["corpora"][0]["corpus"], "demo");
         assert_eq!(structured["corpora"][0]["sources"], 3);
         assert_eq!(structured["corpora"][0]["stale"], false);
+        // Without a pin reader, pins aren't checked.
+        assert_eq!(structured["corpora"][0].get("pins_stale"), None);
         assert_eq!(
             structured,
-            serde_json::to_value(codecite_core::corpora(dir.path()).unwrap()).unwrap()
+            serde_json::to_value(codecite_core::corpora(dir.path(), None).unwrap()).unwrap()
+        );
+        session.stop().await;
+    }
+
+    /// A pin reader for tests: a manifest is a file of `<source> <revision>`
+    /// lines.
+    fn read_pins(path: &std::path::Path) -> Option<Vec<codecite_core::ManifestPin>> {
+        let text = std::fs::read_to_string(path).ok()?;
+        Some(
+            text.lines()
+                .filter_map(|line| line.split_once(' '))
+                .map(|(source, revision)| codecite_core::ManifestPin {
+                    source: source.into(),
+                    revision: revision.into(),
+                })
+                .collect(),
+        )
+    }
+
+    #[tokio::test]
+    async fn corpora_reports_the_pins_the_corpus_does_not_hold() {
+        let dir = fixture();
+        let manifest = dir.path().join("demo.pins");
+        let moved = format!("{:0<64}", "9f9f");
+        std::fs::write(&manifest, format!("app {HEAD}\nrfc9449 {moved}\n")).unwrap();
+        Store::open_read_write(&dir.path().join("demo.db"))
+            .unwrap()
+            .set_manifest_path(&manifest)
+            .unwrap();
+        let session = Session::start_with(dir.path(), Some(read_pins)).await;
+
+        let structured = session.ok("corpora", json!({})).await;
+        let demo = &structured["corpora"][0];
+        assert_eq!(demo["pins_stale"], true, "{demo}");
+        assert_eq!(demo["stale"], false, "{demo}");
+        assert_eq!(
+            demo["stale_pins"],
+            json!([{
+                "source": "rfc9449",
+                "pinned": moved,
+                "stored": [format!("{:0<64}", "1a2b")],
+            }])
+        );
+        // The same JSON `codecite corpora` prints with the same reader.
+        assert_eq!(
+            structured,
+            serde_json::to_value(codecite_core::corpora(dir.path(), Some(read_pins)).unwrap())
+                .unwrap()
         );
         session.stop().await;
     }

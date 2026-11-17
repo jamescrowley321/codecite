@@ -9,8 +9,8 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use codecite_core::{
-    ChunkRecord, DocumentRecord, IndexRun, RuleScope, RunCounts, SourceRecord, SpecAliases, Store,
-    SymbolRecord,
+    ChunkRecord, DocumentRecord, IndexRun, ManifestPin, RuleScope, RunCounts, SourceRecord,
+    SpecAliases, Store, SymbolRecord,
 };
 use sha2::{Digest, Sha256};
 
@@ -324,6 +324,66 @@ fn source_name(local: &LocalSource, tree: &LocalTree) -> String {
     })
 }
 
+/// The revisions the manifest pins, under the names an index run stores
+/// their sources by: each git source's commit, each document version's
+/// sha256, and each pinned guidance file's. A local source, an unpinned
+/// guidance file and an excluded source pin nothing.
+pub fn pins(manifest: &Manifest) -> Vec<ManifestPin> {
+    let pin = |source: String, revision: &str| ManifestPin {
+        source,
+        revision: revision.to_owned(),
+    };
+    manifest
+        .sources
+        .iter()
+        .filter_map(|source| match source {
+            Source::Git(git) if git.license_class != LicenseClass::Excluded => {
+                Some(pin(git_name(git), &git.commit))
+            }
+            Source::Document(doc) if doc.license_class != LicenseClass::Excluded => {
+                Some(pin(doc.name.clone(), &doc.sha256))
+            }
+            Source::Guidance(rules) if rules.license_class != LicenseClass::Excluded => rules
+                .sha256
+                .as_deref()
+                .map(|sha256| pin(rules.name.clone(), sha256)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The most bytes [`manifest_pins`] reads of a manifest. A real one is a
+/// few KiB.
+pub const MAX_MANIFEST_SIZE: u64 = 1024 * 1024;
+
+/// [`pins`] of the manifest at `path`, or `None` when it can't be read or
+/// parsed: the [`PinReader`](codecite_core::PinReader) the freshness check
+/// uses.
+///
+/// The path comes from the corpus file, which may not be the user's own,
+/// so it must be absolute and name a regular file (never a FIFO or device
+/// that would block or never end) of at most [`MAX_MANIFEST_SIZE`], and the
+/// read itself stops past that.
+pub fn manifest_pins(path: &Path) -> Option<Vec<ManifestPin>> {
+    use std::io::Read as _;
+
+    if !path.is_absolute() || !std::fs::metadata(path).ok()?.is_file() {
+        return None;
+    }
+    let file = std::fs::File::open(path).ok()?;
+    if !file.metadata().ok()?.is_file() {
+        return None;
+    }
+    let mut text = String::new();
+    file.take(MAX_MANIFEST_SIZE + 1)
+        .read_to_string(&mut text)
+        .ok()?;
+    if text.len() as u64 > MAX_MANIFEST_SIZE {
+        return None;
+    }
+    Manifest::parse(&text).ok().map(|manifest| pins(&manifest))
+}
+
 /// The manifest's `name`, else the URL's last path segment without `.git`:
 /// `identity-model` for `https://github.com/acme/identity-model.git`.
 fn git_name(git: &GitSource) -> String {
@@ -403,7 +463,7 @@ fn index_tree(
         *summary.skipped.entry(reason).or_default() += count;
     }
 
-    let stored = store.document_hashes(source_id)?;
+    let stored = store.stored_documents(source_id)?;
     let mut kept = HashSet::new();
     for file in &tree.files {
         let bytes = match read(&tree.root, &file.path)? {
@@ -416,7 +476,7 @@ fn index_tree(
         let hash = Sha256::digest(&bytes);
         if stored
             .get(&file.path)
-            .is_some_and(|old| old[..] == hash[..])
+            .is_some_and(|old| old.is_current(&hash, CHUNKER_VERSION))
         {
             store.set_dirty(source_id, &file.path, file.dirty)?;
             kept.insert(file.path.as_str());
@@ -463,7 +523,7 @@ fn index_tree(
                 })
                 .collect(),
         };
-        summary.chunks += store.write_document(source_id, &document)?;
+        summary.chunks += store.write_split_document(source_id, &document, CHUNKER_VERSION)?;
         summary.written += 1;
         kept.insert(file.path.as_str());
     }
@@ -504,12 +564,13 @@ fn index_document(
     // A document source holds one document, stored under its name.
     let path = doc.name.as_str();
     let hash = Sha256::digest(bytes);
-    // The same bytes split the same way, unless the version was stored as
-    // guidance: Markdown with no text of its own, split into rules.
+    // The same bytes split the same way by the same chunker, unless the
+    // version was stored as guidance: Markdown with no text of its own,
+    // split into rules.
     if store
-        .document_hashes(source_id)?
+        .stored_documents(source_id)?
         .get(path)
-        .is_some_and(|old| old[..] == hash[..])
+        .is_some_and(|old| old.is_current(&hash, CHUNKER_VERSION))
         && !stored_as_guidance(store, source_id, path)?
     {
         summary.unchanged += 1;
@@ -526,7 +587,7 @@ fn index_document(
                 .iter()
                 .map(|s| s.steps.iter().map(|step| step.number.to_string()).collect())
                 .collect();
-            store.write_document(
+            store.write_split_document(
                 source_id,
                 &DocumentRecord {
                     path,
@@ -538,13 +599,14 @@ fn index_document(
                     text: None,
                     chunks: spec_chunks(&spec.sections, &step_numbers),
                 },
+                CHUNKER_VERSION,
             )?
         }
         // Any other page is split at its own headings, like a file in a
         // repository, and keeps the text its lines count in.
         Err(SpecError::UnknownFormat) => {
             let generic = split_document(page, &doc.url);
-            store.write_document(
+            store.write_split_document(
                 source_id,
                 &DocumentRecord {
                     path,
@@ -570,6 +632,7 @@ fn index_document(
                         })
                         .collect(),
                 },
+                CHUNKER_VERSION,
             )?
         }
     };
@@ -627,9 +690,9 @@ fn index_guidance(
     // A version stored as a spec or a generic document with the same bytes
     // was split another way, so it is split again.
     if store
-        .document_hashes(source_id)?
+        .stored_documents(source_id)?
         .get(name)
-        .is_some_and(|old| old[..] == hash[..])
+        .is_some_and(|old| old.is_current(&hash, CHUNKER_VERSION))
         && stored_as_guidance(store, source_id, name)?
     {
         summary.unchanged += 1;
@@ -645,7 +708,7 @@ fn index_guidance(
             text: None,
             chunks: spec_chunks(&sections, &no_steps),
         };
-        summary.chunks += store.write_document(source_id, &document)?;
+        summary.chunks += store.write_split_document(source_id, &document, CHUNKER_VERSION)?;
         summary.written += 1;
     }
 
@@ -834,6 +897,7 @@ mod tests {
     use crate::error::error_chain;
     use crate::test_repo::{Remote, Repo};
     use crate::test_server::Server;
+    use codecite_core::TERMS_VERSION;
     use rusqlite::Connection;
     use std::path::PathBuf;
 
@@ -1008,7 +1072,8 @@ mod tests {
             };
             Contents {
                 documents: rows(
-                    "SELECT path, language, hex(content_hash), size_bytes, dirty, text
+                    "SELECT path, language, hex(content_hash), size_bytes, dirty, text,
+                            chunker_version, terms_version
                      FROM document ORDER BY path",
                 ),
                 chunks: rows(
@@ -1837,6 +1902,155 @@ mod tests {
             (summary.written, summary.unchanged, summary.removed),
             (2, 1, 0)
         );
+    }
+
+    /// A local fixture, a fetched spec and a local guidance file, all in
+    /// one manifest, with the server and directory that serve them.
+    fn every_kind() -> (Repo, Server, tempfile::TempDir, Manifest) {
+        let repo = fixture();
+        let server = Server::start();
+        server.set("/rfc9449.html", SPEC);
+        let rules_dir = tempfile::tempdir().unwrap();
+        let file = rules_dir.path().join("RULES.md");
+        std::fs::write(&file, RULES).unwrap();
+        let manifest = manifest(vec![
+            local(&repo, Some("app")),
+            document(server.url("/rfc9449.html"), &sha256(SPEC)),
+            Source::Guidance(guidance(Some(file), None, None)),
+        ]);
+        (repo, server, rules_dir, manifest)
+    }
+
+    /// Each document's (path, chunker_version, terms_version), by path.
+    fn versions(corpus: &Corpus) -> Vec<(String, u32, u32)> {
+        let conn = corpus.sql();
+        let mut stmt = conn
+            .prepare("SELECT path, chunker_version, terms_version FROM document ORDER BY path")
+            .unwrap();
+        stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    }
+
+    #[test]
+    fn the_pins_are_git_commits_document_hashes_and_pinned_guidance() {
+        let repo = fixture();
+        let remote = Remote::new();
+        let commit = repo.push(&remote, "main");
+        let mut excluded = git(&remote, &commit);
+        if let Source::Git(g) = &mut excluded {
+            g.name = Some("skipped".into());
+            g.license_class = LicenseClass::Excluded;
+        }
+        let pinned = guidance(None, Some("https://x/rules.md".into()), Some("cc".into()));
+        let mut unpinned = guidance(Some("RULES.md".into()), None, None);
+        unpinned.name = "local-rules".into();
+        let mut upstream = git(&remote, &commit);
+        if let Source::Git(g) = &mut upstream {
+            g.name = Some("upstream".into());
+        }
+        let manifest = manifest(vec![
+            local(&repo, Some("app")),
+            upstream,
+            excluded,
+            document("https://x/rfc9449.html".into(), "aa"),
+            Source::Guidance(pinned),
+            Source::Guidance(unpinned),
+        ]);
+        let pin = |source: &str, revision: &str| ManifestPin {
+            source: source.into(),
+            revision: revision.into(),
+        };
+        assert_eq!(
+            pins(&manifest),
+            [
+                pin("upstream", &commit),
+                pin("rfc9449", "aa"),
+                pin("house-rules", "cc"),
+            ]
+        );
+        // A manifest that can't be read gives none.
+        assert_eq!(manifest_pins(Path::new("/nonexistent/m.toml")), None);
+    }
+
+    #[test]
+    fn manifest_pins_reads_only_a_small_regular_file_at_an_absolute_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let text = "name = \"demo\"\n\n[[source]]\nurl = \"https://x/app.git\"\n\
+                    commit = \"0123456789abcdef0123456789abcdef01234567\"\nuse = \"adapt\"\n";
+        let good = dir.path().join("demo.toml");
+        std::fs::write(&good, text).unwrap();
+        assert_eq!(
+            manifest_pins(&good),
+            Some(vec![ManifestPin {
+                source: "app".into(),
+                revision: "0123456789abcdef0123456789abcdef01234567".into(),
+            }])
+        );
+
+        // Relative, a directory, a device, a FIFO (which would block an
+        // open), and a file past the cap all give none, at once.
+        assert_eq!(manifest_pins(Path::new("demo.toml")), None);
+        assert_eq!(manifest_pins(dir.path()), None);
+        assert_eq!(manifest_pins(Path::new("/dev/zero")), None);
+        let fifo = dir.path().join("fifo.toml");
+        let made = std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap();
+        assert!(made.success());
+        assert_eq!(manifest_pins(&fifo), None);
+        let big = dir.path().join("big.toml");
+        let padding = "#".repeat(MAX_MANIFEST_SIZE as usize);
+        std::fs::write(&big, format!("{text}{padding}\n")).unwrap();
+        assert_eq!(manifest_pins(&big), None);
+    }
+
+    #[test]
+    fn a_version_bump_resplits_only_the_documents_behind_it() {
+        let (_repo, _server, _rules, manifest) = every_kind();
+        let corpus = Corpus::new();
+        let first = corpus.index(&manifest);
+        assert_eq!(first.written, 5);
+        let current = |path: &str| (path.to_owned(), CHUNKER_VERSION, TERMS_VERSION);
+        let all_current = vec![
+            current("README.md"),
+            current("house-rules"),
+            current("notes.txt"),
+            current("rfc9449"),
+            current("src/lib.rs"),
+        ];
+        assert_eq!(versions(&corpus), all_current);
+        let fresh = corpus.contents();
+        let before = corpus.chunk_ids();
+
+        // As a later build would find them: a code file and the spec split
+        // by an older chunker, the guidance's terms made by older rules.
+        corpus
+            .sql()
+            .execute_batch(
+                "UPDATE document SET chunker_version = 0 WHERE path IN ('src/lib.rs', 'rfc9449');
+                 UPDATE document SET terms_version = 0 WHERE path = 'house-rules';",
+            )
+            .unwrap();
+        let again = corpus.index(&manifest);
+        assert_eq!((again.written, again.unchanged), (3, 2));
+        assert_eq!(versions(&corpus), all_current);
+        // The others kept their rows; the three were written anew, and the
+        // store is as a fresh index of the same pins.
+        let after = corpus.chunk_ids();
+        for path in ["README.md", "notes.txt"] {
+            assert_eq!(after[path], before[path], "{path}");
+        }
+        for path in ["src/lib.rs", "rfc9449", "house-rules"] {
+            assert_ne!(after[path], before[path], "{path}");
+        }
+        assert_eq!(corpus.contents(), fresh);
+
+        // Nothing is behind now.
+        let third = corpus.index(&manifest);
+        assert_eq!((third.written, third.unchanged), (0, 5));
     }
 
     #[test]

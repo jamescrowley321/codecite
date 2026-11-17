@@ -966,8 +966,22 @@ codecite corpora
 ```
 
 ```json
-{"corpora":[{"age_days":0.0,"corpus":"identity","indexed_at":"2026-10-20T22:56:30Z","max_age_days":30,"size_bytes":41594880,"sources":40,"stale":false}]}
+{"corpora":[{"age_days":0.0,"corpus":"identity","indexed_at":"2026-10-20T22:56:30Z","max_age_days":30,"pins_stale":false,"size_bytes":41594880,"sources":40,"stale":false}]}
 ```
+
+`stale` is true once the index is older than the manifest's `max_age_days`,
+and queries then refuse it unless allowed. `pins_stale` is true when the
+manifest the corpus was last indexed from now pins a commit or document
+version the corpus doesn't hold, and `stale_pins` lists each one:
+
+```json
+{"pinned":"9f2c…","source":"identity-model","stored":["41ab…"]}
+```
+
+Run `codecite index` again to catch up. `pins_stale` is left out when that
+manifest can't be read where it was. A corpus written by an older codecite
+whose schema this build can still read carries a `warning` saying so, and
+queries print the same warning on stderr; `codecite index` upgrades it.
 
 ## Verify a release binary
 

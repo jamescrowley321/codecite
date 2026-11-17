@@ -357,7 +357,7 @@ mod tests {
         let meta: i64 = store
             .conn
             .query_row(
-                "SELECT count(*) FROM meta WHERE key <> 'schema_version'",
+                "SELECT count(*) FROM meta WHERE key NOT IN ('schema_version', 'tokenizer')",
                 [],
                 |r| r.get(0),
             )
