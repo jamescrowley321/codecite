@@ -3,9 +3,10 @@
 //! exact name still matches.
 
 /// The version of the rules that turn text into search terms. Raise it
-/// whenever [`identifier_terms`] or [`text_terms`] gives different terms;
-/// each document stores the version its full-text rows were written by,
-/// and an index run writes again every document stored under another.
+/// whenever [`identifier_terms`] or [`text_terms`] gives different terms:
+/// each document stores the version its full-text rows were written by, an
+/// index run writes again every document stored under another, and each
+/// [`IndexRun`](crate::IndexRun) records which rules wrote the corpus.
 pub const TERMS_VERSION: u32 = 1;
 
 /// Splits an identifier into its lowercase parts.

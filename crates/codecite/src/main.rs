@@ -645,7 +645,9 @@ fn index(corpus: &str, manifest: Option<PathBuf>, print_hashes: bool) -> anyhow:
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
-    let mut store = Store::open_read_write(&path)
+    // The lock comes first, so a second run fails on it rather than on
+    // this one's migrations.
+    let mut store = Store::open_for_index(&path)
         .with_context(|| format!("opening corpus file {}", path.display()))?;
     let clones = Clones::new(dirs.cache_dir().join("repos"));
     let summary = index_corpus(

@@ -1,9 +1,11 @@
 //! Writing sources and their documents into the store. Each call is one
-//! transaction, so a document is either fully written or not at all.
+//! savepoint, so a document is either fully written or not at all: its
+//! own transaction outside an index run, and part of the run's one
+//! transaction inside it.
 
 use std::collections::HashMap;
 
-use rusqlite::{OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use super::Store;
 use super::search::name_key;
@@ -164,7 +166,7 @@ impl Store {
     /// in one transaction, so a guidance source the manifest turns into a
     /// plain document stops giving rules.
     pub fn clear_guidance(&mut self, source_id: i64) -> Result<()> {
-        let tx = self.conn.transaction()?;
+        let tx = self.conn.savepoint()?;
         tx.execute("UPDATE source SET guidance = 0 WHERE id = ?1", [source_id])?;
         tx.execute("DELETE FROM rule_scope WHERE source_id = ?1", [source_id])?;
         tx.commit()?;
@@ -232,7 +234,7 @@ impl Store {
     }
 
     /// Replaces the document at `document.path` in the source, with its
-    /// chunks, symbols and full-text rows, in one transaction, stamped with
+    /// chunks, symbols and full-text rows, in one savepoint, stamped with
     /// `chunker_version`, the version of the chunker that split it, and
     /// this build's [`TERMS_VERSION`]. Returns how many chunks were
     /// written.
@@ -242,7 +244,7 @@ impl Store {
         document: &DocumentRecord<'_>,
         chunker_version: u32,
     ) -> Result<usize> {
-        let tx = self.conn.transaction()?;
+        let tx = self.conn.savepoint()?;
         // What the document is for, stored so that search reads its weight
         // instead of working it out for every candidate it ranks.
         let source_kind: String = tx.query_row(
@@ -309,7 +311,7 @@ impl Store {
     /// citations name them, sorted: `app`, or `rfc9449@sha256:1a2b3c4d5e6f`
     /// for a document version.
     pub fn delete_sources_except(&mut self, keep: &[i64]) -> Result<Vec<String>> {
-        let tx = self.conn.transaction()?;
+        let tx = self.conn.savepoint()?;
         let mut sources: Vec<(i64, String)> = {
             let mut stmt = tx.prepare(
                 "SELECT id, CASE kind WHEN 'document' THEN name || '@sha256:' || substr(revision, 1, 12)
@@ -348,7 +350,7 @@ impl Store {
     /// Replaces the stored document aliases with `aliases`, so `read` can
     /// resolve `OIDC Core §3.1` without the manifest.
     pub fn set_aliases(&mut self, aliases: &SpecAliases) -> Result<()> {
-        let tx = self.conn.transaction()?;
+        let tx = self.conn.savepoint()?;
         tx.execute("DELETE FROM alias", [])?;
         let mut insert = tx.prepare("INSERT INTO alias (alias, name) VALUES (?1, ?2)")?;
         for (alias, name) in aliases.iter() {
@@ -362,7 +364,7 @@ impl Store {
 
 /// Deletes a document's chunks, their full-text rows, its symbols and the
 /// edges it is evidence for, keeping the document row.
-fn clear_document(tx: &Transaction<'_>, document_id: i64) -> Result<()> {
+fn clear_document(tx: &Connection, document_id: i64) -> Result<()> {
     // The `chunk_fts_delete` trigger deletes each chunk's full-text row.
     for table_filter in [
         "chunk WHERE document_id = ?1",
@@ -389,11 +391,7 @@ pub(super) fn fts_row(symbol: Option<&str>, path: &str, text: &str) -> [String; 
     ]
 }
 
-fn insert_chunks(
-    tx: &Transaction<'_>,
-    document_id: i64,
-    document: &DocumentRecord<'_>,
-) -> Result<()> {
+fn insert_chunks(tx: &Connection, document_id: i64, document: &DocumentRecord<'_>) -> Result<()> {
     let mut symbol = tx.prepare_cached(
         "INSERT INTO symbol (id, display_name, kind, document_id, start_line, end_line, name_key)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",

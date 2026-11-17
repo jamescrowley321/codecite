@@ -46,7 +46,7 @@ pub use search::{
 };
 
 mod run;
-pub use run::FTS_TOKENIZER;
+pub use run::{FTS_TOKENIZER, IndexRun, RunCounts};
 
 mod write;
 pub use write::{ChunkRecord, DocumentRecord, SourceRecord, StoredDocument, SymbolRecord};
@@ -69,7 +69,7 @@ struct Migration {
 ///
 /// A migration that changes how documents are split or their terms made
 /// sets `document.chunker_version` or `document.terms_version` to 0 for
-/// the documents it affects, from version 11 on, so the next index run
+/// the documents it affects, from version 12 on, so the next index run
 /// splits them again. Raising `codecite_index::CHUNKER_VERSION` or
 /// [`TERMS_VERSION`](crate::TERMS_VERSION) needs no migration at all.
 const MIGRATIONS: &[Migration] = &[
@@ -114,10 +114,15 @@ const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../migrations/0010_rank_inputs.sql"),
         read_compatible: false,
     },
+    // Adds the index run log, which no query reads.
+    Migration {
+        sql: include_str!("../migrations/0011_index_run.sql"),
+        read_compatible: true,
+    },
     // Adds the derived-data versions and `meta.tokenizer`, which no query
     // reads.
     Migration {
-        sql: include_str!("../migrations/0011_derived_versions.sql"),
+        sql: include_str!("../migrations/0012_derived_versions.sql"),
         read_compatible: true,
     },
 ];
@@ -202,6 +207,9 @@ pub struct Store {
     path: PathBuf,
     /// Why a file opened for queries is read at an older schema.
     schema_warning: Option<String>,
+    /// The exclusive lock on `<path>.lock` an index run holds, released
+    /// when the store is dropped.
+    lock: Option<std::fs::File>,
 }
 
 impl Store {
@@ -275,7 +283,7 @@ impl Store {
         enable_wal(&conn, path)?;
         // In WAL mode, NORMAL syncs at checkpoints rather than at every
         // commit. A power cut can lose the last commits but never corrupts
-        // the file, and an index run commits once per document.
+        // the file, and an index run commits once, when it publishes.
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         search::register_functions(&conn)?;
 
@@ -283,6 +291,7 @@ impl Store {
             conn,
             path: path.to_path_buf(),
             schema_warning: None,
+            lock: None,
         })
     }
 
@@ -337,6 +346,7 @@ impl Store {
             conn,
             path: path.to_path_buf(),
             schema_warning,
+            lock: None,
         })
     }
 
@@ -1399,10 +1409,10 @@ mod tests {
     }
 
     #[test]
-    fn version_11_stamps_stored_documents_and_records_the_tokenizer() {
-        let dir = scratch("v10-versions");
+    fn version_12_stamps_stored_documents_and_records_the_tokenizer() {
+        let dir = scratch("v11-versions");
         let path = dir.join("corpus.db");
-        older_file(&path, 10);
+        older_file(&path, 11);
 
         let store = Store::open_read_write(&path).unwrap();
         assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
@@ -1518,6 +1528,7 @@ mod tests {
     fn read_only_opens_a_read_compatible_older_schema_with_a_warning() {
         let dir = scratch("ro-compatible");
         let path = dir.join("corpus.db");
+        // Two read-compatible migrations behind: 11 and 12.
         older_file(&path, 10);
         let before = fs::read(&path).unwrap();
 
