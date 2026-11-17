@@ -55,7 +55,7 @@ a spec chunk never loads its document's text.
    document's lines give the chunk's text. Test: a code chunk stores NULL, a
    chunk whose text isn't its lines and a spec chunk keep theirs, every chunk
    reads back as written, and `chunk` has no `terms` column.
-3. **Migration 0011:** rebuild `chunk` without `terms` and with nullable
+3. **Migration 0012:** rebuild `chunk` without `terms` and with nullable
    `text` (SQLite can't drop NOT NULL), keeping IDs, indexes and the
    `chunk_fts_delete` trigger. In Rust, in the same transaction, clear the
    text of every chunk its document's text holds. `fill_fts`, the refill
@@ -64,7 +64,7 @@ a spec chunk never loads its document's text.
    so the freed pages leave the file. The migration flags the file
    (`meta.vacuum_pending`) and the flag goes only when a vacuum succeeds, so
    a vacuum that fails warns, leaves the open working, and is retried on the
-   next read-write open. Test: a version 10 corpus with a
+   next read-write open. Test: a version 11 corpus with a
    nested class, a method, a window that no longer matches its lines and a
    spec section comes up with the right NULLs, reads every chunk back,
    keeps its full-text rows, indexes and trigger, and has no free pages.
@@ -86,6 +86,9 @@ a spec chunk never loads its document's text.
 ## Concurrency
 
 Other open work adds migrations (#242, #248). #261 (two-phase ranking)
-landed first with 0010, so this takes 0011; whoever lands later renumbers.
+landed first with 0010 and #262 (atomic index runs) with 0011, so this
+takes 0012; whoever lands later renumbers. Since #262 a document write is a
+savepoint inside the run's one transaction; `insert_chunks` writes inside
+whatever `write_document` opens, so it needs no change for that.
 Phase 2 of #261's search reads the text through the same `coalesce`, and
 phase 1 reads none.

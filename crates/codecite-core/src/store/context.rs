@@ -491,7 +491,7 @@ impl Store {
     /// `scopes`, by rule number. A rule left out, or given an empty scope,
     /// applies to every file.
     pub fn set_guidance(&mut self, source_id: i64, scopes: &[(&str, &RuleScope)]) -> Result<()> {
-        let tx = self.conn.transaction()?;
+        let tx = self.conn.savepoint()?;
         tx.execute("UPDATE source SET guidance = 1 WHERE id = ?1", [source_id])?;
         tx.execute("DELETE FROM rule_scope WHERE source_id = ?1", [source_id])?;
         {

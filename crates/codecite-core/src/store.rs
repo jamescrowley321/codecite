@@ -48,6 +48,9 @@ pub use search::{
     MAX_SNIPPET_LINES, Scope, SearchQuery, SearchResult, SearchResults,
 };
 
+mod run;
+pub use run::{FTS_TOKENIZER, IndexRun, RunCounts};
+
 mod write;
 pub use write::{ChunkRecord, DocumentRecord, SourceRecord, SymbolRecord};
 
@@ -65,12 +68,13 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0008_refill_fts.sql"),
     include_str!("../migrations/0009_one_ranking.sql"),
     include_str!("../migrations/0010_rank_inputs.sql"),
-    include_str!("../migrations/0011_derive_chunk_text.sql"),
+    include_str!("../migrations/0011_index_run.sql"),
+    include_str!("../migrations/0012_derive_chunk_text.sql"),
 ];
 
 /// The version whose migration clears the chunk text a document's text
 /// holds. A file brought up past it is vacuumed, so the space comes back.
-const DERIVE_CHUNK_TEXT: u32 = 11;
+const DERIVE_CHUNK_TEXT: u32 = 12;
 
 /// The `meta` key that marks a file a migration freed space in: set in the
 /// migration's transaction and deleted only once a vacuum succeeds, so a
@@ -118,7 +122,7 @@ fn vacuum_if_pending(conn: &Connection) -> rusqlite::Result<()> {
 /// being indexed again. Version 5 fills `spec_fts` this way, and version 8
 /// refills both tables after emptying them; version 9 then drops
 /// `spec_fts`. A chunk's terms are split from its text again, since no
-/// version from 11 on stores them.
+/// version from 12 on stores them.
 ///
 /// `table` and `filter` are formatted into the SQL, which is safe only
 /// because every caller passes a constant written here, never input.
@@ -155,7 +159,7 @@ fn fill_fts(tx: &rusqlite::Transaction<'_>, table: &str, filter: &str) -> Result
 
 /// Clears `chunk.text` wherever the chunk's document stores its text and
 /// the chunk is that text's lines, as `insert_chunks` writes a chunk from
-/// version 11 on. A chunk whose text differs from its lines keeps it.
+/// version 12 on. A chunk whose text differs from its lines keeps it.
 fn clear_derivable_text(tx: &rusqlite::Transaction<'_>) -> Result<()> {
     let mut documents = tx.prepare("SELECT id, text FROM document WHERE text IS NOT NULL")?;
     let mut chunks = tx.prepare(
@@ -229,6 +233,9 @@ pub struct Store {
     conn: Connection,
     path: PathBuf,
     vacuum_error: Option<String>,
+    /// The exclusive lock on `<path>.lock` an index run holds, released
+    /// when the store is dropped.
+    lock: Option<std::fs::File>,
 }
 
 impl Store {
@@ -322,13 +329,14 @@ impl Store {
         enable_wal(&conn, path)?;
         // In WAL mode, NORMAL syncs at checkpoints rather than at every
         // commit. A power cut can lose the last commits but never corrupts
-        // the file, and an index run commits once per document.
+        // the file, and an index run commits once, when it publishes.
         conn.pragma_update(None, "synchronous", "NORMAL")?;
 
         Ok(Store {
             conn,
             path: path.to_path_buf(),
             vacuum_error,
+            lock: None,
         })
     }
 
@@ -374,6 +382,7 @@ impl Store {
             conn,
             path: path.to_path_buf(),
             vacuum_error: None,
+            lock: None,
         })
     }
 
@@ -1200,10 +1209,10 @@ mod tests {
     }
 
     #[test]
-    fn version_11_clears_chunk_text_its_document_holds_and_drops_terms() {
-        let dir = scratch("v10");
+    fn version_12_clears_chunk_text_its_document_holds_and_drops_terms() {
+        let dir = scratch("v11");
         let path = dir.join("corpus.db");
-        // A version 10 corpus: a code file whose function, nested method and
+        // A version 11 corpus: a code file whose function, nested method and
         // window are its lines, plus one chunk whose text isn't, and a spec
         // section with no document text. Every chunk has its full-text row.
         let code = "struct S;\r\nimpl S {\r\n    fn validate() {}\r\n}\n\n// tail\n";
@@ -1217,14 +1226,14 @@ mod tests {
         let conn = raw(&path);
         conn.execute_batch(&format!(
             "{}
-             INSERT INTO meta (key, value) VALUES ('schema_version', '10');
+             INSERT INTO meta (key, value) VALUES ('schema_version', '11');
              INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
                VALUES (1, 'app', 'local', '/src/app', 'abc', 'adapt', 'then'),
                       (2, 'rfc', 'document', 'https://x', 'def', 'quote', 'then');
              INSERT INTO document (id, source_id, path, language, content_hash, text)
                VALUES (1, 1, 'src/lib.rs', 'rust', x'01', NULL),
                       (2, 2, 'rfc', NULL, x'02', NULL);",
-            MIGRATIONS[..10].join("\n")
+            MIGRATIONS[..11].join("\n")
         ))
         .unwrap();
         conn.execute("UPDATE document SET text = ?1 WHERE id = 1", [code])
@@ -1322,18 +1331,18 @@ mod tests {
     fn a_failed_vacuum_keeps_the_open_and_is_retried_on_the_next() {
         let dir = scratch("vacuum");
         let path = dir.join("corpus.db");
-        // A version 10 corpus with free pages for a vacuum to give back.
+        // A version 11 corpus with free pages for a vacuum to give back.
         let conn = raw(&path);
         conn.execute_batch(&format!(
             "{}
-             INSERT INTO meta (key, value) VALUES ('schema_version', '10');
+             INSERT INTO meta (key, value) VALUES ('schema_version', '11');
              INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
                VALUES (1, 'app', 'local', '/src/app', 'abc', 'adapt', 'then');
              INSERT INTO document (id, source_id, path, language, content_hash, text)
                VALUES (1, 1, 'src/lib.rs', 'rust', x'01', 'fn a() {{}}');
              INSERT INTO chunk (id, document_id, start_line, end_line, kind, text, terms)
                VALUES (1, 1, 1, 1, 'function', 'fn a() {{}}', 'fn a');",
-            MIGRATIONS[..10].join("\n")
+            MIGRATIONS[..11].join("\n")
         ))
         .unwrap();
         let filler = "x".repeat(64 * 1024);
