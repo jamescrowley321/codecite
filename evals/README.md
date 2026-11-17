@@ -183,13 +183,16 @@ p95 guardrail of 150 ms.
   tests, the test `data`, the language, the `setup` and `test` commands and
   the `workdir` they run in), `prompt.md`, `hidden/`, `reference/fix.patch`
   (the PR's non-test diff) and `check.sh`. Test data is any file the PR
-  changed under `testdata`, and under a `tests`, `test` or `__tests__`
+  changed under `testdata` or a Jest `__snapshots__` directory, any `.snap`
+  file, and under a `tests`, `test` or `__tests__`
   directory any non-code file and anything in a `fixtures`, `__fixtures__`
   or snapshot directory below it, code or not; a `fixtures` or `snapshots`
   directory outside the tests is source: it goes into `hidden/` with the tests and is
   overlaid with them, but only the test files are named to the runner. A
-  Rust test target is a file directly in a crate's `tests/` (not
-  `src/tests/`, a module of the library); one deeper (`tests/common/mod.rs`) is overlaid but is no
+  Rust hidden test is a file in a `tests/` directory beside a `Cargo.toml`
+  at the merge; one in a `tests/` module inside a crate's `src/` is library
+  code and goes in the fix. A Rust test target is a file directly in that
+  `tests/`; one deeper (`tests/common/mod.rs`) is overlaid but is no
   `--test`, and a Rust PR with no target is skipped, since a bare `cargo
   test` would run the whole package. When the hidden tests call names the
   fix adds and the base lacks, the prompt ends with a "Names the tests use"
@@ -198,7 +201,7 @@ p95 guardrail of 150 ms.
   mined PR's text, so only its last five lines reach the prompt, each cut
   to 200 characters and stripped of Unicode format and control characters
   (zero-width, bidi overrides), inside a fence no backtick run in them can
-  close; read
+  close. The issue's title and body lose the same characters; read
   the section by hand before the task freezes, as with anything added by
   hand. What else the tests
   pin that the issue leaves open (an exact message, say) is added by hand
@@ -469,7 +472,9 @@ benchmark).
 4. Freeze it: set `frozen_at` in its `task.json` to the commit its first A/B
    run runs at, in the PR that adds the task to the panel. From then on CI's
    frozen-task check (`uv run --locked codecite-eval-frozen`) fails any PR
-   that changes a file under `tasks/<id>/` or moves `frozen_at`. A task that
+   that changes a file under `tasks/<id>/` or moves `frozen_at`. A task
+   frozen out of band says why in `frozen_reason`, in the commit that
+   `frozen_at` names. A task that
    needs changing after that is a new task: copy it to a new id and
    calibrate that.
 

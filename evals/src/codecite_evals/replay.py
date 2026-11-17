@@ -79,7 +79,8 @@ DEFINITION = {
 # An entry of a Go `const (` or `var (` block; anywhere else the same line
 # sets a local variable.
 GO_BLOCK_START = re.compile(r"^(?:const|var)\s*\(\s*(?://.*)?$")
-GO_BLOCK_ENTRY = re.compile(r"^\t([A-Za-z_]\w*)(?:\s+[\w.*\[\]]+)?\s*=[^=]")
+# The `=` is optional: an iota-continued constant or a typed var has none.
+GO_BLOCK_ENTRY = re.compile(r"^\t([A-Za-z_]\w*)(?:\s+[\w.*\[\]]+)?\s*(?:=[^=]|//|$)")
 HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 COMMENT = re.compile(r"^\s*(?://|#|/\*|\*)")
 # How much of a definition's doc comment reaches the prompt: the mined PR's
@@ -115,13 +116,15 @@ def is_test_path(path: str) -> bool:
 
 def is_test_data(path: str) -> bool:
     """A file a PR's tests read rather than run (a fixture, golden file or
-    snapshot): anything under `testdata`, and under a test directory a
+    snapshot): anything under `testdata` or `__snapshots__` and any `.snap`
+    file, and under a test directory a
     non-code file or anything in a data directory below it. It goes in
     `hidden/` with the tests, so they find it whatever the agent does. A
     `fixtures` or `snapshots` directory outside the tests is source."""
     p = PurePosixPath(path)
     dirs = p.parts[:-1]
-    if "testdata" in dirs:
+    # Go's testdata, and Jest's snapshots, which sit beside the test file.
+    if "testdata" in dirs or "__snapshots__" in dirs or p.suffix == ".snap":
         return True
     tests = [i for i, d in enumerate(dirs) if d in TEST_DIRS]
     if not tests:
@@ -312,7 +315,7 @@ def visible(text: str) -> str:
     """`text` without Unicode format and control characters (zero-width,
     bidi overrides, tag characters): a mined line reaches the agent's
     prompt, and these would hide words from the person who reviews it."""
-    return "".join(ch for ch in text if ch == "\t" or unicodedata.category(ch) not in ("Cf", "Cc"))
+    return "".join(ch for ch in text if ch in "\t\n" or unicodedata.category(ch) not in ("Cf", "Cc"))
 
 
 def go_blocks(text: str) -> set[int]:
@@ -340,7 +343,8 @@ def interface(c: Candidate, clone: Path) -> list[tuple[str, str, list[str]]]:
     found, path, comment, lineno, blocks = {}, None, [], 0, {}
     for line in diff.stdout.decode(errors="replace").splitlines():
         if line.startswith("+++ "):
-            path = line[len("+++ b/"):] if line.startswith("+++ b/") else None
+            # git ends the header with a tab when the path has a space.
+            path = line[len("+++ b/"):].rstrip("\t") if line.startswith("+++ b/") else None
             comment = []
             continue
         hunk = HUNK.match(line)
@@ -372,7 +376,7 @@ def interface(c: Candidate, clone: Path) -> list[tuple[str, str, list[str]]]:
 def prompt(c: Candidate, clone: Path) -> str:
     """The issue as asked, then the names its tests call that the agent
     can't discover, if any."""
-    text = PROMPT.format(repo=c.repo, title=c.title.strip(), body=c.body.strip())
+    text = PROMPT.format(repo=c.repo, title=visible(c.title).strip(), body=visible(c.body).strip())
     names = interface(c, clone)
     if not names:
         return text
@@ -453,9 +457,24 @@ def fill(c: Candidate, clone: Path, task: Path) -> None:
     shutil.copy2(CHECK, task / "check.sh")
 
 
+def cargo_test(clone: Path, commit: str, path: str) -> bool:
+    """Whether a Rust file is in a crate's integration tests: its `tests/`
+    directory sits beside a Cargo.toml. One deeper in a crate's src/ is a
+    module of the library, whatever the path above it."""
+    dirs = PurePosixPath(path).parts[:-1]
+    crate = PurePosixPath(*dirs[: dirs.index("tests")]) if dirs.index("tests") else PurePosixPath(".")
+    return exists(clone, commit, str(crate / "Cargo.toml"))
+
+
 def runnable(c: Candidate, clone: Path) -> Candidate | None:
     """`c` without the hidden tests that can't run offline, or None when
-    none is left."""
+    none is left. A Rust file that turns out to be library code moves to
+    the fix, and a Rust candidate needs a test target left."""
+    if c.language == "rust":
+        library = tuple(t for t in c.tests if not cargo_test(clone, c.merge, t))
+        c = replace(c, tests=tuple(t for t in c.tests if t not in library), sources=(*c.sources, *library))
+        if not rust_targets(c.tests):
+            return None
     tests = tuple(t for t in c.tests if c.language != "go" or not acceptance_only(show(clone, c.merge, t).decode(errors="replace")))
     return replace(c, tests=tests) if tests else None
 
@@ -513,7 +532,7 @@ def main(argv=None):
         text = json.loads(viewed.stdout)
         c = runnable(replace(c, title=text["title"], body=text.get("body") or ""), clone)
         if c is None:
-            print(f"skip {label}: its only tests are acceptance tests")
+            print(f"skip {label}: no hidden test can run offline (acceptance tests only, or no cargo test target)")
             continue
         task = write_task(c, clone, args.out)
         check = accepted(task, clone)
