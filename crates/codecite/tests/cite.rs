@@ -294,7 +294,15 @@ candidates:
     let lines: Vec<&str> = text.lines().collect();
     assert_eq!(lines[0], "rfc2616@sha256:261600000000#section-14.9");
     assert!(lines[1].starts_with("section · Cache-Control · quote · indexed "));
-    assert_eq!(&lines[2..], ["superseded by rfc9110", "", "Cache-Control"]);
+    assert_eq!(
+        &lines[2..],
+        [
+            "superseded by rfc9110",
+            "instruction: Quote this text exactly, with its citation; never paraphrase it.",
+            "",
+            "Cache-Control"
+        ]
+    );
 }
 
 #[test]

@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 
 use super::Store;
-use super::read::{byte_prefix, file_lines};
+use super::read::{byte_prefix, copy_instruction, file_lines};
 use super::search::{MAX_SNIPPET_BYTES, Scope, code_citation, document_citation, spec_citation};
 use crate::{Error, Result, Role, SectionNumber};
 
@@ -76,6 +76,10 @@ pub struct GrepMatch {
     pub text: String,
     /// Whether the byte budget cut `text` short of the whole line.
     pub truncated: bool,
+    /// For an `approach_only` source: describe the approach in your own
+    /// words, never copy the code.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instruction: Option<String>,
 }
 
 /// A document row, as `grep` needs it.
@@ -111,6 +115,7 @@ impl DocRow {
             dirty: (!self.is_fetched()).then_some(self.dirty),
             text: text.to_owned(),
             truncated,
+            instruction: copy_instruction(&self.license_class),
         }
     }
 }

@@ -10,7 +10,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::Store;
-use super::read::byte_prefix;
+use super::read::{byte_prefix, copy_instruction};
 use crate::{Error, Result, Role, text_terms};
 
 /// The most lines of a chunk a result's snippet holds. Agents read the
@@ -134,6 +134,10 @@ pub struct SearchResult {
     /// pinned citations: `diff` shows how they differ.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub older_versions: Option<Vec<String>>,
+    /// For an `approach_only` source: describe the approach in your own
+    /// words, never copy the code.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instruction: Option<String>,
 }
 
 /// When a corpus was indexed, and whether that is too long ago.
@@ -285,6 +289,7 @@ impl Store {
                 let is_spec = fetched && !has_text;
                 let (snippet, snippet_truncated) = snippet(&text);
                 let role = Role::of_stored(&path, &source_kind, has_text).as_str();
+                let license_class: String = row.get(11)?;
                 let citation = if is_spec {
                     spec_citation(&source, &revision, &kind, number, parent_number)
                 } else if fetched {
@@ -304,7 +309,8 @@ impl Store {
                     anchor: heading(17)?,
                     role,
                     score: row.get(14)?,
-                    license_class: row.get(11)?,
+                    instruction: copy_instruction(&license_class),
+                    license_class,
                     indexed_at: row.get(12)?,
                     dirty: (!fetched).then_some(dirty),
                     snippet,

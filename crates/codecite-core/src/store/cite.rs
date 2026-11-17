@@ -11,7 +11,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 
 use super::Store;
-use super::read::pinned;
+use super::read::{pinned, write_text};
 use super::search::MAX_SNIPPET_LINES;
 use crate::{
     CitationError, Error, ReadOptions, ReadResult, Result, SpecCitation, SpecReference,
@@ -62,6 +62,7 @@ pub struct CiteResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub strength: Option<Vec<String>>,
     /// For a `quote` source: quote the text exactly, with its citation.
+    /// For an `approach_only` one: never copy it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instruction: Option<String>,
     /// When not resolved, the pinned citations it could have meant.
@@ -207,7 +208,7 @@ impl fmt::Display for Finding {
 
 impl fmt::Display for CiteResult {
     /// The human form. Resolved: the citation, a line saying what it is,
-    /// what supersedes it, a blank line and the text. Not resolved:
+    /// what supersedes it, any instruction, a blank line and the text. Not resolved:
     /// `unresolved`, the findings and the candidates.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Some(citation) = &self.citation else {
@@ -241,8 +242,11 @@ impl fmt::Display for CiteResult {
         if let Some(by) = &self.superseded_by {
             writeln!(f, "superseded by {by}")?;
         }
+        if let Some(instruction) = &self.instruction {
+            writeln!(f, "instruction: {instruction}")?;
+        }
         writeln!(f)?;
-        writeln!(f, "{}", self.text.as_deref().unwrap_or_default())?;
+        write_text(f, self.text.as_deref().unwrap_or_default())?;
         if self.truncated == Some(true) {
             writeln!(f, "… (truncated)")?;
         }
@@ -1193,6 +1197,7 @@ mod tests {
                 "rfc9449@sha256:aaaaaaaaaaaa#section-4.3
 section · Checking DPoP Proofs · quote · indexed 2026-10-20T06:00:00Z
 superseded by {PINNED}
+instruction: Quote this text exactly, with its citation; never paraphrase it.
 
 Checking DPoP Proofs
 "
