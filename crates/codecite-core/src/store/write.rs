@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use rusqlite::{OptionalExtension, Transaction, params};
 
 use super::Store;
+use super::lines::LineStarts;
 use crate::{Keyword, Result, SpecAliases, identifier_terms, text_terms};
 
 /// A source to create or update. A document is matched by its name and
@@ -323,13 +324,16 @@ fn insert_chunks(
     )?;
     let mut chunk = tx.prepare_cached(
         "INSERT INTO chunk (document_id, start_line, end_line, kind, symbol_id, number, anchor,
-           title, parent_id, strength, text, terms)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+           title, parent_id, strength, text)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
     )?;
     let mut fts = tx.prepare_cached(
         "INSERT INTO chunk_fts (rowid, symbol, path, terms) VALUES (?1, ?2, ?3, ?4)",
     )?;
     let path_terms = text_terms(document.path);
+    // A chunk whose text is its lines of the stored document text stores
+    // none of its own; readers cut it from the document's.
+    let lines = document.text.map(LineStarts::new);
     // Chunk IDs as they are assigned, so a later chunk can name its parent.
     let mut ids: Vec<i64> = Vec::with_capacity(document.chunks.len());
     for c in &document.chunks {
@@ -361,8 +365,7 @@ fn insert_chunks(
             c.title,
             parent_id,
             strength,
-            c.text,
-            terms,
+            own_text(lines.as_ref(), c),
         ])?;
         ids.push(chunk_id);
         let symbol_terms = c
@@ -372,6 +375,14 @@ fn insert_chunks(
         fts.execute(params![chunk_id, symbol_terms, path_terms, terms])?;
     }
     Ok(())
+}
+
+/// The text to store in `chunk.text`: `None` when `lines`, the document's
+/// stored text, holds the chunk's text as its line range.
+fn own_text<'a>(lines: Option<&LineStarts<'_>>, chunk: &ChunkRecord<'a>) -> Option<&'a str> {
+    let derivable =
+        lines.and_then(|l| l.span(chunk.start_line, chunk.end_line)) == Some(chunk.text);
+    (!derivable).then_some(chunk.text)
 }
 
 #[cfg(test)]
@@ -513,6 +524,81 @@ mod tests {
             .query_row("SELECT text FROM document", [], |row| row.get(0))
             .unwrap();
         assert_eq!(stored, text);
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_chunk_stores_only_text_its_document_does_not_hold() {
+        let (mut store, dir) = store("derive");
+        let id = store.upsert_source(&source("app")).unwrap();
+        let text = "/// Checks.\r\nfn validate() {\r\n    check();\r\n}\r\n\r\nfn check() {}\n";
+        let mut doc = document("src/lib.rs", text);
+        let chunk = |start, end, text| ChunkRecord {
+            kind: "window",
+            start_line: start,
+            end_line: end,
+            text,
+            symbol: None,
+            ..doc.chunks[0].clone()
+        };
+        doc.chunks = vec![
+            chunk(1, 4, "/// Checks.\r\nfn validate() {\r\n    check();\r\n}"),
+            chunk(6, 6, "fn check() {}"),
+            // Text that isn't its lines, as no chunker writes, is kept.
+            chunk(2, 2, "fn validate() {}"),
+            // So is a range past the last line.
+            chunk(7, 7, "gone"),
+        ];
+        store.write_document(id, &doc).unwrap();
+        let own = |store: &Store, sql: &str| -> Vec<Option<String>> {
+            let mut stmt = store.conn.prepare(sql).unwrap();
+            stmt.query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap()
+        };
+        assert_eq!(
+            own(&store, "SELECT text FROM chunk ORDER BY id"),
+            [
+                None,
+                None,
+                Some("fn validate() {}".into()),
+                Some("gone".into())
+            ]
+        );
+        // Readers cut the text from the document's.
+        let read = own(
+            &store,
+            "SELECT coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))
+             FROM chunk c JOIN document d ON d.id = c.document_id ORDER BY c.id",
+        );
+        let written: Vec<Option<String>> =
+            doc.chunks.iter().map(|c| Some(c.text.to_owned())).collect();
+        assert_eq!(read, written);
+        // Terms are split from the text at insert, and stored nowhere else.
+        assert_eq!(matches(&store, "terms:checks"), 1);
+        let columns = own(&store, "SELECT name FROM pragma_table_info('chunk')");
+        assert!(!columns.contains(&Some("terms".into())), "{columns:?}");
+
+        // A spec stores no text of its own, so its chunks keep theirs.
+        let spec = store
+            .upsert_source(&version("rfc9449", "ff", true))
+            .unwrap();
+        let mut page = document("rfc9449", "4.3.  Checking DPoP Proofs");
+        page.text = None;
+        page.chunks[0].symbol = None;
+        store.write_document(spec, &page).unwrap();
+        assert_eq!(
+            own(
+                &store,
+                &format!(
+                    "SELECT c.text FROM chunk c JOIN document d ON d.id = c.document_id
+                     WHERE d.source_id = {spec}"
+                )
+            ),
+            [Some("4.3.  Checking DPoP Proofs".into())]
+        );
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }

@@ -422,7 +422,8 @@ impl Store {
     fn guidance_rules(&self) -> Result<Vec<RuleRow>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT s.id, s.name, s.revision, s.license_class, s.indexed_at,
-                    c.number, c.title, c.strength, c.text
+                    c.number, c.title, c.strength,
+                    coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))
              FROM source s
              JOIN document d ON d.source_id = s.id
              JOIN chunk c ON c.document_id = d.id

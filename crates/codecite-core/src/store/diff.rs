@@ -896,7 +896,8 @@ impl Store {
     /// appendix's `A.1`, is left out, so every change's citation reads back.
     fn diff_sections(&self, source_id: i64) -> Result<Vec<Section>> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT c.id, c.number, c.anchor, c.start_line, c.text
+            "SELECT c.id, c.number, c.anchor, c.start_line,
+               coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))
              FROM chunk c JOIN document d ON d.id = c.document_id
              WHERE d.source_id = ?1 AND c.kind = 'section' ORDER BY c.id",
         )?;
@@ -914,7 +915,8 @@ impl Store {
         })?;
         let mut sections: Vec<(i64, Section)> = rows.collect::<rusqlite::Result<_>>()?;
         let mut stmt = self.conn.prepare_cached(
-            "SELECT c.parent_id, c.number, c.start_line, c.end_line, c.text
+            "SELECT c.parent_id, c.number, c.start_line, c.end_line,
+               coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))
              FROM chunk c JOIN document d ON d.id = c.document_id
              WHERE d.source_id = ?1 AND c.kind = 'step' ORDER BY c.id",
         )?;

@@ -235,29 +235,42 @@ impl Store {
     /// its text is a spec; one stored with its text is a generic page.
     fn ranked(&self, fts: &str, names: &str, query: &SearchQuery<'_>) -> Result<Vec<SearchResult>> {
         let (w_symbol, w_path, w_text) = COLUMN_WEIGHTS;
+        // The inner query ranks every match on narrow columns; only the
+        // best `limit` then read their text, which for a chunk of a document
+        // that stores its text is cut from the document's.
         let mut stmt = self.conn.prepare_cached(
-            "SELECT c.kind, c.start_line, c.end_line, c.number, p.number, c.text, d.path, d.dirty,
-               s.name, s.kind, s.revision, s.license_class, s.indexed_at, sym.display_name,
-               -bm25(chunk_fts, ?3, ?4, ?5)
-                 * codecite_role_weight(d.path, s.kind, d.text IS NOT NULL)
-                 * CASE WHEN instr(?2, char(31) || codecite_name_key(sym.display_name) || char(31)) > 0
-                        THEN ?9 ELSE 1.0 END AS score,
-               d.text IS NOT NULL, c.title, c.anchor
-             FROM chunk_fts
-             JOIN chunk c ON c.id = chunk_fts.rowid
+            "SELECT r.kind, r.start_line, r.end_line, r.number, r.parent_number,
+               coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line)),
+               r.path, r.dirty, r.name, r.source_kind, r.revision, r.license_class,
+               r.indexed_at, r.symbol, r.score, r.has_text, r.title, r.anchor
+             FROM (
+               SELECT c.id, c.kind, c.start_line, c.end_line, c.number, p.number AS parent_number,
+                 d.path, d.dirty, s.name, s.kind AS source_kind, s.revision, s.license_class,
+                 s.indexed_at, sym.display_name AS symbol,
+                 -bm25(chunk_fts, ?3, ?4, ?5)
+                   * codecite_role_weight(d.path, s.kind, d.text IS NOT NULL)
+                   * CASE WHEN instr(?2, char(31) || codecite_name_key(sym.display_name) || char(31)) > 0
+                          THEN ?9 ELSE 1.0 END AS score,
+                 d.text IS NOT NULL AS has_text, c.title, c.anchor
+               FROM chunk_fts
+               JOIN chunk c ON c.id = chunk_fts.rowid
+               JOIN document d ON d.id = c.document_id
+               JOIN source s ON s.id = d.source_id
+               LEFT JOIN chunk p ON p.id = c.parent_id
+               LEFT JOIN symbol sym ON sym.id = c.symbol_id
+               WHERE chunk_fts MATCH ?1 AND s.is_current
+                 AND (?6 IS NULL OR d.language = ?6)
+                 AND (?7 IS NULL OR d.path GLOB ?7)
+                 AND (?10 IS NULL OR (s.kind = 'document' AND d.text IS NULL) = ?10)
+               -- Break ties on what the result cites, not on c.id: a chunk ID
+               -- records when the chunk was written, and a reindex keeps the
+               -- IDs of unchanged files, so ID order differs from a fresh index.
+               ORDER BY score DESC, s.name, d.path, c.start_line, c.end_line
+               LIMIT ?8
+             ) r
+             JOIN chunk c ON c.id = r.id
              JOIN document d ON d.id = c.document_id
-             JOIN source s ON s.id = d.source_id
-             LEFT JOIN chunk p ON p.id = c.parent_id
-             LEFT JOIN symbol sym ON sym.id = c.symbol_id
-             WHERE chunk_fts MATCH ?1 AND s.is_current
-               AND (?6 IS NULL OR d.language = ?6)
-               AND (?7 IS NULL OR d.path GLOB ?7)
-               AND (?10 IS NULL OR (s.kind = 'document' AND d.text IS NULL) = ?10)
-             -- Break ties on what the result cites, not on c.id: a chunk ID
-             -- records when the chunk was written, and a reindex keeps the
-             -- IDs of unchanged files, so ID order differs from a fresh index.
-             ORDER BY score DESC, s.name, d.path, c.start_line, c.end_line
-             LIMIT ?8",
+             ORDER BY r.score DESC, r.name, r.path, r.start_line, r.end_line",
         )?;
         let rows = stmt.query_map(
             params![
@@ -403,6 +416,22 @@ pub(super) fn register_functions(conn: &Connection) -> rusqlite::Result<()> {
         1,
         FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
         |ctx| Ok(ctx.get::<Option<String>>(0)?.map(|name| name_key(&name))),
+    )?;
+    // `codecite_lines(document.text, start, end)`: a chunk's text when the
+    // chunk stores none, cut from its document's. Readers call it as
+    // `coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))`,
+    // which reads the document's text only for a chunk without its own.
+    conn.create_scalar_function(
+        "codecite_lines",
+        3,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |ctx| {
+            let Some(text) = ctx.get_raw(0).as_str_or_null()? else {
+                return Ok(None);
+            };
+            let (start, end): (u32, u32) = (ctx.get(1)?, ctx.get(2)?);
+            Ok(super::lines::line_span(text, start, end).map(str::to_owned))
+        },
     )
 }
 

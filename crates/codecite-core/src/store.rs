@@ -36,6 +36,9 @@ pub use read::{
     QUOTE_INSTRUCTION, QUOTE_TRUNCATED_INSTRUCTION, ReadOptions, ReadResult, defuse_instruction,
 };
 
+mod lines;
+use lines::LineStarts;
+
 mod requirements;
 pub use requirements::{Requirement, RequirementSection, Requirements, RequirementsOptions};
 
@@ -61,20 +64,28 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0007_heading_anchors.sql"),
     include_str!("../migrations/0008_refill_fts.sql"),
     include_str!("../migrations/0009_one_ranking.sql"),
+    include_str!("../migrations/0010_derive_chunk_text.sql"),
 ];
+
+/// The version whose migration clears the chunk text a document's text
+/// holds. A file brought up past it is vacuumed, so the space comes back.
+const DERIVE_CHUNK_TEXT: u32 = 10;
 
 /// Writes a row into the full-text `table` for every stored chunk that
 /// `filter` (a SQL condition over `c` and `s`) keeps, with the terms
 /// `insert_chunks` would give it, so an upgraded corpus searches without
 /// being indexed again. Version 5 fills `spec_fts` this way, and version 8
 /// refills both tables after emptying them; version 9 then drops
-/// `spec_fts`.
+/// `spec_fts`. A chunk's terms are split from its text again, since no
+/// version from 10 on stores them.
 ///
 /// `table` and `filter` are formatted into the SQL, which is safe only
 /// because every caller passes a constant written here, never input.
 fn fill_fts(tx: &rusqlite::Transaction<'_>, table: &str, filter: &str) -> Result<()> {
     let mut chunks = tx.prepare(&format!(
-        "SELECT c.id, sym.display_name, d.path, c.terms FROM chunk c
+        "SELECT c.id, sym.display_name, d.path,
+           coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))
+         FROM chunk c
          JOIN document d ON d.id = c.document_id
          JOIN source s ON s.id = d.source_id
          LEFT JOIN symbol sym ON sym.id = c.symbol_id
@@ -89,9 +100,45 @@ fn fill_fts(tx: &rusqlite::Transaction<'_>, table: &str, filter: &str) -> Result
         let id: i64 = row.get(0)?;
         let symbol: Option<String> = row.get(1)?;
         let path: String = row.get(2)?;
-        let terms: String = row.get(3)?;
+        let text: String = row.get(3)?;
         let symbol = symbol.map_or_else(String::new, |name| identifier_terms(&name));
-        insert.execute(rusqlite::params![id, symbol, text_terms(&path), terms])?;
+        insert.execute(rusqlite::params![
+            id,
+            symbol,
+            text_terms(&path),
+            text_terms(&text)
+        ])?;
+    }
+    Ok(())
+}
+
+/// Clears `chunk.text` wherever the chunk's document stores its text and
+/// the chunk is that text's lines, as `insert_chunks` writes a chunk from
+/// version 10 on. A chunk whose text differs from its lines keeps it.
+fn clear_derivable_text(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+    let mut documents = tx.prepare("SELECT id, text FROM document WHERE text IS NOT NULL")?;
+    let mut chunks = tx.prepare(
+        "SELECT id, start_line, end_line, text FROM chunk
+         WHERE document_id = ?1 AND text IS NOT NULL",
+    )?;
+    let mut clear = tx.prepare("UPDATE chunk SET text = NULL WHERE id = ?1")?;
+    let mut rows = documents.query([])?;
+    while let Some(row) = rows.next()? {
+        let document_id: i64 = row.get(0)?;
+        let text: String = row.get(1)?;
+        let lines = LineStarts::new(&text);
+        let mut derivable = Vec::new();
+        let mut chunk_rows = chunks.query([document_id])?;
+        while let Some(c) = chunk_rows.next()? {
+            let own: String = c.get(3)?;
+            if lines.span(c.get(1)?, c.get(2)?) == Some(own.as_str()) {
+                derivable.push(c.get::<_, i64>(0)?);
+            }
+        }
+        drop(chunk_rows);
+        for id in derivable {
+            clear.execute([id])?;
+        }
     }
     Ok(())
 }
@@ -130,6 +177,8 @@ impl Store {
         // `BEGIN IMMEDIATE` takes the write lock before reading the version,
         // so two indexers racing on a fresh file migrate it one after the
         // other. Any early return drops `tx`, which rolls it back.
+        // Migrations read chunk text through `codecite_lines`.
+        search::register_functions(&conn)?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let found = read_version(&tx, path)?;
         if found > SCHEMA_VERSION {
@@ -150,6 +199,7 @@ impl Store {
                     fill_fts(&tx, "chunk_fts", "1")?;
                     fill_fts(&tx, "spec_fts", "c.number IS NOT NULL")?;
                 }
+                DERIVE_CHUNK_TEXT => clear_derivable_text(&tx)?,
                 _ => {}
             }
             tx.execute(
@@ -170,6 +220,12 @@ impl Store {
             });
         }
         tx.commit()?;
+        // Clearing chunk text frees pages but doesn't shrink the file;
+        // VACUUM does, and can't run inside the transaction. A file that
+        // was empty had nothing to free.
+        if (1..DERIVE_CHUNK_TEXT).contains(&found) {
+            conn.execute_batch("VACUUM")?;
+        }
         conn.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, false)?;
         // Every write from here on checks foreign keys and runs their
         // `ON DELETE CASCADE`.
@@ -182,7 +238,6 @@ impl Store {
         // commit. A power cut can lose the last commits but never corrupts
         // the file, and an index run commits once per document.
         conn.pragma_update(None, "synchronous", "NORMAL")?;
-        search::register_functions(&conn)?;
 
         Ok(Store {
             conn,
@@ -393,6 +448,16 @@ mod tests {
     /// Opens the file directly, bypassing `Store`.
     fn raw(path: &Path) -> Connection {
         Connection::open(path).unwrap()
+    }
+
+    fn table_columns(conn: &Connection, table: &str) -> Vec<String> {
+        let mut stmt = conn
+            .prepare("SELECT name FROM pragma_table_info(?1)")
+            .unwrap();
+        stmt.query_map([table], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
     }
 
     fn table_names(conn: &Connection) -> Vec<String> {
@@ -930,24 +995,26 @@ mod tests {
             MIGRATIONS[..7].join("\n")
         ))
         .unwrap();
+        // Every row's terms are its chunk's text's, as `insert_chunks`
+        // wrote them, so the refill gives the same totals.
         let symbol = identifier_terms("validate_token");
-        for (table, id, symbol, path, terms) in [
+        for (table, id, symbol, path, text) in [
             (
                 "chunk_fts",
                 1,
                 symbol.as_str(),
                 "src/lib.rs",
-                "pub fn validate token validate_token",
+                "pub fn validate_token() {}",
             ),
-            ("chunk_fts", 2, "", "rfc", "tokens are validated"),
-            ("chunk_fts", 3, "", "notes", "sessions"),
-            ("spec_fts", 2, "", "rfc", "tokens are validated"),
+            ("chunk_fts", 2, "", "rfc", "Tokens are validated."),
+            ("chunk_fts", 3, "", "notes", "# Sessions"),
+            ("spec_fts", 2, "", "rfc", "Tokens are validated."),
         ] {
             conn.execute(
                 &format!(
                     "INSERT INTO {table} (rowid, symbol, path, terms) VALUES (?1, ?2, ?3, ?4)"
                 ),
-                rusqlite::params![id, symbol, text_terms(path), terms],
+                rusqlite::params![id, symbol, text_terms(path), text_terms(text)],
             )
             .unwrap();
         }
@@ -1032,6 +1099,125 @@ mod tests {
             )
             .unwrap();
         assert_eq!(found, 1);
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn version_10_clears_chunk_text_its_document_holds_and_drops_terms() {
+        let dir = scratch("v9");
+        let path = dir.join("corpus.db");
+        // A version 9 corpus: a code file whose function, nested method and
+        // window are its lines, plus one chunk whose text isn't, and a spec
+        // section with no document text. Every chunk has its full-text row.
+        let code = "struct S;\r\nimpl S {\r\n    fn validate() {}\r\n}\n\n// tail\n";
+        let chunks: [(i64, i64, u32, u32, &str, &str); 5] = [
+            (1, 1, 1, 1, "class", "struct S;"),
+            (2, 1, 2, 4, "class", "impl S {\r\n    fn validate() {}\r\n}"),
+            (3, 1, 3, 3, "function", "    fn validate() {}"),
+            (4, 1, 6, 6, "window", "// tail, as an older chunker cut it"),
+            (5, 2, 1, 3, "section", "Tokens are validated."),
+        ];
+        let conn = raw(&path);
+        conn.execute_batch(&format!(
+            "{}
+             INSERT INTO meta (key, value) VALUES ('schema_version', '9');
+             INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
+               VALUES (1, 'app', 'local', '/src/app', 'abc', 'adapt', 'then'),
+                      (2, 'rfc', 'document', 'https://x', 'def', 'quote', 'then');
+             INSERT INTO document (id, source_id, path, language, content_hash, text)
+               VALUES (1, 1, 'src/lib.rs', 'rust', x'01', NULL),
+                      (2, 2, 'rfc', NULL, x'02', NULL);",
+            MIGRATIONS[..9].join("\n")
+        ))
+        .unwrap();
+        conn.execute("UPDATE document SET text = ?1 WHERE id = 1", [code])
+            .unwrap();
+        for (id, document, start, end, kind, text) in chunks {
+            conn.execute(
+                "INSERT INTO chunk (id, document_id, start_line, end_line, kind, text, terms)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![id, document, start, end, kind, text, text_terms(text)],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO chunk_fts (rowid, symbol, path, terms) VALUES (?1, '', '', ?2)",
+                rusqlite::params![id, text_terms(text)],
+            )
+            .unwrap();
+        }
+        // A wide row on the overflow pages a vacuum gives back.
+        let filler = "x".repeat(64 * 1024);
+        conn.execute(
+            "INSERT INTO chunk (id, document_id, start_line, end_line, kind, text, terms)
+             VALUES (6, 1, 1, 1, 'window', ?1, ?1)",
+            [&filler],
+        )
+        .unwrap();
+        conn.execute("DELETE FROM chunk WHERE id = 6", []).unwrap();
+        let free: i64 = conn
+            .query_row("PRAGMA freelist_count", [], |row| row.get(0))
+            .unwrap();
+        assert!(free > 0);
+        drop(conn);
+
+        let store = Store::open_read_write(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+        let own: Vec<(i64, Option<String>)> = {
+            let mut stmt = store
+                .conn
+                .prepare("SELECT id, text FROM chunk ORDER BY id")
+                .unwrap();
+            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap()
+        };
+        assert_eq!(
+            own,
+            [
+                (1, None),
+                (2, None),
+                (3, None),
+                (4, Some(chunks[3].5.to_owned())),
+                (5, Some(chunks[4].5.to_owned())),
+            ]
+        );
+        // Every chunk reads back as written.
+        for (id, _, _, _, _, text) in chunks {
+            let read: String = store
+                .conn
+                .query_row(
+                    "SELECT coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))
+                     FROM chunk c JOIN document d ON d.id = c.document_id WHERE c.id = ?1",
+                    [id],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(read, text, "chunk {id}");
+        }
+        let columns = table_columns(&store.conn, "chunk");
+        assert!(!columns.iter().any(|c| c == "terms"), "{columns:?}");
+        // The full-text rows, the indexes and the delete trigger survive.
+        let count = |sql: &str| -> i64 { store.conn.query_row(sql, [], |row| row.get(0)).unwrap() };
+        assert_eq!(
+            count("SELECT rowid FROM chunk_fts WHERE chunk_fts MATCH 'validate' AND rowid = 3"),
+            3
+        );
+        assert_eq!(
+            count(
+                "SELECT count(*) FROM sqlite_master WHERE tbl_name = 'chunk'
+                   AND name IN ('chunk_document', 'chunk_parent', 'chunk_symbol', 'chunk_fts_delete')"
+            ),
+            4
+        );
+        // The freed pages went back to the file system.
+        assert_eq!(count("PRAGMA freelist_count"), 0);
+        store.conn.execute("DELETE FROM chunk", []).unwrap();
+        assert_eq!(
+            count("SELECT count(*) FROM chunk_fts WHERE chunk_fts MATCH 'validate'"),
+            0
+        );
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }
