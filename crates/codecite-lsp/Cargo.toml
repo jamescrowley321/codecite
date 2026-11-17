@@ -16,3 +16,14 @@ workspace = true
 [dependencies]
 codecite-core.workspace = true
 thiserror.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+tempfile.workspace = true
+
+# The lifecycle tests run their own `main`: it is also the fake language
+# server they spawn, so the suite needs no real server.
+[[test]]
+name = "lifecycle"
+harness = false
