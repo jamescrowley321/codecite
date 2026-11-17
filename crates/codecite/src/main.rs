@@ -1,6 +1,7 @@
 //! The `codecite` command-line tool.
 
 mod assist;
+mod check;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -8,7 +9,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use codecite_core::{
-    CiteOptions, CiteResult, Context, ContextQuery, ContextTarget, DEFAULT_MAX_LINES,
+    CheckOptions, CiteOptions, CiteResult, Context, ContextQuery, ContextTarget, DEFAULT_MAX_LINES,
     DEFAULT_SEARCH_LIMIT, Definitions, DiffOptions, DiffResult, GrepMatch, GrepQuery, GrepResults,
     MAX_READ_LINES, MAX_SEARCH_LIMIT, ReadOptions, ReadResult, Requirements, RequirementsOptions,
     Scope, SearchQuery, SearchResult, SearchResults, Store, is_corpus_name,
@@ -223,18 +224,29 @@ exact text."
         allow_stale: bool,
     },
     /// Check a citation: whether it resolves, what it points at, and, for
-    /// a spec, findings for one that doesn't.
-    #[command(after_long_help = "Examples:
+    /// a spec, findings for one that doesn't. `cite check` checks every
+    /// citation written in files.
+    #[command(
+        args_conflicts_with_subcommands = true,
+        disable_help_subcommand = true,
+        subcommand_negates_reqs = true,
+        after_long_help = "Examples:
   codecite cite identity \"RFC 9449 §4.3\"
   codecite cite app \"app@0123456:README.md#install\"
-  codecite cite identity \"OIDC Core §3.1.3.7 step 13\" --json")]
+  codecite cite identity \"OIDC Core §3.1.3.7 step 13\" --json
+  codecite cite check app src docs"
+    )]
     Cite {
+        #[command(subcommand)]
+        check: Option<CiteCommand>,
         /// The corpus to check against.
-        corpus: String,
+        #[arg(required = true)]
+        corpus: Option<String>,
         /// Any citation `read` takes, or a Markdown link whose text is a
         /// spec citation and whose target is a spec URL with an
         /// anchor: `[OIDC Core §3.1.3.6](https://openid.net/specs/…#IDTokenValidation)`.
-        citation: String,
+        #[arg(required = true)]
+        citation: Option<String>,
         /// Print the result as JSON.
         #[arg(long)]
         json: bool,
@@ -380,6 +392,49 @@ enum Only {
     Code,
 }
 
+/// What `codecite cite` does besides checking one citation.
+#[derive(Subcommand)]
+enum CiteCommand {
+    /// Check every citation written in files, for CI: exits 1 when any
+    /// doesn't resolve, is refused, or names a superseded version, and 2
+    /// when the check can't be made.
+    #[command(after_long_help = "Examples:
+  codecite cite check app
+  codecite cite check app src docs README.md
+  git ls-files -z '*.md' | codecite cite check app --files0-from - --json
+
+It finds the canonical citations codecite prints (repo@sha:path#L10-L42,
+doc@sha256:<12 hex>#L3-L9, an #anchor, doc@sha256:<12 hex>#section-4.3) and
+Markdown links whose text cites a § and whose target is a URL with an
+anchor. Directories are walked without following links or reading hidden
+entries; files in them over 1 MiB, not UTF-8 or holding a NUL byte are
+skipped and counted, and a file named that way is an error. Flags go after
+`check`.
+
+Exit status: 0 when every citation holds up, 1 when any fails, 2 when the
+check can't be made (a stale index, an unknown corpus, a path that can't be
+read).")]
+    Check {
+        /// The corpus to check against.
+        corpus: String,
+        /// Files, and directories to walk for files (default: `.`).
+        paths: Vec<PathBuf>,
+        /// Read the paths, NUL-separated, from this file (`-` for stdin),
+        /// as `git ls-files -z` prints them. No paths checks no files.
+        #[arg(long, value_name = "FILE", conflicts_with = "paths")]
+        files0_from: Option<PathBuf>,
+        /// Print the result as JSON.
+        #[arg(long)]
+        json: bool,
+        /// Check against an index older than its manifest's `max_age_days`.
+        #[arg(long)]
+        allow_stale: bool,
+        /// Let a citation of a superseded version pass.
+        #[arg(long)]
+        allow_superseded: bool,
+    },
+}
+
 impl From<Only> for Scope {
     fn from(only: Only) -> Scope {
         match only {
@@ -465,11 +520,45 @@ fn main() -> anyhow::Result<()> {
             read(&corpus, &citation, &options, json)
         }
         Command::Cite {
-            corpus,
-            citation,
+            check:
+                Some(CiteCommand::Check {
+                    corpus,
+                    paths,
+                    files0_from,
+                    json,
+                    allow_stale,
+                    allow_superseded,
+                }),
+            ..
+        } => {
+            let options = CheckOptions {
+                allow_stale,
+                allow_superseded,
+            };
+            // A citation that fails exits 1 (in `cite_check`); a check that
+            // could not be made exits 2, so CI can tell the two apart.
+            let checked = match files0_from {
+                Some(list) => check::read_paths0(&list)
+                    .and_then(|paths| cite_check(&corpus, &paths, &options, json)),
+                None if paths.is_empty() => {
+                    cite_check(&corpus, &[PathBuf::from(".")], &options, json)
+                }
+                None => cite_check(&corpus, &paths, &options, json),
+            };
+            if let Err(err) = checked {
+                eprintln!("{}", error_text(&err));
+                std::process::exit(2);
+            }
+            Ok(())
+        }
+        Command::Cite {
+            corpus: Some(corpus),
+            citation: Some(citation),
             json,
             allow_stale,
+            ..
         } => cite(&corpus, &citation, &CiteOptions { allow_stale }, json),
+        Command::Cite { .. } => bail!("give a corpus and a citation"),
         Command::Context {
             corpus,
             path,
@@ -660,6 +749,25 @@ fn cite(corpus: &str, citation: &str, options: &CiteOptions, json: bool) -> anyh
     let store = Store::open_corpus(dirs.data_dir(), corpus)?;
     let result = store.cite(citation, options)?;
     to_stdout(|out| write_cite(out, &result, json))
+}
+
+/// `codecite cite check`: opens the corpus read-only, checks every citation
+/// in the files at `paths` and prints the problems. Exits 1 when there are
+/// any; an error is returned for the caller to exit 2.
+fn cite_check(
+    corpus: &str,
+    paths: &[PathBuf],
+    options: &CheckOptions,
+    json: bool,
+) -> anyhow::Result<()> {
+    let dirs = project_dirs()?;
+    let store = Store::open_corpus(dirs.data_dir(), corpus)?;
+    let report = check::check(&store, paths, options)?;
+    to_stdout(|out| check::write_report(out, &report, json))?;
+    if !report.problems.is_empty() {
+        std::process::exit(1);
+    }
+    Ok(())
 }
 
 /// `codecite context`: describes the file, opens the corpus read-only and
@@ -1232,6 +1340,22 @@ fn cut(text: &str, max: usize) -> std::borrow::Cow<'_, str> {
 /// characters (zero-width spaces and joiners, bidi controls, Unicode tag
 /// characters, the byte order mark), print as Rust escapes like `\u{1b}`
 /// instead.
+/// An error as `main` prints it, `Error: ` then each cause, with control
+/// characters escaped: a path in it may be a file name a PR author chose,
+/// and a newline in one could start a line CI reads as a command.
+fn error_text(err: &anyhow::Error) -> String {
+    let mut causes = err.chain().map(|cause| escape_controls(&cause.to_string()));
+    let mut text = format!("Error: {}", causes.next().unwrap_or_default());
+    let rest: Vec<String> = causes.collect();
+    if !rest.is_empty() {
+        text.push_str("\n\nCaused by:");
+        for cause in rest {
+            text.push_str(&format!("\n    {cause}"));
+        }
+    }
+    text
+}
+
 fn escape_controls(text: &str) -> String {
     text.chars()
         .map(|c| {
@@ -1573,6 +1697,7 @@ mod tests {
         assert!(Cli::try_parse_from(["codecite", "cite", "identity"]).is_err());
         let cli = Cli::try_parse_from(["codecite", "cite", "identity", "RFC 9449 §4.3"]).unwrap();
         let Command::Cite {
+            check: None,
             corpus,
             citation,
             json,
@@ -1582,8 +1707,8 @@ mod tests {
             panic!("not cite");
         };
         assert_eq!(
-            (corpus.as_str(), citation.as_str()),
-            ("identity", "RFC 9449 §4.3")
+            (corpus.as_deref(), citation.as_deref()),
+            (Some("identity"), Some("RFC 9449 §4.3"))
         );
         assert!(!json && !allow_stale);
         let args = [
@@ -1603,6 +1728,94 @@ mod tests {
         assert!(json && allow_stale);
         let lines = ["codecite", "cite", "identity", "§4.3", "--max-lines", "5"];
         assert!(Cli::try_parse_from(lines).is_err());
+    }
+
+    #[test]
+    fn cite_check_takes_a_corpus_and_paths() {
+        let args = [
+            "codecite",
+            "cite",
+            "check",
+            "identity",
+            "src",
+            "docs",
+            "--json",
+            "--allow-superseded",
+        ];
+        let Command::Cite {
+            check:
+                Some(CiteCommand::Check {
+                    corpus,
+                    paths,
+                    json,
+                    allow_stale,
+                    allow_superseded,
+                    ..
+                }),
+            ..
+        } = Cli::try_parse_from(args).unwrap().command
+        else {
+            panic!("not cite check");
+        };
+        assert_eq!(corpus, "identity");
+        assert_eq!(paths, [PathBuf::from("src"), PathBuf::from("docs")]);
+        assert!(json && allow_superseded && !allow_stale);
+        // Paths come from the command line or a NUL-separated list, not both.
+        let stdin = [
+            "codecite",
+            "cite",
+            "check",
+            "identity",
+            "--files0-from",
+            "-",
+        ];
+        let Command::Cite {
+            check: Some(CiteCommand::Check { files0_from, .. }),
+            ..
+        } = Cli::try_parse_from(stdin).unwrap().command
+        else {
+            panic!("not cite check");
+        };
+        assert_eq!(files0_from, Some(PathBuf::from("-")));
+        let both = [
+            "codecite",
+            "cite",
+            "check",
+            "identity",
+            "src",
+            "--files0-from",
+            "-",
+        ];
+        assert!(Cli::try_parse_from(both).is_err());
+        // A corpus is required; paths are not.
+        assert!(Cli::try_parse_from(["codecite", "cite", "check"]).is_err());
+        assert!(Cli::try_parse_from(["codecite", "cite", "check", "identity"]).is_ok());
+        // A flag before `check` makes it `cite`'s corpus, so flags go after.
+        let args = ["codecite", "cite", "--json", "check", "identity"];
+        let Command::Cite {
+            check: None,
+            corpus,
+            ..
+        } = Cli::try_parse_from(args).unwrap().command
+        else {
+            panic!("not cite");
+        };
+        assert_eq!(corpus.as_deref(), Some("check"));
+        // A corpus named `check` is still checked one citation at a time.
+        let args = ["codecite", "cite", "--", "check", "RFC 9449 §4.3"];
+        let Command::Cite {
+            check: None,
+            corpus,
+            citation,
+            ..
+        } = Cli::try_parse_from(args).unwrap().command
+        else {
+            panic!("not cite");
+        };
+        assert_eq!(
+            (corpus.as_deref(), citation.as_deref()),
+            (Some("check"), Some("RFC 9449 §4.3"))
+        );
     }
 
     #[test]

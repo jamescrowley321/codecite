@@ -1,7 +1,9 @@
 //! Checking a citation: whether it resolves, what it points at, and, for
 //! a spec citation, the findings that say why not. `cite` resolves through `read` and never
-//! forks it.
+//! forks it. [`CitationChecker`] checks every citation written in a text,
+//! each through `cite`.
 
+use std::collections::HashMap;
 use std::fmt;
 
 use rusqlite::{OptionalExtension, params};
@@ -11,7 +13,10 @@ use serde::Serialize;
 use super::Store;
 use super::read::pinned;
 use super::search::MAX_SNIPPET_LINES;
-use crate::{CitationError, Error, ReadOptions, ReadResult, Result, SpecCitation, SpecReference};
+use crate::{
+    CitationError, Error, ReadOptions, ReadResult, Result, SpecCitation, SpecReference,
+    find_citations,
+};
 
 /// How to check a citation.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -383,6 +388,203 @@ impl Store {
             return Ok(None);
         }
         Ok(self.current_version(c.doc())?.map(|s| pinned(&s)))
+    }
+}
+
+/// How to check the citations written in a text.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CheckOptions {
+    /// Check against an index older than its maximum age instead of
+    /// refusing it.
+    pub allow_stale: bool,
+    /// Count a citation of a superseded version as holding up.
+    pub allow_superseded: bool,
+}
+
+/// Why a written citation does not hold up.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(tag = "problem", rename_all = "snake_case")]
+pub enum Problem {
+    /// `cite` found it names nothing in the corpus: a missing section or
+    /// step, a link whose text and anchor disagree, or a bare `§` in no
+    /// single document.
+    Unresolved {
+        /// What `cite` found.
+        findings: Vec<Finding>,
+        /// The pinned citations it could have meant.
+        candidates: Vec<String>,
+    },
+    /// `read` refused it: an unknown source, version, file or anchor,
+    /// lines past the end, or a malformed citation.
+    Refused {
+        /// The error's kind, as the MCP tools name it: `no_such_file`.
+        kind: String,
+        /// The error's message.
+        message: String,
+        /// What the error offers instead.
+        candidates: Vec<String>,
+    },
+    /// It resolves, to a version that something newer supersedes.
+    Superseded {
+        /// What it resolves to, pinned.
+        resolved: String,
+        /// What supersedes it.
+        superseded_by: String,
+    },
+}
+
+impl fmt::Display for Problem {
+    /// One line: why the citation does not hold up.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Problem::Unresolved { findings, .. } => {
+                let lines: Vec<String> = findings.iter().map(ToString::to_string).collect();
+                write!(f, "{}", lines.join("; "))
+            }
+            Problem::Refused { kind, message, .. } => write!(f, "{kind}: {message}"),
+            Problem::Superseded { superseded_by, .. } => {
+                write!(f, "superseded by {superseded_by}")
+            }
+        }
+    }
+}
+
+impl Problem {
+    /// The pinned citations or names it offers instead: a superseded
+    /// citation's successor.
+    pub fn candidates(&self) -> &[String] {
+        match self {
+            Problem::Unresolved { candidates, .. } | Problem::Refused { candidates, .. } => {
+                candidates
+            }
+            Problem::Superseded { superseded_by, .. } => std::slice::from_ref(superseded_by),
+        }
+    }
+}
+
+/// A citation written in a text that does not hold up, and where.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+pub struct CitationProblem {
+    /// The line it is written on, from 1.
+    pub line: usize,
+    /// The character it starts at on that line, from 1.
+    pub column: usize,
+    /// The citation as written.
+    pub citation: String,
+    /// Why it does not hold up.
+    #[serde(flatten)]
+    pub problem: Problem,
+}
+
+/// What checking one text found.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TextCheck {
+    /// How many citations it holds; text that only looked like one is not
+    /// counted.
+    pub citations: usize,
+    /// The ones that do not hold up, in order.
+    pub problems: Vec<CitationProblem>,
+}
+
+/// Checks the citations written in texts against one corpus, each through
+/// [`Store::cite`]. A citation written more than once is checked once.
+pub struct CitationChecker<'s> {
+    store: &'s Store,
+    allow_superseded: bool,
+    /// Each citation checked so far: `None` when it is no citation, else
+    /// its problem, if any.
+    seen: HashMap<String, Option<Option<Problem>>>,
+}
+
+impl Store {
+    /// A checker for the citations written in texts. A stale index is
+    /// refused here, once, unless `options.allow_stale` is set.
+    pub fn citation_checker(&self, options: &CheckOptions) -> Result<CitationChecker<'_>> {
+        self.check_fresh(options.allow_stale)?;
+        Ok(CitationChecker {
+            store: self,
+            allow_superseded: options.allow_superseded,
+            seen: HashMap::new(),
+        })
+    }
+}
+
+impl CitationChecker<'_> {
+    /// Checks every citation [`find_citations`] finds in `text`. A
+    /// citation that does not resolve, that `read` refuses, or that names a
+    /// superseded version (unless allowed) is a problem; text that `cite`
+    /// says is no citation at all is skipped. An error that is not about
+    /// the citation, such as a database error, stops the check.
+    pub fn check(&mut self, text: &str) -> Result<TextCheck> {
+        let mut checked = TextCheck::default();
+        for written in find_citations(text) {
+            let problem = match self.seen.get(written.text) {
+                Some(known) => known.clone(),
+                None => {
+                    let found = self.problem(written.text)?;
+                    self.seen.insert(written.text.to_owned(), found.clone());
+                    found
+                }
+            };
+            let Some(problem) = problem else {
+                continue;
+            };
+            checked.citations += 1;
+            if let Some(problem) = problem {
+                checked.problems.push(CitationProblem {
+                    line: written.line,
+                    column: written.column,
+                    citation: written.text.to_owned(),
+                    problem,
+                });
+            }
+        }
+        Ok(checked)
+    }
+
+    /// `None` when `citation` is no citation; else its problem, if any.
+    fn problem(&self, citation: &str) -> Result<Option<Option<Problem>>> {
+        // The checker refused a stale index when it was made.
+        let options = CiteOptions { allow_stale: true };
+        let result = match self.store.cite(citation, &options) {
+            Ok(result) => result,
+            Err(Error::NotACitation { .. }) => return Ok(None),
+            Err(
+                err @ (Error::NotASpecCitation { .. }
+                | Error::BadCitation { .. }
+                | Error::UnknownSource { .. }
+                | Error::UnknownVersion { .. }
+                | Error::AmbiguousDocument { .. }
+                | Error::NoSuchSection { .. }
+                | Error::NoSuchAnchor { .. }
+                | Error::UncitableSection { .. }
+                | Error::NoSuchStep { .. }
+                | Error::NoSuchFile { .. }
+                | Error::LinesPastEnd { .. }),
+            ) => {
+                return Ok(Some(Some(Problem::Refused {
+                    kind: err.kind().to_owned(),
+                    message: err.to_string(),
+                    candidates: err.candidates().to_vec(),
+                })));
+            }
+            Err(err) => return Err(err),
+        };
+        if !result.resolved {
+            return Ok(Some(Some(Problem::Unresolved {
+                findings: result.findings,
+                candidates: result.candidates,
+            })));
+        }
+        Ok(Some(match (result.citation, result.superseded_by) {
+            (Some(resolved), Some(superseded_by)) if !self.allow_superseded => {
+                Some(Problem::Superseded {
+                    resolved,
+                    superseded_by,
+                })
+            }
+            _ => None,
+        }))
     }
 }
 
@@ -1036,5 +1238,146 @@ candidates:
             .unwrap();
         assert_eq!(r.text.unwrap().lines().count(), MAX_SNIPPET_LINES);
         assert_eq!(r.truncated, Some(true));
+    }
+
+    /// The problems `check` finds in `text`, as (line, citation, problem
+    /// kind) triples, and how many citations it counted.
+    fn checked(f: &Fixture, options: &CheckOptions, text: &str) -> (usize, Vec<CitationProblem>) {
+        let mut checker = f.store.citation_checker(options).unwrap();
+        let found = checker.check(text).unwrap();
+        (found.citations, found.problems)
+    }
+
+    fn problem_kind(p: &Problem) -> String {
+        match p {
+            Problem::Unresolved { findings, .. } => {
+                serde_json::to_value(&findings[0]).unwrap()["type"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            }
+            Problem::Refused { kind, .. } => kind.clone(),
+            Problem::Superseded { .. } => "superseded".into(),
+        }
+    }
+
+    #[test]
+    fn check_passes_citations_that_resolve() {
+        let f = fixture();
+        let text = format!(
+            "// app@{HEAD}:src/lib.rs#L1 and `app@0123456:src/lib.rs#L1`\n\
+             See app@0123456:README.md#install, notes@sha256:9a9b00000000#L3-L6\n\
+             and {PINNED}#section-4.3/step-2. [OIDC Core §3.1.3.7]({CORE_URL}#IDTokenValidation)\n\
+             rfc6749@sha256:674900000000#section-10.12 is only updated.\n"
+        );
+        let (citations, problems) = checked(&f, &CheckOptions::default(), &text);
+        assert_eq!(problems, []);
+        assert_eq!(citations, 7);
+    }
+
+    #[test]
+    fn check_reports_each_citation_that_does_not_hold_up() {
+        let f = fixture();
+        let text = format!(
+            "app@0123456:src/gone.rs#L1\n\
+             app@0123456:src/lib.rs#L1-L9\n\
+             {PINNED}#section-9.9\n\
+             rfc2616@sha256:261600000000#section-14.9\n\
+             nobody@0123456:a.rs#L1\n\
+             [OIDC Core §3.1.3.6]({CORE_URL}#IDTokenValidation)\n\
+             app@0123456:README.md#nowhere\n"
+        );
+        let (citations, problems) = checked(&f, &CheckOptions::default(), &text);
+        assert_eq!(citations, 7);
+        let found: Vec<(usize, String)> = problems
+            .iter()
+            .map(|p| (p.line, problem_kind(&p.problem)))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                (1, "no_such_file".to_owned()),
+                (2, "lines_past_end".to_owned()),
+                (3, "no_such_section".to_owned()),
+                (4, "superseded".to_owned()),
+                (5, "unknown_source".to_owned()),
+                (6, "anchor_label_mismatch".to_owned()),
+                (7, "no_such_anchor".to_owned()),
+            ]
+        );
+        let superseded = &problems[3];
+        assert_eq!(
+            superseded.citation,
+            "rfc2616@sha256:261600000000#section-14.9"
+        );
+        assert_eq!(superseded.column, 1);
+        assert_eq!(
+            superseded.problem.to_string(),
+            "superseded by rfc9110@sha256:911000000000"
+        );
+        assert_eq!(
+            superseded.problem.candidates(),
+            ["rfc9110@sha256:911000000000"]
+        );
+        // A missing section offers the nearest ones.
+        assert!(!problems[2].problem.candidates().is_empty());
+        // The JSON names the problem beside where it is.
+        let json = serde_json::to_value(superseded).unwrap();
+        assert_eq!(json["problem"], "superseded");
+        assert_eq!(json["line"], 4);
+        assert_eq!(json["superseded_by"], "rfc9110@sha256:911000000000");
+    }
+
+    #[test]
+    fn check_allows_superseded_versions_when_asked() {
+        let f = fixture();
+        let options = CheckOptions {
+            allow_superseded: true,
+            ..CheckOptions::default()
+        };
+        let text = format!("rfc2616@sha256:261600000000#section-14.9 and {PINNED}#section-9.9\n");
+        let (citations, problems) = checked(&f, &options, &text);
+        assert_eq!(citations, 2);
+        assert_eq!(problems.len(), 1);
+        assert_eq!(problems[0].citation, format!("{PINNED}#section-9.9"));
+        // The older pinned version of RFC 9449 is superseded by the current one.
+        let older = format!("rfc9449@sha256:{}#section-4.3", "a".repeat(12));
+        let (_, problems) = checked(&f, &CheckOptions::default(), &older);
+        assert_eq!(problem_kind(&problems[0].problem), "superseded");
+        let (_, problems) = checked(&f, &options, &older);
+        assert_eq!(problems, []);
+    }
+
+    #[test]
+    fn check_skips_links_that_are_no_citation_and_counts_repeats() {
+        let f = fixture();
+        let text = "[see §2](https://example.com/page#top)\n\
+                    app@0123456:src/gone.rs#L1 app@0123456:src/gone.rs#L1\n";
+        let (citations, problems) = checked(&f, &CheckOptions::default(), text);
+        assert_eq!(citations, 2);
+        let at: Vec<(usize, usize)> = problems.iter().map(|p| (p.line, p.column)).collect();
+        assert_eq!(at, [(2, 1), (2, 28)]);
+    }
+
+    #[test]
+    fn check_refuses_a_stale_index_once_unless_allowed() {
+        let f = fixture();
+        rusqlite::Connection::open(f.store.path())
+            .unwrap()
+            .execute(
+                "UPDATE meta SET value = '2000-01-01T00:00:00Z' WHERE key = 'indexed_at'",
+                [],
+            )
+            .unwrap();
+        assert!(matches!(
+            f.store.citation_checker(&CheckOptions::default()),
+            Err(Error::StaleIndex { .. })
+        ));
+        let options = CheckOptions {
+            allow_stale: true,
+            ..CheckOptions::default()
+        };
+        let (citations, problems) = checked(&f, &options, "app@0123456:src/lib.rs#L1");
+        assert_eq!((citations, problems.len()), (1, 0));
     }
 }
