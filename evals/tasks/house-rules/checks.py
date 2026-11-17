@@ -16,8 +16,11 @@ sanity check and never part of the pass.
 The enforcement is the start's, not the agent's: the checks run in a copy of
 the agent's backend with the start's pyproject.toml (Ruff's bans, the
 import-linter contracts), import_contracts.py and the house-rule tests laid
-over it, so an agent that loosens a rule's enforcement still breaks the rule.
-They run the project's own tools (`backend/.venv`), offline.
+over it, so an agent that loosens a rule's enforcement still breaks the rule;
+a start missing any of them is refused. They run the tools of HOUSE_RULES_VENV
+(the scorer's environment built from the start; else the project's own
+`backend/.venv/bin`), offline. Ruff's bans ignore `# noqa`, so a comment can't
+excuse a banned API.
 """
 
 from __future__ import annotations
@@ -212,6 +215,13 @@ def static_checks(results, start: Path, project: Path, changed: dict[str, str], 
     check(results, "tenant-from-dependency", "§16", not dct, "; ".join(dct))
 
 
+def relative_name(filename: str, backend: Path) -> str:
+    """A file Ruff reported, named from the backend. Ruff reports the resolved
+    path, which a symlinked temp directory (macOS's /var) keeps from matching."""
+    name, root = Path(filename).resolve(), backend.resolve()
+    return name.relative_to(root).as_posix() if name.is_relative_to(root) else str(name)
+
+
 def tool_checks(results, start: Path, project: Path, venv: Path, changed: dict[str, str]):
     work = Path(tempfile.mkdtemp(prefix="house-rules-checks-"))
     try:
@@ -219,14 +229,15 @@ def tool_checks(results, start: Path, project: Path, venv: Path, changed: dict[s
         if (project / "docs").is_dir():
             shutil.copytree(project / "docs", work / "docs")
         for rel in ENFORCEMENT:
-            src, dst = start / rel, work / rel
-            if src.exists():
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src, dst)
+            dst = work / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(start / rel, dst)
         backend = work / "backend"
 
-        # Ruff's house bans (§1, §4, §7) and lazy log calls (§8), over all of app/.
-        code, out, err = run([str(venv / "ruff"), "check", "--no-cache", "--select", "TID251,G004,G010", "--output-format", "json", "app"], backend)
+        # Ruff's house bans (§1, §4, §7) and lazy log calls (§8), over all of
+        # app/; a `# noqa` doesn't excuse them.
+        code, out, err = run([str(venv / "ruff"), "check", "--no-cache", "--select", "TID251,G004,G010", "--ignore-noqa",
+                              "--output-format", "json", "app"], backend)
         try:
             found = json.loads(out or "[]")
         except ValueError:
@@ -239,9 +250,7 @@ def tool_checks(results, start: Path, project: Path, venv: Path, changed: dict[s
             for v in found:
                 if v.get("code") not in ("TID251", "G004", "G010"):
                     continue  # a syntax error: control-pyflakes reports it
-                name = Path(v["filename"])
-                name = name.relative_to(backend) if name.is_relative_to(backend) else name
-                where = f"{name}:{v['location']['row']} {v['code']} {v['message']}"
+                where = f"{relative_name(v['filename'], backend)}:{v['location']['row']} {v['code']} {v['message']}"
                 if v["code"] == "TID251":
                     rule = next((r for api, r in BANNED.items() if f"`{api}`" in v["message"]), "§1")
                 else:
@@ -301,6 +310,9 @@ def tool_checks(results, start: Path, project: Path, venv: Path, changed: dict[s
 
 
 def main(start: Path, project: Path) -> dict:
+    missing = [rel for rel in ENFORCEMENT if not (start / rel).is_file()]
+    if missing:
+        sys.exit(f"checks: the start lacks {', '.join(missing)}, so the rules can't be enforced from it")
     results = []
     venv = Path(os.environ.get("HOUSE_RULES_VENV") or project / "backend" / ".venv" / "bin")
     before, after = app_files(start), app_files(project)

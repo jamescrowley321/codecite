@@ -167,13 +167,23 @@ p95 guardrail of 150 ms.
   service or the request model. `checks.py` runs identity-stack's own
   enforcement as the start had it (Ruff's bans, import-linter's contracts and
   the house-rule tests, laid over a copy of the agent's tree so loosening
-  them doesn't help) plus its own reuse checks (no settings, HTTP or logging
+  them doesn't help, with Ruff ignoring `# noqa`) plus its own reuse checks (no settings, HTTP or logging
   library in place of `app.knobs`, `app.outbound`, `app.logbook`; new routes
   answer through `result_to_response` and take the tenant from
   `get_tenant_id`). A run passes only with the hidden tests passing and no
   violation of a MUST rule; the control rules and best-practice checks
   (pyflakes, bare `except`, `print`, the agent's own unit tests) are reported
-  apart, never gated. `planted.sh` plants seventeen rule breaks and
+  apart, never gated. The agent runs as root in the sandbox, so the scorer
+  trusts nothing it could rewrite: it reads the start tarball the image built
+  (`/opt/project-start.tar`) back to the host and checks it against
+  task.json's `corpus.start_sha256` (which `check.sh` recomputes from the
+  pin), and runs the hidden tests and checks with tools from a fresh
+  environment built offline from that start's lockfile (`score_setup`), not
+  the agent's `.venv`. A mismatch fails the sample as `scorer-start`. What
+  stays open is an agent that rewrites the system tools themselves (`uv`'s
+  cache, `python3`, `tar`) or leaves a process running to tamper after it
+  exits; nothing short of scoring in a second container closes that.
+  `planted.sh` plants nineteen rule breaks and
   hand-rolled helpers on the reference (`reference/solution.patch`) and shows
   each caught. `probe.toml` holds the memorization probe: three questions
   only the rule layer answers, for a model asked with no files; no runner

@@ -2,7 +2,9 @@
 # Prove house-rules well-formed, with no model key, no sandbox and no codecite:
 # task.json names files that exist, the prompt names no identity-stack helper,
 # every corpus manifest pins its git sources by full commit and starts with the
-# same identity-stack pin, rules.toml agrees with checks.py, the hidden tests
+# same identity-stack pin, whole, the start the image builds from that pin has
+# task.json's start_sha256 (the digest the scorer checks the sandbox's start
+# against), rules.toml agrees with checks.py, the hidden tests
 # fail on identity-stack as the agent gets it and pass with the reference
 # solution, checks.py passes both trees, and planted.sh shows each planted
 # rule break or hand-rolled helper caught.
@@ -48,6 +50,8 @@ for size, rel in task["corpus"]["sizes"].items():
     sources = manifest["source"]
     if sources[0].get("name") != task["corpus"]["project"]:
         problems.append(f"{rel}: the first source must be the project, {task['corpus']['project']}")
+    elif sources[0].get("include"):
+        problems.append(f"{rel}: the project is staged whole, so its start is start_sha256's; drop its include")
     for s in sources:
         if s.get("kind", "git") == "git":
             if not re.fullmatch(r"[0-9a-f]{40}", s.get("commit", "")):
@@ -95,11 +99,27 @@ fi
 mkdir "$WORK/start" "$WORK/reference"
 git -C "$REPO" archive "$SHA" | tar -x -C "$WORK/start"
 git -C "$REPO" archive "$SHA" | tar -x -C "$WORK/reference"
+
+echo "== the image's start has task.json's start_sha256" >&2
+# As the Dockerfile builds /opt/project-start.tar: the staged files committed
+# afresh (so .gitignore applies) and archived.
+mkdir "$WORK/image"
+git -C "$REPO" archive "$SHA" | tar -x -C "$WORK/image"
+(cd "$WORK/image" && git init -q . && git add -A \
+  && git -c user.name=eval -c user.email=eval@localhost commit -qm export && git archive -o "$WORK/project-start.tar" HEAD)
+DIGEST="$(uv run -q --project "$HERE/../.." python -I -c \
+  'import sys; from codecite_evals.task import tree_digest; print(tree_digest(open(sys.argv[1], "rb").read()))' \
+  "$WORK/project-start.tar")"
+PINNED="$(python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["corpus"]["start_sha256"])' "$HERE/task.json")"
+if [[ "$DIGEST" != "$PINNED" ]]; then
+  echo "check: the start's digest is $DIGEST, task.json's start_sha256 $PINNED" >&2
+  exit 1
+fi
 git -C "$WORK/reference" apply "$HERE/reference/solution.patch" 2>/dev/null \
   || (cd "$WORK/reference" && git apply "$HERE/reference/solution.patch")
 
-echo "== identity-stack's environment, as the image builds it" >&2
-(cd "$WORK/start/backend" && uv sync --locked -q)
+echo "== identity-stack's environment, as the scorer builds it (task.json score_setup)" >&2
+(cd "$WORK/start/backend" && uv sync --locked --no-install-project -q)
 VENV="$WORK/start/backend/.venv/bin"
 hidden() { (cd "$1/backend" && PYTHONDONTWRITEBYTECODE=1 "$VENV/python" -m pytest -q -p no:cacheprovider "$HERE/hidden" "${@:2}"); }
 

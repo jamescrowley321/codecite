@@ -64,6 +64,7 @@ default, or what the task's task.json sets), before it blocks.
 """
 
 import argparse
+import json
 import random
 import re
 import sys
@@ -355,12 +356,24 @@ def medians(runs):
 def task_name(log):
     """The task's name: its task_id argument when it ran as the `ab` task
     (codecite_evals/ab -T task_id=<id>, as a replay task does), else its own;
-    for a size-dial task, with its corpus size after an @ (house_rules@m), so
-    each size gets its own table."""
+    for a size-dial task, with the corpus size it ran at after an @
+    (house_rules@m), so each size gets its own table and a run left on the
+    default size shares the default's."""
     args = log.eval.task_args or {}
     name = log.eval.task.removeprefix("codecite_evals/")
     name = args.get("task_id", name) if name == "ab" else name
-    return f"{name}@{args['corpus']}" if args.get("corpus") else name
+    size = args.get("corpus") or default_corpus(name)
+    return f"{name}@{size}" if size else name
+
+
+def default_corpus(name: str) -> str:
+    """A size-dial task's default corpus size, by its task's name (house_rules
+    or house-rules); empty for any other task, or one not on disk."""
+    try:
+        meta = json.loads((config.task_dir(name.replace("_", "-")) / "task.json").read_text())
+    except (OSError, ValueError):
+        return ""
+    return meta["corpus"].get("default", "") if meta.get("kind") == "corpus" else ""
 
 
 def per_arm(log, arm, arms=2):

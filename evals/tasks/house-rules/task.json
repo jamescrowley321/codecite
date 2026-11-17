@@ -13,7 +13,8 @@
       "m": "corpus/m.toml",
       "l": "corpus/l.toml"
     },
-    "default": "m"
+    "default": "m",
+    "start_sha256": "0f7d628d1170e88a5657c94ddac0c0ff59238cd7eaca86f99a1c9341c8a2840c"
   },
   "language": "python",
   "workdir": "backend",
@@ -22,8 +23,14 @@
     "sync",
     "--locked"
   ],
+  "score_setup": [
+    "uv",
+    "sync",
+    "--locked",
+    "--no-install-project"
+  ],
   "score": [
-    ".venv/bin/python",
+    "{venv}/python",
     "-m",
     "pytest",
     "-q",

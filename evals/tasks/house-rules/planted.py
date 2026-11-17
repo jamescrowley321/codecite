@@ -64,6 +64,14 @@ VARIANTS = {
         ["ruff-§4"],
         True,
     ),
+    # §4: the same, with a noqa comment to hide it from Ruff.
+    "noqa-httpx": (
+        [(ROLE, "async with outbound_client(timeout=_CATALOGUE_TIMEOUT) as client:",
+          "async with httpx.AsyncClient(timeout=_CATALOGUE_TIMEOUT) as client:  # noqa: TID251"),
+         (ROLE, "import uuid\n", "import uuid\n\nimport httpx  # noqa: TID251\n")],
+        ["ruff-§4"],
+        True,
+    ),
     # §4, reuse: another HTTP library instead of app.outbound.
     "urllib": (
         [(ROLE, "import uuid\n", "import urllib.request  # noqa: F401\nimport uuid\n")],
@@ -73,6 +81,13 @@ VARIANTS = {
     # §7: a logger from logging.getLogger instead of app.logbook.
     "getlogger": (
         [(ROLE, "logger = logbook(__name__)", "logger = logging.getLogger(__name__)"),
+         (ROLE, "import uuid\n", "import logging\nimport uuid\n")],
+        ["ruff-§7"],
+        True,
+    ),
+    # §7: the same, with a noqa comment to hide it from Ruff.
+    "noqa-getlogger": (
+        [(ROLE, "logger = logbook(__name__)", "logger = logging.getLogger(__name__)  # noqa: TID251"),
          (ROLE, "import uuid\n", "import logging\nimport uuid\n")],
         ["ruff-§7"],
         True,

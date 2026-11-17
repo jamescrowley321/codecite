@@ -2,7 +2,12 @@
 the staged-size guard and its scorer, without a model key or a live sandbox."""
 
 import asyncio
+import importlib.util
+import io
 import json
+import subprocess
+import sys
+import tarfile
 import types
 
 import pytest
@@ -94,21 +99,67 @@ class Store(dict):
         self[key] = value
 
 
-class CorpusSandbox:
-    """Records writes and execs; the hidden tests pass and checks.py prints `checks`."""
+def tarball(files: dict[str, bytes], mtime=0, links=None) -> bytes:
+    """A tarball of `files`, in the order given, at `mtime`; `links` adds symlinks."""
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        for name, body in files.items():
+            info = tarfile.TarInfo(name)
+            info.size, info.mtime = len(body), mtime
+            tar.addfile(info, io.BytesIO(body))
+        for name, target in (links or {}).items():
+            info = tarfile.TarInfo(name)
+            info.type, info.linkname = tarfile.SYMTYPE, target
+            tar.addfile(info)
+    return buf.getvalue()
 
-    def __init__(self, checks, tests_pass=True):
-        self.checks, self.tests_pass, self.log = checks, tests_pass, []
+
+START = tarball({"backend/pyproject.toml": b"[tool.ruff]\n", "backend/app/main.py": b"app = 1\n"})
+
+
+def test_the_start_digest_is_its_files_not_their_order_or_times():
+    same = tarball({"backend/app/main.py": b"app = 1\n", "backend/pyproject.toml": b"[tool.ruff]\n"}, mtime=1_800_000_000)
+    assert task.tree_digest(START) == task.tree_digest(same)
+    loosened = tarball({"backend/pyproject.toml": b"", "backend/app/main.py": b"app = 1\n"})
+    assert task.tree_digest(loosened) != task.tree_digest(START)
+    # A link into the agent's tree, so its new file reads as unchanged, moves it too.
+    linked = tarball({"backend/pyproject.toml": b"[tool.ruff]\n", "backend/app/main.py": b"app = 1\n"},
+                     links={"backend/app/new.py": f"{task.PROJECT}/backend/app/new.py"})
+    assert task.tree_digest(linked) != task.tree_digest(START)
+
+
+def test_the_task_pins_its_start_by_digest():
+    assert len(meta()["corpus"]["start_sha256"]) == 64
+
+
+class CorpusSandbox:
+    """Records reads, writes and execs; the start tarball reads back as
+    `start`, the hidden tests pass and checks.py prints `checks`."""
+
+    def __init__(self, checks, tests_pass=True, start=START, extracts=True, venv=True):
+        self.checks, self.tests_pass, self.start, self.extracts, self.venv = checks, tests_pass, start, extracts, venv
+        self.log = []
+
+    async def read_file(self, path, text=True):
+        self.log.append(("read", path))
+        assert path == task.PROJECT_START and text is False
+        if self.start is None:
+            raise FileNotFoundError(path)
+        return self.start
 
     async def write_file(self, path, contents):
-        self.log.append(("write", path))
+        self.log.append(("write", path, contents))
 
     async def exec(self, cmd, **kwargs):
         self.log.append(("exec", cmd, kwargs))
         if cmd[0] == "python3":
             return ExecResult(success=True, returncode=0, stdout=json.dumps({"checks": self.checks}), stderr="")
         if cmd[0] == "sh":
-            return ExecResult(success=True, returncode=0, stdout="", stderr="")
+            ok = self.extracts
+            return ExecResult(success=ok, returncode=0 if ok else 2, stdout="", stderr="" if ok else "tar: bad")
+        if cmd[0] == "uv":
+            ok = self.venv
+            return ExecResult(success=ok, returncode=0 if ok else 2, stdout="", stderr="" if ok else "uv: offline")
         ok = self.tests_pass
         return ExecResult(success=ok, returncode=0 if ok else 1, stdout="26 passed" if ok else "1 failed", stderr="")
 
@@ -116,6 +167,10 @@ class CorpusSandbox:
 def score(monkeypatch, sb, store=None):
     monkeypatch.setattr(task, "sandbox", lambda: sb)
     monkeypatch.setattr(task, "store", lambda: store or Store())
+    # The task pins identity-stack's start by digest; the fake start stands in for it.
+    pinned = meta()["corpus"]["start_sha256"]
+    real = task.tree_digest
+    monkeypatch.setattr(task, "tree_digest", lambda data: pinned if data == START else real(data))
     state = types.SimpleNamespace(metadata={"corpus": "s"})
     return asyncio.run(task.hidden_tests_and_checks(TASK)(state, None))
 
@@ -124,20 +179,48 @@ def check(name, passed, control=False):
     return {"name": name, "rule": "§1", "level": "MUST", "control": control, "passed": passed, "detail": ""}
 
 
-def test_the_hidden_tests_run_from_the_workdir_in_the_projects_environment(monkeypatch):
+def test_the_checks_run_on_a_verified_start_with_tools_built_from_it(monkeypatch):
     sb = CorpusSandbox([check("ruff-§1", True)])
     s = score(monkeypatch, sb)
     assert s.value == 1 and s.metadata["corpus"] == "s" and s.metadata["violations"] == 0
     execs = [e for e in sb.log if e[0] == "exec"]
-    (_, tests, kw), (_, start, _), (_, checks, _) = execs
-    assert tests == [".venv/bin/python", "-m", "pytest", "-q", "-p", "no:cacheprovider", "/score/hidden"]
+    (_, extract, _), (_, venv, venv_kw), (_, tests, kw), (_, checks, checks_kw) = execs
+    # The start the agent may have rewritten is read, verified on the host and
+    # written back to a fresh path; the old /score/start and venv go first.
+    assert ("write", "/score/start.tar", START) in sb.log
+    assert extract[-1].startswith("rm -rf /score/start /score/venv && ")
+    assert "/score/start.tar" in extract[-1] and task.PROJECT_START not in extract[-1]
+    # The tools come from a venv built from the verified start, not the agent's .venv.
+    assert venv == ["uv", "sync", "--locked", "--no-install-project"]
+    assert venv_kw["cwd"] == "/score/start/backend" and venv_kw["env"]["UV_PROJECT_ENVIRONMENT"] == "/score/venv"
+    assert venv_kw["env"]["UV_OFFLINE"] == "1"
+    assert tests == ["/score/venv/bin/python", "-m", "pytest", "-q", "-p", "no:cacheprovider", "/score/hidden"]
     assert kw["cwd"] == f"{task.PROJECT}/backend" and kw["env"]["UV_OFFLINE"] == "1"
-    assert task.PROJECT_START in start[-1]
     assert checks == ["python3", "-I", "/score/checks.py", "/score/start", task.PROJECT]
+    assert checks_kw["env"]["HOUSE_RULES_VENV"] == "/score/venv/bin"
     writes = {e[1] for e in sb.log if e[0] == "write"}
     assert {"/score/hidden/test_hidden.py", "/score/hidden/conftest.py", "/score/checks.py"} <= writes
     # Nothing reaches the sandbox before scoring writes it: the writes come first.
     assert [e[0] for e in sb.log][:3] == ["write"] * 3
+
+
+@pytest.mark.parametrize(
+    "sandbox, why",
+    [
+        (lambda: CorpusSandbox([check("ruff-§1", True)], start=tarball({"backend/pyproject.toml": b""})), "does not match"),
+        (lambda: CorpusSandbox([check("ruff-§1", True)], start=b"not a tarball"), "not a tarball"),
+        (lambda: CorpusSandbox([check("ruff-§1", True)], start=None), "cannot read"),
+        (lambda: CorpusSandbox([check("ruff-§1", True)], extracts=False), "tar: bad"),
+        (lambda: CorpusSandbox([check("ruff-§1", True)], venv=False), "uv: offline"),
+    ],
+)
+def test_a_start_that_fails_verification_fails_the_sample(monkeypatch, sandbox, why):
+    sb = sandbox()
+    s = score(monkeypatch, sb)
+    assert s.value == 0 and "failed checks: scorer-start" in s.explanation
+    assert why in s.metadata["checks"][0]["detail"]
+    # Neither the hidden tests nor checks.py run on a start that isn't the image's.
+    assert not [e for e in sb.log if e[0] == "exec" and e[1][0] in ("python3", "/score/venv/bin/python")]
 
 
 def test_a_failed_control_is_reported_and_not_gated(monkeypatch):
@@ -167,6 +250,39 @@ def test_a_stopped_agent_cannot_pass(monkeypatch):
     assert s.value == 0 and s.explanation.startswith("agent timed out; ")
 
 
+def checks_module():
+    spec = importlib.util.spec_from_file_location("house_rules_checks", config.task_dir(TASK) / "checks.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_checks_refuse_a_start_missing_its_enforcement(tmp_path):
+    start, project = tmp_path / "start", tmp_path / "project"
+    for tree in (start, project):
+        (tree / "backend" / "app").mkdir(parents=True)
+    (start / "backend" / "pyproject.toml").write_text("")
+    p = subprocess.run([sys.executable, "-I", str(config.task_dir(TASK) / "checks.py"), str(start), str(project)],
+                       capture_output=True, text=True)
+    assert p.returncode != 0 and "backend/import_contracts.py" in p.stderr and not p.stdout
+
+
+def test_ruff_findings_are_named_from_the_backend_behind_a_symlink(tmp_path):
+    checks = checks_module()
+    real = tmp_path / "real"
+    (real / "backend" / "app").mkdir(parents=True)
+    (tmp_path / "link").symlink_to(real)
+    backend = tmp_path / "link" / "backend"
+    # Ruff reports the resolved path; the backend was named through the link.
+    assert checks.relative_name(str(real / "backend" / "app" / "x.py"), backend) == "app/x.py"
+    assert checks.relative_name(str(backend / "app" / "x.py"), backend) == "app/x.py"
+
+
+def test_the_gating_ruff_run_ignores_noqa():
+    source = (config.task_dir(TASK) / "checks.py").read_text()
+    assert '"--select", "TID251,G004,G010", "--ignore-noqa"' in source
+
+
 def log(task_name, args):
     return types.SimpleNamespace(eval=types.SimpleNamespace(task=task_name, task_args=args))
 
@@ -175,3 +291,7 @@ def test_the_scorecard_gives_each_corpus_size_its_own_table():
     assert report.task_name(log("codecite_evals/house_rules", {"arms": "ab", "corpus": "l"})) == "house_rules@l"
     assert report.task_name(log("codecite_evals/ab", {"task_id": "house-rules", "corpus": "s"})) == "house-rules@s"
     assert report.task_name(log("codecite_evals/backchannel_logout", {"arms": "ab"})) == "backchannel_logout"
+    # Left out, the size is the task's default, so a default run shares its table.
+    assert report.task_name(log("codecite_evals/house_rules", {"arms": "ab"})) == "house_rules@m"
+    assert report.task_name(log("codecite_evals/ab", {"task_id": "house-rules"})) == "house-rules@m"
+    assert report.task_name(log("codecite_evals/ab", {"task_id": "backchannel-logout"})) == "backchannel-logout"

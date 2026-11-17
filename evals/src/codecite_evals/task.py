@@ -26,10 +26,14 @@ and sandbox, labelled apart, so the scorecard shows what noise alone does.
 difficulty without watching codecite's (evals/README.md).
 """
 
+import hashlib
+import io
 import json
 import os
 import posixpath
 import re
+import shlex
+import tarfile
 import tomllib
 from pathlib import Path
 from time import monotonic
@@ -52,6 +56,10 @@ IDENTITY_MODEL = "/opt/identity-model"
 CORPUS_DIR = "/opt/corpus"
 SPECS_DIR = "/opt/specs"
 PROJECT_START = "/opt/project-start.tar"
+# Where a size-dial task's scorer puts the start once verified, and the
+# environment it builds from it for the hidden tests and checks.
+SCORE_START = "/score/start"
+SCORE_VENV = "/score/venv"
 CODECITE = "/opt/codecite/bin/codecite"
 CODECITE_TOOLS = ["mcp__codecite__search", "mcp__codecite__read", "mcp__codecite__requirements"]
 PI_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"]
@@ -454,20 +462,83 @@ async def score_replay(sb, task_dir: Path, meta: dict) -> tuple[bool, str, list]
     return passed, tail, []
 
 
+def tree_digest(data: bytes) -> str:
+    """A tarball's digest over what it holds: each member's path with its
+    content's sha256 (a regular file), its target (a link) or its type, sorted
+    by path, so neither member order, mtimes nor git's pax header move it.
+    Raises tarfile.TarError for bytes that aren't a tarball."""
+    entries = []
+    with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+        for m in tar:
+            name = m.name.removeprefix("./").rstrip("/")
+            if m.isdir():
+                continue
+            if m.isfile():
+                what = "f " + hashlib.sha256(tar.extractfile(m).read()).hexdigest()
+            elif m.issym() or m.islnk():
+                what = f"{'l' if m.issym() else 'h'} {m.linkname}"
+            else:
+                what = f"t {m.type!r}"
+            entries.append(f"{name}\0{what}\n")
+    return hashlib.sha256("".join(sorted(entries)).encode()).hexdigest()
+
+
+def start_failed(why: str) -> list:
+    """The one result of a sample whose start couldn't be verified: no check
+    can be trusted without it, so none runs."""
+    return [{"name": "scorer-start", "rule": "scorer", "level": "MUST", "control": False, "passed": False, "detail": why[-1500:]}]
+
+
+async def verified_start(sb, meta: dict) -> str | None:
+    """Lay the project as the image built it at SCORE_START, and build the
+    hidden tests' and checks' environment from it at SCORE_VENV. The agent ran
+    as root in this sandbox, so PROJECT_START is read back to the host and
+    checked against task.json's corpus.start_sha256 before use, and the tools
+    come from the start's lockfile, not the agent's .venv. None when ready,
+    else why not."""
+    try:
+        data = await sb.read_file(PROJECT_START, text=False)
+    except Exception as e:
+        return f"cannot read {PROJECT_START}: {type(e).__name__}: {e}"
+    try:
+        digest = tree_digest(data)
+    except (tarfile.TarError, EOFError) as e:
+        return f"{PROJECT_START} is not a tarball: {e}"
+    if digest != meta["corpus"]["start_sha256"]:
+        return f"{PROJECT_START} does not match task.json's start_sha256 (got {digest})"
+    await sb.write_file("/score/start.tar", data)
+    steps = [
+        (["sh", "-c", f"rm -rf {SCORE_START} {SCORE_VENV} && mkdir -p {SCORE_START} && tar -xf /score/start.tar -C {SCORE_START}"], {}),
+        (meta["score_setup"], {"cwd": posixpath.join(SCORE_START, meta["workdir"]),
+                               "env": {**offline_env(meta["language"]), "UV_PROJECT_ENVIRONMENT": SCORE_VENV}}),
+    ]
+    for cmd, kw in steps:
+        try:
+            result = await sb.exec(cmd, timeout=300, **kw)
+        except TimeoutError:
+            return f"{shlex.join(cmd)} timed out"
+        if not result.success:
+            return f"{shlex.join(cmd)} exited {result.returncode}: {result.stderr[-1000:]}"
+    return None
+
+
 async def score_corpus(sb, task_dir: Path, meta: dict) -> tuple[bool, str, list]:
-    """A size-dial task: its hidden tests, run from its workdir in the
-    project's own environment, then its checks against the project as the
-    image built it (PROJECT_START). A check marked `control` is reported and
-    never fails the sample."""
+    """A size-dial task: its hidden tests, run from its workdir, then its
+    checks against the project as the image built it, both with the tools of
+    an environment built from that start (verified_start). A check marked
+    `control` is reported and never fails the sample."""
     for f in (task_dir / "hidden").glob("*.py"):
         await sb.write_file(f"/score/hidden/{f.name}", f.read_text())
     await sb.write_file("/score/checks.py", (task_dir / "checks.py").read_text())
-    cmd = ["/score/hidden" if arg == "{hidden}" else arg for arg in meta["score"]]
+    if why := await verified_start(sb, meta):
+        return False, f"not run: {why}"[-1500:], start_failed(why)
+    venv = f"{SCORE_VENV}/bin"
+    cmd = [{"{hidden}": "/score/hidden"}.get(arg, arg).replace("{venv}", venv) for arg in meta["score"]]
     cwd = posixpath.normpath(posixpath.join(PROJECT, meta["workdir"]))
     tests_passed, tests_tail = await run_hidden(sb, cmd, cwd, offline_env(meta["language"]))
     try:
-        await sb.exec(["sh", "-c", f"mkdir -p /score/start && tar -xf {PROJECT_START} -C /score/start"], timeout=120)
-        checks = await sb.exec(["python3", "-I", "/score/checks.py", "/score/start", PROJECT], timeout=300)
+        checks = await sb.exec(["python3", "-I", "/score/checks.py", SCORE_START, PROJECT],
+                               env={"HOUSE_RULES_VENV": venv}, timeout=300)
         results = json.loads(checks.stdout)["checks"] if checks.success else []
     except (TimeoutError, ValueError, KeyError, TypeError):
         results = []
