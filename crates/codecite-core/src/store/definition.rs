@@ -183,17 +183,18 @@ impl Store {
     }
 
     /// The defined names that differ from `name` only in case, `_` or `-`,
-    /// sorted. Only an error asks, so a scan of the symbols is fine here.
+    /// sorted, found by the `symbol_name_key` index.
     fn similar_names(&self, name: &str) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT DISTINCT display_name FROM symbol
-             WHERE codecite_name_key(display_name) = ?1 ORDER BY display_name LIMIT ?2",
-        )?;
+        let mut stmt = self.conn.prepare_cached(SIMILAR_NAMES)?;
         let limit = i64::try_from(MAX_CANDIDATES).unwrap_or(i64::MAX);
         let rows = stmt.query_map(params![name_key(name), limit], |row| row.get(0))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 }
+
+/// At most `?2` distinct defined names whose name key is `?1`, sorted.
+pub(super) const SIMILAR_NAMES: &str = "SELECT DISTINCT display_name FROM symbol
+     WHERE name_key = ?1 ORDER BY display_name LIMIT ?2";
 
 /// The definitions with one name as written, `?1`. A symbol's lines are its
 /// chunk's, which the index run wrote with it.

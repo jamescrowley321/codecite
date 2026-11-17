@@ -231,108 +231,97 @@ impl Store {
     }
 
     /// The best `query.limit` chunks that `chunk_fts` matches for `fts`,
-    /// best first, within `query.only`. A fetched document stored without
-    /// its text is a spec; one stored with its text is a generic page.
+    /// best first, within `query.only`.
+    ///
+    /// Ranking runs in two phases, so its cost follows `query.limit` rather
+    /// than the number of matches: [`RANK`] orders every match by its score
+    /// and keeps the best `query.limit` chunk IDs, reading only what the
+    /// score and its tie-breaks need, and [`FETCH`] then reads the text,
+    /// citation and snippet of those chunks alone.
     fn ranked(&self, fts: &str, names: &str, query: &SearchQuery<'_>) -> Result<Vec<SearchResult>> {
         let (w_symbol, w_path, w_text) = COLUMN_WEIGHTS;
-        // The inner query ranks every match on narrow columns; only the
-        // best `limit` then read their text, which for a chunk of a document
-        // that stores its text is cut from the document's.
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT r.kind, r.start_line, r.end_line, r.number, r.parent_number,
-               coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line)),
-               r.path, r.dirty, r.name, r.source_kind, r.revision, r.license_class,
-               r.indexed_at, r.symbol, r.score, r.has_text, r.title, r.anchor
-             FROM (
-               SELECT c.id, c.kind, c.start_line, c.end_line, c.number, p.number AS parent_number,
-                 d.path, d.dirty, s.name, s.kind AS source_kind, s.revision, s.license_class,
-                 s.indexed_at, sym.display_name AS symbol,
-                 -bm25(chunk_fts, ?3, ?4, ?5)
-                   * codecite_role_weight(d.path, s.kind, d.text IS NOT NULL)
-                   * CASE WHEN instr(?2, char(31) || codecite_name_key(sym.display_name) || char(31)) > 0
-                          THEN ?9 ELSE 1.0 END AS score,
-                 d.text IS NOT NULL AS has_text, c.title, c.anchor
-               FROM chunk_fts
-               JOIN chunk c ON c.id = chunk_fts.rowid
-               JOIN document d ON d.id = c.document_id
-               JOIN source s ON s.id = d.source_id
-               LEFT JOIN chunk p ON p.id = c.parent_id
-               LEFT JOIN symbol sym ON sym.id = c.symbol_id
-               WHERE chunk_fts MATCH ?1 AND s.is_current
-                 AND (?6 IS NULL OR d.language = ?6)
-                 AND (?7 IS NULL OR d.path GLOB ?7)
-                 AND (?10 IS NULL OR (s.kind = 'document' AND d.text IS NULL) = ?10)
-               -- Break ties on what the result cites, not on c.id: a chunk ID
-               -- records when the chunk was written, and a reindex keeps the
-               -- IDs of unchanged files, so ID order differs from a fresh index.
-               ORDER BY score DESC, s.name, d.path, c.start_line, c.end_line
-               LIMIT ?8
-             ) r
-             JOIN chunk c ON c.id = r.id
-             JOIN document d ON d.id = c.document_id
-             ORDER BY r.score DESC, r.name, r.path, r.start_line, r.end_line",
-        )?;
-        let rows = stmt.query_map(
-            params![
-                fts,
-                names,
-                w_symbol,
-                w_path,
-                w_text,
-                query.language,
-                query.path,
-                query.limit,
-                NAME_BOOST,
-                query.only.map(|scope| scope == Scope::Spec),
-            ],
-            |row| {
-                let kind: String = row.get(0)?;
-                let start: u32 = row.get(1)?;
-                let end: u32 = row.get(2)?;
-                let number: Option<String> = row.get(3)?;
-                let parent_number: Option<String> = row.get(4)?;
-                let text: String = row.get(5)?;
-                let path: String = row.get(6)?;
-                let dirty: bool = row.get(7)?;
-                let source: String = row.get(8)?;
-                let source_kind: String = row.get(9)?;
-                let revision: String = row.get(10)?;
-                let has_text: bool = row.get(15)?;
-                let fetched = source_kind == "document";
-                let is_spec = fetched && !has_text;
-                let (snippet, snippet_truncated) = snippet(&text);
-                let role = Role::of_stored(&path, &source_kind, has_text).as_str();
-                let license_class: String = row.get(11)?;
-                let citation = if is_spec {
-                    spec_citation(&source, &revision, &kind, number, parent_number)
-                } else if fetched {
-                    document_citation(&source, &revision, start, end)
-                } else {
-                    code_citation(&source, &revision, &path, start, end)
-                };
-                // A spec's citation already names its section.
-                let heading = |i| -> rusqlite::Result<Option<String>> {
-                    Ok(if is_spec { None } else { row.get(i)? })
-                };
-                Ok(SearchResult {
-                    citation,
-                    kind,
-                    symbol: row.get(13)?,
-                    title: heading(16)?,
-                    anchor: heading(17)?,
-                    role,
-                    score: row.get(14)?,
-                    instruction: copy_instruction(&license_class),
-                    license_class,
-                    indexed_at: row.get(12)?,
-                    dirty: (!fetched).then_some(dirty),
-                    snippet,
-                    snippet_truncated,
-                    older_versions: None,
-                })
-            },
-        )?;
-        Ok(rows.collect::<rusqlite::Result<_>>()?)
+        // One read transaction holds both phases, so an index run that
+        // commits between them can't take away a chunk phase 1 chose.
+        let snapshot = self.conn.unchecked_transaction()?;
+        let mut stmt = self.conn.prepare_cached(RANK)?;
+        let ranked: Vec<(i64, f64)> = stmt
+            .query_map(
+                params![
+                    fts,
+                    names,
+                    w_symbol,
+                    w_path,
+                    w_text,
+                    query.language,
+                    query.path,
+                    query.limit,
+                    NAME_BOOST,
+                    query.only.map(|scope| scope == Scope::Spec),
+                ],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )?
+            .collect::<rusqlite::Result<_>>()?;
+        let results = ranked
+            .into_iter()
+            .map(|(id, score)| self.ranked_result(id, score))
+            .collect();
+        drop(stmt);
+        snapshot.finish()?;
+        results
+    }
+
+    /// The search result for the chunk `id`, which ranked with `score`. A
+    /// fetched document stored without its text is a spec; one stored with
+    /// its text is a generic page.
+    fn ranked_result(&self, id: i64, score: f64) -> Result<SearchResult> {
+        let mut stmt = self.conn.prepare_cached(FETCH)?;
+        let result = stmt.query_row([id], |row| {
+            let kind: String = row.get(0)?;
+            let start: u32 = row.get(1)?;
+            let end: u32 = row.get(2)?;
+            let number: Option<String> = row.get(3)?;
+            let parent_number: Option<String> = row.get(4)?;
+            let text: String = row.get(5)?;
+            let path: String = row.get(6)?;
+            let dirty: bool = row.get(7)?;
+            let source: String = row.get(8)?;
+            let source_kind: String = row.get(9)?;
+            let revision: String = row.get(10)?;
+            let has_text: bool = row.get(14)?;
+            let fetched = source_kind == "document";
+            let is_spec = fetched && !has_text;
+            let (snippet, snippet_truncated) = snippet(&text);
+            let role = Role::of_stored(&path, &source_kind, has_text).as_str();
+            let license_class: String = row.get(11)?;
+            let citation = if is_spec {
+                spec_citation(&source, &revision, &kind, number, parent_number)
+            } else if fetched {
+                document_citation(&source, &revision, start, end)
+            } else {
+                code_citation(&source, &revision, &path, start, end)
+            };
+            // A spec's citation already names its section.
+            let heading = |i| -> rusqlite::Result<Option<String>> {
+                Ok(if is_spec { None } else { row.get(i)? })
+            };
+            Ok(SearchResult {
+                citation,
+                kind,
+                symbol: row.get(13)?,
+                title: heading(15)?,
+                anchor: heading(16)?,
+                role,
+                score,
+                instruction: copy_instruction(&license_class),
+                license_class,
+                indexed_at: row.get(12)?,
+                dirty: (!fetched).then_some(dirty),
+                snippet,
+                snippet_truncated,
+                older_versions: None,
+            })
+        })?;
+        Ok(result)
     }
 
     /// Sets each spec result's `older_versions`. Search reads only current
@@ -361,9 +350,7 @@ impl Store {
     /// The [`query_names`] that at least one and at most
     /// [`MAX_NAME_DEFINITIONS`] symbols have.
     fn boosted_names(&self, text: &str) -> Result<Vec<String>> {
-        let mut count = self.conn.prepare_cached(
-            "SELECT count(*) FROM symbol WHERE codecite_name_key(display_name) = ?1",
-        )?;
+        let mut count = self.conn.prepare_cached(BOOSTED_NAME_COUNT)?;
         let mut names = Vec::new();
         for name in query_names(text) {
             let defined: u32 = count.query_row([&name], |row| row.get(0))?;
@@ -396,9 +383,11 @@ impl Store {
     }
 }
 
-/// Registers the SQL functions [`Store::search`] ranks with, once per
-/// connection: `codecite_role_weight(path, source_kind, has_text)` and
-/// `codecite_name_key(name)`.
+/// Registers codecite's SQL functions, once per connection:
+/// `codecite_role_weight(path, source_kind, has_text)` and
+/// `codecite_name_key(name)`. Search reads the stored `document.role_weight`
+/// and `symbol.name_key` instead (#251), so no query of codecite's calls
+/// these two; they compute the stored values for ad hoc SQL.
 pub(super) fn register_functions(conn: &Connection) -> rusqlite::Result<()> {
     conn.create_scalar_function(
         "codecite_role_weight",
@@ -434,6 +423,49 @@ pub(super) fn register_functions(conn: &Connection) -> rusqlite::Result<()> {
         },
     )
 }
+
+/// Phase 1 of a search: the IDs and scores of the best `?8` chunks that
+/// `chunk_fts` matches for `?1`, best first. It reads no text, only the
+/// score's inputs and the tie-breaks: BM25 with the column weights `?3` to
+/// `?5`, times the document's stored role weight, times `?9` when the
+/// chunk's symbol's stored name key is one of the `char(31)`-separated
+/// names in `?2`. `?6` and `?7` filter by language and path glob, and `?10`
+/// keeps only specs (true) or everything else (false).
+const RANK: &str = "SELECT c.id,
+       -bm25(chunk_fts, ?3, ?4, ?5) * d.role_weight
+         * CASE WHEN instr(?2, char(31) || sym.name_key || char(31)) > 0
+                THEN ?9 ELSE 1.0 END AS score
+     FROM chunk_fts
+     JOIN chunk c ON c.id = chunk_fts.rowid
+     JOIN document d ON d.id = c.document_id
+     JOIN source s ON s.id = d.source_id
+     LEFT JOIN symbol sym ON sym.id = c.symbol_id
+     WHERE chunk_fts MATCH ?1 AND s.is_current
+       AND (?6 IS NULL OR d.language = ?6)
+       AND (?7 IS NULL OR d.path GLOB ?7)
+       AND (?10 IS NULL OR (d.role = 'spec') = ?10)
+     -- Break ties on what the result cites, not on c.id: a chunk ID
+     -- records when the chunk was written, and a reindex keeps the
+     -- IDs of unchanged files, so ID order differs from a fresh index.
+     ORDER BY score DESC, s.name, d.path, c.start_line, c.end_line
+     LIMIT ?8";
+
+/// Phase 2 of a search: what a result shows of the chunk `?1`, its text
+/// included. A chunk of a document that stores its text stores none of its
+/// own, so its text is cut from the document's.
+const FETCH: &str = "SELECT c.kind, c.start_line, c.end_line, c.number, p.number,
+       coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line)), d.path,
+       d.dirty, s.name, s.kind, s.revision, s.license_class, s.indexed_at, sym.display_name,
+       d.text IS NOT NULL, c.title, c.anchor
+     FROM chunk c
+     JOIN document d ON d.id = c.document_id
+     JOIN source s ON s.id = d.source_id
+     LEFT JOIN chunk p ON p.id = c.parent_id
+     LEFT JOIN symbol sym ON sym.id = c.symbol_id
+     WHERE c.id = ?1";
+
+/// How many symbols have the name key `?1`.
+const BOOSTED_NAME_COUNT: &str = "SELECT count(*) FROM symbol WHERE name_key = ?1";
 
 /// Turns the user's text into an FTS5 query, or `None` when it has no
 /// terms.
@@ -847,6 +879,53 @@ mod tests {
         let results = store.search(&query("add middleware")).unwrap();
         let roles: Vec<&str> = results.iter().map(|r| r.role).collect();
         assert_eq!(roles, ["source", "example", "test"], "{results:?}");
+
+        // The weight is read from the document row, not worked out again
+        // for each candidate: a stored weight is what the score multiplies.
+        store
+            .conn
+            .execute(
+                "UPDATE document SET role_weight = 2.0 WHERE path = 'tests/test_app.py'",
+                [],
+            )
+            .unwrap();
+        let results = store.search(&query("add middleware")).unwrap();
+        let roles: Vec<&str> = results.iter().map(|r| r.role).collect();
+        assert_eq!(roles, ["test", "source", "example"], "{results:?}");
+    }
+
+    #[test]
+    fn name_lookups_use_the_name_key_index() {
+        let f = fixture();
+        for (sql, params) in [
+            (BOOSTED_NAME_COUNT, 1),
+            (super::super::definition::SIMILAR_NAMES, 2),
+        ] {
+            let plan: Vec<String> = f
+                .store
+                .conn
+                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .unwrap()
+                .query_map(
+                    rusqlite::params_from_iter(["validate", "10"].iter().take(params)),
+                    |row| row.get(3),
+                )
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap();
+            assert!(
+                plan.iter().any(|step| step.contains("symbol_name_key")),
+                "{sql}: {plan:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn ranking_reads_no_text() {
+        // Phase 1 orders every match, so it must not read a chunk's or a
+        // document's text; phase 2 reads it for the results only.
+        assert!(!RANK.contains("text"), "{RANK}");
+        assert!(FETCH.contains("c.text"), "{FETCH}");
     }
 
     #[test]

@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use rusqlite::config::DbConfig;
 use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionBehavior};
 
-use crate::{Error, Result, identifier_terms, text_terms};
+use crate::{Error, Result, Role, identifier_terms, text_terms};
 
 mod cite;
 pub use cite::{
@@ -64,12 +64,13 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0007_heading_anchors.sql"),
     include_str!("../migrations/0008_refill_fts.sql"),
     include_str!("../migrations/0009_one_ranking.sql"),
-    include_str!("../migrations/0010_derive_chunk_text.sql"),
+    include_str!("../migrations/0010_rank_inputs.sql"),
+    include_str!("../migrations/0011_derive_chunk_text.sql"),
 ];
 
 /// The version whose migration clears the chunk text a document's text
 /// holds. A file brought up past it is vacuumed, so the space comes back.
-const DERIVE_CHUNK_TEXT: u32 = 10;
+const DERIVE_CHUNK_TEXT: u32 = 11;
 
 /// The `meta` key that marks a file a migration freed space in: set in the
 /// migration's transaction and deleted only once a vacuum succeeds, so a
@@ -117,7 +118,7 @@ fn vacuum_if_pending(conn: &Connection) -> rusqlite::Result<()> {
 /// being indexed again. Version 5 fills `spec_fts` this way, and version 8
 /// refills both tables after emptying them; version 9 then drops
 /// `spec_fts`. A chunk's terms are split from its text again, since no
-/// version from 10 on stores them.
+/// version from 11 on stores them.
 ///
 /// `table` and `filter` are formatted into the SQL, which is safe only
 /// because every caller passes a constant written here, never input.
@@ -154,7 +155,7 @@ fn fill_fts(tx: &rusqlite::Transaction<'_>, table: &str, filter: &str) -> Result
 
 /// Clears `chunk.text` wherever the chunk's document stores its text and
 /// the chunk is that text's lines, as `insert_chunks` writes a chunk from
-/// version 10 on. A chunk whose text differs from its lines keeps it.
+/// version 11 on. A chunk whose text differs from its lines keeps it.
 fn clear_derivable_text(tx: &rusqlite::Transaction<'_>) -> Result<()> {
     let mut documents = tx.prepare("SELECT id, text FROM document WHERE text IS NOT NULL")?;
     let mut chunks = tx.prepare(
@@ -179,6 +180,40 @@ fn clear_derivable_text(tx: &rusqlite::Transaction<'_>) -> Result<()> {
         for id in derivable {
             clear.execute([id])?;
         }
+    }
+    Ok(())
+}
+
+/// The version whose migration stores what search ranks by: each
+/// document's role and weight and each symbol's name key.
+const RANK_INPUTS: u32 = 10;
+
+/// Sets every stored document's `role` and `role_weight` and every
+/// symbol's `name_key`, as the write path sets them, so an upgraded corpus
+/// ranks as a fresh index does. Version [`RANK_INPUTS`] adds the columns.
+fn fill_rank_inputs(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+    let documents: Vec<(i64, String, String, bool)> = tx
+        .prepare(
+            "SELECT d.id, d.path, s.kind, d.text IS NOT NULL
+             FROM document d JOIN source s ON s.id = d.source_id",
+        )?
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut set_role =
+        tx.prepare("UPDATE document SET role = ?2, role_weight = ?3 WHERE id = ?1")?;
+    for (id, path, source_kind, has_text) in documents {
+        let role = Role::of_stored(&path, &source_kind, has_text);
+        set_role.execute(rusqlite::params![id, role.as_str(), role.weight()])?;
+    }
+    let symbols: Vec<(String, String)> = tx
+        .prepare("SELECT id, display_name FROM symbol")?
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut set_key = tx.prepare("UPDATE symbol SET name_key = ?2 WHERE id = ?1")?;
+    for (id, display_name) in symbols {
+        set_key.execute(rusqlite::params![id, search::name_key(&display_name)])?;
     }
     Ok(())
 }
@@ -240,6 +275,8 @@ impl Store {
                     fill_fts(&tx, "chunk_fts", "1")?;
                     fill_fts(&tx, "spec_fts", "c.number IS NOT NULL")?;
                 }
+                // What search ranks by, for the rows stored before it.
+                RANK_INPUTS => fill_rank_inputs(&tx)?,
                 DERIVE_CHUNK_TEXT => {
                     clear_derivable_text(&tx)?;
                     // A file that was empty had nothing to free.
@@ -1163,10 +1200,10 @@ mod tests {
     }
 
     #[test]
-    fn version_10_clears_chunk_text_its_document_holds_and_drops_terms() {
-        let dir = scratch("v9");
+    fn version_11_clears_chunk_text_its_document_holds_and_drops_terms() {
+        let dir = scratch("v10");
         let path = dir.join("corpus.db");
-        // A version 9 corpus: a code file whose function, nested method and
+        // A version 10 corpus: a code file whose function, nested method and
         // window are its lines, plus one chunk whose text isn't, and a spec
         // section with no document text. Every chunk has its full-text row.
         let code = "struct S;\r\nimpl S {\r\n    fn validate() {}\r\n}\n\n// tail\n";
@@ -1180,14 +1217,14 @@ mod tests {
         let conn = raw(&path);
         conn.execute_batch(&format!(
             "{}
-             INSERT INTO meta (key, value) VALUES ('schema_version', '9');
+             INSERT INTO meta (key, value) VALUES ('schema_version', '10');
              INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
                VALUES (1, 'app', 'local', '/src/app', 'abc', 'adapt', 'then'),
                       (2, 'rfc', 'document', 'https://x', 'def', 'quote', 'then');
              INSERT INTO document (id, source_id, path, language, content_hash, text)
                VALUES (1, 1, 'src/lib.rs', 'rust', x'01', NULL),
                       (2, 2, 'rfc', NULL, x'02', NULL);",
-            MIGRATIONS[..9].join("\n")
+            MIGRATIONS[..10].join("\n")
         ))
         .unwrap();
         conn.execute("UPDATE document SET text = ?1 WHERE id = 1", [code])
@@ -1285,18 +1322,18 @@ mod tests {
     fn a_failed_vacuum_keeps_the_open_and_is_retried_on_the_next() {
         let dir = scratch("vacuum");
         let path = dir.join("corpus.db");
-        // A version 9 corpus with free pages for a vacuum to give back.
+        // A version 10 corpus with free pages for a vacuum to give back.
         let conn = raw(&path);
         conn.execute_batch(&format!(
             "{}
-             INSERT INTO meta (key, value) VALUES ('schema_version', '9');
+             INSERT INTO meta (key, value) VALUES ('schema_version', '10');
              INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
                VALUES (1, 'app', 'local', '/src/app', 'abc', 'adapt', 'then');
              INSERT INTO document (id, source_id, path, language, content_hash, text)
                VALUES (1, 1, 'src/lib.rs', 'rust', x'01', 'fn a() {{}}');
              INSERT INTO chunk (id, document_id, start_line, end_line, kind, text, terms)
                VALUES (1, 1, 1, 1, 'function', 'fn a() {{}}', 'fn a');",
-            MIGRATIONS[..9].join("\n")
+            MIGRATIONS[..10].join("\n")
         ))
         .unwrap();
         let filler = "x".repeat(64 * 1024);
@@ -1348,6 +1385,76 @@ mod tests {
         // A fresh file has nothing to give back, so it never flags one.
         let store = Store::open_read_write(&dir.join("fresh.db")).unwrap();
         assert!(!pending(&store));
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn version_10_stores_rank_inputs_for_existing_rows() {
+        let dir = scratch("v9");
+        let path = dir.join("corpus.db");
+        // A version 9 corpus with a document of every role and two symbols,
+        // one of them with a non-ASCII name SQLite's lower() would not fold.
+        raw(&path)
+            .execute_batch(&format!(
+                "{}
+                 INSERT INTO meta (key, value) VALUES ('schema_version', '9');
+                 INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
+                   VALUES (1, 'app', 'git', 'https://x', 'abc', 'adapt', 'then'),
+                          (2, 'rfc', 'document', 'https://y', 'def', 'quote', 'then'),
+                          (3, 'page', 'document', 'https://z', 'ghi', 'quote', 'then');
+                 INSERT INTO document (id, source_id, path, language, content_hash, text)
+                   VALUES (1, 1, 'src/lib.rs', 'rust', x'01', 'fn a() {{}}'),
+                          (2, 1, 'tests/lib.rs', 'rust', x'02', 'fn b() {{}}'),
+                          (3, 1, 'examples/demo.rs', 'rust', x'03', 'fn c() {{}}'),
+                          (4, 1, 'README.md', 'markdown', x'04', '# App'),
+                          (5, 2, 'rfc', 'html', x'05', NULL),
+                          (6, 3, 'page', 'html', x'06', 'Sessions');
+                 INSERT INTO symbol (id, display_name, kind, document_id)
+                   VALUES ('a', 'validate_Token', 'function', 1),
+                          ('b', 'ÄrgerHelper', 'function', 2);",
+                MIGRATIONS[..9].join("\n")
+            ))
+            .unwrap();
+
+        let store = Store::open_read_write(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+        let roles: Vec<(String, f64)> = store
+            .conn
+            .prepare("SELECT role, role_weight FROM document ORDER BY id")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let expected: Vec<(String, f64)> = [
+            ("src/lib.rs", "git", true),
+            ("tests/lib.rs", "git", true),
+            ("examples/demo.rs", "git", true),
+            ("README.md", "git", true),
+            ("rfc", "document", false),
+            ("page", "document", true),
+        ]
+        .into_iter()
+        .map(|(p, kind, has_text)| {
+            let role = crate::Role::of_stored(p, kind, has_text);
+            (role.as_str().to_owned(), role.weight())
+        })
+        .collect();
+        assert_eq!(roles, expected);
+        assert_eq!(
+            roles.iter().map(|(r, _)| r.as_str()).collect::<Vec<_>>(),
+            ["source", "test", "example", "docs", "spec", "docs"]
+        );
+        let keys: Vec<String> = store
+            .conn
+            .prepare("SELECT name_key FROM symbol ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(keys, ["validatetoken", "ärgerhelper"]);
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }

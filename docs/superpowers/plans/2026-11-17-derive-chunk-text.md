@@ -55,7 +55,7 @@ a spec chunk never loads its document's text.
    document's lines give the chunk's text. Test: a code chunk stores NULL, a
    chunk whose text isn't its lines and a spec chunk keep theirs, every chunk
    reads back as written, and `chunk` has no `terms` column.
-3. **Migration 0010:** rebuild `chunk` without `terms` and with nullable
+3. **Migration 0011:** rebuild `chunk` without `terms` and with nullable
    `text` (SQLite can't drop NOT NULL), keeping IDs, indexes and the
    `chunk_fts_delete` trigger. In Rust, in the same transaction, clear the
    text of every chunk its document's text holds. `fill_fts`, the refill
@@ -64,12 +64,12 @@ a spec chunk never loads its document's text.
    so the freed pages leave the file. The migration flags the file
    (`meta.vacuum_pending`) and the flag goes only when a vacuum succeeds, so
    a vacuum that fails warns, leaves the open working, and is retried on the
-   next read-write open. Test: a version 9 corpus with a
+   next read-write open. Test: a version 10 corpus with a
    nested class, a method, a window that no longer matches its lines and a
    spec section comes up with the right NULLs, reads every chunk back,
    keeps its full-text rows, indexes and trigger, and has no free pages.
-4. **Readers:** search (inner query ranks without text; the outer reads
-   text for the `limit` rows and sorts them again by the same key),
+4. **Readers:** search (phase 2 of the two-phase query reads the text for
+   the `limit` best rows only),
    definitions, context rules, requirements, `read` sections and steps,
    `grep` over a spec and `diff`.
 5. **Equivalence:** index the retrieval benchmark corpus
@@ -85,5 +85,7 @@ a spec chunk never loads its document's text.
 
 ## Concurrency
 
-Other open work adds migrations (#242, #248). This takes 0010, the next
-free number on `main`; whoever lands later renumbers.
+Other open work adds migrations (#242, #248). #261 (two-phase ranking)
+landed first with 0010, so this takes 0011; whoever lands later renumbers.
+Phase 2 of #261's search reads the text through the same `coalesce`, and
+phase 1 reads none.
