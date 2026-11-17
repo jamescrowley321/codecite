@@ -1,0 +1,51 @@
+{
+  "id": "house-rules",
+  "frozen_at": "2cbdf3fee2ce47dc329152e95fc9f33624bd890c",
+  "frozen_reason": "In band by pooled rate but Sonnet passes every run: the quick calibration on the baseline arm at m passed 73% of 15 runs pooled, inside 40-80% (Haiku 3/5, Sonnet 5/5, Opus 3/5; run 44023756169). Frozen as is by owner decision, to proceed to the A/B, and judged on its A/B result, not on the band.",
+  "kind": "corpus",
+  "prompt": "prompt.md",
+  "hidden": "hidden",
+  "checks": "checks.py",
+  "rules": "rules.toml",
+  "probe": "probe.toml",
+  "corpus": {
+    "project": "identity-stack",
+    "sizes": {
+      "s": "corpus/s.toml",
+      "m": "corpus/m.toml",
+      "l": "corpus/l.toml"
+    },
+    "default": "m",
+    "start_sha256": "0f7d628d1170e88a5657c94ddac0c0ff59238cd7eaca86f99a1c9341c8a2840c"
+  },
+  "language": "python",
+  "workdir": "backend",
+  "setup": [
+    "uv",
+    "sync",
+    "--locked"
+  ],
+  "score_setup": [
+    "uv",
+    "sync",
+    "--locked",
+    "--no-install-project"
+  ],
+  "score": [
+    "{venv}/python",
+    "-P",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "--junitxml={report}",
+    "-c",
+    "/dev/null",
+    "--rootdir={hidden}",
+    "--confcutdir={hidden}",
+    "-o",
+    "pythonpath={workdir}",
+    "{hidden}"
+  ]
+}

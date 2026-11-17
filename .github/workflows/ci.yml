@@ -166,6 +166,7 @@ jobs:
         task:
           - backchannel-logout
           - spec-questions
+          - house-rules
           - replay-identity-model-908
           - replay-identity-stack-449
           - replay-terraform-provider-descope-75
@@ -181,9 +182,11 @@ jobs:
         env:
           TASK: ${{ matrix.task }}
         # A replay task's check.sh needs its own repository at its base
-        # instead; the runner's Go and uv run its tests.
+        # instead; the runner's Go and uv run its tests. A size-dial task's
+        # check.sh fetches its project itself.
         run: |
           task="evals/tasks/$TASK/task.json"
+          [[ "$(jq -r '.kind // ""' "$task")" != corpus ]] || exit 0
           if [[ "$(jq -r '.kind // ""' "$task")" == replay ]]; then
             git init -q "$RUNNER_TEMP/replay"
             git -C "$RUNNER_TEMP/replay" fetch -q --depth 1 "$(jq -r .url "$task")" "$(jq -r .base "$task")"
