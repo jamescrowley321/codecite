@@ -232,7 +232,9 @@ jobs:
           PR_NUMBER: ${{ github.event.issue.number }}
         run: |
           set -eu
-          association=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json authorAssociation --jq .authorAssociation)
+          # `gh pr view --json` has no association field on every gh the
+          # runners get; the REST field is stable.
+          association=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq .author_association)
           case "$association" in
             OWNER | MEMBER | COLLABORATOR)
               git fetch origin "pull/${PR_NUMBER}/head"
