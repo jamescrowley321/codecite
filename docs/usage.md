@@ -113,7 +113,9 @@ cited by section. Any other page is split at its own headings and cited by
 lines of its text, `name@sha256:<12 hex>#L3-L9`: HTML is rendered to text
 first, a URL ending `.md` or `.markdown` is read as Markdown, and anything
 else is plain text in 60-line windows. A repository's Markdown and HTML files
-split at their headings too.
+split at their headings too. C (`.c`, `.h`) and Java (`.java`) are split at
+recognized definitions, with windows for uncovered lines. `.h` is treated as
+C, not C++; Java overloads are not resolved through a build.
 
 To pin a new or changed document, leave a placeholder hash and print the
 hash each URL serves now:
@@ -265,7 +267,8 @@ A query matches identifiers however they are written: `validate token` finds
 `validateToken`, `validate_token` and `validate-token`. Results rank by BM25,
 weighting symbol names over paths over body text, and a chunk's score triples
 when a word of the query, or the whole query, is its symbol's name (when at
-most 3 symbols share that name). Spec results come from each document's current
+most 3 definitions share that name; Java same-name methods, including
+constructors, count with their enclosing class). Spec results come from each document's current
 version; one whose document also has an older version pinned carries
 `· older version pinned` on its line, and its JSON lists them in `older_versions` (see
 [Diff a spec's versions](#diff-a-specs-versions)).
@@ -1217,6 +1220,5 @@ codecite search fhir "conditional create" --path "fhir-r4-*"
 
 The first run clones about 4 GB into the cache and takes a few minutes; the
 corpus file is about 3 GB. HAPI FHIR, Helios hfs and HasteHealth leave out
-their JSON and XML, which is almost all FHIR fixtures and definitions. Java
-and Clojure have no grammar, so HAPI FHIR and Blaze are cited as 60-line
-windows, not by definition.
+their JSON and XML, which is almost all FHIR fixtures and definitions. HAPI FHIR’s Java definitions are indexed by name. Blaze’s Clojure files
+are cited as 60-line windows, not by definition.

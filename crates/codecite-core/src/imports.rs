@@ -97,7 +97,14 @@ pub fn imports(language: Language, text: &str) -> Vec<String> {
                 }
             }
         }
-        Language::Markdown | Language::Html => {}
+        Language::Java => {
+            for line in text.lines() {
+                if let Some(c) = JAVA_IMPORT.captures(line) {
+                    push(&c[1]);
+                }
+            }
+        }
+        Language::C | Language::Markdown | Language::Html => {}
     }
     found
 }
@@ -111,10 +118,10 @@ pub fn imports(language: Language, text: &str) -> Vec<String> {
 /// `request` does not cover `requests`, and `node` not `node:fs`.
 pub fn imports_dependency(language: Language, module: &str, dependency: &str) -> bool {
     let separator = match language {
-        Language::Python | Language::CSharp => ".",
+        Language::Python | Language::CSharp | Language::Java => ".",
         Language::TypeScript | Language::Tsx | Language::JavaScript | Language::Go => "/",
         Language::Rust => "::",
-        Language::Markdown | Language::Html => return module == dependency,
+        Language::C | Language::Markdown | Language::Html => return module == dependency,
     };
     module
         .strip_prefix(dependency)
@@ -168,6 +175,12 @@ static GO_SPEC: LazyLock<Regex> =
 static CS_USING: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^\s*(?:global\s+)?using\s+(?:static\s+)?(?:\w+\s*=\s*)?([\w.]+)\s*;")
         .expect("valid regex")
+});
+
+/// `import java.util.Map;`, `import static org.junit.Assert.assertEquals;`,
+/// `import java.util.*;` (whose module is `java.util`).
+static JAVA_IMPORT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^\s*import\s+(?:static\s+)?([\w.]+)(?:\.\*)?\s*;").expect("valid regex")
 });
 
 #[cfg(test)]
@@ -252,6 +265,30 @@ mod tests {
             imports(Language::CSharp, text),
             ["System", "System.Math", "System.Net.Http"]
         );
+    }
+
+    #[test]
+    fn java_imports() {
+        let text = "import java.util.Map;\nimport static org.junit.Assert.assertEquals;\nimport java.util.*;\nimport org.keycloak.models.UserModel;\nString s = \"import nope\";\n";
+        assert_eq!(
+            imports(Language::Java, text),
+            [
+                "java.util.Map",
+                "org.junit.Assert.assertEquals",
+                "java.util",
+                "org.keycloak.models.UserModel",
+            ]
+        );
+        assert!(imports_dependency(
+            Language::Java,
+            "org.keycloak.models.UserModel",
+            "org.keycloak"
+        ));
+        assert!(!imports_dependency(
+            Language::Java,
+            "org.keycloakx",
+            "org.keycloak"
+        ));
     }
 
     #[test]
