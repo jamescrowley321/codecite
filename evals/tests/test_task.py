@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import re
+import subprocess
 from contextlib import asynccontextmanager
 
 import pytest
@@ -444,3 +446,52 @@ def test_prepare_arm_fails_on_cleanup_error():
 
     with pytest.raises(RuntimeError, match="permission denied"):
         asyncio.run(task.prepare_arm(FailingSandbox(TimeoutError()), "baseline", task.PI_MCP, task.MCP_CONFIG))
+
+
+def _run_dockerfile_codegraph_loop(tmp_path, fail_at=""):
+    dockerfile = (config.EVALS_DIR / "inspect" / "Dockerfile").read_text()
+    joined = re.sub(r"\\\n\s*", " ", dockerfile)
+    m = re.search(r"(for d in /work/project /opt/identity-model /opt/corpus/\*; do .*?;\s*done)", joined)
+    assert m, "Dockerfile has no codegraph init loop"
+    loop = (
+        m.group(1)
+        .replace("/work/project", "work/project")
+        .replace("/opt/identity-model", "opt/identity-model")
+        .replace("/opt/corpus/*", "opt/corpus/*")
+        .replace("/opt/codegraph/bin/codegraph", "./codegraph")
+    )
+    stub = tmp_path / "codegraph"
+    stub.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> init.log\n[ "$3" != "$FAIL_INIT_PATH" ]\n')
+    stub.chmod(0o755)
+    res = subprocess.run(["/bin/sh", "-c", loop], cwd=tmp_path, env={"FAIL_INIT_PATH": fail_at}, timeout=10)
+    return res.returncode, (tmp_path / "init.log").read_text().splitlines()
+
+
+def test_dockerfile_codegraph_loop_fails_fast_on_earlier_init_error(tmp_path):
+    proj = tmp_path / "work/project"
+    ext = tmp_path / "opt/corpus/other"
+    proj.mkdir(parents=True)
+    (tmp_path / "opt/identity-model").mkdir(parents=True)
+    ext.mkdir(parents=True)
+    (proj / "app.py").write_text("x = 1\n")
+    (ext / "lib.py").write_text("y = 2\n")
+
+    status, calls = _run_dockerfile_codegraph_loop(tmp_path, fail_at="work/project")
+
+    assert status != 0
+    assert calls == ["init -y work/project"]
+
+
+def test_dockerfile_codegraph_loop_skips_empty_project_and_succeeds(tmp_path):
+    ident = tmp_path / "opt/identity-model"
+    corpus = tmp_path / "opt/corpus"
+    (tmp_path / "work/project").mkdir(parents=True)
+    ident.mkdir(parents=True)
+    corpus.mkdir(parents=True)
+    (ident / "model.py").write_text("x = 1\n")
+    (corpus / ".size").write_text("s\n")
+
+    status, calls = _run_dockerfile_codegraph_loop(tmp_path)
+
+    assert status == 0
+    assert calls == ["init -y opt/identity-model"]

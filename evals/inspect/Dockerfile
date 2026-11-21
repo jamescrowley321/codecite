@@ -114,7 +114,7 @@ RUN npm install -g --prefix /opt/codegraph @colbymchenry/codegraph@${CODEGRAPH_V
  && /opt/codegraph/bin/codegraph telemetry off \
  && for d in /work/project /opt/identity-model /opt/corpus/*; do \
       if [ -d "$d" ] && [ -n "$(ls -A "$d" 2>/dev/null)" ]; then \
-        /opt/codegraph/bin/codegraph init -y "$d" >/dev/null; \
+        /opt/codegraph/bin/codegraph init -y "$d" >/dev/null || exit 1; \
       fi; \
     done
 
