@@ -473,7 +473,8 @@ def claude(model: str) -> Agent:
             stdout = await sb.read_file(claude_code.OUTPUT)
         except Exception:
             stdout = ""
-        for key, value in claude_code.measures(stdout).items():
+        tool = "codegraph" if condition == "codegraph" else "codecite"
+        for key, value in claude_code.measures(stdout, tool).items():
             store().set(key, value)
         store().set("tool_calls", claude_code.tool_calls(stdout))
         await keep_assist_measures(sb, condition)

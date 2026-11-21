@@ -69,6 +69,19 @@ def test_measures_count_each_message_once():
     }
 
 
+def test_measures_count_the_selected_tool_in_mixed_native_and_shell_calls():
+    out = stream(assistant(
+        "m1", USAGE,
+        tool("mcp__codecite__search"), tool("mcp__codegraph__codegraph_explore"),
+        tool("Bash", command="codecite search eval x"),
+        tool("Bash", command="cd /work && /opt/codegraph/bin/codegraph explore token"),
+        tool("Bash", command="grep codegraph ."),
+    ))
+    assert claude_code.measures(out, "codegraph")["codegraph_calls"] == 2
+    assert claude_code.measures(out, "codecite")["codecite_calls"] == 2
+    assert "codecite_calls" not in claude_code.measures(out, "codegraph")
+
+
 def test_a_cut_off_stream_still_has_measures_but_no_model_time():
     out = stream(assistant("m1", USAGE)) + '{"type": "assist'
     m = claude_code.measures(out)
@@ -149,6 +162,18 @@ def test_a_finished_run_keeps_its_answer_and_measures(monkeypatch):
     assert isinstance(state.messages[-1], ChatMessageAssistant) and state.messages[-1].text == "Fixed it."
     assert store["agent_turns"] == 1 and "stopped" not in store
     assert json.loads(sb.files[claude_code.MCP]) == claude_code.MCP_CONFIG
+
+
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_codegraph_measures_are_persisted_by_the_agent(monkeypatch, interrupted):
+    out = stream(assistant(
+        "m1", USAGE, tool("mcp__codecite__search"),
+        tool("mcp__codegraph__codegraph_explore"), tool("Bash", command="codegraph explore token"),
+    ))
+    result = TimeoutError() if interrupted else finished(out + stream(DONE))
+    _, store, _ = run_claude(monkeypatch, result, arm="codegraph", output=out if interrupted else None)
+    assert store["codegraph_calls"] == 2
+    assert "codecite_calls" not in store
 
 
 def test_the_token_never_goes_in_an_execs_env(monkeypatch):

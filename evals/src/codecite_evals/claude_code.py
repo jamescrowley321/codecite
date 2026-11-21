@@ -18,8 +18,8 @@ through api.anthropic.com alone, and CI scrubs the logs (scrub.py) before
 uploading them.
 
 Inspect sees none of Claude Code's model calls, so the agent reads the turns,
-tokens, model time and codecite calls from its stream-json output and keeps
-them in the sample's store, where report.py reads them.
+tokens, model time and tool calls from its stream-json output and keeps them
+in the sample's store, where report.py reads them.
 """
 
 import json
@@ -28,7 +28,7 @@ import os
 from inspect_ai.model import GenerateConfig, ModelAPI, ModelOutput, modelapi
 
 from codecite_evals import assist
-from codecite_evals.report import CLI, NATIVE
+from codecite_evals.tool_use import cli
 
 PROVIDER = "claude-code"
 TOKEN = "CLAUDE_CODE_OAUTH_TOKEN"
@@ -121,8 +121,8 @@ def tool_calls(stdout: str) -> list[dict]:
     return calls
 
 
-def measures(stdout: str) -> dict:
-    """Turns, tokens, model time and codecite calls from Claude Code's
+def measures(stdout: str, tool: str = "codecite") -> dict:
+    """Turns, tokens, model time and the selected tool's calls from Claude Code's
     stream-json output, which may stop short when it timed out. A turn is
     one API message, counted once though it streams a block at a time. Each
     message's usage is only what was known when it started streaming, so the
@@ -140,10 +140,10 @@ def measures(stdout: str) -> dict:
             if not isinstance(block, dict) or block.get("type") != "tool_use":
                 continue
             name, args = str(block.get("name")), block.get("input") or {}
-            if name.startswith(NATIVE):
+            if name.startswith(f"mcp__{tool}__"):
                 calls += 1
             elif name == "Bash" and isinstance(args.get("command"), str):
-                calls += bool(CLI.search(args["command"]))
+                calls += bool(cli(tool).search(args["command"]))
     totals = [result["usage"]] if result and isinstance(result.get("usage"), dict) else list(usage.values())
     count = lambda *keys: sum(int(u.get(k) or 0) for u in totals for k in keys)
     api_ms = result.get("duration_api_ms") if result else None
@@ -152,7 +152,7 @@ def measures(stdout: str) -> dict:
         "agent_tokens": count("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"),
         "agent_output_tokens": count("output_tokens"),
         "agent_model_seconds": api_ms / 1000 if isinstance(api_ms, (int, float)) else None,
-        "codecite_calls": calls,
+        f"{tool}_calls": calls,
     }
 
 

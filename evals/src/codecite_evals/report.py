@@ -30,8 +30,8 @@ The scorecard shows their medians per arm, the providers with counts, and a
 95% interval for every measure.
 
 A Claude Code run (a claude-code/ model) makes its calls outside Inspect, so
-its turns, tokens, model time and codecite calls come from the sample's
-store instead (claude_code.py), and it names no provider.
+its turns, tokens, model time and tool calls come from the sample's store
+instead (claude_code.py), and it names no provider.
 
 Timeouts and sandbox errors both count as failures. They get columns of
 their own, each sandbox error is listed under the task's tables, and a model
@@ -39,13 +39,12 @@ with any has them named in its verdict, so a loss or pass they helped make
 doesn't read as clean. An agent whose own output overflowed or didn't decode
 is a plain failure, in neither column.
 
-A pair whose codecite arm called codecite in fewer than half its usable runs
-is not measured: the arms then differ by a tool the agent never used, so the
-comparison says nothing about codecite. "used codecite" counts, per arm, the
-runs with at least one call, read from the model calls in the log: a call to
-one of codecite's native tools, or a `bash` call that runs `codecite`. An
-assist run (`arms=assist`, assist.py) used it when its hook added a block,
-and gets a table of the hook's calls, blocks, bytes and estimated tokens.
+A pair whose tool arm used its own tool in fewer than half its usable runs
+is not measured: the comparison says nothing about a tool the agent never
+used. Use counts native calls or `bash` calls running the arm's binary in the
+model events, or the sample store for Claude Code. An assist run (`arms=assist`,
+assist.py) used codecite when its hook added a block, and gets a table of the
+hook's calls, blocks, bytes and estimated tokens.
 
 A run of the baseline arm alone (`-T arms=baseline`, recorded in the log's
 task arguments) is a calibration, not an A/B run: per task, it gets a
@@ -66,7 +65,6 @@ default, or what the task's task.json sets), before it blocks.
 import argparse
 import json
 import random
-import re
 import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -78,6 +76,7 @@ from inspect_ai.log import list_eval_logs, read_eval_log
 from inspect_ai.model import ChatMessageAssistant
 
 from codecite_evals import config
+from codecite_evals.tool_use import CLI, GRAPH_CLI, cli
 
 # The margin that stars the measures outside the gate in the intervals table.
 MARGIN = 0.05
@@ -86,15 +85,11 @@ MARGIN = 0.05
 # Tokens have none (None): reported, never a loss, whatever they cost. A
 # task.json's old "gate" key is ignored.
 GATE = {"pass": 0.0, "tokens": None, "time": 0.25}
-# A pair is measured when its codecite arm used codecite in at least this
+# A pair is measured when its tool arm used its own tool in at least this
 # share of its usable runs.
 ADOPTION = 0.5
-NATIVE = "mcp__codecite__"
+NATIVE = {"codecite": "mcp__codecite__", "codegraph": "mcp__codegraph__"}
 ATTACHMENT = "attachment://"
-# `codecite` at the start of a shell command: of the line, or after `;`, `&`,
-# `|`, `(`, `$(` or a backtick, behind any VAR=value prefixes, by bare name or
-# path. `grep codecite` or `ls /opt/codecite` don't run it.
-CLI = re.compile(r"(?:^|[;&|(`\n]|\$\()\s*(?:\w+=\S*\s+)*(?:\S*/)?codecite(?=\s|$)")
 RESAMPLES = 10_000
 SEED = 0
 # A task is in band when baseline passes this share of runs, pooled over the
@@ -175,7 +170,7 @@ class Run:
     providers: Counter = field(default_factory=Counter)
     # The model's decode rate over both arms' runs, set once they are read.
     pooled_rate: float | None = None
-    # Whether any tool call ran codecite (codecite_calls).
+    # Whether the sample used its arm's tool (or the assist hook added a block).
     used: bool = False
     # Assistant messages: the turns of a sample whose log kept no model events.
     replies: int = 0
@@ -271,24 +266,25 @@ def stopped(metadata):
     return metadata.get("stopped") or ("agent_timeout" if metadata.get("timed_out") else None)
 
 
-def codecite_calls(sample):
-    """How many tool calls in this sample's model calls ran codecite: its
-    native tools, or `bash` with a codecite command. Text that only names
-    codecite isn't a call."""
+def tool_calls(sample, tool="codecite"):
+    """Count calls to this tool's native tools or binary in the transcript."""
     calls = 0
     for event in sample.events or []:
         if not isinstance(event, ModelEvent) or not event.output.choices:
             continue
         for call in event.output.message.tool_calls or []:
-            if call.function.startswith(NATIVE):
+            if call.function.startswith(NATIVE[tool]):
                 calls += 1
             elif call.function == "bash":
                 command = call.arguments.get("command") if isinstance(call.arguments, dict) else None
                 if isinstance(command, str) and command.startswith(ATTACHMENT):
                     # Inspect stores long strings apart, in the sample's attachments.
                     command = (sample.attachments or {}).get(command.removeprefix(ATTACHMENT))
-                calls += isinstance(command, str) and bool(CLI.search(command))
+                calls += isinstance(command, str) and bool(cli(tool).search(command))
     return calls
+
+
+codecite_calls = tool_calls
 
 
 def listed(error, limit=200):
@@ -413,6 +409,8 @@ def scorecard(logs, tier=None):
             if s.error or not s.scores:
                 continue
             arm = s.metadata["arm"]
+            condition = dict(pair).get(arm, s.metadata.get("condition"))
+            tool = "codegraph" if condition == "codegraph" else "codecite"
             score = next(iter(s.scores.values()))
             usage = (s.model_usage or {}).values()
             metadata = score.metadata or {}
@@ -433,7 +431,7 @@ def scorecard(logs, tier=None):
                 model_seconds=model_seconds,
                 providers=providers,
                 # An assist run reaches codecite only through its hook's blocks.
-                used=agent["assist_blocks"] > 0 if "assist_blocks" in agent else agent.get("codecite_calls", codecite_calls(s)) > 0,
+                used=agent["assist_blocks"] > 0 if "assist_blocks" in agent else agent.get(f"{tool}_calls", tool_calls(s, tool)) > 0,
                 replies=sum(isinstance(m, ChatMessageAssistant) for m in s.messages or []),
                 assist_calls=agent.get("assist_calls"),
                 assist_blocks=agent.get("assist_blocks"),
@@ -573,7 +571,8 @@ def table(rng, name, runs, planned, arms):
                 wide = [m for m, _, _ in MEASURES if found[m] is not None and past(m, *found[m])]
                 verdict = ("noise past the margin on " + ", ".join(wide) if wide else "noise inside the margin") + ranges
             elif (used := sum(x.used for x in second)) < ADOPTION * len(second):
-                verdict = f"not measured (codecite used in {used} of {len(second)} runs)"
+                tool = "codegraph" if b_condition == "codegraph" else "codecite"
+                verdict = f"not measured ({tool} used in {used} of {len(second)} runs)"
             else:
                 lost = losses(found)
                 verdict = ("loses on " + ", ".join(lost) if lost else "no loss") + ranges

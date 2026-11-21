@@ -189,6 +189,51 @@ def test_codecite_calls(calls, text, expected):
     assert codecite_calls(s) == expected
 
 
+def test_tool_calls_count_only_the_selected_tool_in_mixed_transcripts():
+    graph = ToolCall(id="g", function="mcp__codegraph__codegraph_explore", arguments={"query": "token"})
+    s = sample("codegraph", 1, calls=[
+        NATIVE, graph, bash("codecite search eval x"),
+        bash("cd /work && VAR=1 /opt/codegraph/bin/codegraph explore token"),
+        bash("grep codegraph ."),
+    ])
+    assert report.tool_calls(s, "codecite") == 2
+    assert report.tool_calls(s, "codegraph") == 2
+    assert codecite_calls(s) == 2
+
+
+def test_codegraph_attachment_counts_only_when_it_runs_the_binary():
+    s = sample("codegraph", 1, calls=[bash("attachment://a"), bash("attachment://b")])
+    s.attachments = {"a": "echo $(codegraph explore token)", "b": "ls /opt/codegraph/bin"}
+    assert report.tool_calls(s, "codegraph") == 1
+    assert report.tool_calls(s, "codecite") == 0
+
+
+def test_codegraph_adoption_uses_condition_and_its_own_calls(monkeypatch):
+    # A two-arm stand-in tests counting without introducing Task 4's three-arm tables.
+    monkeypatch.setitem(config.ARMS, "graph-test", (("baseline", "baseline"), ("graph-label", "codegraph")))
+    graph = ToolCall(id="g", function="mcp__codegraph__codegraph_explore", arguments={})
+    base = sample("baseline", 1, passed=True)
+    wrong = sample("graph-label", 1, passed=True, calls=[NATIVE, bash("codecite search eval x")])
+    l = log("claude-code/m", [base, wrong], arms="graph-test", epochs=1)
+    _, rows = table(scorecard([l]))
+    assert rows[("claude-code/m", "graph-label")]["used codecite"] == "0/1"
+    assert rows[("claude-code/m", "graph-label")]["verdict"] == "not measured (codegraph used in 0 of 1 runs)"
+
+    wrong.events = [model_call([graph, bash("codegraph explore token")])]
+    _, rows = table(scorecard([l]))
+    assert rows[("claude-code/m", "graph-label")]["used codecite"] == "1/1"
+    assert rows[("claude-code/m", "graph-label")]["verdict"].startswith("no loss")
+
+    # A persisted zero takes precedence over transcript fallback and the other tool's count.
+    wrong.store = {"codegraph_calls": 0, "codecite_calls": 9}
+    _, rows = table(scorecard([l]))
+    assert rows[("claude-code/m", "graph-label")]["verdict"] == "not measured (codegraph used in 0 of 1 runs)"
+    wrong.events = []
+    wrong.store = {"codegraph_calls": 2, "codecite_calls": 0}
+    _, rows = table(scorecard([l]))
+    assert rows[("claude-code/m", "graph-label")]["verdict"].startswith("no loss")
+
+
 def adoption(used):
     """A clean pair whose codecite arm calls codecite in `used` of its runs:
     one by the CLI, the rest natively; the others only mention it."""
