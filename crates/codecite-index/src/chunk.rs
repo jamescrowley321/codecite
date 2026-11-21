@@ -12,7 +12,7 @@ pub(crate) use text::{Heading, Lines, Slugs, markdown_headings, sections, sectio
 /// The version of the chunker's output. Raise it whenever the same file
 /// splits into different chunks, so each index run records which chunker
 /// wrote the corpus.
-pub const CHUNKER_VERSION: u32 = 2;
+pub const CHUNKER_VERSION: u32 = 3;
 
 /// The longest window, in lines.
 pub const WINDOW_LINES: u32 = 60;

@@ -267,7 +267,8 @@ A query matches identifiers however they are written: `validate token` finds
 `validateToken`, `validate_token` and `validate-token`. Results rank by BM25,
 weighting symbol names over paths over body text, and a chunk's score triples
 when a word of the query, or the whole query, is its symbol's name (when at
-most 3 symbols share that name). Spec results come from each document's current
+most 3 definitions share that name; Java same-name methods, including
+constructors, count with their enclosing class). Spec results come from each document's current
 version; one whose document also has an older version pinned carries
 `· older version pinned` on its line, and its JSON lists them in `older_versions` (see
 [Diff a spec's versions](#diff-a-specs-versions)).

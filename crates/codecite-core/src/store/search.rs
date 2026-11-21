@@ -205,8 +205,9 @@ impl Store {
     /// tests and examples rank below the source they use, and multiplied by
     /// [`NAME_BOOST`] when a word of the query, or the whole query, is the
     /// chunk's symbol's name (ignoring case, `_` and `-`) and at most
-    /// [`MAX_NAME_DEFINITIONS`] symbols have that name. Only the current
-    /// version of each document is searched.
+    /// [`MAX_NAME_DEFINITIONS`] definitions have that name. Java methods
+    /// sharing their enclosing class's name count with that class. Only the
+    /// current version of each document is searched.
     ///
     /// Code, repository prose, fetched documents and specs are ranked
     /// together, in one score order: a spec section ranks where its score
@@ -347,8 +348,9 @@ impl Store {
         Ok(())
     }
 
-    /// The [`query_names`] that at least one and at most
-    /// [`MAX_NAME_DEFINITIONS`] symbols have.
+    /// The [`query_names`] shared by at least one and at most
+    /// [`MAX_NAME_DEFINITIONS`] definitions, counting Java same-name
+    /// methods with their enclosing class.
     fn boosted_names(&self, text: &str) -> Result<Vec<String>> {
         let mut count = self.conn.prepare_cached(BOOSTED_NAME_COUNT)?;
         let mut names = Vec::new();
@@ -464,8 +466,22 @@ const FETCH: &str = "SELECT c.kind, c.start_line, c.end_line, c.number, p.number
      LEFT JOIN symbol sym ON sym.id = c.symbol_id
      WHERE c.id = ?1";
 
-/// How many symbols have the name key `?1`.
-const BOOSTED_NAME_COUNT: &str = "SELECT count(*) FROM symbol WHERE name_key = ?1";
+/// How many definitions share the name key `?1`. Java constructors and
+/// other methods with their enclosing class's name count with that class.
+/// Other methods, languages and classes in different files count separately.
+const BOOSTED_NAME_COUNT: &str = "SELECT count(*)
+    FROM symbol s
+    WHERE s.name_key = ?1
+      AND NOT (coalesce(s.kind, '') = 'method' AND EXISTS (
+        SELECT 1 FROM symbol parent
+        JOIN document d ON d.id = parent.document_id
+        WHERE parent.document_id = s.document_id
+          AND d.language = 'java'
+          AND parent.kind = 'class'
+          AND parent.display_name = s.display_name
+          AND parent.start_line <= s.start_line
+          AND parent.end_line >= s.end_line
+      ))";
 
 /// Turns the user's text into an FTS5 query, or `None` when it has no
 /// terms.
@@ -1150,6 +1166,53 @@ mod tests {
         // `search` registers the name function `boosted_names` needs.
         store.search(&query("app")).unwrap();
         assert_eq!(store.boosted_names("app create").unwrap(), ["create"]);
+    }
+
+    #[test]
+    fn java_constructors_count_with_their_enclosing_class_for_name_boosts() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open_read_write(&dir.path().join("demo.db")).unwrap();
+        let app = store.upsert_source(&code_source("app")).unwrap();
+        let mut class = chunk("class", (1, 20), "class Widget {}", None);
+        class.symbol = Some(SymbolRecord {
+            id: "codecite . app . Widget.java/Widget#".into(),
+            display_name: "Widget",
+            kind: "class",
+        });
+        let mut chunks = vec![class];
+        for (i, line) in [2, 4, 6].into_iter().enumerate() {
+            let mut constructor = chunk("function", (line, line), "Widget() {}", None);
+            constructor.symbol = Some(SymbolRecord {
+                id: format!("codecite . app . Widget.java/Widget#Widget(+{i})."),
+                display_name: "Widget",
+                kind: "method",
+            });
+            chunks.push(constructor);
+        }
+        store
+            .write_document(app, &file("Widget.java", "java", false, chunks))
+            .unwrap();
+        assert_eq!(store.boosted_names("Widget").unwrap(), ["widget"]);
+    }
+
+    #[test]
+    fn distinct_java_classes_still_count_separately_for_name_boosts() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open_read_write(&dir.path().join("demo.db")).unwrap();
+        let app = store.upsert_source(&code_source("app")).unwrap();
+        for i in 0..4 {
+            let path = format!("p{i}/Widget.java");
+            let mut class = chunk("class", (1, 1), "class Widget {}", None);
+            class.symbol = Some(SymbolRecord {
+                id: format!("codecite . app . p{i}/Widget.java/Widget#"),
+                display_name: "Widget",
+                kind: "class",
+            });
+            store
+                .write_document(app, &file(&path, "java", false, vec![class]))
+                .unwrap();
+        }
+        assert!(store.boosted_names("Widget").unwrap().is_empty());
     }
 
     /// A corpus with a repository README split at its headings and a

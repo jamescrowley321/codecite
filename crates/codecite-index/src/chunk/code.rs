@@ -462,7 +462,7 @@ fn documented_start(language: Language, node: Node<'_>, source: &[u8]) -> usize 
 
 /// Whether `node` documents or annotates the definition below it: a doc
 /// comment or attribute in Rust (`///`, `/** */`, `#[...]`; not `//!`, which
-/// documents the module), any comment in Go, a JSDoc block or decorator in
+/// documents the module), any comment in C or Go, a JSDoc block or decorator in
 /// TypeScript and JavaScript, an XML doc comment in C# (`///`, `/** */`),
 /// or a Javadoc block in Java. Java annotations are part of the definition.
 /// Python's decorators are part of the definition already, and its docstring
@@ -475,7 +475,7 @@ fn attaches(language: Language, node: Node<'_>, source: &[u8]) -> bool {
         (Language::Rust, "attribute_item") => true,
         (Language::Rust, "line_comment") => doc_line,
         (Language::Rust, "block_comment") => doc_block,
-        (Language::Go, "comment") => true,
+        (Language::C | Language::Go, "comment") => true,
         (Language::TypeScript | Language::Tsx | Language::JavaScript, "decorator") => true,
         (Language::TypeScript | Language::Tsx | Language::JavaScript, "comment") => doc_block,
         (Language::CSharp, "comment") => doc_line || doc_block,
