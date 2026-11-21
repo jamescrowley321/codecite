@@ -206,6 +206,45 @@ jobs:
           path: .review-plugin
           persist-credentials: false
 
+      # `issue_comment` events check out the DEFAULT BRANCH above, not the
+      # pull request: actions/checkout only takes the merge ref on
+      # pull_request* events. The action's first pass then runs
+      # `git hash-object` on every file the PR changes, and on the first PR
+      # that ADDS a file (PR #272, whose c.scm and java.scm do not exist on
+      # main) every re-review requested with "@claude review this PR" died
+      # before the session started: "No such file or directory", then
+      # `is_error:true`.
+      #
+      # Checking a PR's code out into this job is the one place this
+      # privileged workflow would hold someone else's code, so it takes the
+      # same trust gate as the `pull_request opened` review above: only a PR
+      # whose AUTHOR is an OWNER, MEMBER or COLLABORATOR. A re-review of
+      # any other PR keeps today's behavior (the default-branch tree), which
+      # fails for a PR that adds files, rather than putting untrusted code
+      # next to the subscription token. The PR number arrives through env,
+      # never spliced into the script, and the untracked .review-plugin above
+      # survives the checkout because no PR tree contains it.
+      - name: Check out the PR head when a comment asked for the review
+        if: github.event_name == 'issue_comment' && github.event.issue.pull_request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -eu
+          # `gh pr view --json` has no association field on every gh the
+          # runners get; the REST field is stable.
+          association=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq .author_association)
+          case "$association" in
+            OWNER | MEMBER | COLLABORATOR)
+              git fetch origin "pull/${PR_NUMBER}/head"
+              git checkout --detach FETCH_HEAD
+              ;;
+            *)
+              echo "::notice::PR #$PR_NUMBER is authored by a $association, so its code stays off this privileged job; a re-review of a PR that adds files needs its author to be an owner, member or collaborator."
+              ;;
+          esac
+
       # When the review started: the check after the action looks only at
       # comments from then on.
       - id: started
