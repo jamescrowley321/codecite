@@ -495,3 +495,50 @@ def test_dockerfile_codegraph_loop_skips_empty_project_and_succeeds(tmp_path):
 
     assert status == 0
     assert calls == ["init -y opt/identity-model"]
+
+@pytest.mark.parametrize("task_id", TASKS)
+def test_codegraph_scoring_removes_generated_index_before_real_frozen_scope_check(monkeypatch, tmp_path, task_id):
+    """An actual frozen check sees CodeGraph's generated files as out of scope."""
+    import os
+    import shutil
+
+    start = config.task_dir(task_id) / "project"
+    project = tmp_path / "project"
+    shutil.copytree(start, project)
+    executable = os.environ.get("CODEGRAPH_TEST_BINARY")
+    if executable:
+        subprocess.run([executable, "init", "-y", str(project)], check=True, capture_output=True,
+                       env={**os.environ, "HOME": str(tmp_path), "CODEGRAPH_TELEMETRY": "0"})
+    else:
+        (project / ".codegraph").mkdir()
+        (project / ".codegraph" / "codegraph.db").write_bytes(b"index")
+        (project / ".codegraph" / ".gitignore").write_text("*\n")
+    assert (project / ".codegraph" / "codegraph.db").is_file()
+    check = task.task_checks(config.task_dir(task_id), json.loads((config.task_dir(task_id) / "task.json").read_text()))
+    passed, reason = check.check_scope(start, project)
+    assert not passed and "added .codegraph/" in reason
+
+    class RealScopeSandbox(ScoringSandbox):
+        async def exec(self, cmd, **kwargs):
+            if cmd == ["rm", "-rf", f"{task.PROJECT}/.codegraph"]:
+                shutil.rmtree(project / ".codegraph")
+                return ExecResult(success=True, returncode=0, stdout="", stderr="")
+            if cmd[:3] == ["python3", "-I", "/score/checks.py"]:
+                passed, reason = check.check_scope(start, project)
+                return ExecResult(success=True, returncode=0,
+                                  stdout=json.dumps({"checks": [{"name": "scope", "passed": passed, "reason": reason}]}), stderr="")
+            return await super().exec(cmd, **kwargs)
+
+    result = score_with(monkeypatch, Store(condition="codegraph"), task_id, RealScopeSandbox())
+    assert result.value == 1, result.explanation
+    assert not (project / ".codegraph").exists()
+
+
+def test_codegraph_scoring_cleanup_failure_aborts(monkeypatch):
+    class Broken(ScoringSandbox):
+        async def exec(self, cmd, **kwargs):
+            if cmd[0] == "rm":
+                return ExecResult(success=False, returncode=1, stdout="", stderr="denied")
+            return await super().exec(cmd, **kwargs)
+    with pytest.raises(RuntimeError, match="failed to remove codegraph index"):
+        score_with(monkeypatch, Store(condition="codegraph"), sb=Broken())

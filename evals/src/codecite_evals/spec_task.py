@@ -70,6 +70,8 @@ def spec_questions(arms: str = "ab") -> Task:
     arms="aa" runs two baseline arms."""
     if arms not in config.ARMS:
         raise ValueError(f"arms must be one of {', '.join(config.ARMS)}, not {arms!r}")
+    if any(condition == "codegraph" for _, condition in config.ARMS[arms]):
+        raise ValueError("codegraph is not supported for spec-questions")
     task_dir = config.task_dir(TASK_ID)
     return Task(
         dataset=[

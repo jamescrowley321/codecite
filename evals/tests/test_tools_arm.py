@@ -45,3 +45,19 @@ def test_only_the_two_tool_arms_get_a_note():
     assert task.note(d, "assist") is None
     assert task.note(d, "codecite") == task.codecite_note(d)
     assert task.note(d, "codegraph") == task.codegraph_note(d)
+
+
+def test_codegraph_note_targets_external_source_without_claiming_specs():
+    d = config.task_dir("backchannel-logout")
+    note = task.codegraph_note(d)
+    assert "specifications" not in note
+    assert f'--path {task.IDENTITY_MODEL}' in note
+    assert f'`projectPath`' in note and task.IDENTITY_MODEL in note
+    assert abs(len(note) - len(task.codecite_note(d))) <= len(task.codecite_note(d)) / 4
+
+
+def test_codegraph_corpus_note_excludes_documents_and_targets_sources():
+    note = task.codegraph_note(config.task_dir("house-rules"), "m")
+    assert "specifications" not in note
+    assert task.PROJECT in note and task.CORPUS_DIR in note
+    assert "--path" in note and "projectPath" in note
