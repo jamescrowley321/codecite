@@ -113,7 +113,9 @@ cited by section. Any other page is split at its own headings and cited by
 lines of its text, `name@sha256:<12 hex>#L3-L9`: HTML is rendered to text
 first, a URL ending `.md` or `.markdown` is read as Markdown, and anything
 else is plain text in 60-line windows. A repository's Markdown and HTML files
-split at their headings too.
+split at their headings too. C (`.c`, `.h`) and Java (`.java`) are split at
+recognized definitions, with windows for uncovered lines. `.h` is treated as
+C, not C++; Java overloads are not resolved through a build.
 
 To pin a new or changed document, leave a placeholder hash and print the
 hash each URL serves now:
@@ -1217,6 +1219,5 @@ codecite search fhir "conditional create" --path "fhir-r4-*"
 
 The first run clones about 4 GB into the cache and takes a few minutes; the
 corpus file is about 3 GB. HAPI FHIR, Helios hfs and HasteHealth leave out
-their JSON and XML, which is almost all FHIR fixtures and definitions. Java
-and Clojure have no grammar, so HAPI FHIR and Blaze are cited as 60-line
-windows, not by definition.
+their JSON and XML, which is almost all FHIR fixtures and definitions. HAPI FHIR’s Java definitions are indexed by name. Blaze’s Clojure files
+are cited as 60-line windows, not by definition.

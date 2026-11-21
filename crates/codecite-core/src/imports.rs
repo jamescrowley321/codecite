@@ -97,7 +97,7 @@ pub fn imports(language: Language, text: &str) -> Vec<String> {
                 }
             }
         }
-        Language::Markdown | Language::Html => {}
+        Language::C | Language::Java | Language::Markdown | Language::Html => {}
     }
     found
 }
@@ -111,10 +111,10 @@ pub fn imports(language: Language, text: &str) -> Vec<String> {
 /// `request` does not cover `requests`, and `node` not `node:fs`.
 pub fn imports_dependency(language: Language, module: &str, dependency: &str) -> bool {
     let separator = match language {
-        Language::Python | Language::CSharp => ".",
+        Language::Python | Language::CSharp | Language::Java => ".",
         Language::TypeScript | Language::Tsx | Language::JavaScript | Language::Go => "/",
         Language::Rust => "::",
-        Language::Markdown | Language::Html => return module == dependency,
+        Language::C | Language::Markdown | Language::Html => return module == dependency,
     };
     module
         .strip_prefix(dependency)
