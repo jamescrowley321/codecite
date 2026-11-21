@@ -329,7 +329,14 @@ image is built; after switching tasks, rebuild it (`docker compose -f
 inspect/compose.yaml build`). `panel.sh` runs the task `TASK_ID` names
 (default `fastapi-middleware`).
 Every task takes `-T arms=baseline` to run the baseline arm alone, a
-calibration (see below).
+calibration (see below). `-T arms=tools` runs baseline, codecite and codegraph
+in one run on the same host (`docs/superpowers/specs/2026-11-21-codegraph-arm-design.md`).
+The codegraph arm gets a mirrored prompt note on coding tasks, CodeGraph 1.6.4
+baked into the image and indexes built at image build time; every other arm strips CodeGraph
+and its indexes. `used` counts each arm's own tool. CodeGraph comparisons are
+reported, never gated, and the direct CodeGraph-vs-codecite comparison is
+`not measured` if either tool was used in fewer than half its usable runs.
+The codecite-vs-baseline gate is unchanged.
 
 ## The gate run and the rerun
 
@@ -379,7 +386,7 @@ and never a required check.
   off and put it back, or dispatch. Fork PRs never run: they get no secrets.
 - **Full, the rerun:** after a quick loss, run the workflow by hand
   (Actions → Evals → Run workflow) with `tier: full`, the losing `task` (and `corpus`, for a size-dial task) and `arms` (`ab`, the default; `aa`;
-  `assist`; or `baseline` to calibrate; see below). Its scorecard goes to the job summary.
+  `assist`; `tools`; or `baseline` to calibrate; see below). Its scorecard goes to the job summary.
   To finish a run that stopped part way, run it again with `resume` set to
   that run's id: it downloads that run's logs and reruns only their missing
   samples with `inspect eval-retry`.
@@ -407,6 +414,7 @@ proxy checks only the host), so a token kept for evals alone is the safer
 secret. The Inspect logs, with the scorecard, upload as the
 `eval-logs-<tier>-<task>` artifact (`eval-logs-<tier>-aa-<task>` for an A/A
 round, `eval-logs-<tier>-assist-<task>` for the assist arm,
+`eval-logs-<tier>-tools-<task>` for the tools arms,
 `eval-logs-calibration-<task>` for a calibration; a size-dial task's `<task>`
 is `<task>-<size>`, as `house-rules-m`).
 
@@ -441,11 +449,17 @@ and bytes per run, with bytes / 4 as an estimate of the tokens added.
 `ARMS=assist inspect/panel.sh quick` logs to `inspect/logs/<tier>-assist/<task>/`;
 on CI, dispatch with `arms: assist`.
 
+## The tools arms
+
+`ARMS=tools inspect/panel.sh quick` logs to `inspect/logs/<tier>-tools/<task>/`;
+on CI, dispatch with `arms: tools`. These paths and artifacts are distinct
+from the default A/B logs, including on retry or resume.
+
 ## The scorecard
 
 `codecite-eval-report` prints three tables per task (a calibration prints one):
 
-- **Per arm:** runs, how many called codecite (`used codecite`), pass rate, failures, timeouts, sandbox errors, median
+- **Per arm:** runs, how many used the arm's tool (`used codecite`, or `used tool` with the tools arms), pass rate, failures, timeouts, sandbox errors, median
   total tokens and median wall time, and the model's verdict.
 - **From the transcripts:** the median turns (model calls that returned),
   output tokens, model time (the sum of the calls' generation times), other
@@ -475,7 +489,10 @@ transcript measures blank.
 
 Needs Docker, [uv](https://docs.astral.sh/uv/), a release build of codecite
 and an identity-model checkout (`IDENTITY_MODEL_REPO`, default
-`~/repos/auth/identity-model`).
+`~/repos/auth/identity-model`). The eval host's uv commands default to Python
+3.15 via `evals/.python-version`; the package remains compatible with Python
+3.12 and later. This does not change the sandbox image's interpreter or the
+frozen tasks' own environments.
 
 ```
 cargo build --release
@@ -495,7 +512,7 @@ uv run --locked codecite-eval-report --tier quick
 
 The package registers its tasks with Inspect through the `inspect_ai` entry
 point, so Inspect runs them by name from any directory: `codecite_evals/ab`
-takes the task's id (`-T task_id=<id>`) and its arms (`-T arms=ab|aa|baseline|assist`),
+takes the task's id (`-T task_id=<id>`) and its arms (`-T arms=ab|aa|baseline|assist|tools`),
 and each registered task also runs by its own name.
 `codecite-eval-report` is the scorecard's command. Both find `tasks/`,
 `inspect/compose.yaml` and `inspect/logs/` through

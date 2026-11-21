@@ -40,8 +40,9 @@ doesn't read as clean. An agent whose own output overflowed or didn't decode
 is a plain failure, in neither column.
 
 A pair whose tool arm used its own tool in fewer than half its usable runs
-is not measured: the comparison says nothing about a tool the agent never
-used. Use counts native calls or `bash` calls running the arm's binary in the
+is not measured: the comparison says nothing about a tool the agent rarely
+used. The CodeGraph-vs-codecite comparison requires both tools to meet that
+floor. Use counts native calls or `bash` calls running the arm's binary in the
 model events, or the sample store for Claude Code. An assist run (`arms=assist`,
 assist.py) used codecite when its hook added a block, and gets a table of the
 hook's calls, blocks, bytes and estimated tokens.
@@ -537,8 +538,16 @@ def calibration(name, runs, planned):
     return out
 
 
+def adoption_shortfall(condition, runs):
+    """Why a tool arm did not meet the adoption floor, or None."""
+    used = sum(x.used for x in runs)
+    if used < ADOPTION * len(runs):
+        tool = "codegraph" if condition == "codegraph" else "codecite"
+        return f"{tool} used in {used} of {len(runs)} runs"
+
+
 def table(rng, name, runs, planned, arms):
-    """One task's tables: per model, both arms and the verdict; the
+    """One task's tables: per model, the arms and their verdicts; the
     transcript medians; and every measure's interval."""
     out = [f"**Task: `{name}`**", "", gate_line(), ""]
     tool_header = "used tool" if any(len(pair) > 2 for (task, _), pair in arms.items() if task == name) else "used codecite"
@@ -577,7 +586,7 @@ def table(rng, name, runs, planned, arms):
                 r.pooled_rate = pooled
         verdicts = defaultdict(list)
         for comparison in pairs(pair):
-            (b_label, b_condition), (a_label, _) = comparison
+            (b_label, b_condition), (a_label, a_condition) = comparison
             first, second = arm_runs[a_label], arm_runs[b_label]
             want_a, want_b = planned[(name, model, a_label)], planned[(name, model, b_label)]
             # Assist retains the existing codecite hook gate.
@@ -599,14 +608,16 @@ def table(rng, name, runs, planned, arms):
                 spans.append(f"| {label} | {b_label} vs {a_label} | " + " | ".join(cells) + " |")
                 p, t, s = found["pass"], found["tokens"], found["time"]
                 ranges = f" (pass {p[0]:+.0%}..{p[1]:+.0%}, tokens {t[0]:+.0%}..{t[1]:+.0%}, time {s[0]:+.0%}..{s[1]:+.0%})"
+                adoption_arms = [(b_condition, second)]
+                if (b_condition, a_condition) == ("codegraph", "codecite"):
+                    adoption_arms.append((a_condition, first))
                 if aa:
                     # Noise alone made these differences: no verdict, only which
                     # intervals it pushed past the margin.
                     wide = [m for m, _, _ in MEASURES if found[m] is not None and past(m, *found[m])]
                     verdict = ("noise past the margin on " + ", ".join(wide) if wide else "noise inside the margin") + ranges
-                elif (used := sum(x.used for x in second)) < ADOPTION * len(second):
-                    tool = "codegraph" if b_condition == "codegraph" else "codecite"
-                    verdict = f"not measured ({tool} used in {used} of {len(second)} runs)"
+                elif shortfalls := [why for condition, r in adoption_arms if (why := adoption_shortfall(condition, r))]:
+                    verdict = f"not measured ({', '.join(shortfalls)})"
                 elif is_gate:
                     lost = losses(found)
                     verdict = ("loses on " + ", ".join(lost) if lost else "no loss") + ranges

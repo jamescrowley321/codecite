@@ -739,11 +739,11 @@ def test_an_ab_scorecard_has_no_assist_table():
     assert "tokens added" not in out and len(tables(out)) == 3
 
 
-def tools_log(graph_runs=EPOCHS, graph_used=True):
-    graph = ToolCall(id="g", function="mcp__codegraph__explore", arguments={})
+def tools_log(graph_runs=EPOCHS, graph_used=EPOCHS, codecite_used=EPOCHS):
+    graph = ToolCall(id="g", function="mcp__codegraph__codegraph_explore", arguments={})
     samples = [sample("baseline", e, passed=True) for e in range(1, EPOCHS + 1)]
-    samples += [sample("codecite", e, passed=True) for e in range(1, EPOCHS + 1)]
-    samples += [sample("codegraph", e, passed=False, calls=[graph] if graph_used else []) for e in range(1, graph_runs + 1)]
+    samples += [sample("codecite", e, passed=True, calls=[NATIVE] if e <= codecite_used else []) for e in range(1, EPOCHS + 1)]
+    samples += [sample("codegraph", e, passed=False, calls=[graph] if e <= graph_used else []) for e in range(1, graph_runs + 1)]
     return log("claude-code/m", samples, arms="tools")
 
 
@@ -774,9 +774,25 @@ def test_tools_missing_arm_and_low_adoption():
     assert "incomplete" in rows[("claude-code/m", "codegraph")]["verdict"]
     _, spans = table(out, 2, ("model", "arms"))
     assert spans[("claude-code/m", "codegraph vs codecite")]["pass"] == "-"
-    _, rows = table(scorecard([tools_log(graph_used=False)]))
+    _, rows = table(scorecard([tools_log(graph_used=0)]))
     assert "not measured (codegraph used in 0 of 4 runs)" in rows[("claude-code/m", "codegraph")]["verdict"]
     assert "reported, not gated" in rows[("claude-code/m", "codegraph")]["verdict"]
+
+
+@pytest.mark.parametrize("codecite_used, graph_used", [(1, 2), (2, 1), (1, 1), (2, 2)])
+def test_tools_head_to_head_requires_adoption_in_both_arms(codecite_used, graph_used):
+    _, rows = table(scorecard([tools_log(codecite_used=codecite_used, graph_used=graph_used)]))
+    codecite = rows[("claude-code/m", "codecite")]["verdict"]
+    baseline, head_to_head = rows[("claude-code/m", "codegraph")]["verdict"].split("; ")
+    assert codecite.startswith("vs baseline: not measured" if codecite_used == 1 else "vs baseline: no loss")
+    assert baseline.startswith("vs baseline: not measured" if graph_used == 1 else "vs baseline: reported, not gated")
+    assert "reported, not gated" in head_to_head
+    if min(codecite_used, graph_used) == 1:
+        assert head_to_head.startswith("vs codecite: not measured")
+        for arm, used in (("codecite", codecite_used), ("codegraph", graph_used)):
+            assert (f"{arm} used in 1 of 4 runs" in head_to_head) == (used == 1)
+    else:
+        assert head_to_head.startswith("vs codecite: reported, not gated (pass")
 
 
 def test_incompatible_arm_sets_are_not_pooled():
