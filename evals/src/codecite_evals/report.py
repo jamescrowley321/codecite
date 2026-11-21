@@ -137,10 +137,15 @@ def logs(paths: list[Path], tier=None):
             yield read_eval_log(str(path))
             continue
         newest = {}  # (task, model) -> header
+        arm_sets = {}
         for info in list_eval_logs(str(path)):
             head = read_eval_log(info.name, header_only=True)
             key = (head.status == "success", head.eval.created)
-            run = (head.eval.task, head.eval.model)
+            run = (task_name(head), head.eval.model)
+            pair = log_arms(head)
+            if run in arm_sets and arm_sets[run] != pair:
+                raise ValueError(f"incompatible arm sets for {run}; report logs apart")
+            arm_sets[run] = pair
             if run not in newest or key > newest[run][0]:
                 newest[run] = (key, info.name)
         for _, name in newest.values():
@@ -387,6 +392,26 @@ def calibrating(log):
     return (log.eval.task_args or {}).get("arms") == "baseline"
 
 
+def log_arms(log):
+    name = (log.eval.task_args or {}).get("arms", "ab")
+    if name not in config.ARMS:
+        raise ValueError(f"unknown arm set: {name}")
+    return config.ARMS[name]
+
+
+def pairs(pair):
+    """Compare each arm to the reference, then the non-reference arms."""
+    return [(arm, pair[0]) for arm in pair[1:]] + [
+        (b, a) for i, a in enumerate(pair[1:]) for b in pair[i + 2 :]
+    ]
+
+
+def gated(comparison, pair):
+    """Only codecite against the reference carries the gate."""
+    code, base = comparison
+    return code[1] == "codecite" and base == pair[0]
+
+
 def scorecard(logs, tier=None):
     """The scorecard for these eval logs, as markdown, headed by its tier,
     with tables per task: the A/B (or A/A) tables, or the calibration table
@@ -401,7 +426,9 @@ def scorecard(logs, tier=None):
     arms = {}  # (task, model) -> ((label, condition), ...)
     for log in logs:
         name, model = task_name(log), log.eval.model
-        pair = config.ARMS.get((log.eval.task_args or {}).get("arms", "ab"), config.ARMS["ab"])
+        pair = log_arms(log)
+        if (name, model) in arms and arms[(name, model)] != pair:
+            raise ValueError(f"incompatible arm sets for {name}, {model}; report logs apart")
         arms[(name, model)] = pair
         for label, _ in pair:
             planned[(name, model, label)] = per_arm(log, label, len(pair)) * (log.eval.config.epochs or 1)
@@ -446,7 +473,7 @@ def scorecard(logs, tier=None):
         out = [CALIBRATION.format(tier=tier or "this")]
     else:
         out = [TIERS[tier]] if tier else []
-        if any(a == b for pair in arms.values() if len(pair) == 2 for (_, a), (_, b) in [pair]):
+        if any(len(pair) > 1 and len({condition for _, condition in pair}) == 1 for pair in arms.values()):
             out.append(AA)
     for name in sorted({k[0] for k in planned}):
         if out:
@@ -514,8 +541,9 @@ def table(rng, name, runs, planned, arms):
     """One task's tables: per model, both arms and the verdict; the
     transcript medians; and every measure's interval."""
     out = [f"**Task: `{name}`**", "", gate_line(), ""]
+    tool_header = "used tool" if any(len(pair) > 2 for (task, _), pair in arms.items() if task == name) else "used codecite"
     out += [
-        "| model | arm | runs | used codecite | pass | fails | timeouts | sandbox errors | median tokens | median time | verdict |",
+        f"| model | arm | runs | {tool_header} | pass | fails | timeouts | sandbox errors | median tokens | median time | verdict |",
         "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     detail = [
@@ -539,59 +567,66 @@ def table(rng, name, runs, planned, arms):
     for model in sorted({k[1] for k in planned if k[0] == name}):
         label = model.removeprefix("openrouter/")
         pair = arms[(name, model)]
-        (a_label, _), (b_label, b_condition) = pair
-        aa = pair[0][1] == b_condition
-        first, second = runs.get((name, model, a_label), []), runs.get((name, model, b_label), [])
-        want_a, want_b = planned[(name, model, a_label)], planned[(name, model, b_label)]
-        timed = [r for r in first + second if r.model_seconds]
+        aa = len({condition for _, condition in pair}) == 1
+        arm_runs = {arm: runs.get((name, model, arm), []) for arm, _ in pair}
+        all_runs = [r for arm, _ in pair for r in arm_runs[arm]]
+        timed = [r for r in all_runs if r.model_seconds]
         if timed:
             pooled = sum(r.output_tokens for r in timed) / sum(r.model_seconds for r in timed)
-            for r in first + second:
+            for r in all_runs:
                 r.pooled_rate = pooled
-        if len(first) < want_a or len(second) < want_b:
-            of = want_a if want_a == want_b else f"{want_a}/{want_b}"
-            verdict = f"incomplete ({len(first)}/{len(second)} of {of} runs)"
-            spans.append(f"| {label} | {b_label} vs {a_label} | " + " | ".join("-" for _ in MEASURES) + " |")
-        else:
-            found = {}
-            for measure, value, kind in MEASURES:
-                a = [v for v in map(value, first) if v is not None]
-                b = [v for v in map(value, second) if v is not None]
-                found[measure] = interval(rng, a, b, pass_diff if kind == "points" else median_ratio) if a and b else None
-            cells = [
-                "-" if found[m] is None else span(*found[m], kind) + (" *" if past(m, *found[m]) else "")
-                for m, _, kind in MEASURES
-            ]
-            spans.append(f"| {label} | {b_label} vs {a_label} | " + " | ".join(cells) + " |")
-            p, t, s = found["pass"], found["tokens"], found["time"]
-            ranges = f" (pass {p[0]:+.0%}..{p[1]:+.0%}, tokens {t[0]:+.0%}..{t[1]:+.0%}, time {s[0]:+.0%}..{s[1]:+.0%})"
-            if aa:
-                # Noise alone made these differences: no verdict, only which
-                # intervals it pushed past the margin.
-                wide = [m for m, _, _ in MEASURES if found[m] is not None and past(m, *found[m])]
-                verdict = ("noise past the margin on " + ", ".join(wide) if wide else "noise inside the margin") + ranges
-            elif (used := sum(x.used for x in second)) < ADOPTION * len(second):
-                tool = "codegraph" if b_condition == "codegraph" else "codecite"
-                verdict = f"not measured ({tool} used in {used} of {len(second)} runs)"
+        verdicts = defaultdict(list)
+        for comparison in pairs(pair):
+            (b_label, b_condition), (a_label, _) = comparison
+            first, second = arm_runs[a_label], arm_runs[b_label]
+            want_a, want_b = planned[(name, model, a_label)], planned[(name, model, b_label)]
+            # Assist retains the existing codecite hook gate.
+            is_gate = gated(comparison, pair) or (b_condition == "assist" and comparison[1] == pair[0])
+            if len(first) < want_a or len(second) < want_b:
+                of = want_a if want_a == want_b else f"{want_a}/{want_b}"
+                verdict = f"incomplete ({len(first)}/{len(second)} of {of} runs)"
+                spans.append(f"| {label} | {b_label} vs {a_label} | " + " | ".join("-" for _ in MEASURES) + " |")
             else:
-                lost = losses(found)
-                verdict = ("loses on " + ", ".join(lost) if lost else "no loss") + ranges
-        crashed = [sum(x.stopped == "sandbox_error" for x in r) for r in (first, second)]
-        if any(crashed):
-            verdict += f", with sandbox errors ({a_label} {crashed[0]}, {b_label} {crashed[1]})"
-        if model.startswith(UNGATED) and not aa:
-            # Every verdict of a model outside the gating panel, incomplete
-            # and not measured too.
-            verdict += ", reported, not gated"
-        for i, (arm, r) in enumerate(((a_label, first), (b_label, second))):
-            # An arm with no usable runs still gets a row, so the verdict
-            # (incomplete) always shows.
+                found = {}
+                for measure, value, kind in MEASURES:
+                    a = [v for v in map(value, first) if v is not None]
+                    b = [v for v in map(value, second) if v is not None]
+                    found[measure] = interval(rng, a, b, pass_diff if kind == "points" else median_ratio) if a and b else None
+                cells = [
+                    "-" if found[m] is None else span(*found[m], kind) + (" *" if past(m, *found[m]) else "")
+                    for m, _, kind in MEASURES
+                ]
+                spans.append(f"| {label} | {b_label} vs {a_label} | " + " | ".join(cells) + " |")
+                p, t, s = found["pass"], found["tokens"], found["time"]
+                ranges = f" (pass {p[0]:+.0%}..{p[1]:+.0%}, tokens {t[0]:+.0%}..{t[1]:+.0%}, time {s[0]:+.0%}..{s[1]:+.0%})"
+                if aa:
+                    # Noise alone made these differences: no verdict, only which
+                    # intervals it pushed past the margin.
+                    wide = [m for m, _, _ in MEASURES if found[m] is not None and past(m, *found[m])]
+                    verdict = ("noise past the margin on " + ", ".join(wide) if wide else "noise inside the margin") + ranges
+                elif (used := sum(x.used for x in second)) < ADOPTION * len(second):
+                    tool = "codegraph" if b_condition == "codegraph" else "codecite"
+                    verdict = f"not measured ({tool} used in {used} of {len(second)} runs)"
+                elif is_gate:
+                    lost = losses(found)
+                    verdict = ("loses on " + ", ".join(lost) if lost else "no loss") + ranges
+                else:
+                    verdict = "reported, not gated" + ranges
+            crashed = [sum(x.stopped == "sandbox_error" for x in r) for r in (first, second)]
+            if any(crashed):
+                verdict += f", with sandbox errors ({a_label} {crashed[0]}, {b_label} {crashed[1]})"
+            if not aa and (model.startswith(UNGATED) or not is_gate) and "reported, not gated" not in verdict:
+                # Every verdict of a model outside the gating panel, incomplete
+                # and not measured too.
+                verdict += ", reported, not gated"
+            verdicts[b_label].append((f"vs {a_label}: " if len(pair) > 2 else "") + verdict)
+        for arm, _ in pair:
+            r = arm_runs[arm]
             cells = (
                 f"{counts(r)} | {median(x.tokens for x in r):,.0f} | {median(x.seconds for x in r):.0f}s"
-                if r
-                else "- | - | - | - | - | -"
+                if r else "- | - | - | - | - | -"
             )
-            out.append(f"| {label} | {arm} | {len(r)} | {sum(x.used for x in r)}/{len(r)} | {cells} | {verdict if i == 1 else ''} |")
+            out.append(f"| {label} | {arm} | {len(r)} | {sum(x.used for x in r)}/{len(r)} | {cells} | {'; '.join(verdicts[arm])} |")
             detail.append(f"| {label} | {arm} | {medians(r)} |")
             if hooked := [x for x in r if x.assist_calls is not None]:
                 assisted.append(f"| {label} | {arm} | {assist_medians(hooked)} |")

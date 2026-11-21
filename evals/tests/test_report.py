@@ -217,21 +217,21 @@ def test_codegraph_adoption_uses_condition_and_its_own_calls(monkeypatch):
     l = log("claude-code/m", [base, wrong], arms="graph-test", epochs=1)
     _, rows = table(scorecard([l]))
     assert rows[("claude-code/m", "graph-label")]["used codecite"] == "0/1"
-    assert rows[("claude-code/m", "graph-label")]["verdict"] == "not measured (codegraph used in 0 of 1 runs)"
+    assert rows[("claude-code/m", "graph-label")]["verdict"] == "not measured (codegraph used in 0 of 1 runs), reported, not gated"
 
     wrong.events = [model_call([graph, bash("codegraph explore token")])]
     _, rows = table(scorecard([l]))
     assert rows[("claude-code/m", "graph-label")]["used codecite"] == "1/1"
-    assert rows[("claude-code/m", "graph-label")]["verdict"].startswith("no loss")
+    assert rows[("claude-code/m", "graph-label")]["verdict"].startswith("reported, not gated")
 
     # A persisted zero takes precedence over transcript fallback and the other tool's count.
     wrong.store = {"codegraph_calls": 0, "codecite_calls": 9}
     _, rows = table(scorecard([l]))
-    assert rows[("claude-code/m", "graph-label")]["verdict"] == "not measured (codegraph used in 0 of 1 runs)"
+    assert rows[("claude-code/m", "graph-label")]["verdict"] == "not measured (codegraph used in 0 of 1 runs), reported, not gated"
     wrong.events = []
     wrong.store = {"codegraph_calls": 2, "codecite_calls": 0}
     _, rows = table(scorecard([l]))
-    assert rows[("claude-code/m", "graph-label")]["verdict"].startswith("no loss")
+    assert rows[("claude-code/m", "graph-label")]["verdict"].startswith("reported, not gated")
 
 
 def adoption(used):
@@ -737,3 +737,55 @@ def test_the_assist_arm_shows_its_blocks_and_estimated_tokens():
 def test_an_ab_scorecard_has_no_assist_table():
     out = scorecard(PANEL)
     assert "tokens added" not in out and len(tables(out)) == 3
+
+
+def tools_log(graph_runs=EPOCHS, graph_used=True):
+    graph = ToolCall(id="g", function="mcp__codegraph__explore", arguments={})
+    samples = [sample("baseline", e, passed=True) for e in range(1, EPOCHS + 1)]
+    samples += [sample("codecite", e, passed=True) for e in range(1, EPOCHS + 1)]
+    samples += [sample("codegraph", e, passed=False, calls=[graph] if graph_used else []) for e in range(1, graph_runs + 1)]
+    return log("claude-code/m", samples, arms="tools")
+
+
+def test_three_arm_comparisons_and_gate():
+    pair = config.ARMS["tools"]
+    assert report.pairs(pair) == [(pair[1], pair[0]), (pair[2], pair[0]), (pair[2], pair[1])]
+    assert report.gated((pair[1], pair[0]), pair)
+    assert not report.gated((pair[2], pair[0]), pair)
+    assert not report.gated((pair[2], pair[1]), pair)
+
+
+def test_tools_scorecard_renders_each_direct_interval_and_never_gates_codegraph():
+    out = scorecard([tools_log()])
+    header, rows = table(out)
+    assert "used tool" in header
+    assert rows[("claude-code/m", "codecite")]["verdict"].startswith("vs baseline: no loss")
+    graph = rows[("claude-code/m", "codegraph")]["verdict"]
+    assert "reported, not gated" in graph and "loses on" not in graph
+    _, spans = table(out, 2, ("model", "arms"))
+    assert list(spans) == [("claude-code/m", x) for x in ("codecite vs baseline", "codegraph vs baseline", "codegraph vs codecite")]
+    assert [r["pass"] for r in spans.values()] == ["+0..+0 pts", "-100..-100 pts *", "-100..-100 pts *"]
+
+
+def test_tools_missing_arm_and_low_adoption():
+    out = scorecard([tools_log(graph_runs=0)])
+    _, rows = table(out)
+    assert [key[1] for key in rows] == ["baseline", "codecite", "codegraph"]
+    assert "incomplete" in rows[("claude-code/m", "codegraph")]["verdict"]
+    _, spans = table(out, 2, ("model", "arms"))
+    assert spans[("claude-code/m", "codegraph vs codecite")]["pass"] == "-"
+    _, rows = table(scorecard([tools_log(graph_used=False)]))
+    assert "not measured (codegraph used in 0 of 4 runs)" in rows[("claude-code/m", "codegraph")]["verdict"]
+    assert "reported, not gated" in rows[("claude-code/m", "codegraph")]["verdict"]
+
+
+def test_incompatible_arm_sets_are_not_pooled():
+    with pytest.raises(ValueError, match="arm sets"):
+        scorecard([tools_log(), log("claude-code/m", [], arms="ab")])
+
+
+def test_directory_does_not_silently_select_between_arm_sets(tmp_path):
+    write_eval_log(tools_log(), str(tmp_path / "tools.eval"))
+    write_eval_log(log("claude-code/m", [], arms="ab"), str(tmp_path / "ab.eval"))
+    with pytest.raises(ValueError, match="arm sets"):
+        list(logs([tmp_path]))
