@@ -20,3 +20,5 @@ struct CClient *make_client(void) {
 char **make_names(void) {
     return 0;
 }
+
+typedef struct Pair { int first; int second; } Pair;

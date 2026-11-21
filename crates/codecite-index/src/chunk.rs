@@ -344,6 +344,9 @@ mod tests {
             ("function", 12, 14, "validate()."),
             ("function", 16, 18, "make_client()."),
             ("function", 20, 22, "make_names()."),
+            // `typedef struct Pair { … } Pair;` names one definition: the
+            // struct. The alias would repeat its name nested inside it.
+            ("class", 24, 24, "Pair#"),
         ]);
         assert_eq!(outline("src/sample.c", text), want);
         assert_eq!(outline("include/sample.h", text), want);
@@ -388,6 +391,11 @@ mod tests {
                 ("window", 35, 35, ""),
                 ("class", 37, 39, "Detached#"),
                 ("function", 38, 38, "Detached#execute()."),
+                ("class", 41, 49, "Status#"),
+                ("function", 45, 48, "Status#active()."),
+                ("class", 51, 53, "Point#"),
+                ("function", 52, 52, "Point#sum()."),
+                ("class", 55, 57, "Note#"),
             ])
         );
     }

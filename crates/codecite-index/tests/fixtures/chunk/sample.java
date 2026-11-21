@@ -37,3 +37,21 @@ public class Client {
 interface Detached {
     void execute();
 }
+
+/** Task status. */
+enum Status {
+    OPEN, CLOSED;
+
+    /** Whether work remains. */
+    boolean active() {
+        return this == OPEN;
+    }
+}
+
+record Point(int x, int y) {
+    int sum() { return x + y; }
+}
+
+@interface Note {
+    String value();
+}

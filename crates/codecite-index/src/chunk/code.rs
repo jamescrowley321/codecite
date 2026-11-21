@@ -362,6 +362,23 @@ fn definitions(
         if defined_elsewhere {
             continue;
         }
+        // `typedef struct Pair { … } Pair;` names one definition: the
+        // struct, union or enum the query captured itself. The alias would
+        // repeat that name nested inside it, so it is dropped; an alias for
+        // a different name (`typedef struct Foo { … } Bar;`) stays.
+        if language == Language::C
+            && captured_kind == Some(SymbolKind::TypeAlias)
+            && node.child_by_field_name("type").is_some_and(|defined| {
+                matches!(
+                    defined.kind(),
+                    "struct_specifier" | "union_specifier" | "enum_specifier"
+                ) && defined
+                    .child_by_field_name("name")
+                    .is_some_and(|n| n.utf8_text(source).ok() == name.utf8_text(source).ok())
+            })
+        {
+            continue;
+        }
         let text = |n: Node<'_>| n.utf8_text(source).unwrap_or_default().to_string();
         let name = if is_scope { type_name(name) } else { name };
         found.push((
@@ -508,7 +525,7 @@ fn symbol_kind(node: Node<'_>) -> SymbolKind {
         | "union_specifier" => SymbolKind::Struct,
         "enum_item" | "enum_declaration" | "enum_specifier" => SymbolKind::Enum,
         "trait_item" => SymbolKind::Trait,
-        "interface_declaration" => SymbolKind::Interface,
+        "interface_declaration" | "annotation_type_declaration" => SymbolKind::Interface,
         "class_definition"
         | "class_declaration"
         | "class"
