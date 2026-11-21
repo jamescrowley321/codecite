@@ -12,7 +12,7 @@ pub(crate) use text::{Heading, Lines, Slugs, markdown_headings, sections, sectio
 /// The version of the chunker's output. Raise it whenever the same file
 /// splits into different chunks, so each index run records which chunker
 /// wrote the corpus.
-pub const CHUNKER_VERSION: u32 = 1;
+pub const CHUNKER_VERSION: u32 = 3;
 
 /// The longest window, in lines.
 pub const WINDOW_LINES: u32 = 60;
@@ -333,6 +333,26 @@ mod tests {
     }
 
     #[test]
+    fn c_fixture() {
+        let text = include_str!("../tests/fixtures/chunk/sample.c");
+        let want = expect(&[
+            ("window", 1, 2, ""),
+            ("class", 4, 6, "CClient#"),
+            ("class", 8, 8, "Mode#"),
+            ("class", 9, 9, "Value#"),
+            ("type_alias", 10, 10, "Count#"),
+            ("function", 12, 14, "validate()."),
+            ("function", 16, 18, "make_client()."),
+            ("function", 20, 22, "make_names()."),
+            // `typedef struct Pair { … } Pair;` names one definition: the
+            // struct. The alias would repeat its name nested inside it.
+            ("class", 24, 24, "Pair#"),
+        ]);
+        assert_eq!(outline("src/sample.c", text), want);
+        assert_eq!(outline("include/sample.h", text), want);
+    }
+
+    #[test]
     fn csharp_fixture() {
         let text = include_str!("../tests/fixtures/chunk/sample.cs");
         assert_eq!(
@@ -345,6 +365,56 @@ mod tests {
                 ("class", 16, 29, "Client#"),
                 ("function", 18, 21, "Client#Client()."),
                 ("function", 25, 28, "Client#Validate()."),
+            ])
+        );
+    }
+
+    #[test]
+    fn java_fixture() {
+        let text = include_str!("../tests/fixtures/chunk/sample.java");
+        assert_eq!(
+            outline("src/sample.java", text),
+            expect(&[
+                ("window", 1, 1, ""),
+                ("class", 3, 33, "Client#"),
+                ("function", 6, 7, "Client#Client()."),
+                ("function", 9, 9, "Client#Client(+1)."),
+                ("function", 11, 15, "Client#validate()."),
+                ("function", 17, 17, "Client#validate(+1)."),
+                ("function", 20, 20, "Client#plain()."),
+                ("function", 21, 21, "Client#next()."),
+                ("class", 23, 27, "Client#Verifier#"),
+                ("function", 25, 26, "Client#Verifier#verify()."),
+                ("class", 29, 32, "Client#Inner#"),
+                ("function", 30, 30, "Client#Inner#Inner()."),
+                ("function", 31, 31, "Client#Inner#run()."),
+                ("window", 35, 35, ""),
+                ("class", 37, 39, "Detached#"),
+                ("function", 38, 38, "Detached#execute()."),
+                ("class", 41, 49, "Status#"),
+                ("function", 45, 48, "Status#active()."),
+                ("class", 51, 53, "Point#"),
+                ("function", 52, 52, "Point#sum()."),
+                ("class", 55, 57, "Note#"),
+            ])
+        );
+    }
+
+    #[test]
+    fn java_uncovered_lines_use_bounded_windows() {
+        let text = format!(
+            "{}\nclass Client {{}}\n{}",
+            "import a.b.C;\n".repeat(61),
+            "// tail\n".repeat(61)
+        );
+        assert_eq!(
+            outline("sample.java", &text),
+            expect(&[
+                ("window", 1, 60, ""),
+                ("window", 61, 61, ""),
+                ("class", 63, 63, "Client#"),
+                ("window", 64, 123, ""),
+                ("window", 124, 124, ""),
             ])
         );
     }
