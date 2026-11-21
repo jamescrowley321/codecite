@@ -234,17 +234,23 @@ impl Store {
     /// The best `query.limit` chunks that `chunk_fts` matches for `fts`,
     /// best first, within `query.only`.
     ///
-    /// Ranking runs in two phases, so its cost follows `query.limit` rather
-    /// than the number of matches: [`RANK`] orders every match by its score
-    /// and keeps the best `query.limit` chunk IDs, reading only what the
-    /// score and its tie-breaks need, and [`FETCH`] then reads the text,
-    /// citation and snippet of those chunks alone.
+    /// Ranking runs in two phases: [`RANK`] or [`RANK_BOOSTED`] scores and
+    /// orders every match and keeps the best `query.limit` chunk IDs, reading
+    /// only what the score and its tie-breaks need. [`FETCH`] then reads the
+    /// text, citation and snippet of those chunks alone.
     fn ranked(&self, fts: &str, names: &str, query: &SearchQuery<'_>) -> Result<Vec<SearchResult>> {
         let (w_symbol, w_path, w_text) = COLUMN_WEIGHTS;
         // One read transaction holds both phases, so an index run that
         // commits between them can't take away a chunk phase 1 chose.
         let snapshot = self.conn.unchecked_transaction()?;
-        let mut stmt = self.conn.prepare_cached(RANK)?;
+        // A single separator means there are no eligible names to boost.
+        // In that case the symbol join cannot affect the score.
+        let sql = if names == NAME_SEPARATOR.to_string() {
+            RANK
+        } else {
+            RANK_BOOSTED
+        };
+        let mut stmt = self.conn.prepare_cached(sql)?;
         let ranked: Vec<(i64, f64)> = stmt
             .query_map(
                 params![
@@ -426,14 +432,26 @@ pub(super) fn register_functions(conn: &Connection) -> rusqlite::Result<()> {
     )
 }
 
-/// Phase 1 of a search: the IDs and scores of the best `?8` chunks that
-/// `chunk_fts` matches for `?1`, best first. It reads no text, only the
-/// score's inputs and the tie-breaks: BM25 with the column weights `?3` to
-/// `?5`, times the document's stored role weight, times `?9` when the
-/// chunk's symbol's stored name key is one of the `char(31)`-separated
-/// names in `?2`. `?6` and `?7` filter by language and path glob, and `?10`
-/// keeps only specs (true) or everything else (false).
+/// When no names can be boosted, rank without probing the symbol table.
+/// Multiplying by 1.0 keeps the arithmetic identical to `RANK_BOOSTED`.
+/// Parameters use the same numbering as `RANK_BOOSTED`.
 const RANK: &str = "SELECT c.id,
+       -bm25(chunk_fts, ?3, ?4, ?5) * d.role_weight * 1.0 AS score
+     FROM chunk_fts
+     JOIN chunk c ON c.id = chunk_fts.rowid
+     JOIN document d ON d.id = c.document_id
+     JOIN source s ON s.id = d.source_id
+     WHERE chunk_fts MATCH ?1 AND s.is_current
+       AND (?6 IS NULL OR d.language = ?6)
+       AND (?7 IS NULL OR d.path GLOB ?7)
+       AND (?10 IS NULL OR (d.role = 'spec') = ?10)
+     ORDER BY score DESC, s.name, d.path, c.start_line, c.end_line
+     LIMIT ?8";
+
+/// Phase 1 with name boosts: BM25 times role weight and, when the symbol's
+/// name is in `?2`, the boost factor `?9`. Both paths use the same filters,
+/// ordering and parameters. Phase 2 reads the text of the best `?8` IDs.
+const RANK_BOOSTED: &str = "SELECT c.id,
        -bm25(chunk_fts, ?3, ?4, ?5) * d.role_weight
          * CASE WHEN instr(?2, char(31) || sym.name_key || char(31)) > 0
                 THEN ?9 ELSE 1.0 END AS score
@@ -1121,6 +1139,90 @@ mod tests {
         let only = store.search(&specs).unwrap();
         assert_eq!(only.len(), 1, "{only:?}");
         assert_eq!(only[0].role, "spec");
+    }
+
+    #[test]
+    fn unboosted_rank_does_not_join_symbol_rows() {
+        let fixture = fixture();
+        let sql = format!("EXPLAIN QUERY PLAN {RANK}");
+        let mut stmt = fixture.store.conn.prepare(&sql).unwrap();
+        let details: Vec<String> = stmt
+            .query_map(
+                params![
+                    "\"app\"",
+                    "\u{1f}",
+                    10.0,
+                    5.0,
+                    1.0,
+                    None::<&str>,
+                    None::<&str>,
+                    10,
+                    3.0,
+                    None::<bool>
+                ],
+                |row| row.get(3),
+            )
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(
+            !details.iter().any(|line| line.contains("sym")),
+            "unboosted ranking must not probe symbols: {details:?}"
+        );
+    }
+
+    #[test]
+    fn unboosted_rank_matches_the_original_scores_order_and_filters() {
+        let fixture = fixture();
+        let cases = [
+            query("validate"),
+            SearchQuery {
+                limit: 1,
+                ..query("validate")
+            },
+            SearchQuery {
+                language: Some("rust"),
+                ..query("validate")
+            },
+            SearchQuery {
+                path: Some("web/*"),
+                ..query("validate")
+            },
+            SearchQuery {
+                only: Some(Scope::Code),
+                ..query("validate token")
+            },
+            SearchQuery {
+                only: Some(Scope::Spec),
+                ..query("jti")
+            },
+            query("nothingmatches"),
+        ];
+        for q in cases {
+            let fts = fts_query(q.text).unwrap();
+            let run = |sql| {
+                let mut statement = fixture.store.conn.prepare(sql).unwrap();
+                let rows = statement
+                    .query_map(
+                        params![
+                            fts,
+                            "\u{1f}",
+                            10.0,
+                            5.0,
+                            1.0,
+                            q.language,
+                            q.path,
+                            q.limit,
+                            NAME_BOOST,
+                            q.only.map(|s| s == Scope::Spec)
+                        ],
+                        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, f64>(1)?.to_bits())),
+                    )
+                    .unwrap();
+                rows.collect::<rusqlite::Result<Vec<_>>>().unwrap()
+            };
+            assert_eq!(run(RANK), run(RANK_BOOSTED), "query {q:?}");
+        }
     }
 
     #[test]
