@@ -463,23 +463,31 @@ fn prefer_c_tag_definitions(found: &mut Vec<(Node<'_>, Definition)>, source: &[u
         return;
     }
     let captured: HashSet<_> = found.iter().map(|(node, _)| node.id()).collect();
-    let complete_tags: HashSet<_> = found
-        .iter()
-        .filter_map(|(tag, _)| {
-            let key = (tag.kind(), c_tag_name(*tag, source)?);
-            if !forward_tags.contains(&key) {
-                return None;
-            }
-            // The C query only captures a tag definition with a body.
-            Some((c_tag_scope(*tag, &captured)?, key))
-        })
-        .collect();
+    let mut complete_tags: HashMap<_, HashSet<_>> = HashMap::new();
+    for (tag, _) in found.iter() {
+        let Some(name) = c_tag_name(*tag, source) else {
+            continue;
+        };
+        let key = (tag.kind(), name);
+        if !forward_tags.contains(&key) {
+            continue;
+        }
+        // The C query only captures a tag definition with a body.
+        if let Some(scope) = c_tag_scope(*tag, &captured) {
+            complete_tags.entry(key).or_default().insert(scope);
+        }
+    }
+    if complete_tags.is_empty() {
+        return;
+    }
     found.retain(|(node, def)| {
         let Some(tag) = c_forward_typedef_tag(*node, def, source) else {
             return true;
         };
-        c_tag_scope(*node, &captured)
-            .is_none_or(|scope| !complete_tags.contains(&(scope, (tag.kind(), def.name.as_str()))))
+        let Some(scopes) = complete_tags.get(&(tag.kind(), def.name.as_str())) else {
+            return true;
+        };
+        c_tag_scope(*node, &captured).is_none_or(|scope| !scopes.contains(&scope))
     });
 }
 

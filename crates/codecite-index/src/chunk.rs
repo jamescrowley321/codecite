@@ -381,6 +381,44 @@ mod tests {
     }
 
     #[test]
+    fn c_forward_typedefs_with_no_or_unrelated_complete_tags_remain_symbols() {
+        let text = "typedef struct A A;\n\
+                    typedef union B B;\n\
+                    typedef enum C C;\n";
+        let want = expect(&[
+            ("type_alias", 1, 1, "A#"),
+            ("type_alias", 2, 2, "B#"),
+            ("type_alias", 3, 3, "C#"),
+        ]);
+        assert_eq!(outline("forward.h", text), want);
+
+        // An unrelated tag and a matching tag inside prototype scope cannot
+        // replace any alias. Adding a matching in-scope tag replaces only A.
+        let unrelated =
+            format!("{text}struct Other {{ int x; }};\nvoid f(union B {{ int x; }} b);\n");
+        assert_eq!(
+            outline("forward.h", &unrelated),
+            [
+                want.clone(),
+                expect(&[("class", 4, 4, "Other#"), ("class", 5, 5, "")]),
+            ]
+            .concat()
+        );
+        let mixed = format!("{unrelated}struct A {{ int x; }};\n");
+        assert_eq!(
+            outline("forward.h", &mixed),
+            expect(&[
+                ("window", 1, 1, ""),
+                ("type_alias", 2, 2, "B#"),
+                ("type_alias", 3, 3, "C#"),
+                ("class", 4, 4, "Other#"),
+                ("class", 5, 5, ""),
+                ("class", 6, 6, "A#"),
+            ])
+        );
+    }
+
+    #[test]
     fn c_forward_typedef_prefers_same_scope_tag_in_either_order() {
         for (tag, body) in [("struct", "int x;"), ("union", "int x;"), ("enum", "VALUE")] {
             let alias = format!("typedef {tag} Node Node;");
