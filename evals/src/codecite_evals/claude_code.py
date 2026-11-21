@@ -37,6 +37,8 @@ TOKEN = "CLAUDE_CODE_OAUTH_TOKEN"
 TOOLS = ["Bash", "Read", "Edit", "Write", "Glob", "Grep"]
 MCP = "/root/.claude/codecite-mcp.json"
 MCP_CONFIG = {"mcpServers": {"codecite": {"command": "/opt/codecite/bin/codecite", "args": ["mcp"]}}}
+GRAPH_MCP = "/root/.claude/codegraph-mcp.json"
+GRAPH_MCP_CONFIG = {"mcpServers": {"codegraph": {"command": "/opt/codegraph/bin/codegraph", "args": ["serve", "--mcp"]}}}
 PROXY = "http://proxy:8888"
 # Claude Code's stream-json goes to a file, not the exec's stdout, so a run
 # that outgrows Inspect's output limit or loses its exec still leaves it.
@@ -77,7 +79,7 @@ def command(condition: str, prompt: str, model: str, timeout: int) -> list[str]:
     keeps any other out of every arm. Only the assist arm gets the settings
     holding its grep and glob hook. `timeout` stops it a little before
     Inspect would."""
-    mcp = ["--mcp-config", MCP] if condition == "codecite" else []
+    mcp = {"codecite": ["--mcp-config", MCP], "codegraph": ["--mcp-config", GRAPH_MCP]}.get(condition, [])
     settings = ["--settings", assist.SETTINGS_PATH] if condition == "assist" else []
     return [
         "sh", "-c", f'"$@" >{OUTPUT}', "sh",

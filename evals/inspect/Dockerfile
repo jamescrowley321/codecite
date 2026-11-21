@@ -105,6 +105,19 @@ RUN if [ -s /tmp/corpus.toml ]; then \
     done < /tmp/specs.tsv \
  && rm -rf /tmp/src /tmp/corpus.toml /tmp/documents.toml /tmp/specs.tsv /tmp/citations.txt /tmp/COMMIT /tmp/warm.sh /root/.cache/codecite
 
+# CodeGraph, pinned, installed entirely under /opt/codegraph with no global
+# leftovers, and its index built here: a run reads `.codegraph/` and never
+# indexes, since the sandbox has no route out but the proxy. Every arm but
+# the codegraph one removes both at sample time (task.py).
+ARG CODEGRAPH_VERSION=1.6.4
+RUN npm install -g --prefix /opt/codegraph @colbymchenry/codegraph@${CODEGRAPH_VERSION} \
+ && /opt/codegraph/bin/codegraph telemetry off \
+ && for d in /work/project /opt/identity-model /opt/corpus/*; do \
+      if [ -d "$d" ] && [ -n "$(ls -A "$d" 2>/dev/null)" ]; then \
+        /opt/codegraph/bin/codegraph init -y "$d" >/dev/null; \
+      fi; \
+    done
+
 COPY pi-models.json /root/.pi/agent/models.json
 ENV PI_OFFLINE=1 PI_TELEMETRY=0 PI_SKIP_VERSION_CHECK=1
 

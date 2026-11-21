@@ -98,6 +98,8 @@ CHECKS_TIMEOUT = 1200
 MAX_START = 64 * 1024 * 1024
 CODECITE = "/opt/codecite/bin/codecite"
 CODECITE_TOOLS = ["mcp__codecite__search", "mcp__codecite__read", "mcp__codecite__requirements"]
+GRAPH = "/opt/codegraph/bin/codegraph"
+CODEGRAPH_TOOLS = ["mcp__codegraph__codegraph_explore"]
 PI_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"]
 PI_FLAGS = ["--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve"]
 # pi's user-level MCP config. `direct` exposure declares the tools to the
@@ -109,6 +111,16 @@ MCP_CONFIG = {
         "codecite": {
             "command": CODECITE,
             "args": ["mcp"],
+            "exposure": "direct",
+        }
+    },
+    "autoEnableCodemode": False,
+}
+GRAPH_MCP_CONFIG = {
+    "mcpServers": {
+        "codegraph": {
+            "command": GRAPH,
+            "args": ["serve", "--mcp"],
             "exposure": "direct",
         }
     },
@@ -269,10 +281,13 @@ def ab_task(task_id: str, arms: str = "ab", corpus: str = "") -> Task:
 
 def pi_command(condition: str, prompt: str) -> list[str]:
     """pi's command line for an arm. --no-extensions drops the built-in
-    extensions too, so the codecite arm loads only the MCP one back, and only
-    it lists codecite's tools; the assist arm loads only its hook's."""
+    extensions too, so the codecite and codegraph arms load only the MCP
+    one back, and only each lists its own tools; the assist arm loads only
+    its hook's."""
     if condition == "codecite":
         flags, tools = [*PI_FLAGS, "-e", "builtin:mcp"], [*PI_TOOLS, *CODECITE_TOOLS]
+    elif condition == "codegraph":
+        flags, tools = [*PI_FLAGS, "-e", "builtin:mcp"], [*PI_TOOLS, *CODEGRAPH_TOOLS]
     elif condition == "assist":
         flags, tools = [*PI_FLAGS, "--no-mcp", "-e", assist.PI_EXTENSION_PATH], PI_TOOLS
     else:
@@ -349,17 +364,31 @@ def coding_agent() -> Agent:
 
 
 async def prepare_arm(sb, condition: str, mcp_path: str, mcp_config: dict) -> dict[str, str]:
-    """Take codecite out of the baseline arm's sandbox, give the assist arm
-    its hook (codecite kept, but off PATH), or give the codecite arm the
-    agent's MCP config, and return the arm's base env."""
-    if condition == "baseline":
-        await sb.exec(["rm", "-rf", "/opt/codecite"])
-    elif condition == "assist":
+    """Strip the other tools and indexes from the sandbox, give the assist arm
+    its hook (codecite kept, but off PATH), or give the codecite/codegraph arm
+    the agent's MCP config, and return the arm's base env."""
+    if condition in ("codecite", "codegraph"):
+        await sb.write_file(mcp_path, json.dumps(mcp_config, indent=2))
+    # Every other arm loses CodeGraph, its config, and every `.codegraph/`
+    # index, so the arms differ only by the tool under test.
+    if condition != "codegraph":
+        res = await sb.exec([
+            "sh",
+            "-c",
+            "rm -rf /opt/codegraph /root/.codegraph /work/project/.codegraph /opt/identity-model/.codegraph /opt/corpus/*/.codegraph",
+        ])
+        if res is not None and not res.success:
+            raise RuntimeError(f"failed to remove codegraph: {res.stderr}")
+    # Preserve assist's off-PATH codecite binary; every other non-codecite arm loses it.
+    if condition not in ("codecite", "assist"):
+        res = await sb.exec(["rm", "-rf", "/opt/codecite"])
+        if res is not None and not res.success:
+            raise RuntimeError(f"failed to remove codecite: {res.stderr}")
+    if condition == "assist":
         for path, text in assist.files().items():
             await sb.write_file(path, text)
-    else:
-        await sb.write_file(mcp_path, json.dumps(mcp_config, indent=2))
-    path = ("/opt/codecite/bin:" if condition == "codecite" else "") + "/usr/local/bin:/usr/bin:/bin"
+    first = {"codecite": "/opt/codecite/bin:", "codegraph": "/opt/codegraph/bin:"}.get(condition, "")
+    path = first + "/usr/local/bin:/usr/bin:/bin"
     return {"PATH": path, "HOME": "/root"}
 
 
@@ -404,7 +433,8 @@ def pi() -> Agent:
     async def execute(state: AgentState) -> AgentState:
         sb = sandbox()
         condition = store().get("condition")
-        env = await prepare_arm(sb, condition, PI_MCP, MCP_CONFIG)
+        mcp_config = GRAPH_MCP_CONFIG if condition == "codegraph" else MCP_CONFIG
+        env = await prepare_arm(sb, condition, PI_MCP, mcp_config)
         async with sandbox_agent_bridge(state) as bridge:
             result = await run_agent(sb, pi_command(condition, state.messages[0].text), env, AGENT_TIMEOUT)
             await keep_assist_measures(sb, condition)
@@ -429,7 +459,12 @@ def claude(model: str) -> Agent:
     async def execute(state: AgentState) -> AgentState:
         sb = sandbox()
         condition = store().get("condition")
-        env = {**await prepare_arm(sb, condition, claude_code.MCP, claude_code.MCP_CONFIG), **claude_code.ENV}
+        mcp_path, mcp_config = (
+            (claude_code.GRAPH_MCP, claude_code.GRAPH_MCP_CONFIG)
+            if condition == "codegraph"
+            else (claude_code.MCP, claude_code.MCP_CONFIG)
+        )
+        env = {**await prepare_arm(sb, condition, mcp_path, mcp_config), **claude_code.ENV}
         cmd = claude_code.command(condition, state.messages[0].text, model, AGENT_TIMEOUT)
         started = monotonic()
         result = await run_agent(sb, cmd, env, AGENT_TIMEOUT + 30)

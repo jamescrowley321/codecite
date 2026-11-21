@@ -119,7 +119,7 @@ class Sandbox:
 
     async def exec(self, cmd, **kwargs):
         self.commands.append(cmd)
-        if cmd[0] == "sh":
+        if cmd[0] == "sh" and "env" in kwargs:
             self.envs.append(kwargs["env"])
             if self.output is not None:
                 self.files[claude_code.OUTPUT] = self.output
@@ -257,3 +257,20 @@ def test_tool_calls_lists_every_call_in_order_with_its_input_cut():
     assert json.loads(calls[0]["input"]) == {"command": "grep -rn sid app"}
     assert len(calls[1]["input"]) == claude_code.MAX_CALL_CHARS
     assert claude_code.tool_calls("") == []
+
+
+def test_the_codegraph_arm_gets_its_own_mcp_config():
+    cmd = claude_code.command("codegraph", "do the task", "claude-sonnet-5-5", 600)
+    assert cmd[cmd.index("--mcp-config") + 1] == claude_code.GRAPH_MCP
+
+
+def test_only_one_mcp_config_per_arm():
+    for condition in ("baseline", "codecite", "codegraph"):
+        assert claude_code.command(condition, "p", "m", 600).count("--mcp-config") == (0 if condition == "baseline" else 1)
+
+
+def test_the_codegraph_arm_writes_claude_graph_mcp_and_strips_codecite(monkeypatch):
+    _, _, sb = run_claude(monkeypatch, finished(stream(DONE)), arm="codegraph")
+    assert json.loads(sb.files[claude_code.GRAPH_MCP]) == claude_code.GRAPH_MCP_CONFIG
+    assert ["rm", "-rf", "/opt/codecite"] in sb.commands
+    assert sb.envs[0]["PATH"].startswith("/opt/codegraph/bin:")

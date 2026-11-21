@@ -31,7 +31,9 @@ class Sandbox:
         self.commands.append(cmd)
         if cmd[0] == "pi":
             raise self.error
-        if cmd == ["rm", "-rf", "/opt/codecite"]:
+        if cmd == ["rm", "-rf", "/opt/codecite"] or (
+            cmd[:2] == ["sh", "-c"] and "/opt/codegraph" in cmd[2]
+        ):
             return ExecResult(success=True, returncode=0, stdout="", stderr="")
         raise AssertionError(f"unexpected exec: {cmd}")
 
@@ -402,3 +404,43 @@ def test_ab_runs_a_replay_task_by_its_id(replay_task):
     t = task.ab(REPLAY["id"])
     assert [s.id for s in t.dataset] == ["baseline", "codecite"]
     assert "owner/demo source" in t.dataset[1].input
+
+
+def test_the_codegraph_arm_gets_codegraphs_tools_and_not_codecites():
+    cmd = task.pi_command("codegraph", "do the task")
+    tools = cmd[cmd.index("--tools") + 1].split(",")
+    assert "mcp__codegraph__codegraph_explore" in tools
+    assert not any(t.startswith("mcp__codecite__") for t in tools)
+    assert "read" in tools
+    assert cmd[cmd.index("-e") + 1] == "builtin:mcp"
+
+
+def test_every_arm_but_the_codegraph_one_loses_codegraph():
+    for condition in ("baseline", "assist", "codecite"):
+        sb = Sandbox(TimeoutError())
+        env = asyncio.run(task.prepare_arm(sb, condition, task.PI_MCP, task.MCP_CONFIG))
+        assert "/opt/codegraph/bin" not in env["PATH"]
+        assert any(
+            c[:2] == ["sh", "-c"] and "/opt/codegraph" in c[2] and ".codegraph" in c[2]
+            for c in sb.commands
+        )
+        if condition == "assist":
+            assert ["rm", "-rf", "/opt/codecite"] not in sb.commands
+
+
+def test_codegraph_arm_writes_pi_mcp_json_and_strips_codecite():
+    sb = Sandbox(TimeoutError())
+    env = asyncio.run(task.prepare_arm(sb, "codegraph", task.PI_MCP, task.GRAPH_MCP_CONFIG))
+    assert env["PATH"].startswith("/opt/codegraph/bin:")
+    assert json.loads(sb.files[task.PI_MCP]) == task.GRAPH_MCP_CONFIG
+    assert ["rm", "-rf", "/opt/codecite"] in sb.commands
+    assert not any(c[:2] == ["sh", "-c"] and "/opt/codegraph" in c[2] for c in sb.commands)
+
+
+def test_prepare_arm_fails_on_cleanup_error():
+    class FailingSandbox(Sandbox):
+        async def exec(self, cmd, **kwargs):
+            return ExecResult(success=False, returncode=1, stdout="", stderr="permission denied")
+
+    with pytest.raises(RuntimeError, match="permission denied"):
+        asyncio.run(task.prepare_arm(FailingSandbox(TimeoutError()), "baseline", task.PI_MCP, task.MCP_CONFIG))
