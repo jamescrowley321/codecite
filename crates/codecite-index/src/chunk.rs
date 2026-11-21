@@ -437,6 +437,29 @@ mod tests {
     }
 
     #[test]
+    fn c_forward_typedef_matches_each_same_named_tag_in_its_own_scope() {
+        let text = "void first(void) {\n\
+                    typedef struct Node Node;\n\
+                    struct Node { int x; };\n}\n\
+                    void second(void) {\n\
+                    typedef struct Node Node;\n\
+                    struct Node { int y; };\n}\n\
+                    void third(void) {\n\
+                    typedef struct Node Node;\n}\n";
+        assert_eq!(
+            outline("scopes.c", text),
+            expect(&[
+                ("function", 1, 4, "first()."),
+                ("class", 3, 3, "first().Node#"),
+                ("function", 5, 8, "second()."),
+                ("class", 7, 7, "second().Node#"),
+                ("function", 9, 11, "third()."),
+                ("type_alias", 10, 10, "third().Node#"),
+            ])
+        );
+    }
+
+    #[test]
     fn c_forward_typedef_matches_inside_include_guards_and_the_same_branch() {
         let text = "#ifndef SAMPLE_H\n#define SAMPLE_H\n\
                     typedef struct Guarded Guarded;\nstruct Guarded { int x; };\n\
