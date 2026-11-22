@@ -31,7 +31,7 @@ The run used source revision `9b779886c0e3aabd084e2226d3481b235bbc0df0`, Rust 1.
 
 Linux is over one million chunks on this build. Its exact-symbol CLI class has p50 117.90 ms and p95 536.32 ms across 30 samples (six questions, five rounds); the separate behaviour class is p50 196.61 ms and p95 364.10 ms across ten samples. These are not pooled with other corpora and miss the 100 ms p95 target for these samples. The frozen identity retrieval baseline has 122 queries, Recall@1 0.148, Recall@10 0.475 and MRR 0.245. Frozen per-class measures, both search modes, per-query records and citations are in `results/`. All 361 distinct citations returned by the revised four-corpus workload resolved through `read`; all four miss controls returned empty results in every timed round. The ambiguity probes returned 49, 518 and 596 definitions for Linux, Keycloak and Kubernetes respectively; FHIR's `FhirContext` returned eight. `def` returned at most 50 results, so totals, not displayed counts, describe ambiguity.
 
-`#283` was open when these measurements ran. If it merges, rebuild and rerun on the new `origin/main` before comparisons; its C changes can change the corpus and ranking. The #255 `detail=column`, per-document path and `optimize` experiments, further label adjudication, and comparison against the frozen labels and non-identity holdout remain necessary.
+`#283` was open when these measurements ran. If it merges, rebuild and rerun on the new `origin/main` before comparisons; its C changes can change the corpus and ranking. The experiments below compare the three #255 levers; further label adjudication and broader comparisons are needed before any ranking change.
 
 ## `detail=column` isolated prototype
 
@@ -39,7 +39,7 @@ A scratch build from the same base revision changed only the initial FTS DDL as 
 
 **Actionable incompatibility:** the frozen Linux `tcp_v4_connect` search succeeds with the baseline binary but the `detail=column` binary exits with `fts5: phrase queries are not supported (detail!=full)`. A naive DDL-only change is therefore not deployable: some emitted quoted terms tokenize to multiple FTS tokens even though the application intends single-term queries. A partial paired probe, including the error and two single-token controls, is recorded in `probe.json`; the longer frozen comparison stopped on this error, so it is not a quality or latency result. Fixing query semantics would be a separate ranking-changing design requiring independent evaluation; do not infer that shrinking postings alone is safe.
 
-The saved scratch prototype's remaining indexes and frozen retrieval/history comparisons were not run. The per-document path and `optimize` alternatives have not been compared. Preserve the interrupted database rather than reuse it; any resumed second Linux fresh run needs a new data directory. For a compatible revised prototype, rerun both frozen labels and citation checks on every corpus, then compare per-corpus quality and paired latency before proposing production tuning.
+The saved scratch prototype's remaining indexes and frozen retrieval/history comparisons were not run because its query semantics are incompatible. For a separately designed compatible variant, rerun the frozen labels and citation checks on every corpus, then compare per-corpus quality and paired latency before proposing production tuning. The following sections measure the other two levers independently.
 
 ## Path postings
 
@@ -71,3 +71,28 @@ python3 experiments/fts-tuning/optimize.py "$baseline_run" "$new_run" fhir ident
 ```
 
 Then run the frozen FHIR query subset against `$new_run/before` and `$new_run/after` with the recorded binary, and the unchanged retrieval/history `codecite-bench` labels against each copy. The exact FHIR subset and its hash, per-sample records, citation checks and aggregate comparisons are under `results/optimize/`. Baseline caches and input databases are never overwritten.
+
+## Incremental optimize comparison
+
+A bounded **synthetic same-content** experiment rewrites 1%, 10%, and 50% of the 12,583 chunk FTS rows in the frozen identity retrieval corpus. Each arm starts from a separate byte-identical private copy of the baseline database. It selects the first chunk IDs, reads the existing chunk, symbol and document data, reconstructs the FTS terms using the production `identifier_terms` and `text_terms`, deletes and reinserts each FTS row, then commits. The optimize arm runs the FTS `optimize` command in that same transaction; the control does not. It does not simulate changed source text, document cascades, tree-sitter, or the rest of the indexer's publish transaction, and first-ID selection is not representative sampling. Segment counts are affected by SQLite's automatic merging. These are **not** production index-run measurements.
+
+One transaction per arm per fraction was timed; raw records, the exact frozen label and binary hashes, source database hash, and per-call timings are in `results/incremental-optimize/`. WAL was polled every millisecond and its sampled maximum is a lower bound. All 122 frozen retrieval outcomes matched the original baseline and across arms for each fraction. For eight frozen questions, one warmup plus five sequential, alternating-arm CLI sweeps returned identical paired citations; 78 distinct citations per arm and fraction all resolved. There are only 40 timed calls per arm per fraction, no disk-cache eviction, and the individual timing distributions should not be generalized to other corpora or runs.
+
+| Rewritten | Control transaction | Optimize transaction | Control / optimize segments | Control / optimize sampled WAL peak |
+| --- | ---: | ---: | ---: | ---: |
+| 1% (125 chunks) | 24.9 ms | 76.5 ms | 5 / 1 | 1,186,592 / 6,118,232 bytes |
+| 10% (1,258 chunks) | 91.6 ms | 121.8 ms | 4 / 1 | 3,539,112 / 7,646,752 bytes |
+| 50% (6,291 chunks) | 422.5 ms | 482.5 ms | 4 / 1 | 10,646,112 / 10,646,112 bytes |
+
+**Recommendation:** no automatic optimize threshold now. The fresh and synthetic runs show an extra write and transient WAL cost but insufficient repeated, cross-corpus paired evidence of a search benefit. Likewise, reject the DDL-only `detail=column` change and do not implement the path join on storage savings alone. A future ranking/query change requires a separate plan and frozen quality comparison; an optimize proposal needs realistic changed-document workloads at measured rewrite fractions, repeated interleaved runs, and indexer's own publish-transaction cost and WAL peaks. If #283 lands, rebuild on the new base before comparing Linux results.
+
+To reproduce the incremental experiment from the repository root, use the pinned release build and a private, nonexistent output path:
+
+```sh
+core=$(echo target/release/deps/libcodecite_core-*.rlib)
+sql=$(echo target/release/deps/librusqlite-*.rlib)
+rustc --edition=2024 -O experiments/fts-tuning/incremental_rewrite.rs -L dependency=target/release/deps --extern codecite_core="$core" --extern rusqlite="$sql" -o "$helper"
+python3 experiments/fts-tuning/incremental_optimize.py "$baseline_run" "$new_run" --helper "$helper" --bin-dir target/release
+```
+
+The helper writes to the path it receives; the Python driver passes only newly created private copies, refuses a nonempty source WAL, checks the binary and manifest pins, and never rewrites the original index. Run on a quiet host.

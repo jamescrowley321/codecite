@@ -1,0 +1,23 @@
+{
+  "source_db_sha256": "5d89d8a50a6216ac27ec4314a376a1c05ce4bd28d0d6d50d5902ae36514bddc5",
+  "queries_sha256": "cd933d8b6571bed62265fb92e98fc21b1fe3ffad2ce0396d32f420fbcfc50814",
+  "binary_sha256": "ed39022becaa3eece17ed750a92ce6e01b4a54dde87a33e8c62fe4c79f5af55e",
+  "manifest_sha256": "cc1e3cca2ec6d371e312facaeef0b8b7d96105d0c58e7bd9eff6b24256ca8408",
+  "fractions": [
+    1,
+    10,
+    50
+  ],
+  "probe_indexes": [
+    0,
+    15,
+    30,
+    45,
+    60,
+    75,
+    90,
+    105
+  ],
+  "rounds": 5,
+  "cache": "warm sweep, sequential interleaved CLI calls, no eviction"
+}
