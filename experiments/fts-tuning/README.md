@@ -54,7 +54,7 @@ rustc --edition=2024 -O experiments/fts-tuning/path_postings.rs -L dependency=ta
 /usr/bin/time "$run/path_postings" "$baseline_db" "$run/chunk.db" "$run/document.db"
 ```
 
-The FTS `detail=column` error is reproducible without the corpus: with SQLite 3.54.1, create an FTS5 table using `detail=column`, insert `tcp_v4_connect`, and match `"tcp_v4_connect"`. The `unicode61` tokenizer splits the quoted identifier at underscores into a multi-token phrase, unsupported by that detail setting. The same MATCH succeeds with `detail=full`. The production query builder preserves and quotes that identifier in addition to its split terms; changing it is a ranking change, not a DDL-only fix.
+Run `python3 experiments/fts-tuning/detail_column_check.py` to reproduce the FTS `detail=column` error without the corpus: with SQLite 3.54.1, create an FTS5 table using `detail=column`, insert `tcp_v4_connect`, and match `"tcp_v4_connect"`. The `unicode61` tokenizer splits the quoted identifier at underscores into a multi-token phrase, unsupported by that detail setting. The same MATCH succeeds with `detail=full`. The production query builder preserves and quotes that identifier in addition to its split terms; changing it is a ranking change, not a DDL-only fix.
 
 ## FTS optimize
 
