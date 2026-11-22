@@ -50,6 +50,16 @@ impl Demo {
         fs::write(repo.join("src/client.rs"), CLIENT).unwrap();
         fs::write(repo.join("src/server.rs"), SERVER).unwrap();
         fs::write(repo.join("tests/callback.rs"), TEST).unwrap();
+        fs::write(
+            repo.join("src/sample.c"),
+            include_str!("../../codecite-index/tests/fixtures/chunk/sample.c"),
+        )
+        .unwrap();
+        fs::write(
+            repo.join("src/api.h"),
+            "int header_prototype(void);\nint header_body(void) { return 1; }\n",
+        )
+        .unwrap();
         git(&repo, &["add", "."]);
         git(&repo, &["commit", "-q", "-m", "init"]);
 
@@ -210,4 +220,30 @@ fn a_missing_symbol_is_an_error() {
     }
     let output = demo.run(&["def", "dmeo", "callback"]);
     assert!(stderr(&output).contains("unknown corpus `dmeo`; known corpora: demo"));
+}
+
+#[test]
+fn c_definitions_and_header_prototypes() {
+    let demo = Demo::new();
+    for (name, span) in [
+        ("CClient", "src/sample.c#L4-L6"),
+        ("Mode", "src/sample.c#L8"),
+        ("Value", "src/sample.c#L9"),
+        ("Count", "src/sample.c#L10"),
+        ("validate", "src/sample.c#L12-L14"),
+        ("make_client", "src/sample.c#L16-L18"),
+        ("make_names", "src/sample.c#L20-L22"),
+        ("header_body", "src/api.h#L2"),
+    ] {
+        let found = demo.def(name);
+        assert_eq!(spans(&found), [span], "{name}");
+        let result = &found["results"][0];
+        assert_eq!(
+            demo.read(result["citation"].as_str().unwrap()),
+            result["snippet"].as_str().unwrap()
+        );
+    }
+    for name in ["declared", "header_prototype"] {
+        assert!(!demo.run(&["def", "demo", name]).status.success(), "{name}");
+    }
 }

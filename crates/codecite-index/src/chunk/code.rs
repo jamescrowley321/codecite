@@ -56,7 +56,7 @@ type Grammar = fn() -> tree_sitter::Language;
 
 /// The code languages, each with its grammar and query. TSX shares the
 /// TypeScript query: its grammar has the same node kinds, plus JSX.
-const LANGUAGES: [(Language, Grammar, &str); 7] = [
+const LANGUAGES: [(Language, Grammar, &str); 9] = [
     (
         Language::Rust,
         || tree_sitter_rust::LANGUAGE.into(),
@@ -88,9 +88,19 @@ const LANGUAGES: [(Language, Grammar, &str); 7] = [
         include_str!("queries/go.scm"),
     ),
     (
+        Language::C,
+        || tree_sitter_c::LANGUAGE.into(),
+        include_str!("queries/c.scm"),
+    ),
+    (
         Language::CSharp,
         || tree_sitter_c_sharp::LANGUAGE.into(),
         include_str!("queries/csharp.scm"),
+    ),
+    (
+        Language::Java,
+        || tree_sitter_java::LANGUAGE.into(),
+        include_str!("queries/java.scm"),
     ),
 ];
 
@@ -304,6 +314,21 @@ fn definitions(
         for capture in m.captures() {
             match names[capture.index as usize] {
                 "function" | "type" => node = Some(capture.node),
+                "c_function" => {
+                    node = Some(capture.node);
+                    let mut declarator = capture.node.child_by_field_name("declarator");
+                    while let Some(d) = declarator {
+                        if d.kind() == "identifier" {
+                            name = Some(d);
+                            break;
+                        }
+                        declarator = d.child_by_field_name("declarator").or_else(|| {
+                            (d.kind() == "parenthesized_declarator")
+                                .then(|| d.named_child(0))
+                                .flatten()
+                        });
+                    }
+                }
                 "variable" => {
                     node = Some(capture.node);
                     captured_kind = Some(SymbolKind::Variable);
@@ -335,6 +360,23 @@ fn definitions(
             continue;
         };
         if defined_elsewhere {
+            continue;
+        }
+        // `typedef struct Pair { … } Pair;` names one definition: the
+        // struct, union or enum the query captured itself. The alias would
+        // repeat that name nested inside it, so it is dropped; an alias for
+        // a different name (`typedef struct Foo { … } Bar;`) stays.
+        if language == Language::C
+            && captured_kind == Some(SymbolKind::TypeAlias)
+            && node.child_by_field_name("type").is_some_and(|defined| {
+                matches!(
+                    defined.kind(),
+                    "struct_specifier" | "union_specifier" | "enum_specifier"
+                ) && defined
+                    .child_by_field_name("name")
+                    .is_some_and(|n| n.utf8_text(source).ok() == name.utf8_text(source).ok())
+            })
+        {
             continue;
         }
         let text = |n: Node<'_>| n.utf8_text(source).unwrap_or_default().to_string();
@@ -437,8 +479,9 @@ fn documented_start(language: Language, node: Node<'_>, source: &[u8]) -> usize 
 
 /// Whether `node` documents or annotates the definition below it: a doc
 /// comment or attribute in Rust (`///`, `/** */`, `#[...]`; not `//!`, which
-/// documents the module), any comment in Go, a JSDoc block or decorator in
-/// TypeScript and JavaScript, an XML doc comment in C# (`///`, `/** */`).
+/// documents the module), any comment in C or Go, a JSDoc block or decorator in
+/// TypeScript and JavaScript, an XML doc comment in C# (`///`, `/** */`),
+/// or a Javadoc block in Java. Java annotations are part of the definition.
 /// Python's decorators are part of the definition already, and its docstring
 /// sits inside it.
 fn attaches(language: Language, node: Node<'_>, source: &[u8]) -> bool {
@@ -449,10 +492,11 @@ fn attaches(language: Language, node: Node<'_>, source: &[u8]) -> bool {
         (Language::Rust, "attribute_item") => true,
         (Language::Rust, "line_comment") => doc_line,
         (Language::Rust, "block_comment") => doc_block,
-        (Language::Go, "comment") => true,
+        (Language::C | Language::Go, "comment") => true,
         (Language::TypeScript | Language::Tsx | Language::JavaScript, "decorator") => true,
         (Language::TypeScript | Language::Tsx | Language::JavaScript, "comment") => doc_block,
         (Language::CSharp, "comment") => doc_line || doc_block,
+        (Language::Java, "block_comment") => doc_block,
         _ => false,
     }
 }
@@ -477,10 +521,11 @@ fn symbol_kind(node: Node<'_>) -> SymbolKind {
         | "method_signature"
         | "method_elem"
         | "constructor_declaration" => SymbolKind::Method,
-        "struct_item" | "union_item" | "struct_declaration" => SymbolKind::Struct,
-        "enum_item" | "enum_declaration" => SymbolKind::Enum,
+        "struct_item" | "union_item" | "struct_declaration" | "struct_specifier"
+        | "union_specifier" => SymbolKind::Struct,
+        "enum_item" | "enum_declaration" | "enum_specifier" => SymbolKind::Enum,
         "trait_item" => SymbolKind::Trait,
-        "interface_declaration" => SymbolKind::Interface,
+        "interface_declaration" | "annotation_type_declaration" => SymbolKind::Interface,
         "class_definition"
         | "class_declaration"
         | "class"

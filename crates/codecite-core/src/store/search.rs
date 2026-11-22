@@ -205,8 +205,9 @@ impl Store {
     /// tests and examples rank below the source they use, and multiplied by
     /// [`NAME_BOOST`] when a word of the query, or the whole query, is the
     /// chunk's symbol's name (ignoring case, `_` and `-`) and at most
-    /// [`MAX_NAME_DEFINITIONS`] symbols have that name. Only the current
-    /// version of each document is searched.
+    /// [`MAX_NAME_DEFINITIONS`] definitions have that name. Java methods
+    /// sharing their enclosing class's name count with that class. Only the
+    /// current version of each document is searched.
     ///
     /// Code, repository prose, fetched documents and specs are ranked
     /// together, in one score order: a spec section ranks where its score
@@ -220,11 +221,7 @@ impl Store {
     pub fn search(&self, query: &SearchQuery<'_>) -> Result<Vec<SearchResult>> {
         let fts = fts_query(query.text).ok_or(Error::EmptyQuery)?;
         self.check_fresh(query.allow_stale)?;
-        let mut names = String::from(NAME_SEPARATOR);
-        for name in self.boosted_names(query.text)? {
-            names.push_str(&name);
-            names.push(NAME_SEPARATOR);
-        }
+        let names = self.boosted_names(query.text)?;
         let mut results = self.ranked(&fts, &names, query)?;
         self.add_older_versions(results.iter_mut().filter(|r| r.role == "spec"))?;
         Ok(results)
@@ -233,22 +230,43 @@ impl Store {
     /// The best `query.limit` chunks that `chunk_fts` matches for `fts`,
     /// best first, within `query.only`.
     ///
-    /// Ranking runs in two phases, so its cost follows `query.limit` rather
-    /// than the number of matches: [`RANK`] orders every match by its score
-    /// and keeps the best `query.limit` chunk IDs, reading only what the
-    /// score and its tie-breaks need, and [`FETCH`] then reads the text,
-    /// citation and snippet of those chunks alone.
-    fn ranked(&self, fts: &str, names: &str, query: &SearchQuery<'_>) -> Result<Vec<SearchResult>> {
+    /// Ranking runs in two phases: [`RANK`], [`RANK_BOOSTED`] or
+    /// [`RANK_LEGACY`] scores every match and keeps the best `query.limit`
+    /// chunk IDs. [`FETCH`] then reads text and snippets for those IDs alone.
+    fn ranked(
+        &self,
+        fts: &str,
+        names: &[String],
+        query: &SearchQuery<'_>,
+    ) -> Result<Vec<SearchResult>> {
         let (w_symbol, w_path, w_text) = COLUMN_WEIGHTS;
+        // The old delimiter lookup can match a stored name containing the
+        // delimiter across two eligible names. Retain it for multi-name
+        // searches so even those unusual stored symbols rank identically.
+        let (sql, bound_names) = match names {
+            [] => (RANK, String::new()),
+            [_] => (
+                RANK_BOOSTED,
+                serde_json::to_string(names).expect("strings serialize to JSON"),
+            ),
+            _ => {
+                let mut joined = String::from("\u{1f}");
+                for name in names {
+                    joined.push_str(name);
+                    joined.push('\u{1f}');
+                }
+                (RANK_LEGACY, joined)
+            }
+        };
         // One read transaction holds both phases, so an index run that
         // commits between them can't take away a chunk phase 1 chose.
         let snapshot = self.conn.unchecked_transaction()?;
-        let mut stmt = self.conn.prepare_cached(RANK)?;
+        let mut stmt = self.conn.prepare_cached(sql)?;
         let ranked: Vec<(i64, f64)> = stmt
             .query_map(
                 params![
                     fts,
-                    names,
+                    bound_names,
                     w_symbol,
                     w_path,
                     w_text,
@@ -347,8 +365,9 @@ impl Store {
         Ok(())
     }
 
-    /// The [`query_names`] that at least one and at most
-    /// [`MAX_NAME_DEFINITIONS`] symbols have.
+    /// The [`query_names`] shared by at least one and at most
+    /// [`MAX_NAME_DEFINITIONS`] definitions, counting Java same-name
+    /// methods with their enclosing class.
     fn boosted_names(&self, text: &str) -> Result<Vec<String>> {
         let mut count = self.conn.prepare_cached(BOOSTED_NAME_COUNT)?;
         let mut names = Vec::new();
@@ -424,14 +443,48 @@ pub(super) fn register_functions(conn: &Connection) -> rusqlite::Result<()> {
     )
 }
 
-/// Phase 1 of a search: the IDs and scores of the best `?8` chunks that
-/// `chunk_fts` matches for `?1`, best first. It reads no text, only the
-/// score's inputs and the tie-breaks: BM25 with the column weights `?3` to
-/// `?5`, times the document's stored role weight, times `?9` when the
-/// chunk's symbol's stored name key is one of the `char(31)`-separated
-/// names in `?2`. `?6` and `?7` filter by language and path glob, and `?10`
-/// keeps only specs (true) or everything else (false).
+/// When no names can be boosted, rank without probing the symbol table.
+/// Multiplying by 1.0 keeps the arithmetic identical to `RANK_BOOSTED`.
+/// Parameters use the same numbering as `RANK_BOOSTED`.
 const RANK: &str = "SELECT c.id,
+       -bm25(chunk_fts, ?3, ?4, ?5) * d.role_weight * 1.0 AS score
+     FROM chunk_fts
+     JOIN chunk c ON c.id = chunk_fts.rowid
+     JOIN document d ON d.id = c.document_id
+     JOIN source s ON s.id = d.source_id
+     WHERE chunk_fts MATCH ?1 AND s.is_current
+       AND (?6 IS NULL OR d.language = ?6)
+       AND (?7 IS NULL OR d.path GLOB ?7)
+       AND (?10 IS NULL OR (d.role = 'spec') = ?10)
+     ORDER BY score DESC, s.name, d.path, c.start_line, c.end_line
+     LIMIT ?8";
+
+/// Phase 1 with one boosted name: SQLite materializes the matching symbol
+/// IDs from the JSON array `?2`, then checks candidates against that set.
+/// All paths use the same filters, ordering and parameters.
+const RANK_BOOSTED: &str = "SELECT c.id,
+       -bm25(chunk_fts, ?3, ?4, ?5) * d.role_weight
+         * CASE WHEN c.symbol_id IN (
+                  SELECT id FROM symbol WHERE name_key IN (
+                    SELECT value FROM json_each(?2)
+                  )
+                ) THEN ?9 ELSE 1.0 END AS score
+     FROM chunk_fts
+     JOIN chunk c ON c.id = chunk_fts.rowid
+     JOIN document d ON d.id = c.document_id
+     JOIN source s ON s.id = d.source_id
+     WHERE chunk_fts MATCH ?1 AND s.is_current
+       AND (?6 IS NULL OR d.language = ?6)
+       AND (?7 IS NULL OR d.path GLOB ?7)
+       AND (?10 IS NULL OR (d.role = 'spec') = ?10)
+     -- Break ties on what the result cites, not on c.id: a chunk ID
+     -- records when the chunk was written, and a reindex keeps the
+     -- IDs of unchanged files, so ID order differs from a fresh index.
+     ORDER BY score DESC, s.name, d.path, c.start_line, c.end_line
+     LIMIT ?8";
+
+/// Retain the original name comparison for queries with several boosted names.
+const RANK_LEGACY: &str = "SELECT c.id,
        -bm25(chunk_fts, ?3, ?4, ?5) * d.role_weight
          * CASE WHEN instr(?2, char(31) || sym.name_key || char(31)) > 0
                 THEN ?9 ELSE 1.0 END AS score
@@ -444,9 +497,6 @@ const RANK: &str = "SELECT c.id,
        AND (?6 IS NULL OR d.language = ?6)
        AND (?7 IS NULL OR d.path GLOB ?7)
        AND (?10 IS NULL OR (d.role = 'spec') = ?10)
-     -- Break ties on what the result cites, not on c.id: a chunk ID
-     -- records when the chunk was written, and a reindex keeps the
-     -- IDs of unchanged files, so ID order differs from a fresh index.
      ORDER BY score DESC, s.name, d.path, c.start_line, c.end_line
      LIMIT ?8";
 
@@ -464,8 +514,22 @@ const FETCH: &str = "SELECT c.kind, c.start_line, c.end_line, c.number, p.number
      LEFT JOIN symbol sym ON sym.id = c.symbol_id
      WHERE c.id = ?1";
 
-/// How many symbols have the name key `?1`.
-const BOOSTED_NAME_COUNT: &str = "SELECT count(*) FROM symbol WHERE name_key = ?1";
+/// How many definitions share the name key `?1`. Java constructors and
+/// other methods with their enclosing class's name count with that class.
+/// Other methods, languages and classes in different files count separately.
+const BOOSTED_NAME_COUNT: &str = "SELECT count(*)
+    FROM symbol s
+    WHERE s.name_key = ?1
+      AND NOT (coalesce(s.kind, '') = 'method' AND EXISTS (
+        SELECT 1 FROM symbol parent
+        JOIN document d ON d.id = parent.document_id
+        WHERE parent.document_id = s.document_id
+          AND d.language = 'java'
+          AND parent.kind = 'class'
+          AND parent.display_name = s.display_name
+          AND parent.start_line <= s.start_line
+          AND parent.end_line >= s.end_line
+      ))";
 
 /// Turns the user's text into an FTS5 query, or `None` when it has no
 /// terms.
@@ -498,10 +562,6 @@ fn join_terms(terms: &[String], op: &str) -> String {
         .collect();
     quoted.join(op)
 }
-
-/// Separates the names passed to the search, so SQL finds one with
-/// `instr`. No name holds it: [`query_names`] splits words at it.
-const NAME_SEPARATOR: char = '\u{1f}';
 
 /// The names a query can mean: each word, and all the words run together,
 /// so `validate token` names both `validate` and `validateToken`. Each is a
@@ -597,6 +657,22 @@ mod tests {
     check_audience(&claims)
 }";
     const SHA256: &str = "1a2b3c4d5e6f00000000000000000000000000000000000000000000000000ff";
+    // The original join-based query is retained as a correctness oracle.
+    const ORIGINAL_RANK: &str = "SELECT c.id,
+       -bm25(chunk_fts, ?3, ?4, ?5) * d.role_weight
+         * CASE WHEN instr(?2, char(31) || sym.name_key || char(31)) > 0
+                THEN ?9 ELSE 1.0 END AS score
+     FROM chunk_fts
+     JOIN chunk c ON c.id = chunk_fts.rowid
+     JOIN document d ON d.id = c.document_id
+     JOIN source s ON s.id = d.source_id
+     LEFT JOIN symbol sym ON sym.id = c.symbol_id
+     WHERE chunk_fts MATCH ?1 AND s.is_current
+       AND (?6 IS NULL OR d.language = ?6)
+       AND (?7 IS NULL OR d.path GLOB ?7)
+       AND (?10 IS NULL OR (d.role = 'spec') = ?10)
+     ORDER BY score DESC, s.name, d.path, c.start_line, c.end_line
+     LIMIT ?8";
 
     /// A store holding a small fixture corpus, in its own directory.
     struct Fixture {
@@ -1108,6 +1184,241 @@ mod tests {
     }
 
     #[test]
+    fn unboosted_rank_does_not_join_symbol_rows() {
+        let fixture = fixture();
+        let sql = format!("EXPLAIN QUERY PLAN {RANK}");
+        let mut stmt = fixture.store.conn.prepare(&sql).unwrap();
+        let details: Vec<String> = stmt
+            .query_map(
+                params![
+                    "\"app\"",
+                    "\u{1f}",
+                    10.0,
+                    5.0,
+                    1.0,
+                    None::<&str>,
+                    None::<&str>,
+                    10,
+                    3.0,
+                    None::<bool>
+                ],
+                |row| row.get(3),
+            )
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(
+            !details.iter().any(|line| line.contains("sym")),
+            "unboosted ranking must not probe symbols: {details:?}"
+        );
+    }
+
+    #[test]
+    fn boosted_rank_materializes_matching_symbol_ids_without_per_hit_join() {
+        let fixture = fixture();
+        let sql = format!("EXPLAIN QUERY PLAN {RANK_BOOSTED}");
+        let mut stmt = fixture.store.conn.prepare(&sql).unwrap();
+        let details: Vec<String> = stmt
+            .query_map(
+                params![
+                    "\"validate\"",
+                    "[\"validate\"]",
+                    10.0,
+                    5.0,
+                    1.0,
+                    None::<&str>,
+                    None::<&str>,
+                    10,
+                    3.0,
+                    None::<bool>
+                ],
+                |row| row.get(3),
+            )
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(
+            !details.iter().any(|line| line.contains("SEARCH sym USING")),
+            "boosted ranking must not join symbols per candidate: {details:?}"
+        );
+        assert!(
+            details.iter().any(|line| line.contains("symbol_name_key")),
+            "{details:?}"
+        );
+    }
+
+    #[test]
+    fn unboosted_rank_matches_the_original_scores_order_and_filters() {
+        let fixture = fixture();
+        let cases = [
+            query("validate"),
+            SearchQuery {
+                limit: 1,
+                ..query("validate")
+            },
+            SearchQuery {
+                language: Some("rust"),
+                ..query("validate")
+            },
+            SearchQuery {
+                path: Some("web/*"),
+                ..query("validate")
+            },
+            SearchQuery {
+                only: Some(Scope::Code),
+                ..query("validate token")
+            },
+            SearchQuery {
+                only: Some(Scope::Spec),
+                ..query("jti")
+            },
+            query("nothingmatches"),
+        ];
+        for q in cases {
+            let fts = fts_query(q.text).unwrap();
+            let run = |sql| {
+                let mut statement = fixture.store.conn.prepare(sql).unwrap();
+                let rows = statement
+                    .query_map(
+                        params![
+                            fts,
+                            "\u{1f}",
+                            10.0,
+                            5.0,
+                            1.0,
+                            q.language,
+                            q.path,
+                            q.limit,
+                            NAME_BOOST,
+                            q.only.map(|s| s == Scope::Spec)
+                        ],
+                        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, f64>(1)?.to_bits())),
+                    )
+                    .unwrap();
+                rows.collect::<rusqlite::Result<Vec<_>>>().unwrap()
+            };
+            assert_eq!(run(RANK), run(ORIGINAL_RANK), "query {q:?}");
+        }
+    }
+
+    #[test]
+    fn boosted_rank_matches_the_original_scores_order_and_filters() {
+        let fixture = fixture();
+        let cases = [
+            query("validate"),
+            SearchQuery {
+                limit: 1,
+                ..query("validate")
+            },
+            SearchQuery {
+                language: Some("rust"),
+                ..query("validate")
+            },
+            SearchQuery {
+                path: Some("web/*"),
+                ..query("validate")
+            },
+            SearchQuery {
+                only: Some(Scope::Code),
+                ..query("validate token")
+            },
+            SearchQuery {
+                only: Some(Scope::Spec),
+                ..query("jti")
+            },
+        ];
+        for q in cases {
+            let fts = fts_query(q.text).unwrap();
+            let names = fixture.store.boosted_names(q.text).unwrap();
+            let json = serde_json::to_string(&names).unwrap();
+            let mut legacy = String::from("\u{1f}");
+            for name in &names {
+                legacy.push_str(name);
+                legacy.push('\u{1f}');
+            }
+            let run = |sql, bound_names: &str| {
+                let mut statement = fixture.store.conn.prepare(sql).unwrap();
+                let rows = statement
+                    .query_map(
+                        params![
+                            fts,
+                            bound_names,
+                            10.0,
+                            5.0,
+                            1.0,
+                            q.language,
+                            q.path,
+                            q.limit,
+                            NAME_BOOST,
+                            q.only.map(|s| s == Scope::Spec)
+                        ],
+                        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, f64>(1)?.to_bits())),
+                    )
+                    .unwrap();
+                rows.collect::<rusqlite::Result<Vec<_>>>().unwrap()
+            };
+            assert_eq!(
+                run(RANK_BOOSTED, &json),
+                run(ORIGINAL_RANK, &legacy),
+                "query {q:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn multi_name_search_keeps_the_original_separator_matching_semantics() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open_read_write(&dir.path().join("demo.db")).unwrap();
+        let app = store.upsert_source(&code_source("app")).unwrap();
+        for (i, name) in ["foo", "bar", "foo\u{1f}bar"].into_iter().enumerate() {
+            let path = format!("src/s{i}.rs");
+            let mut definition = chunk("function", (1, 1), "foo bar", None);
+            definition.symbol = Some(SymbolRecord {
+                id: format!("codecite . app . s{i}()."),
+                display_name: name,
+                kind: "function",
+            });
+            store
+                .write_document(app, &file(&path, "rust", false, vec![definition]))
+                .unwrap();
+        }
+        store.set_indexed_at(30).unwrap();
+        let q = query("foo bar");
+        let actual = store.search(&q).unwrap();
+        let fts = fts_query(q.text).unwrap();
+        let mut legacy_names = String::from("\u{1f}");
+        for name in store.boosted_names(q.text).unwrap() {
+            legacy_names.push_str(&name);
+            legacy_names.push('\u{1f}');
+        }
+        let mut stmt = store.conn.prepare(ORIGINAL_RANK).unwrap();
+        let ranks: Vec<(i64, f64)> = stmt
+            .query_map(
+                params![
+                    fts,
+                    legacy_names,
+                    10.0,
+                    5.0,
+                    1.0,
+                    None::<&str>,
+                    None::<&str>,
+                    10,
+                    NAME_BOOST,
+                    None::<bool>
+                ],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let expected: Vec<SearchResult> = ranks
+            .into_iter()
+            .map(|(id, score)| store.ranked_result(id, score).unwrap())
+            .collect();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
     fn query_names_are_each_word_and_all_of_them() {
         assert_eq!(query_names("validate"), ["validate"]);
         assert_eq!(
@@ -1150,6 +1461,53 @@ mod tests {
         // `search` registers the name function `boosted_names` needs.
         store.search(&query("app")).unwrap();
         assert_eq!(store.boosted_names("app create").unwrap(), ["create"]);
+    }
+
+    #[test]
+    fn java_constructors_count_with_their_enclosing_class_for_name_boosts() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open_read_write(&dir.path().join("demo.db")).unwrap();
+        let app = store.upsert_source(&code_source("app")).unwrap();
+        let mut class = chunk("class", (1, 20), "class Widget {}", None);
+        class.symbol = Some(SymbolRecord {
+            id: "codecite . app . Widget.java/Widget#".into(),
+            display_name: "Widget",
+            kind: "class",
+        });
+        let mut chunks = vec![class];
+        for (i, line) in [2, 4, 6].into_iter().enumerate() {
+            let mut constructor = chunk("function", (line, line), "Widget() {}", None);
+            constructor.symbol = Some(SymbolRecord {
+                id: format!("codecite . app . Widget.java/Widget#Widget(+{i})."),
+                display_name: "Widget",
+                kind: "method",
+            });
+            chunks.push(constructor);
+        }
+        store
+            .write_document(app, &file("Widget.java", "java", false, chunks))
+            .unwrap();
+        assert_eq!(store.boosted_names("Widget").unwrap(), ["widget"]);
+    }
+
+    #[test]
+    fn distinct_java_classes_still_count_separately_for_name_boosts() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open_read_write(&dir.path().join("demo.db")).unwrap();
+        let app = store.upsert_source(&code_source("app")).unwrap();
+        for i in 0..4 {
+            let path = format!("p{i}/Widget.java");
+            let mut class = chunk("class", (1, 1), "class Widget {}", None);
+            class.symbol = Some(SymbolRecord {
+                id: format!("codecite . app . p{i}/Widget.java/Widget#"),
+                display_name: "Widget",
+                kind: "class",
+            });
+            store
+                .write_document(app, &file(&path, "java", false, vec![class]))
+                .unwrap();
+        }
+        assert!(store.boosted_names("Widget").unwrap().is_empty());
     }
 
     /// A corpus with a repository README split at its headings and a

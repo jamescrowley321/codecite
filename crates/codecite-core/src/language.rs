@@ -16,8 +16,12 @@ pub enum Language {
     JavaScript,
     /// Go (`.go`).
     Go,
+    /// C (`.c` and `.h`).
+    C,
     /// C# (`.cs`).
     CSharp,
+    /// Java (`.java`).
+    Java,
     /// Markdown (`.md`, `.markdown`).
     Markdown,
     /// HTML (`.html`, `.htm`). Split at its heading tags; no grammar.
@@ -26,14 +30,16 @@ pub enum Language {
 
 impl Language {
     /// Every language, in the order [`Language::name`] lists them.
-    pub const ALL: [Language; 9] = [
+    pub const ALL: [Language; 11] = [
         Self::Rust,
         Self::Python,
         Self::TypeScript,
         Self::Tsx,
         Self::JavaScript,
         Self::Go,
+        Self::C,
         Self::CSharp,
+        Self::Java,
         Self::Markdown,
         Self::Html,
     ];
@@ -59,7 +65,9 @@ impl Language {
             Self::Tsx => "tsx",
             Self::JavaScript => "javascript",
             Self::Go => "go",
+            Self::C => "c",
             Self::CSharp => "csharp",
+            Self::Java => "java",
             Self::Markdown => "markdown",
             Self::Html => "html",
         }
@@ -78,7 +86,9 @@ impl Language {
             "tsx" => Self::Tsx,
             "js" | "mjs" | "cjs" | "jsx" => Self::JavaScript,
             "go" => Self::Go,
+            "c" | "h" => Self::C,
             "cs" => Self::CSharp,
+            "java" => Self::Java,
             "md" | "markdown" => Self::Markdown,
             "html" | "htm" => Self::Html,
             _ => return None,
@@ -122,6 +132,8 @@ mod tests {
             ("lib/a.cjs", Language::JavaScript),
             ("lib/View.jsx", Language::JavaScript),
             ("cmd/main.go", Language::Go),
+            ("main.c", Language::C),
+            ("include/api.H", Language::C),
             ("Client.cs", Language::CSharp),
             ("README.md", Language::Markdown),
             ("docs/Guide.MARKDOWN", Language::Markdown),
@@ -169,6 +181,15 @@ mod tests {
         for (text, language) in cases {
             assert_eq!(Language::detect("bin/tool", text), language, "{text:?}");
         }
+    }
+
+    #[test]
+    fn java_is_detected_and_round_trips_through_its_name() {
+        let java = Language::from_name("java").unwrap();
+        assert_eq!(java.name(), "java");
+        assert_eq!(Language::detect("src/Client.java", ""), Some(java));
+        assert_eq!(Language::detect("src/Client.JAVA", ""), Some(java));
+        assert_eq!(Language::detect(".java", ""), None);
     }
 
     #[test]
