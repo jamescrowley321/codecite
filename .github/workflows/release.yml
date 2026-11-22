@@ -120,7 +120,7 @@ jobs:
           fi
       # cargo-auditable embeds the dependency list in the binary, so the SBOM
       # lists exactly what was linked, not everything in Cargo.lock.
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
         with:
           tool: cargo-auditable@0.7.7
       - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
