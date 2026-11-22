@@ -16,10 +16,15 @@ def reject_uncheckpointed_wal(db):
 
 
 def check_sqlite_version(metadata):
+    inspection = metadata.get('inspection_sqlite')
+    bundled = metadata.get('bundled_sqlite')
+    if not inspection or not bundled:
+        raise ValueError('baseline lacks recorded SQLite versions; regenerate it with '
+                         'index_baseline.py --sqlite-version')
     actual = subprocess.check_output(['sqlite3', '-version'], text=True).strip()
-    if actual != metadata['inspection_sqlite']:
+    if actual != inspection:
         raise ValueError('SQLite CLI differs from the index baseline')
-    if actual.partition(' ')[0] != metadata['bundled_sqlite']:
+    if actual.partition(' ')[0] != bundled:
         raise ValueError('SQLite CLI differs from the bundled SQLite')
 
 
@@ -41,14 +46,16 @@ def main():
     args = parser.parse_args()
     baseline = args.baseline.resolve(strict=True)
     root = args.output.absolute()
-    root.mkdir()
     metadata = json.loads((baseline / 'index-metadata.json').read_text())
     check_sqlite_version(metadata)
+    sources = [(corpus, baseline / 'data' / (corpus + '-1') / 'codecite' / (corpus + '.db'))
+               for corpus in args.corpora]
+    for _, src in sources:
+        reject_uncheckpointed_wal(src)
+    root.mkdir()
     (root / 'index-metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
     records = root / 'optimize.jsonl'
-    for corpus in args.corpora:
-        src = baseline / 'data' / (corpus + '-1') / 'codecite' / (corpus + '.db')
-        reject_uncheckpointed_wal(src)
+    for corpus, src in sources:
         before = root / 'before' / 'data' / (corpus + '-1') / 'codecite' / (corpus + '.db')
         after = root / 'after' / 'data' / (corpus + '-1') / 'codecite' / (corpus + '.db')
         for db in (before, after):

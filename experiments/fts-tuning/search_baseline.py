@@ -19,6 +19,42 @@ HERE = Path(__file__).resolve().parent
 LABELS = HERE / 'queries.json'
 
 
+class BufferedLineReader:
+    def __init__(self, stream):
+        self.stream = stream
+        self.buffer = bytearray()
+
+    def readline(self, deadline):
+        while True:
+            end = self.buffer.find(b'\n')
+            if end >= 0:
+                line = bytes(self.buffer[:end + 1])
+                del self.buffer[:end + 1]
+                return line
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError
+            ready, _, _ = select.select([self.stream], [], [], remaining)
+            if not ready:
+                raise TimeoutError
+            chunk = os.read(self.stream.fileno(), 65536)
+            if not chunk:
+                raise EOFError
+            self.buffer.extend(chunk)
+
+
+def write_all(stream, data):
+    remaining = memoryview(data)
+    while remaining:
+        written = stream.write(remaining)
+        if written is None:
+            raise BlockingIOError('MCP stdin write made no progress')
+        if written <= 0:
+            raise OSError('MCP stdin write made no progress')
+        remaining = remaining[written:]
+    stream.flush()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('run_dir', type=Path)
@@ -60,24 +96,24 @@ def main():
             if (q['class'] == 'rare-term' and not 1 <= count <= 200) or (q['class'] == 'broad-term' and count < 10_000):
                 raise ValueError(f"match-count stratum violated: {q['id']} {count}")
             q['matches'] = count
-        # Unbuffered pipes keep every complete line visible to select, even when
-        # one write contains both a notification and a response.
         process = subprocess.Popen([binary, 'mcp'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                    stderr=subprocess.DEVNULL, env=env, bufsize=0)
+        reader = BufferedLineReader(process.stdout)
         request_id = 0
 
         def request(method, params):
             nonlocal request_id
             request_id += 1
             data = {'jsonrpc': '2.0', 'id': request_id, 'method': method, 'params': params}
-            process.stdin.write((json.dumps(data) + '\n').encode())
-            process.stdin.flush()
+            write_all(process.stdin, (json.dumps(data) + '\n').encode())
+            deadline = time.monotonic() + 120
             while True:
-                if not select.select([process.stdout], [], [], 120)[0]:
-                    raise TimeoutError(f'{corpus}: {method}')
-                line = process.stdout.readline()
-                if not line:
-                    raise RuntimeError(f'{corpus}: server exited')
+                try:
+                    line = reader.readline(deadline)
+                except TimeoutError:
+                    raise TimeoutError(f'{corpus}: {method}') from None
+                except EOFError:
+                    raise RuntimeError(f'{corpus}: server exited') from None
                 obj = json.loads(line)
                 if obj.get('id') == request_id:
                     if 'error' in obj:
@@ -87,8 +123,7 @@ def main():
         try:
             request('initialize', {'protocolVersion': '2024-11-05', 'capabilities': {},
                                    'clientInfo': {'name': 'fts-tuning', 'version': '1'}})
-            process.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
-            process.stdin.flush()
+            write_all(process.stdin, b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
             rng = random.Random(255)
             references = {}
             for mode in ('cli', 'mcp'):

@@ -17,6 +17,11 @@ def output(*args, **kwargs):
     return subprocess.check_output(args, text=True, **kwargs).strip()
 
 
+def check_sqlite_version(inspection, bundled):
+    if inspection.partition(' ')[0] != bundled:
+        raise ValueError('SQLite CLI differs from the bundled SQLite')
+
+
 def digest(path):
     with path.open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
@@ -91,6 +96,9 @@ def main():
     binary, bench = (args.bin_dir.resolve() / name for name in ('codecite', 'codecite-bench'))
     sqlite_version = args.sqlite_version.resolve(strict=True)
     run = args.run_dir.resolve(strict=True)
+    inspection_sqlite = output('sqlite3', '-version')
+    bundled_sqlite = output(sqlite_version)
+    check_sqlite_version(inspection_sqlite, bundled_sqlite)
     cache = run / 'cache'
     cache.mkdir(exist_ok=True)
     manifests = run / 'manifests'
@@ -116,10 +124,6 @@ def main():
     for path in frozen:
         paths[tomllib.loads(path.read_text())['name']] = path
 
-    inspection_sqlite = output('sqlite3', '-version')
-    bundled_sqlite = output(sqlite_version)
-    if inspection_sqlite.partition(' ')[0] != bundled_sqlite:
-        raise ValueError('SQLite CLI differs from the bundled SQLite')
     metadata = dict(
         source_revision=output('git', 'rev-parse', 'HEAD', cwd=REPO),
         rustc=output('rustc', '-Vv', cwd=REPO), codecite_version=output(binary, '--version'),
