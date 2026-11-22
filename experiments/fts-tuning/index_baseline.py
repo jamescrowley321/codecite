@@ -85,8 +85,11 @@ def main():
     parser.add_argument('run_dir', type=Path, help='new private mktemp directory')
     parser.add_argument('--bin-dir', type=Path, required=True, help='locked release binaries')
     parser.add_argument('--checkout-root', type=Path, required=True)
+    parser.add_argument('--sqlite-version', type=Path, required=True,
+                        help='sqlite_version helper linked to the locked release rusqlite')
     args = parser.parse_args()
     binary, bench = (args.bin_dir.resolve() / name for name in ('codecite', 'codecite-bench'))
+    sqlite_version = args.sqlite_version.resolve(strict=True)
     run = args.run_dir.resolve(strict=True)
     cache = run / 'cache'
     cache.mkdir(exist_ok=True)
@@ -113,17 +116,23 @@ def main():
     for path in frozen:
         paths[tomllib.loads(path.read_text())['name']] = path
 
+    inspection_sqlite = output('sqlite3', '-version')
+    bundled_sqlite = output(sqlite_version)
+    if inspection_sqlite.partition(' ')[0] != bundled_sqlite:
+        raise ValueError('SQLite CLI differs from the bundled SQLite')
     metadata = dict(
         source_revision=output('git', 'rev-parse', 'HEAD', cwd=REPO),
         rustc=output('rustc', '-Vv', cwd=REPO), codecite_version=output(binary, '--version'),
-        inspection_sqlite=output('sqlite3', '-version'),
+        inspection_sqlite=inspection_sqlite, bundled_sqlite=bundled_sqlite,
+        sqlite_version_helper_sha256=digest(sqlite_version),
         binary_sha256={p.name: digest(p) for p in (binary, bench)},
         manifest_sha256={name: digest(path) for name, path in paths.items()},
         local_pins={p['name']: p['commit'] for p in locals_},
     )
     (run / 'index-metadata.json').write_text(json.dumps(metadata, sort_keys=True, indent=2) + '\n')
     for name, manifest in paths.items():
-        for pair in range(1, 2 if manifest in frozen else 3):
+        pairs = 1 if manifest in frozen else 2
+        for pair in range(1, pairs + 1):
             run_pair(binary, name, manifest, data / f'{name}-{pair}', cache, raw)
         for local in locals_:
             if local['name'] == name:

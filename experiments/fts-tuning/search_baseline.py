@@ -49,7 +49,7 @@ def main():
     all_records = []
     for corpus, queries in labels.items():
         data_home = run / 'data' / f'{corpus}-1'
-        env = dict(os.environ, XDG_DATA_HOME=str(data_home))
+        env = dict(os.environ, XDG_DATA_HOME=str(data_home), XDG_CACHE_HOME=str(run / 'cache'))
         for q in queries:
             if q['class'] not in ('rare-term', 'broad-term'):
                 continue
@@ -60,8 +60,10 @@ def main():
             if (q['class'] == 'rare-term' and not 1 <= count <= 200) or (q['class'] == 'broad-term' and count < 10_000):
                 raise ValueError(f"match-count stratum violated: {q['id']} {count}")
             q['matches'] = count
+        # Unbuffered pipes keep every complete line visible to select, even when
+        # one write contains both a notification and a response.
         process = subprocess.Popen([binary, 'mcp'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                   stderr=subprocess.DEVNULL, env=env)
+                                   stderr=subprocess.DEVNULL, env=env, bufsize=0)
         request_id = 0
 
         def request(method, params):

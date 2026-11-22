@@ -49,6 +49,8 @@ def main():
         raise ValueError('source has uncheckpointed WAL')
     root = a.output.absolute()
     root.mkdir()
+    cache = root / 'cache'
+    cache.mkdir()
     output = root / 'records.jsonl'
     query_data = tomllib.loads(labels.read_text())['query']
     # Fixed spread through frozen labels, independent of system results.
@@ -58,7 +60,8 @@ def main():
                'fractions': [1, 10, 50], 'probe_indexes': [i for i, _ in probes],
                'rounds': 5, 'cache': 'warm sweep, sequential interleaved CLI calls, no eviction'}
     (root / 'metadata.json').write_text(json.dumps(summary, indent=2) + '\n')
-    baseline_env = dict(os.environ, XDG_DATA_HOME=str(baseline / 'data/identity-bench-1'))
+    baseline_env = dict(os.environ, XDG_DATA_HOME=str(baseline / 'data/identity-bench-1'),
+                        XDG_CACHE_HOME=str(cache))
     baseline_quality = json.loads(subprocess.check_output([bench, '--queries', labels, '--codecite', binary, '--json'], env=baseline_env, text=True))
     for fraction in (1, 10, 50):
         homes = {}
@@ -93,7 +96,7 @@ def main():
         quality = {}
         outcomes = {}
         for arm, home in homes.items():
-            env = dict(os.environ, XDG_DATA_HOME=str(home))
+            env = dict(os.environ, XDG_DATA_HOME=str(home), XDG_CACHE_HOME=str(cache))
             data = json.loads(subprocess.check_output([bench, '--queries', labels, '--codecite', binary, '--json'], env=env, text=True))
             quality[arm] = data['all']
             outcomes[arm] = data['outcomes']
@@ -108,7 +111,7 @@ def main():
                 result = {}
                 arms = ('control', 'optimize') if iteration % 2 == 0 else ('optimize', 'control')
                 for arm in arms:
-                    env = dict(os.environ, XDG_DATA_HOME=str(homes[arm]))
+                    env = dict(os.environ, XDG_DATA_HOME=str(homes[arm]), XDG_CACHE_HOME=str(cache))
                     t = time.perf_counter_ns()
                     value = json.loads(subprocess.check_output([binary, 'search', 'identity-bench', text, '--limit', '10', '--json'], env=env, text=True))
                     ms = (time.perf_counter_ns() - t) / 1e6
@@ -120,7 +123,7 @@ def main():
                     raise ValueError(f'{fraction} query {index}: different results')
         checks = {}
         for arm, citations in distinct.items():
-            env = dict(os.environ, XDG_DATA_HOME=str(homes[arm]))
+            env = dict(os.environ, XDG_DATA_HOME=str(homes[arm]), XDG_CACHE_HOME=str(cache))
             failures = 0
             for citation in sorted(citations):
                 read = subprocess.run([binary, 'read', 'identity-bench', citation, '--json'], env=env, capture_output=True)

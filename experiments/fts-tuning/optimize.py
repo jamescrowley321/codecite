@@ -9,6 +9,20 @@ import subprocess
 import time
 
 
+def reject_uncheckpointed_wal(db):
+    wal = Path(str(db) + '-wal')
+    if wal.exists() and wal.stat().st_size:
+        raise ValueError('source has uncheckpointed WAL')
+
+
+def check_sqlite_version(metadata):
+    actual = subprocess.check_output(['sqlite3', '-version'], text=True).strip()
+    if actual != metadata['inspection_sqlite']:
+        raise ValueError('SQLite CLI differs from the index baseline')
+    if actual.partition(' ')[0] != metadata['bundled_sqlite']:
+        raise ValueError('SQLite CLI differs from the bundled SQLite')
+
+
 def stats(db):
     sql = """SELECT (SELECT count(*) FROM chunk) chunks,
       (SELECT count(distinct segid) FROM chunk_fts_idx) segments,
@@ -29,10 +43,12 @@ def main():
     root = args.output.absolute()
     root.mkdir()
     metadata = json.loads((baseline / 'index-metadata.json').read_text())
+    check_sqlite_version(metadata)
     (root / 'index-metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
     records = root / 'optimize.jsonl'
     for corpus in args.corpora:
         src = baseline / 'data' / (corpus + '-1') / 'codecite' / (corpus + '.db')
+        reject_uncheckpointed_wal(src)
         before = root / 'before' / 'data' / (corpus + '-1') / 'codecite' / (corpus + '.db')
         after = root / 'after' / 'data' / (corpus + '-1') / 'codecite' / (corpus + '.db')
         for db in (before, after):
