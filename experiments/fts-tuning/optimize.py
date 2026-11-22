@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+"""Copy baseline databases, then time FTS optimize on the copies only."""
+import argparse
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import time
+
+
+def stats(db):
+    sql = """SELECT (SELECT count(*) FROM chunk) chunks,
+      (SELECT count(distinct segid) FROM chunk_fts_idx) segments,
+      (SELECT sum(pgsize) FROM dbstat WHERE name='chunk_fts_data') fts_data_bytes,
+      (SELECT sum(pgsize) FROM dbstat WHERE name GLOB 'chunk_fts_*') fts_bytes;"""
+    row = json.loads(subprocess.check_output(['sqlite3', '-readonly', '-json', db, sql], text=True))[0]
+    row['database_bytes'] = db.stat().st_size
+    return row
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('baseline', type=Path)
+    parser.add_argument('output', type=Path, help='new directory')
+    parser.add_argument('corpora', nargs='+', help='corpus names in baseline/data/<name>-1')
+    args = parser.parse_args()
+    baseline = args.baseline.resolve(strict=True)
+    root = args.output.absolute()
+    root.mkdir()
+    metadata = json.loads((baseline / 'index-metadata.json').read_text())
+    (root / 'index-metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
+    records = root / 'optimize.jsonl'
+    for corpus in args.corpora:
+        src = baseline / 'data' / (corpus + '-1') / 'codecite' / (corpus + '.db')
+        before = root / 'before' / 'data' / (corpus + '-1') / 'codecite' / (corpus + '.db')
+        after = root / 'after' / 'data' / (corpus + '-1') / 'codecite' / (corpus + '.db')
+        for db in (before, after):
+            db.parent.mkdir(parents=True)
+            shutil.copyfile(src, db)
+        pre = stats(before)
+        if stats(after) != pre:
+            raise ValueError(f'{corpus}: copies differ')
+        wal = Path(str(after) + '-wal')
+        t = time.perf_counter_ns()
+        proc = subprocess.Popen(['sqlite3', after,
+            "PRAGMA wal_autocheckpoint=0; INSERT INTO chunk_fts(chunk_fts) VALUES('optimize');"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        peak = 0
+        while proc.poll() is None:
+            try:
+                peak = max(peak, wal.stat().st_size)
+            except FileNotFoundError:
+                pass
+            time.sleep(.005)
+        out, err = proc.communicate()
+        seconds = (time.perf_counter_ns() - t) / 1e9
+        if proc.returncode:
+            raise RuntimeError(f'{corpus}: {err}')
+        post = stats(after)
+        if pre['chunks'] != post['chunks']:
+            raise ValueError(f'{corpus}: chunk count changed')
+        record = dict(corpus=corpus, before=pre, after=post, wall_seconds=seconds,
+                      peak_wal_bytes=peak, wal_sampling_ms=5, stdout=out.strip(), stderr=err.strip())
+        with records.open('a') as f:
+            f.write(json.dumps(record, sort_keys=True) + '\n')
+        print(corpus, json.dumps(record), flush=True)
+
+
+if __name__ == '__main__':
+    main()

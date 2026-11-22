@@ -55,3 +55,19 @@ rustc --edition=2024 -O experiments/fts-tuning/path_postings.rs -L dependency=ta
 ```
 
 The FTS `detail=column` error is reproducible without the corpus: with SQLite 3.54.1, create an FTS5 table using `detail=column`, insert `tcp_v4_connect`, and match `"tcp_v4_connect"`. The `unicode61` tokenizer splits the quoted identifier at underscores into a multi-token phrase, unsupported by that detail setting. The same MATCH succeeds with `detail=full`. The production query builder preserves and quotes that identifier in addition to its split terms; changing it is a ranking change, not a DDL-only fix.
+
+## FTS optimize
+
+`optimize.py` copies baseline databases into new before/after directories and invokes the bundled-version SQLite CLI's FTS5 `optimize` command only on the after copies. It polls WAL size every 5 ms (the observed peak is a lower bound), disables automatic checkpoints during the command, and records wall time, table and database bytes, chunks and segments. It never changes the original files. These copies came from completed fresh/no-op pairs: the 100%-fresh build state is represented; no incremental rewrite fractions were synthesized, so these data cannot select a rewrite threshold. The command runs after indexing in a separate transaction, not inside the indexer's publish transaction; the latter's wall time and WAL peak could differ.
+
+On FHIR (231,843 chunks), optimize reduced 26 segments to one, FTS data from 451,588,096 to 449,773,568 bytes, and increased the database from 806,842,368 to 826,589,184 bytes. Wall time was 2.739 s and sampled WAL peak 453,772,712 bytes. On the frozen identity retrieval corpus (12,583 chunks), 11 segments became one, FTS data fell from 5,681,152 to 5,492,736 bytes, and the database grew from 21,577,728 to 25,300,992 bytes; wall time was 0.077 s and sampled WAL peak 5,763,912 bytes. This is one measurement per corpus, not a threshold or production recommendation.
+
+The same seven-query frozen FHIR subset ran on the two copies, one warmup plus five sweeps per CLI and MCP mode. All 84 pre/post result lists were identical, with 47 distinct citations resolving on each side. CLI p50/p95 for the broad term was 120.14/168.93 ms before and 111.53/118.89 ms after; other buckets and raw samples are in `results/optimize/`. Runs were sequential, not interleaved, and each class has at most two distinct questions, so the apparent latency improvement is preliminary. The 122 frozen identity retrieval queries and five frozen history corpora produced identical per-query outcomes and aggregate scores before and after. History results are anonymized. More repeated interleaved trials, incremental rewrite fractions and peak-WAL observation inside a publish transaction are needed before choosing whether or when to run optimize.
+
+To reproduce, create an output path that does not yet exist and run the following with the pinned baseline data and no concurrent benchmarks; list the frozen history corpus names as additional arguments to reproduce those checks:
+
+```sh
+python3 experiments/fts-tuning/optimize.py "$baseline_run" "$new_run" fhir identity-bench
+```
+
+Then run the frozen FHIR query subset against `$new_run/before` and `$new_run/after` with the recorded binary, and the unchanged retrieval/history `codecite-bench` labels against each copy. The exact FHIR subset and its hash, per-sample records, citation checks and aggregate comparisons are under `results/optimize/`. Baseline caches and input databases are never overwritten.
