@@ -1,0 +1,427 @@
+[
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:CHANGELOG/CHANGELOG-1.19.md#L4078-L4085",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:cmd/kube-scheduler/app/server.go#L82-L83",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:cmd/kubeadm/app/constants/constants.go#L303-L304",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:cmd/kubelet/app/server.go#L1285-L1346",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:cmd/kubelet/app/server.go#L659-L1014",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/api/pod/util.go#L1362-L1440",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/api/pod/util.go#L1634-L1652",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/api/pod/util.go#L439-L527",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/api/pod/util.go#L537-L540",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/apis/apps/v1/zz_generated.conversion.go#L578-L587",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/apis/apps/v1/zz_generated.conversion.go#L589-L598",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/apis/apps/v1beta1/zz_generated.conversion.go#L335-L344",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/apis/apps/v1beta1/zz_generated.conversion.go#L346-L349",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/apis/apps/v1beta1/zz_generated.conversion.go#L351-L360",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/apis/apps/v1beta1/zz_generated.conversion.go#L362-L365",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/apis/apps/v1beta2/zz_generated.conversion.go#L609-L618",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/apis/batch/validation/validation.go#L906-L935",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/apis/core/v1/defaults.go#L164-L230",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/apis/core/v1/zz_generated.conversion.go#L5569-L5572",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/apis/core/v1/zz_generated.conversion.go#L5585-L5588",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/apis/core/v1/zz_generated.conversion.go#L6302-L6305",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/apis/core/v1/zz_generated.conversion.go#L6307-L6310",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/apis/core/v1/zz_generated.conversion.go#L6312-L6315",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/apis/core/v1/zz_generated.conversion.go#L6317-L6320",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/apis/extensions/v1beta1/zz_generated.conversion.go#L710-L713",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/apis/extensions/v1beta1/zz_generated.conversion.go#L726-L729",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/controller/deployment/deployment_controller.go#L223-L227",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/controller/podautoscaler/monitor/monitor.go#L52-L54",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/kubelet/allocation/state/checkpoint_v1.go#L194-L222",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/kubelet/apis/podresources/server_v1.go#L125-L165",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/kubelet/apis/podresources/server_v1.go#L60-L108",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/kubelet/cm/cpumanager/policy_static.go#L416-L471",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/kubelet/cm/devicemanager/plugin/v1beta1/client.go#L43",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/kubelet/cm/memorymanager/policy_static.go#L112-L188",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/kubelet/kubelet.go#L316",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/kubelet/kubelet.go#L429-L461",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/kubelet/pod/pod_manager.go#L146-L148",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/kubelet/pod/pod_manager.go#L334-L339",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/kubelet/pod/pod_manager.go#L341-L346",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/kubelet/pod/pod_manager.go#L55-L57",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/kubelet/pod/pod_manager.go#L58-L60",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/kubelet/pod/pod_manager.go#L82-L83",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/kubelet/pod/pod_manager.go#L84-L85",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/kubelet/prober/prober.go#L246-L248",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/kubelet/volumemanager/populator/desired_state_of_world_populator.go#L57",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/kubelet/volumemanager/volumehealth/manager.go#L58",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/probe/exec/exec.go#L35-L38",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/probe/tcp/tcp.go#L30-L33",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/proxy/conntrack/conntrack.go#L50-L52",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/proxy/ipvs/ipset/ipset.go#L279-L284",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/registry/core/namespace/storage/storage.go#L105-L107",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/registry/core/pod/strategy.go#L386-L421",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/scheduler/framework/plugins/volumebinding/metrics/metrics.go#L24-L25",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/scheduler/metrics/metrics.go#L108",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/scheduler/metrics/metrics.go#L211",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/scheduler/metrics/metrics.go#L212",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/scheduler/metrics/metrics.go#L31-L33",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/scheduler/scheduler.go#L134-L139",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:pkg/scheduler/scheduler.go#L65-L125",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:staging/src/k8s.io/api/core/v1/types.go#L2564-L2592",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:staging/src/k8s.io/api/core/v1/types.go#L3224-L3237",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:staging/src/k8s.io/api/core/v1/types.go#L4532-L4947",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:staging/src/k8s.io/api/core/v1/types.go#L5814-L5837",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:staging/src/k8s.io/api/core/v1/types.go#L5882-L5884",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:staging/src/k8s.io/api/core/v1/types.go#L6139-L6165",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:staging/src/k8s.io/api/core/v1/types.go#L6183-L6195",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:staging/src/k8s.io/api/core/v1/types.go#L6201-L6213",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:staging/src/k8s.io/api/core/v1/types.go#L6230-L6274",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:staging/src/k8s.io/api/core/v1/types.go#L7194-L7241",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:staging/src/k8s.io/client-go/applyconfigurations/core/v1/extranodeallocatableresource.go#L25-L78",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:staging/src/k8s.io/client-go/applyconfigurations/core/v1/podspec.go#L324-L328",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:staging/src/k8s.io/kubelet/pkg/apis/podresources/v1alpha1/api.pb.go#L124-L132",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:staging/src/k8s.io/pod-security-admission/policy/visitor.go#L26-L37",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:test/e2e/invariants/logcheck/logcheck_test.go#L62-L1092",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:test/e2e_node/e2e_node_suite_test.go#L201-L272",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:test/e2e_node/services/kubelet.go#L76-L90",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:test/e2e_node_windows/e2e_node_suite_test.go#L146-L194",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:test/e2e_node_windows/services/kubelet.go#L73-L87",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:vendor/github.com/opencontainers/runtime-spec/specs-go/config.go#L38-L64",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:vendor/github.com/xlab/treeprint/treeprint.go#L286-L289",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:vendor/go.etcd.io/etcd/pkg/v3/schedule/schedule.go#L51-L71",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:vendor/golang.org/x/sys/windows/zerrors_windows.go#L5138",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:vendor/k8s.io/gengo/v2/parser/parse.go#L74-L77",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:vendor/k8s.io/klog/v2/imports.go#L36-L37",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "kubernetes@2b40648ce66b6061d48e8b468e65ee69cc18c424:vendor/sigs.k8s.io/kustomize/api/resmap/factory.go#L31-L33",
+    "exit": 0,
+    "error": ""
+  }
+]

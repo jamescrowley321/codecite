@@ -1,0 +1,507 @@
+[
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:core/src/main/java/org/keycloak/Token.java#L21-L26",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:core/src/main/java/org/keycloak/exceptions/TokenVerificationException.java#L22-L54",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:core/src/main/java/org/keycloak/protocol/oidc/representations/MTLSEndpointAliases.java#L56-L58",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:core/src/main/java/org/keycloak/protocol/oidc/representations/OIDCConfigurationRepresentation.java#L231-L233",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:core/src/main/java/org/keycloak/protocol/oidc/representations/OIDCConfigurationRepresentation.java#L239-L241",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:core/src/main/java/org/keycloak/representations/idm/ClaimRepresentation.java#L36-L38",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:core/src/main/java/org/keycloak/sdjwt/SdJwtClaimName.java#L37-L39",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:docs/guides/securing-apps/partials/oidc/available-endpoints.adoc#L2-L61",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:docs/guides/securing-apps/partials/oidc/available-endpoints.adoc#L63-L122",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:integration/admin-client-core/src/main/java/org/keycloak/admin/client/resource/PoliciesResource.java#L85-L86",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:integration/admin-client-core/src/main/java/org/keycloak/admin/client/resource/RealmResource.java#L362-L364",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:integration/admin-client-core/src/main/java/org/keycloak/admin/client/resource/RealmResource.java#L402-L403",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:integration/admin-client-core/src/main/java/org/keycloak/admin/client/resource/UserResource.java#L109-L111",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:integration/admin-client-core/src/main/java/org/keycloak/admin/client/resource/UserResource.java#L265-L267",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:integration/admin-client-core/src/main/java/org/keycloak/admin/client/resource/UserResource.java#L297-L299",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:integration/admin-client-core/src/main/java/org/keycloak/admin/client/resource/UserResource.java#L317-L318",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:integration/admin-client-core/src/main/java/org/keycloak/admin/client/resource/UserResource.java#L49-L50",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:integration/admin-client-core/src/main/java/org/keycloak/admin/client/resource/UserResource.java#L52-L53",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:integration/admin-client-core/src/main/java/org/keycloak/admin/client/resource/UserResource.java#L55-L56",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:integration/admin-client-core/src/main/java/org/keycloak/admin/client/resource/UserResource.java#L58-L59",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:integration/admin-client-core/src/main/java/org/keycloak/admin/client/resource/UserResource.java#L61-L63",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:integration/admin-client-core/src/main/java/org/keycloak/admin/client/resource/UsersResource.java#L526-L527",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:integration/admin-client-core/src/main/java/org/keycloak/admin/client/token/TokenManager.java#L150-L152",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:integration/admin-client-core/src/main/java/org/keycloak/admin/client/token/TokenManager.java#L75-L77",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:integration/admin-client-core/src/main/java/org/keycloak/admin/client/token/TokenManager.java#L79-L86",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:js/apps/admin-ui/maven-resources-community/theme/keycloak.v2/admin/messages/messages_id.properties#L481-L540",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:js/apps/admin-ui/maven-resources/theme/keycloak.v2/admin/messages/messages_en.properties#L4021-L4080",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:js/apps/admin-ui/src/authentication/policies/CibaPolicy.tsx#L19",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:js/libs/keycloak-admin-client/src/utils/auth.ts#L72-L131",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:model/storage-services/src/main/java/org/keycloak/services/resources/admin/ClearUserCacheResource.java#L39-L44",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:scim/core/src/main/java/org/keycloak/scim/resource/user/User.java#L70-L72",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:server-spi/src/main/java/org/keycloak/models/ClientModel.java#L101",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:server-spi/src/main/java/org/keycloak/models/GroupModel.java#L227",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:server-spi/src/main/java/org/keycloak/models/OrganizationModel.java#L107",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:server-spi/src/main/java/org/keycloak/models/RealmModel.java#L76",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:server-spi/src/main/java/org/keycloak/models/RoleModel.java#L106",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:server-spi/src/main/java/org/keycloak/provider/Spi.java#L26",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:server-spi/src/main/java/org/keycloak/theme/Theme.java#L39",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/broker/oauth/OAuth2IdentityProviderFactory.java#L80-L100",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/broker/oidc/OIDCIdentityProviderFactory.java#L60-L85",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oid4vc/issuance/OID4VCIssuerEndpoint.java#L1114-L1118",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oid4vc/resources/admin/UserVerifiableCredentialResource.java#L75-L81",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/OIDCAdvancedConfigWrapper.java#L42",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/OIDCLoginProtocol.java#L175-L181",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/OIDCLoginProtocol.java#L183-L185",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/OIDCLoginProtocol.java#L194-L198",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/OIDCLoginProtocol.java#L200-L204",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/OIDCLoginProtocol.java#L206-L210",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/OIDCLoginProtocol.java#L212-L216",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/OIDCLoginProtocol.java#L218-L222",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/OIDCLoginProtocol.java#L554-L557",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/OIDCLoginProtocol.java#L614-L616",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/OIDCLoginProtocol.java#L82-L617",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/OIDCWellKnownProviderFactory.java#L64-L73",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/encode/TokenContextEncoderProvider.java#L35",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/endpoints/AuthorizationEndpoint.java#L111-L114",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/endpoints/AuthorizationEndpoint.java#L116-L121",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/endpoints/AuthorizationEndpoint.java#L123-L127",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/endpoints/AuthorizationEndpoint.java#L129-L138",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/endpoints/AuthorizationEndpoint.java#L288-L297",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/endpoints/AuthorizationEndpoint.java#L79-L509",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/endpoints/AuthorizationEndpoint.java#L96-L98",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/endpoints/LogoutEndpoint.java#L347-L372",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/endpoints/TokenEndpoint.java#L116-L125",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/endpoints/TokenEndpoint.java#L190-L193",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/endpoints/TokenEndpoint.java#L195-L201",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/endpoints/TokenEndpoint.java#L203-L207",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/endpoints/TokenEndpoint.java#L209-L213",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/endpoints/TokenEndpoint.java#L249-L256",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/endpoints/TokenEndpoint.java#L258-L261",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/endpoints/TokenEndpoint.java#L306-L308",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/endpoints/TokenEndpoint.java#L329-L332",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/endpoints/TokenEndpoint.java#L82-L334",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/mappers/TokenIntrospectionTokenMapper.java#L9-L12",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/protocol/oidc/token/TokenPostProcessorContext.java#L8-L9",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/DefaultKeycloakSession.java#L101-L104",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/DefaultKeycloakSession.java#L190-L193",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/DefaultKeycloakSession.java#L195-L198",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/DefaultKeycloakSession.java#L291-L294",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/DefaultKeycloakSession.java#L296-L299",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/DefaultKeycloakSession.java#L306-L309",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/DefaultKeycloakSession.java#L447",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/DefaultKeycloakSession.java#L449-L451",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/DefaultKeycloakSession.java#L74-L452",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/DefaultKeycloakSession.java#L94-L99",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/Urls.java#L197-L199",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/managers/AuthenticationManager.java#L1113-L1116",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/managers/AuthenticationManager.java#L137-L1924",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/managers/AuthenticationManager.java#L1595-L1598",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/managers/AuthenticationManager.java#L1600-L1603",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/managers/AuthenticationManager.java#L1605-L1608",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/managers/AuthenticationManager.java#L1610-L1613",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/managers/AuthenticationManager.java#L1615-L1618",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/managers/AuthenticationManager.java#L1800-L1802",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/managers/AuthenticationManager.java#L1813-L1819",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/managers/AuthenticationManager.java#L1821-L1827",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/resources/admin/UserProfileResource.java#L65-L70",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:services/src/main/java/org/keycloak/services/resources/admin/UserResource.java#L171-L179",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:test-framework/conformance-runner/src/main/java/org/keycloak/testframework/conformance/runner/BrowserInteraction.java#L52-L54",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:test-framework/conformance-runner/src/main/java/org/keycloak/testframework/conformance/runner/ModuleRun.java#L30-L43",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "keycloak@d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1:tests/base/src/test/java/org/keycloak/tests/oauth/MalformedContentTypeTest.java#L76-L83",
+    "exit": 0,
+    "error": ""
+  }
+]

@@ -1,0 +1,481 @@
+{
+  "description": "Frozen source-verified smoke labels; accepted locations are examples, not exhaustive relevance judgements. Positive quality and no-result controls are scored separately.",
+  "corpora": {
+    "linux": [
+      {
+        "id": "linux-vfs-read",
+        "text": "vfs_read",
+        "answers": [
+          {
+            "path": "fs/read_write.c",
+            "line": 552
+          }
+        ],
+        "class": "exact-symbol"
+      },
+      {
+        "id": "linux-vfs-write",
+        "text": "vfs_write",
+        "answers": [
+          {
+            "path": "fs/read_write.c",
+            "line": 666
+          }
+        ],
+        "class": "exact-symbol"
+      },
+      {
+        "id": "linux-openat",
+        "text": "do_sys_openat2",
+        "answers": [
+          {
+            "path": "fs/open.c",
+            "line": 1420
+          }
+        ],
+        "class": "exact-symbol"
+      },
+      {
+        "id": "linux-tcp-connect",
+        "text": "tcp_v4_connect",
+        "answers": [
+          {
+            "path": "net/ipv4/tcp_ipv4.c",
+            "line": 224
+          }
+        ],
+        "class": "exact-symbol"
+      },
+      {
+        "id": "linux-task",
+        "text": "task_struct",
+        "answers": [
+          {
+            "path": "include/linux/sched.h",
+            "line": 819
+          }
+        ],
+        "class": "exact-symbol"
+      },
+      {
+        "id": "linux-socket",
+        "text": "sock_create",
+        "answers": [
+          {
+            "path": "net/socket.c",
+            "line": 1661
+          }
+        ],
+        "class": "exact-symbol"
+      },
+      {
+        "id": "linux-read-behaviour",
+        "text": "read file userspace buffer",
+        "answers": [
+          {
+            "path": "fs/read_write.c",
+            "line": 552
+          }
+        ],
+        "class": "behaviour"
+      },
+      {
+        "id": "linux-tcp-behaviour",
+        "text": "establish tcp ipv4 connection",
+        "answers": [
+          {
+            "path": "net/ipv4/tcp_ipv4.c",
+            "line": 224
+          }
+        ],
+        "class": "behaviour"
+      },
+      {
+        "id": "linux-ambiguous-symbol-0",
+        "text": "probe",
+        "answers": [
+          {
+            "path": "drivers/hid/bpf/progs/FR-TEC__Raptor-Mach-2.bpf.c",
+            "line": 177
+          }
+        ],
+        "class": "ambiguous-symbol"
+      },
+      {
+        "id": "linux-rare-term-1",
+        "text": "do_sys_openat2",
+        "answers": [
+          {
+            "path": "fs/open.c",
+            "line": 1420
+          }
+        ],
+        "class": "rare-term"
+      },
+      {
+        "id": "linux-broad-term-2",
+        "text": "memory",
+        "answers": [
+          {
+            "path": "include/linux/sched.h",
+            "line": 819
+          }
+        ],
+        "class": "broad-term"
+      },
+      {
+        "id": "linux-path-filter-3",
+        "text": "vfs_read",
+        "answers": [
+          {
+            "path": "fs/read_write.c",
+            "line": 552
+          }
+        ],
+        "path": "fs/read_write.c",
+        "class": "path-filter"
+      },
+      {
+        "id": "linux-miss",
+        "text": "zzcodecite255notpresentxqz",
+        "answers": [],
+        "class": "miss"
+      }
+    ],
+    "keycloak": [
+      {
+        "id": "kc-token-endpoint",
+        "text": "TokenEndpoint",
+        "answers": [
+          {
+            "path": "services/src/main/java/org/keycloak/protocol/oidc/endpoints/TokenEndpoint.java",
+            "line": 85
+          }
+        ],
+        "class": "exact-symbol"
+      },
+      {
+        "id": "kc-authz-endpoint",
+        "text": "AuthorizationEndpoint",
+        "answers": [
+          {
+            "path": "services/src/main/java/org/keycloak/protocol/oidc/endpoints/AuthorizationEndpoint.java",
+            "line": 82
+          }
+        ],
+        "class": "exact-symbol"
+      },
+      {
+        "id": "kc-user-resource",
+        "text": "UserResource",
+        "answers": [
+          {
+            "path": "services/src/main/java/org/keycloak/services/resources/admin/UserResource.java",
+            "line": 153
+          }
+        ],
+        "class": "exact-symbol"
+      },
+      {
+        "id": "kc-authentication-manager",
+        "text": "AuthenticationManager",
+        "answers": [
+          {
+            "path": "services/src/main/java/org/keycloak/services/managers/AuthenticationManager.java",
+            "line": 143
+          }
+        ],
+        "class": "exact-symbol"
+      },
+      {
+        "id": "kc-session",
+        "text": "DefaultKeycloakSession",
+        "answers": [
+          {
+            "path": "services/src/main/java/org/keycloak/services/DefaultKeycloakSession.java",
+            "line": 77
+          }
+        ],
+        "class": "exact-symbol"
+      },
+      {
+        "id": "kc-oidc",
+        "text": "OIDCLoginProtocol",
+        "answers": [
+          {
+            "path": "services/src/main/java/org/keycloak/protocol/oidc/OIDCLoginProtocol.java",
+            "line": 86
+          }
+        ],
+        "class": "exact-symbol"
+      },
+      {
+        "id": "kc-token-behaviour",
+        "text": "openid token endpoint",
+        "answers": [
+          {
+            "path": "services/src/main/java/org/keycloak/protocol/oidc/endpoints/TokenEndpoint.java",
+            "line": 85
+          }
+        ],
+        "class": "behaviour"
+      },
+      {
+        "id": "kc-user-behaviour",
+        "text": "admin user resource",
+        "answers": [
+          {
+            "path": "services/src/main/java/org/keycloak/services/resources/admin/UserResource.java",
+            "line": 153
+          }
+        ],
+        "class": "behaviour"
+      },
+      {
+        "id": "keycloak-ambiguous-symbol-0",
+        "text": "getName",
+        "answers": [
+          {
+            "path": "services/src/main/java/org/keycloak/authentication/actiontoken/ActionTokenHandlerSpi.java",
+            "line": 35
+          }
+        ],
+        "class": "ambiguous-symbol"
+      },
+      {
+        "id": "keycloak-rare-term-1",
+        "text": "DefaultKeycloakSession",
+        "answers": [
+          {
+            "path": "services/src/main/java/org/keycloak/services/DefaultKeycloakSession.java",
+            "line": 77
+          }
+        ],
+        "class": "rare-term"
+      },
+      {
+        "id": "keycloak-broad-term-2",
+        "text": "token",
+        "answers": [
+          {
+            "path": "services/src/main/java/org/keycloak/protocol/oidc/endpoints/TokenEndpoint.java",
+            "line": 85
+          }
+        ],
+        "class": "broad-term"
+      },
+      {
+        "id": "keycloak-path-filter-3",
+        "text": "TokenEndpoint",
+        "answers": [
+          {
+            "path": "services/src/main/java/org/keycloak/protocol/oidc/endpoints/TokenEndpoint.java",
+            "line": 85
+          }
+        ],
+        "path": "services/src/main/java/org/keycloak/protocol/oidc/endpoints/TokenEndpoint.java",
+        "class": "path-filter"
+      },
+      {
+        "id": "keycloak-miss",
+        "text": "zzcodecite255notpresentxqz",
+        "answers": [],
+        "class": "miss"
+      }
+    ],
+    "kubernetes": [
+      {
+        "id": "k8s-pod-spec",
+        "text": "PodSpec",
+        "answers": [
+          {
+            "path": "staging/src/k8s.io/api/core/v1/types.go",
+            "line": 4533
+          }
+        ],
+        "class": "exact-symbol"
+      },
+      {
+        "id": "k8s-pod",
+        "text": "Pod",
+        "answers": [
+          {
+            "path": "staging/src/k8s.io/api/core/v1/types.go",
+            "line": 6146
+          }
+        ],
+        "class": "exact-symbol"
+      },
+      {
+        "id": "k8s-deployment",
+        "text": "Deployment",
+        "answers": [
+          {
+            "path": "staging/src/k8s.io/api/apps/v1/types.go",
+            "line": 406
+          }
+        ],
+        "class": "exact-symbol"
+      },
+      {
+        "id": "k8s-scheduler",
+        "text": "Scheduler",
+        "answers": [
+          {
+            "path": "pkg/scheduler/scheduler.go",
+            "line": 67
+          }
+        ],
+        "class": "exact-symbol"
+      },
+      {
+        "id": "k8s-kubelet",
+        "text": "RunKubelet",
+        "answers": [
+          {
+            "path": "cmd/kubelet/app/server.go",
+            "line": 1292
+          }
+        ],
+        "class": "exact-symbol"
+      },
+      {
+        "id": "k8s-pod-behaviour",
+        "text": "pod configuration containers resources",
+        "answers": [
+          {
+            "path": "staging/src/k8s.io/api/core/v1/types.go",
+            "line": 4533
+          }
+        ],
+        "class": "behaviour"
+      },
+      {
+        "id": "kubernetes-ambiguous-symbol-0",
+        "text": "New",
+        "answers": [
+          {
+            "path": "pkg/controller/devicetainteviction/device_taint_eviction.go",
+            "line": 743
+          }
+        ],
+        "class": "ambiguous-symbol"
+      },
+      {
+        "id": "kubernetes-rare-term-1",
+        "text": "RunKubelet",
+        "answers": [
+          {
+            "path": "cmd/kubelet/app/server.go",
+            "line": 1292
+          }
+        ],
+        "class": "rare-term"
+      },
+      {
+        "id": "kubernetes-broad-term-2",
+        "text": "pod",
+        "answers": [
+          {
+            "path": "staging/src/k8s.io/api/core/v1/types.go",
+            "line": 6146
+          }
+        ],
+        "class": "broad-term"
+      },
+      {
+        "id": "kubernetes-path-filter-3",
+        "text": "PodSpec",
+        "answers": [
+          {
+            "path": "staging/src/k8s.io/api/core/v1/types.go",
+            "line": 4533
+          }
+        ],
+        "path": "staging/src/k8s.io/api/core/v1/types.go",
+        "class": "path-filter"
+      },
+      {
+        "id": "kubernetes-miss",
+        "text": "zzcodecite255notpresentxqz",
+        "answers": [],
+        "class": "miss"
+      }
+    ],
+    "fhir": [
+      {
+        "id": "fhir-exact-symbol-0",
+        "text": "FhirContext",
+        "answers": [
+          {
+            "path": "hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java",
+            "line": 105
+          }
+        ],
+        "class": "exact-symbol"
+      },
+      {
+        "id": "fhir-exact-symbol-1",
+        "text": "RestfulServer",
+        "answers": [
+          {
+            "path": "hapi-fhir-server/src/main/java/ca/uhn/fhir/rest/server/RestfulServer.java",
+            "line": 120
+          }
+        ],
+        "class": "exact-symbol"
+      },
+      {
+        "id": "fhir-rare-term-2",
+        "text": "FhirVersionEnum",
+        "answers": [
+          {
+            "path": "hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirVersionEnum.java",
+            "line": 26
+          }
+        ],
+        "class": "rare-term"
+      },
+      {
+        "id": "fhir-broad-term-3",
+        "text": "fhir",
+        "answers": [
+          {
+            "path": "hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java",
+            "line": 105
+          }
+        ],
+        "class": "broad-term"
+      },
+      {
+        "id": "fhir-behaviour-4",
+        "text": "server handles REST requests",
+        "answers": [
+          {
+            "path": "hapi-fhir-server/src/main/java/ca/uhn/fhir/rest/server/RestfulServer.java",
+            "line": 120
+          }
+        ],
+        "class": "behaviour"
+      },
+      {
+        "id": "fhir-path-filter-5",
+        "text": "FhirContext",
+        "answers": [
+          {
+            "path": "hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java",
+            "line": 105
+          }
+        ],
+        "path": "hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java",
+        "class": "path-filter"
+      },
+      {
+        "id": "fhir-miss",
+        "text": "zzcodecite255notpresentxqz",
+        "answers": [],
+        "class": "miss"
+      }
+    ]
+  }
+}

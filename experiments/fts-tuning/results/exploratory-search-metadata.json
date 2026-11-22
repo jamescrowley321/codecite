@@ -1,0 +1,9 @@
+{
+  "query_sha256": "3f7bfb3051cb57c8493ac6ab7e80063c21b8d74f3e3579ce064aa994d1671e12",
+  "rounds": 5,
+  "seed": 255,
+  "limit": 10,
+  "cache": "one untimed sweep per mode; warm OS page cache; no cache eviction",
+  "cli": "one new process per query, startup included",
+  "mcp": "one initialized persistent process per corpus; store reopened per call"
+}
