@@ -40,3 +40,18 @@ A scratch build from the same base revision changed only the initial FTS DDL as 
 **Actionable incompatibility:** the frozen Linux `tcp_v4_connect` search succeeds with the baseline binary but the `detail=column` binary exits with `fts5: phrase queries are not supported (detail!=full)`. A naive DDL-only change is therefore not deployable: some emitted quoted terms tokenize to multiple FTS tokens even though the application intends single-term queries. A partial paired probe, including the error and two single-token controls, is recorded in `probe.json`; the longer frozen comparison stopped on this error, so it is not a quality or latency result. Fixing query semantics would be a separate ranking-changing design requiring independent evaluation; do not infer that shrinking postings alone is safe.
 
 The saved scratch prototype's remaining indexes and frozen retrieval/history comparisons were not run. The per-document path and `optimize` alternatives have not been compared. Preserve the interrupted database rather than reuse it; any resumed second Linux fresh run needs a new data directory. For a compatible revised prototype, rerun both frozen labels and citation checks on every corpus, then compare per-corpus quality and paired latency before proposing production tuning.
+
+## Path postings
+
+`path_postings.rs` builds two new path-only contentless FTS5 tables from the same read-only corpus, using production `text_terms` and `unicode61`: one row per chunk and one per document having chunks. It does not reproduce the full multi-column index, ranking or a joined query. On the original untuned FHIR data (231,843 chunks, 23,208 documents with chunks), per-chunk `paths_data` was 7,450,624 bytes versus 983,040 per document, saving 6,467,584 bytes. On identity (13,468 chunks, 868 documents), it was 266,240 versus 32,768 bytes, saving 233,472. Build time and peak RSS for both tables together were 0.89 s / 12,496 KiB and 0.07 s / 6,864 KiB respectively; complete table and database sizes are in `results/path-postings.json`. Path-only postings save about 1.43% of FHIR's existing 451,588,096-byte full FTS data, without accounting for any additional join or table cost. This narrow storage result does not warrant building the more complicated joined ranking prototype now; it does not prove equivalence or predict query latency.
+
+Reproduce with the locked release build, in a new private directory, with the same baseline corpus files as above. Link against the exact release dependencies, then run the helper once per corpus, providing two nonexistent database paths:
+
+```sh
+core=$(echo target/release/deps/libcodecite_core-*.rlib)
+sql=$(echo target/release/deps/librusqlite-*.rlib)
+rustc --edition=2024 -O experiments/fts-tuning/path_postings.rs -L dependency=target/release/deps --extern codecite_core="$core" --extern rusqlite="$sql" -o "$run/path_postings"
+/usr/bin/time "$run/path_postings" "$baseline_db" "$run/chunk.db" "$run/document.db"
+```
+
+The FTS `detail=column` error is reproducible without the corpus: with SQLite 3.54.1, create an FTS5 table using `detail=column`, insert `tcp_v4_connect`, and match `"tcp_v4_connect"`. The `unicode61` tokenizer splits the quoted identifier at underscores into a multi-token phrase, unsupported by that detail setting. The same MATCH succeeds with `detail=full`. The production query builder preserves and quotes that identifier in addition to its split terms; changing it is a ranking change, not a DDL-only fix.
