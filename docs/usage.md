@@ -1110,7 +1110,9 @@ gh attestation verify codecite-0.1.0-x86_64-unknown-linux-gnu.tar.gz \
 `--source-ref` pins the attestation to the release tag, so a binary built
 from any other ref fails the check.
 
-`cargo install codecite --locked` builds the same version from crates.io.
+A release also publishes the crates, so `cargo install codecite --locked`
+builds the same version from crates.io. No version is published yet; until
+one is, install from git as the README says.
 
 ## Connect an agent
 
