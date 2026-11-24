@@ -12,7 +12,8 @@ use std::io::Read as _;
 use std::path::Path;
 
 use codecite_core::{
-    ColumnUnit, ROLE_DEFINITION, ScipDefinition, ScipDocument, ScipOccurrence, symbol_name,
+    ColumnUnit, MAX_SCIP_NAME_BYTES, ROLE_DEFINITION, ScipDefinition, ScipDocument, ScipOccurrence,
+    symbol_name,
 };
 use prost::Message as _;
 
@@ -21,12 +22,13 @@ pub const MAX_SCIP_SIZE: u64 = 256 * 1024 * 1024;
 
 /// The longest display name kept; a longer one gives way to the name the
 /// symbol's descriptors give, so an index can't hand agents a long text as a
-/// name.
-const MAX_DISPLAY_NAME_BYTES: usize = 256;
+/// name. Core holds descriptor-derived names of nodes outside the corpus to
+/// the same cap.
+const MAX_DISPLAY_NAME_BYTES: usize = MAX_SCIP_NAME_BYTES;
 
 /// The longest symbol string kept. Real symbols are far shorter; a longer
-/// one is skipped rather than stored.
-const MAX_SYMBOL_BYTES: usize = 1024;
+/// one is skipped rather than stored, since symbols reach agents as IDs.
+const MAX_SYMBOL_BYTES: usize = 512;
 
 /// Why a SCIP index couldn't be read.
 #[derive(Debug, thiserror::Error)]
@@ -564,7 +566,7 @@ mod tests {
             display_name: name,
         };
         let (long, short) = (format!("{PKG}f()."), format!("{PKG}g()."));
-        let backticked = format!("{PKG}`{}`().", "é ".repeat(300));
+        let backticked = format!("{PKG}`{}`().", "é ".repeat(140));
         let index = Index {
             documents: vec![Document {
                 relative_path: "a.rs".into(),
@@ -652,7 +654,7 @@ mod tests {
                     occ(vec![1, 2], format!("{PKG}a().")),
                     occ(vec![-1, 0, 3], format!("{PKG}a().")),
                     occ(vec![5, 0, 2, 3], format!("{PKG}a().")),
-                    occ(vec![1, 0, 3], format!("{PKG}{}.", "x".repeat(2000))),
+                    occ(vec![1, 0, 3], format!("{PKG}{}.", "x".repeat(600))),
                     occ(vec![1, 0, 3], String::new()),
                     occ(vec![2, 0, 3], format!("{PKG}a().")),
                 ],

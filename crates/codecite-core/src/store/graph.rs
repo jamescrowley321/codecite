@@ -675,9 +675,14 @@ enum Walk {
 /// The last name a symbol ID's descriptors give, for a symbol the corpus
 /// doesn't define: `is_empty` for
 /// ``rust-analyzer cargo core 1.0 str/impl#[str]is_empty().``. The ID
-/// itself when it has none.
+/// itself when it has none. Either is cut to [`MAX_SCIP_NAME_BYTES`] on a
+/// character boundary, as display names are, since it reaches agents.
+///
+/// [`MAX_SCIP_NAME_BYTES`]: super::scip::MAX_SCIP_NAME_BYTES
 fn descriptor_name(id: &str) -> String {
-    super::definition::symbol_name(id).unwrap_or_else(|| id.to_owned())
+    let mut name = super::definition::symbol_name(id).unwrap_or_else(|| id.to_owned());
+    name.truncate(name.floor_char_boundary(super::scip::MAX_SCIP_NAME_BYTES));
+    name
 }
 
 #[cfg(test)]
@@ -685,6 +690,19 @@ mod tests {
     use super::super::scip::fixture::{HEAD, IS_EMPTY, STRING_NEW, app, index, scip};
     use super::*;
     use crate::{ScipDocument, ScipOccurrence};
+
+    #[test]
+    fn a_long_descriptor_name_is_cut_at_a_char_boundary() {
+        let id = format!("rust-analyzer cargo dep 1.0 `{}`().", "é".repeat(300));
+        let name = descriptor_name(&id);
+        assert!(name.len() <= crate::MAX_SCIP_NAME_BYTES, "{}", name.len());
+        assert!(
+            name.starts_with('é') && name.chars().all(|c| c == 'é'),
+            "{name}"
+        );
+        let bare = "x".repeat(600);
+        assert_eq!(descriptor_name(&bare).len(), crate::MAX_SCIP_NAME_BYTES);
+    }
 
     fn walk(store: &Store, symbol: &str, direction: Direction, depth: u32) -> Graph {
         store

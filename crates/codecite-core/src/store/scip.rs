@@ -18,6 +18,12 @@ pub const SCIP_CONFIDENCE: u8 = 3;
 /// The SCIP role bit that marks a definition.
 pub const ROLE_DEFINITION: u32 = 0x1;
 
+/// The longest name taken from a SCIP index that reaches agents: a display
+/// name, or the name a symbol's descriptors give. A longer one is cut on a
+/// character boundary or gives way to a shorter one, so an index can't hand
+/// agents a long text as a name.
+pub const MAX_SCIP_NAME_BYTES: usize = 256;
+
 /// The SCIP role bit that marks an import.
 pub const ROLE_IMPORT: u32 = 0x2;
 
