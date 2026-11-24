@@ -605,13 +605,17 @@ impl Store {
     }
 
     /// The IDs and providers of the symbols in current sources whose name
-    /// as written is `name`.
+    /// as written is `name`. Parameters (an ID ending `(x)`) and type
+    /// parameters (`[T]`) are left out: scip-python names every parameter,
+    /// and a function's name would be ambiguous with each parameter that
+    /// shares it. An ID still finds one, as written.
     fn symbols_named(&self, name: &str) -> Result<Vec<(String, String)>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT sym.id, sym.provider FROM symbol sym
              JOIN document d ON d.id = sym.document_id
              JOIN source s ON s.id = d.source_id
-             WHERE sym.display_name = ?1 AND s.is_current",
+             WHERE sym.display_name = ?1 AND s.is_current
+               AND substr(sym.id, -1) NOT IN (')', ']')",
         )?;
         let rows = stmt.query_map([name], |row| Ok((row.get(0)?, row.get(1)?)))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)

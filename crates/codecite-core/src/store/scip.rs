@@ -1656,4 +1656,50 @@ mod tests {
             .unwrap();
         assert_eq!(enclosing.as_deref(), Some(init));
     }
+
+    #[test]
+    fn a_parameter_does_not_make_a_name_ambiguous() {
+        let (_dir, mut store, id) = files(&[(
+            "a.py",
+            "def f(x):\n    return x\n\ndef g(f):\n    return f\n",
+        )]);
+        let f = "scip-python python app 0.1.0 a/f().";
+        let x = "scip-python python app 0.1.0 a/f().(x)";
+        let g = "scip-python python app 0.1.0 a/g().";
+        let g_f = "scip-python python app 0.1.0 a/g().(f)";
+        let doc = ScipDocument {
+            path: "a.py".into(),
+            definitions: vec![
+                defined(f, "f", "function", (1, 2)),
+                defined(x, "x", "parameter", (1, 1)),
+                defined(g, "g", "function", (4, 5)),
+                defined(g_f, "f", "parameter", (4, 4)),
+            ],
+            occurrences: vec![
+                site(f, 1, 5, ROLE_DEFINITION),
+                site(x, 1, 7, ROLE_DEFINITION),
+                site(g, 4, 5, ROLE_DEFINITION),
+                site(g_f, 4, 7, ROLE_DEFINITION),
+            ],
+            encoding: ColumnUnit::Utf8,
+        };
+        store.write_scip(id, &[doc]).unwrap();
+        let walk = |symbol| {
+            store.graph(&crate::GraphQuery {
+                symbol,
+                direction: crate::Direction::Callers,
+                depth: 1,
+                min_confidence: 0,
+                allow_stale: false,
+            })
+        };
+        assert_eq!(walk("f").unwrap().id, f, "the parameter `f` is left out");
+        // A parameter still resolves by its ID.
+        assert_eq!(walk(g_f).unwrap().id, g_f);
+        let err = walk("X").unwrap_err();
+        let Error::NoSuchSymbol { candidates, .. } = &err else {
+            panic!("{err:?}");
+        };
+        assert!(candidates.is_empty(), "no parameter names: {candidates:?}");
+    }
 }

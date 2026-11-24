@@ -250,11 +250,13 @@ pub(super) const SIMILAR_NAMES: &str = "SELECT DISTINCT sym.display_name FROM sy
        AND EXISTS (SELECT 1 FROM chunk c WHERE c.symbol_id = sym.id)
      ORDER BY sym.display_name LIMIT ?2";
 
-/// The same over every symbol in a current source, SCIP-only ones included.
+/// The same over every symbol in a current source, SCIP-only ones included,
+/// except parameters and type parameters, which name lookup leaves out.
 const SIMILAR_GRAPH_NAMES: &str = "SELECT DISTINCT sym.display_name FROM symbol sym
      JOIN document d ON d.id = sym.document_id
      JOIN source s ON s.id = d.source_id
      WHERE sym.name_key = ?1 AND s.is_current
+       AND substr(sym.id, -1) NOT IN (')', ']')
      ORDER BY sym.display_name LIMIT ?2";
 
 /// The definitions with one name as written, `?1`. A symbol's lines are its
