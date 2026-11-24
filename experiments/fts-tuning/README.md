@@ -15,7 +15,7 @@ python3 experiments/fts-tuning/search_baseline.py "$run" --binary target/release
 
 The index harness checks both release binaries, the SQLite versions and every local checkout before it creates any run output, refuses a dirty or wrong local checkout, uses only the new run's `data` and `cache`, measures each fresh/no-op pair serially, and checks the run metadata and no-op counts. It records the helper's bundled SQLite version and refuses a SQLite CLI with a different version. The same private cache is reused in pair order, so pair 2 inherits pair 1's cache state; its wall time is not an independent cold-cache measurement. Data directories remain separate. It builds FHIR first, then the three public checkouts, identity and the unchanged retrieval/history corpora. Supply `$run` as a new absolute directory; existing `manifests`, `data`, or raw index output cause it to refuse to start. The local manifest pins and the empty include/exclude lists are in `corpora.toml`, while the generated manifests and their hashes are in the private run directory. The existing committed FHIR, identity and benchmark manifests supply the other pins. An isolated copy of caches avoids modifying an existing checkout or index.
 
-Search uses `queries.json` and checks the binary hash against the index run. It sets both data and cache homes inside the run rather than inheriting the host's cache. Rare and broad queries are one lowercase alphanumeric token, so the literal FTS5 match count is the search query's count; before creating any output or starting a server, the harness verifies every corpus's predeclared strata, rare 1–200 and broad at least 10,000 matching chunks. One untimed sweep precedes five timed shuffled sweeps per mode. CLI times include startup; a single persistent MCP process is initialized once per corpus, but opens a new store per request. Neither mode is a cold-disk test. Returned citations are read back outside the timed sweeps; ranked citations must remain identical across rounds and modes. The raw records retain ranks and citations, not source snippets. The committed MCP samples were recorded before the harness read MCP responses in buffered chunks, when it read them one byte at a time; treat them as upper bounds. At these response sizes the overhead was small (MCP misses took 0.8 to 0.9 ms p50, and MCP was at or below CLI in every bucket), and the CLI samples are unaffected.
+Search uses `queries.json` and checks the binary hash against the index run. It sets both data and cache homes inside the run rather than inheriting the host's cache. Rare and broad queries are one lowercase alphanumeric token, so the literal FTS5 match count is the search query's count; before creating any output or starting a server, the harness verifies every corpus's predeclared strata, rare 1–200 and broad at least 10,000 matching chunks. One untimed sweep precedes five timed shuffled sweeps per mode. CLI times include startup; a single persistent MCP process is initialized once per corpus, but opens a new store per request. Neither the `cli` nor the `mcp` mode is a cold-disk test: the untimed first sweep warms the page cache and is not recorded, and nothing evicts the cache between sweeps, so every frozen latency is a warm-cache figure. Cold-cache latency was measured afterwards on FHIR only, with `--cold`; see [Cold-cache search](#cold-cache-search-fhir). Returned citations are read back outside the timed sweeps; ranked citations must remain identical across rounds and modes. The raw records retain ranks and citations, not source snippets. The committed MCP samples were recorded before the harness read MCP responses in buffered chunks, when it read them one byte at a time; treat them as upper bounds. At these response sizes the overhead was small (MCP misses took 0.8 to 0.9 ms p50, and MCP was at or below CLI in every bucket), and the CLI samples are unaffected.
 
 `exploratory-queries.json` and `results/exploratory-*` retain an earlier search trial, **not a correctness gate**. Its compound identifiers labelled rare were split into OR terms, and ambiguous symbols had just one accepted location. The revised workload keeps those ambiguous questions and broad terms for latency only; their acceptable answer sets require independent adjudication before quality scoring. It retains source-verified single-location example labels for the remaining questions, not exhaustive relevance judgements. One labelled example per several classes and five timed samples are too few to establish robust corpus-wide quality or tail latency. Existing retrieval/history labels were not changed. The baseline measures them with `codecite-bench --queries <existing queries.toml> --codecite <release binary> --json` against their separate index run directories; anonymized aggregate summaries are in `results/`. Harness unit tests run with `python3 -m unittest experiments/fts-tuning/test_harness.py`.
 
@@ -31,9 +31,30 @@ The run used source revision `9b779886c0e3aabd084e2226d3481b235bbc0df0`, Rust 1.
 | Keycloak | 12,785 | 116,785 | 18.45, 17.27 | 0.84, 0.94 | 255,008,768 |
 | Identity | 886 | 13,468 | 1.64, 1.52 | 0.13, 0.13 | 23,257,088 |
 
-Linux is over one million chunks on this build. Its exact-symbol CLI class has p50 117.90 ms and p95 536.32 ms across 30 samples (six questions, five rounds); the separate behaviour class is p50 196.61 ms and p95 364.10 ms across ten samples. These are not pooled with other corpora and miss the 100 ms p95 target for these samples. The frozen identity retrieval baseline has 122 queries, Recall@1 0.148, Recall@10 0.475 and MRR 0.245. Frozen per-class measures, both search modes, per-query records and citations are in `results/`. All 361 distinct citations returned by the revised four-corpus workload resolved through `read`; all four miss controls returned empty results in every timed round. The ambiguity probes returned 49, 518 and 596 definitions for Linux, Keycloak and Kubernetes respectively; FHIR's `FhirContext` returned eight. `def` returned at most 50 results, so totals, not displayed counts, describe ambiguity.
+Linux is over one million chunks on this build. Its exact-symbol CLI class has p50 117.90 ms and p95 536.32 ms across 30 samples (six questions, five rounds); the separate behaviour class is p50 196.61 ms and p95 364.10 ms across ten samples. These are not pooled with other corpora and miss the 100 ms p95 target for these samples. They are warm-cache figures; cold-cache latency was measured on FHIR only, not on Linux. The frozen identity retrieval baseline has 122 queries, Recall@1 0.148, Recall@10 0.475 and MRR 0.245. Frozen per-class measures, both search modes, per-query records and citations are in `results/`. All 361 distinct citations returned by the revised four-corpus workload resolved through `read`; all four miss controls returned empty results in every timed round. The ambiguity probes returned 49, 518 and 596 definitions for Linux, Keycloak and Kubernetes respectively; FHIR's `FhirContext` returned eight. `def` returned at most 50 results, so totals, not displayed counts, describe ambiguity.
 
 `#283` was open when these measurements ran and merged afterwards. Its C changes can change the Linux corpus and ranking, so rebuild and rerun on the current `origin/main` before comparing any later variant against these Linux numbers. The experiments below compare the three #255 levers; further label adjudication and broader comparisons are needed before any ranking change.
+
+## Cold-cache search (FHIR)
+
+The frozen records above are warm-cache only. For a cold baseline, the release binary was rebuilt from `9b77988`; it is byte-identical to the recorded `ed39022b…`. FHIR was reindexed with it into a new private run directory, giving the same 231,843 chunks and 806,481,920 database bytes. Then `search_baseline.py --corpus fhir --cold` ran. Its `cli-cold` mode is the CLI mode with `posix_fadvise(DONTNEED)` before every call. That evicts the database, its `-wal` and `-shm` and the binary from the page cache, without root. The mode runs after the corpus's MCP server stops, because pages a running process maps stay resident: `fincore` showed the binary keeping 4.8 MB while a server ran, and 0 B after it stopped. `fhir.db` went from 769.1 MB resident to 0 B after one eviction. Shared libraries, directory entries and inodes stay cached, so this is a cold-data, cold-binary figure, not a cold boot. Every ranked citation matched `frozen-search.jsonl`, and all 47 distinct citations resolved.
+
+| FHIR class | Samples | Warm CLI p50 / p95 ms | Cold CLI p50 / p95 ms |
+| --- | ---: | ---: | ---: |
+| exact-symbol | 10 | 178.44 / 243.42 | 2,475.95 / 3,472.42 |
+| behaviour | 5 | 138.15 / 163.21 | 2,430.38 / 3,905.35 |
+| broad-term | 5 | 217.03 / 221.88 | 2,555.02 / 3,563.67 |
+| path-filter | 5 | 73.69 / 82.38 | 1,410.22 / 2,276.39 |
+| rare-term | 5 | 4.89 / 9.62 | 29.51 / 64.99 |
+| miss | 5 | 4.39 / 8.29 | 26.96 / 81.50 |
+
+Warm and cold figures come from the same run, on a shared host that was busy throughout (load average 7.9 at the start and 14.2 at the end, on 22 cores). The warm figures are 2.2 to 2.4 times the frozen FHIR ones for the slower classes, so compare cold with this run's warm column, not with `frozen-summary.json`, and read every figure here as noisy. A query that touches many postings pays 1.4 to 3.9 s cold against 0.07 to 0.2 s warm. Rare terms and misses stay under 100 ms. Five or ten samples per class are too few for a robust tail. Linux, Kubernetes and Keycloak have no cold run. Records are in `results/cold/`.
+
+To reproduce, index FHIR with the recorded binary into a run directory laid out as `index_baseline.py` makes it, with a copy of `results/index-metadata.json`, then run:
+
+```sh
+python3 experiments/fts-tuning/search_baseline.py "$run" --binary target/release/codecite --prefix cold --corpus fhir --cold
+```
 
 ## `detail=column` isolated prototype
 
@@ -41,7 +62,26 @@ A scratch build from the same base revision changed only the initial FTS DDL as 
 
 **Actionable incompatibility:** the frozen Linux `tcp_v4_connect` search succeeds with the baseline binary but the `detail=column` binary exits with `fts5: phrase queries are not supported (detail!=full)`. A naive DDL-only change is therefore not deployable: some emitted quoted terms tokenize to multiple FTS tokens even though the application intends single-term queries. A partial paired probe, including the error and two single-token controls, is recorded in `probe.json`; the longer frozen comparison stopped on this error, so it is not a quality or latency result. Fixing query semantics would be a separate ranking-changing design requiring independent evaluation; do not infer that shrinking postings alone is safe.
 
-The saved scratch prototype's remaining indexes and frozen retrieval/history comparisons were not run because its query semantics are incompatible. For a separately designed compatible variant, rerun the frozen labels and citation checks on every corpus, then compare per-corpus quality and paired latency before proposing production tuning. The following sections measure the other two levers independently.
+**Frozen retrieval and history labels.** `detail_column_bench.py` rebuilt both binaries from `9b77988` (byte-identical to the recorded hashes: `ed39022b…` baseline, `c6681f97…` variant), indexed the identity retrieval corpus and the five history corpora with each, and ran the unchanged labels. The baseline is scored on each whole labels file with `codecite-bench`. The variant is scored one query at a time, because `codecite-bench` stops at the first failed search, and a failed query counts as a miss. The baseline reproduced the committed retrieval and history scores exactly.
+
+| Labels | Queries | Variant errors | Baseline Recall@10 / MRR | Variant Recall@10 / MRR | Answered by both, same rank |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Identity retrieval | 122 | 24 | 0.475 / 0.245 | 0.000 / 0.000 | 57 of 98 |
+| history-1 | 36 | 4 | 0.889 / 0.502 | 0.056 / 0.007 | 4 of 32 |
+| history-2 | 44 | 4 | 0.568 / 0.333 | 0.318 / 0.094 | 11 of 40 |
+| history-3 | 48 | 6 | 0.771 / 0.411 | 0.104 / 0.015 | 11 of 42 |
+| history-4 | 46 | 8 | 0.630 / 0.366 | 0.087 / 0.011 | 16 of 38 |
+| history-5 | 32 | 3 | 0.844 / 0.578 | 0.438 / 0.061 | 4 of 29 |
+
+All 49 errors are `fts5: phrase queries are not supported (detail!=full)`. The answered queries collapse too: on a contentless table (`content=''`), `bm25()` scores every `detail=column` match 0.0, so results come back in tie order. In the variant's identity index, the top three `nonce` matches all score 0.0, against about -6.8 in the baseline. On identity, the 57 "same rank" queries are all misses in both builds. `detail_column_check.py` reproduces both failures on a bare SQLite table. Per-query records and hashes are in `results/detail-column/bench/`. History corpora are numbered as in the other `history-N` results and their query ids replaced by ordinals.
+
+So the DDL-only variant loses ranking as well as phrase queries. A compatible variant needs a different scoring path as well as a different query builder, and is a separate design. The remaining large-corpus indexes of the scratch prototype were not built. The following sections measure the other two levers independently.
+
+To reproduce, build the baseline at `9b77988` with `codecite-bench`, build the variant with `results/detail-column/variant.patch` applied, copy the codecite cache into a private directory, and run:
+
+```sh
+python3 experiments/fts-tuning/detail_column_bench.py "$new_run" --base "$base/target/release" --variant "$variant/target/release/codecite" --source "$base" --cache "$cache"
+```
 
 ## Path postings
 
@@ -56,7 +96,7 @@ rustc --edition=2024 -O experiments/fts-tuning/path_postings.rs -L dependency=ta
 /usr/bin/time "$run/path_postings" "$baseline_db" "$run/chunk.db" "$run/document.db"
 ```
 
-Run `python3 experiments/fts-tuning/detail_column_check.py` to reproduce the FTS `detail=column` error without the corpus: with SQLite 3.54.1, create an FTS5 table using `detail=column`, insert `tcp_v4_connect`, and match `"tcp_v4_connect"`. The `unicode61` tokenizer splits the quoted identifier at underscores into a multi-token phrase, unsupported by that detail setting. The same MATCH succeeds with `detail=full`. The production query builder preserves and quotes that identifier in addition to its split terms; changing it is a ranking change, not a DDL-only fix.
+Run `python3 experiments/fts-tuning/detail_column_check.py` to reproduce both `detail=column` failures without the corpus. For the phrase error: with SQLite 3.54.1, create an FTS5 table using `detail=column`, insert `tcp_v4_connect`, and match `"tcp_v4_connect"`. The `unicode61` tokenizer splits the quoted identifier at underscores into a multi-token phrase, unsupported by that detail setting. The same MATCH succeeds with `detail=full`. The production query builder preserves and quotes that identifier in addition to its split terms; changing it is a ranking change, not a DDL-only fix. For ranking, it builds a contentless `detail=column` table and shows `bm25()` returning 0.0 for every match, where the same table with `detail=full` returns distinct negative scores.
 
 ## FTS optimize
 
