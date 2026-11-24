@@ -60,9 +60,26 @@ place:
   GitHub does.
 - Links to repository files that are not published pages (`LICENSE`,
   `NOTICE`, and any later link into `crates/` or `evals/`) are rewritten to
-  `https://github.com/jamescrowley321/codecite/blob/main/<path>` by a small
-  local remark plugin in `website/src/remark/repo-links.ts`. The file on
-  GitHub keeps its relative link; only the rendered site rewrites it.
+  `https://github.com/jamescrowley321/codecite/blob/main/<path>` (or
+  `tree/main/<path>` for a directory) by a small local remark plugin in
+  `website/src/remark/repo-links.ts`. The file on GitHub keeps its relative
+  link; only the rendered site rewrites it. The plugin rewrites a link only
+  when all of these hold, and otherwise leaves it untouched for Docusaurus's
+  broken-link checks to judge:
+  - it is relative (no scheme, not protocol-relative, not a bare `#anchor`);
+  - with its `#fragment` and `?query` stripped, it resolves from the doc's
+    directory to a path inside the repository root;
+  - that path exists on disk at build time;
+  - it is not a `.md` or `.mdx` file. A link to an unpublished Markdown file
+    (`AGENTS.md`, a spec) is left for `onBrokenMarkdownLinks` to fail, so
+    linking a living doc to one is a decision made by adding a page, not by
+    a silent jump to GitHub.
+
+  A rewritten link keeps its fragment (`LICENSE#L1` becomes
+  `.../blob/main/LICENSE#L1`). The plugin visits `link` nodes and the
+  `definition` nodes behind reference-style links. So a mistyped
+  `docs/usge.md` or a stale `crates/gone.rs` is never turned into an
+  external URL that escapes the check; the build fails on it.
 - `design.md`'s front matter (`last_verified`) is ignored by Docusaurus; page
   titles come from each file's first `#` heading. The sidebar labels live in
   `website/sidebars.ts`, not in the docs.
@@ -147,16 +164,23 @@ website/
 
 Two jobs in one workflow, `.github/workflows/docs.yml`:
 
-- **`docs-build`** on `pull_request` and on `push` to `main`, when
+- **`docs-build`** on every `pull_request` and every `push` to `main`.
+  `permissions: contents: read`. A first step decides whether
   `website/**`, `README.md`, `docs/*.md`, `evals/README.md` or the workflow
-  changes. `permissions: contents: read`. Checks out with
+  changed: on a PR it diffs the PR's base and head; on a push it diffs
+  `github.event.before` against `github.sha` (and treats an all-zero or
+  unknown `before`, as on a branch's first push, as "relevant"). It exposes
+  the answer as the job output `relevant`. When `relevant` is false the job
+  ends green without building. Otherwise it checks out with
   `persist-credentials: false`, sets up Node from `website/.nvmrc`, runs
-  `npm ci --ignore-scripts` and `npm run build`. On `main` it uploads
-  `website/build` with `actions/upload-pages-artifact`.
-- **`docs-deploy`** on `push` to `main` only, `needs: docs-build`,
-  `environment: github-pages`, with job-level
-  `permissions: pages: write, id-token: write` and nothing else; it runs
-  `actions/deploy-pages`. Workflow-level `permissions: {}`.
+  `npm ci --ignore-scripts` and `npm run build`, and on a push to `main`
+  uploads `website/build` with `actions/upload-pages-artifact`.
+- **`docs-deploy`** on `push` to `main` only, `needs: docs-build`, and only
+  when `needs.docs-build.outputs.relevant == 'true'`, so a Rust-only merge
+  skips the deploy instead of failing it for want of an artifact (the site
+  it would deploy is unchanged anyway). `environment: github-pages`, with
+  job-level `permissions: pages: write, id-token: write` and nothing else;
+  it runs `actions/deploy-pages`. Workflow-level `permissions: {}`.
 
 Every action is pinned by full commit SHA with its version in a comment, as
 the existing workflows are, and Dependabot's `github-actions` entry already

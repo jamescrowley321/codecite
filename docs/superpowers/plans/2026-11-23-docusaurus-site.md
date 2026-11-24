@@ -4,7 +4,7 @@
 
 **Goal:** A Docusaurus site in `website/` that renders `README.md`, `docs/usage.md`, `docs/design.md` and `evals/README.md` in place, fails CI on a broken internal link or anchor, and deploys to GitHub Pages from `main` (#291).
 
-**Architecture:** One docs-plugin instance rooted at the repository (`path: '..'`) with an `include` list, CommonMark parsing (`markdown.format: 'detect'`), Mermaid, local search, and a local remark plugin that points links to non-page repository files at GitHub. One workflow builds on every PR and deploys on `main` through `actions/deploy-pages`. Nothing is copied out of `docs/`.
+**Architecture:** One docs-plugin instance rooted at the repository (`path: '..'`) with an `include` list, CommonMark parsing (`markdown.format: 'detect'`), Mermaid, local search, and a local remark plugin that points links to existing, non-Markdown repository files at GitHub and leaves every other link for Docusaurus to check. One workflow builds on every PR and deploys on `main` through `actions/deploy-pages`. Nothing is copied out of `docs/`.
 
 **Tech Stack:** Docusaurus (the current major, classic preset, TypeScript config), `@docusaurus/theme-mermaid`, `@easyops-cn/docusaurus-search-local`, Node LTS, GitHub Actions, GitHub Pages.
 
@@ -23,7 +23,8 @@
 ## Review Focus
 
 - A `<corpus>` or `{...}` in prose renders as text, not as a JSX or MDX error.
-- A broken internal link, or a link to a missing `#anchor` in `usage.md`, fails `npm run build`.
+- A broken internal link (to a missing page, a missing non-Markdown file or unpublished Markdown), or a link to a missing `#anchor` in `usage.md`, fails `npm run build`; the remark plugin rewrites only links to files that exist and are not Markdown.
+- A push to `main` that changes no site input leaves `docs-build` green and skips `docs-deploy`.
 - `LICENSE` and `NOTICE` links from the README land on GitHub, not on a 404.
 - `docs/superpowers/**`, `docs/cloud-sessions.md` and `AGENTS.md` produce no page.
 - zizmor passes on `docs.yml` with no new ignore in `.github/zizmor.yml`.
@@ -63,12 +64,19 @@
 - Create: `website/src/remark/repo-links.ts`, `website/src/remark/repo-links.test.ts`
 - Modify: `website/docusaurus.config.ts`, `website/package.json`
 
-- [ ] Write a failing test (Node's built-in `node:test`, no new test framework): a relative link to `LICENSE`, `NOTICE` or `crates/codecite/src/main.rs` becomes `https://github.com/jamescrowley321/codecite/blob/main/<path resolved from the doc's directory>`; a link to a published page (`docs/usage.md`), an in-page `#anchor` and an absolute URL are left alone; a `../` that climbs above the repo root is left alone, so the build reports it.
-- [ ] Implement the plugin as a remark transformer over `link` nodes, using the doc's file path from the vfile; the published set is the docs `include` list, passed as an option so the two can't drift.
+- [ ] Write failing tests (Node's built-in `node:test`, no new test framework) against a temporary fixture directory standing in for the repo root, holding `LICENSE`, `NOTICE`, `crates/codecite/src/main.rs`, `docs/usage.md` and `AGENTS.md`:
+  - a relative link to `LICENSE`, `NOTICE` or `crates/codecite/src/main.rs` becomes `https://github.com/jamescrowley321/codecite/blob/main/<path resolved from the doc's directory>`; a link to the `crates/` directory becomes `.../tree/main/crates`;
+  - `LICENSE#L1` becomes `.../blob/main/LICENSE#L1`, fragment kept; `LICENSE?plain=1` resolves `LICENSE` for the lookup;
+  - a link to a missing file (`docs/missing.md`, `crates/gone.rs`, `LICENCE`) is left untouched;
+  - a link to unpublished Markdown that exists (`AGENTS.md`) is left untouched;
+  - a link to a published page (`docs/usage.md`), to `docs/usage.md#search`, an in-page `#anchor` and an absolute or protocol-relative URL are left untouched;
+  - a `../` that climbs above the repo root is left untouched;
+  - a reference-style link (`[license][l]` with `[l]: LICENSE`) is rewritten through its `definition` node, and a reference-style link to a missing file is not.
+- [ ] Implement the plugin as a remark transformer over `link` and `definition` nodes, using the doc's file path from the vfile and a `repoRoot` option (the absolute repository root, so tests can point it at the fixture). For each URL: skip it if it has a scheme, starts with `//` or `#`; split off `#fragment` and `?query`; decode and resolve the path against the doc's directory; skip it if it leaves `repoRoot`, does not exist (`fs.existsSync`), or ends in `.md`/`.mdx`; otherwise rewrite to `blob/main/<path>` (or `tree/main/<path>` for a directory) with the fragment re-attached. Everything skipped is left for Docusaurus to resolve or report, so no list of published pages is needed in the plugin.
 - [ ] Register it under the docs preset's `beforeDefaultRemarkPlugins`, so Docusaurus's own link resolution never sees a rewritten link.
 - [ ] Add `@easyops-cn/docusaurus-search-local` to `themes` with `indexDocs: true`, `indexBlog: false`, `docsRouteBasePath: '/'`, `hashed: true`.
 - [ ] `npm test` and `npm run build` both pass; search finds `pins_stale` and `cite check`.
-- [ ] Prove the link check: in an uncommitted scratch edit, add a link to `#no-such-heading` in `docs/usage.md`, see `npm run build` fail naming it, then `git checkout docs/usage.md`. Do the same with a link to `docs/missing.md`.
+- [ ] Prove the link check: in an uncommitted scratch edit, add a link to `#no-such-heading` in `docs/usage.md`, see `npm run build` fail naming it, then `git checkout docs/usage.md`. Do the same, one at a time, with a link to `docs/missing.md`, to `crates/gone.rs` (a missing non-Markdown file, which the plugin must leave for Docusaurus to report), to `docs/usage.md#no-such-heading` and to `AGENTS.md` (unpublished Markdown); each must fail the build.
 - [ ] Commit: `feat(website): point repository-file links at GitHub and add local search`.
 
 ### Task 4: Build and deploy workflow
@@ -76,9 +84,10 @@
 **Files:** Create `.github/workflows/docs.yml`.
 
 - [ ] Triggers: `pull_request` (no `branches:` filter, so stacked PRs build too), `push` to `main`. `permissions: {}`. `concurrency: { group: pages-${{ github.ref }}, cancel-in-progress: ${{ github.event_name == 'pull_request' }} }` at workflow level; the deploy job gets its own `concurrency: { group: pages, cancel-in-progress: false }`.
-- [ ] `docs-build` (`name: docs-build`), `permissions: contents: read`: checkout (`persist-credentials: false`, `fetch-depth: 0` only if the paths step needs history); a step that compares the PR's changed files with `website/**`, `README.md`, `docs/*.md`, `evals/README.md`, `.github/workflows/docs.yml` and sets an output, passing values through `env:` and never `${{ }}` inside `run:`; when nothing relevant changed it ends green without building, so the check can be required; otherwise `actions/setup-node` with `node-version-file: website/.nvmrc` and no cache, `npm ci --ignore-scripts`, `npm test`, `npm run build` (all `working-directory: website`). On `push` to `main` only, `actions/upload-pages-artifact` with `path: website/build`.
-- [ ] `docs-deploy` (`name: docs-deploy`), `if: github.event_name == 'push'`, `needs: docs-build`, `environment: { name: github-pages, url: ${{ steps.deploy.outputs.page_url }} }`, `permissions: { pages: write, id-token: write }`, one step: `actions/deploy-pages`.
+- [ ] `docs-build` (`name: docs-build`), `permissions: contents: read`: checkout (`persist-credentials: false`, `fetch-depth: 0` only if the paths step needs history); a step (`id: paths`) that lists the changed files and matches them against `website/**`, `README.md`, `docs/*.md`, `evals/README.md`, `.github/workflows/docs.yml`, writing `relevant=true|false` to `$GITHUB_OUTPUT`. On `pull_request` it diffs `github.event.pull_request.base.sha...github.event.pull_request.head.sha`; on `push` it diffs `github.event.before..github.sha`, and an all-zero or unfetchable `before` counts as relevant. The SHAs reach the script through `env:`, never `${{ }}` inside `run:`. Expose it as the job output `relevant: ${{ steps.paths.outputs.relevant }}`. Every later step carries `if: steps.paths.outputs.relevant == 'true'`, so when nothing relevant changed the job ends green without building and the check can be required; otherwise `actions/setup-node` with `node-version-file: website/.nvmrc` and no cache, `npm ci --ignore-scripts`, `npm test`, `npm run build` (all `working-directory: website`). On `push` to `main` only, `actions/upload-pages-artifact` with `path: website/build`.
+- [ ] `docs-deploy` (`name: docs-deploy`), `needs: docs-build`, `if: github.event_name == 'push' && needs.docs-build.outputs.relevant == 'true'`, so a push that changed no site input skips the deploy rather than failing it for want of an artifact, `environment: { name: github-pages, url: ${{ steps.deploy.outputs.page_url }} }`, `permissions: { pages: write, id-token: write }`, one step: `actions/deploy-pages`.
 - [ ] Pin every action by SHA with a version comment, using the SHAs the other workflows already use where they share an action (`actions/checkout`).
+- [ ] Check both branches of the gate on the PR's own runs or with `act`: a change only under `crates/` gives a green `docs-build` with the build steps skipped and, on `main`, a skipped `docs-deploy`; a change to `docs/usage.md` builds, and on `main` uploads and deploys.
 - [ ] Run `zizmor .github/workflows/docs.yml` (the same version `security.yml` runs) with the repo's `.github/zizmor.yml`; fix every finding rather than ignoring it.
 - [ ] `actionlint` if available. Commit: `ci(docs): build the site on every PR and deploy it to Pages from main`.
 
