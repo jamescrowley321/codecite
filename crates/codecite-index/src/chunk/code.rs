@@ -1,7 +1,7 @@
 //! Code chunking with tree-sitter: one chunk per definition that a
 //! language's query (`queries/<language>.scm`) captures.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Node, Parser, Query, QueryCursor};
@@ -51,12 +51,15 @@ pub(super) const MAX_DESCRIPTOR: usize = 512;
 /// later definitions keep their chunks but get no symbol.
 pub(super) const DESCRIPTOR_BUDGET: usize = 8 << 20;
 
+/// Bound the number of root-to-node walks while comparing C tag scopes.
+const MAX_C_SCOPE_ANCESTORS: usize = 32;
+
 /// Loads a grammar from its crate.
 type Grammar = fn() -> tree_sitter::Language;
 
 /// The code languages, each with its grammar and query. TSX shares the
 /// TypeScript query: its grammar has the same node kinds, plus JSX.
-const LANGUAGES: [(Language, Grammar, &str); 7] = [
+const LANGUAGES: [(Language, Grammar, &str); 9] = [
     (
         Language::Rust,
         || tree_sitter_rust::LANGUAGE.into(),
@@ -88,9 +91,19 @@ const LANGUAGES: [(Language, Grammar, &str); 7] = [
         include_str!("queries/go.scm"),
     ),
     (
+        Language::C,
+        || tree_sitter_c::LANGUAGE.into(),
+        include_str!("queries/c.scm"),
+    ),
+    (
         Language::CSharp,
         || tree_sitter_c_sharp::LANGUAGE.into(),
         include_str!("queries/csharp.scm"),
+    ),
+    (
+        Language::Java,
+        || tree_sitter_java::LANGUAGE.into(),
+        include_str!("queries/java.scm"),
     ),
 ];
 
@@ -304,6 +317,21 @@ fn definitions(
         for capture in m.captures() {
             match names[capture.index as usize] {
                 "function" | "type" => node = Some(capture.node),
+                "c_function" => {
+                    node = Some(capture.node);
+                    let mut declarator = capture.node.child_by_field_name("declarator");
+                    while let Some(d) = declarator {
+                        if d.kind() == "identifier" {
+                            name = Some(d);
+                            break;
+                        }
+                        declarator = d.child_by_field_name("declarator").or_else(|| {
+                            (d.kind() == "parenthesized_declarator")
+                                .then(|| d.named_child(0))
+                                .flatten()
+                        });
+                    }
+                }
                 "variable" => {
                     node = Some(capture.node);
                     captured_kind = Some(SymbolKind::Variable);
@@ -337,8 +365,18 @@ fn definitions(
         if defined_elsewhere {
             continue;
         }
-        let text = |n: Node<'_>| n.utf8_text(source).unwrap_or_default().to_string();
-        let name = if is_scope { type_name(name) } else { name };
+        let text = |n: Node<'_>| n.utf8_text(source).unwrap_or_default();
+        let name = text(if is_scope { type_name(name) } else { name });
+        // `typedef struct Pair { … } Pair;` names one definition: the tag
+        // captured by the query. An alias for a different name or a tag
+        // without a body cannot be dropped here.
+        if language == Language::C
+            && captured_kind == Some(SymbolKind::TypeAlias)
+            && c_same_name_typedef_tag(node, name, source)
+                .is_some_and(|tag| tag.child_by_field_name("body").is_some())
+        {
+            continue;
+        }
         found.push((
             node,
             Definition {
@@ -347,13 +385,16 @@ fn definitions(
                 } else {
                     Some(captured_kind.unwrap_or_else(|| symbol_kind(node)))
                 },
-                name: text(name),
-                receiver: receiver.map(text),
+                name: name.to_owned(),
+                receiver: receiver.map(|n| text(n).to_owned()),
                 start_line: 0,
                 end_line: 0,
                 parent: None,
             },
         ));
+    }
+    if language == Language::C {
+        prefer_c_tag_definitions(&mut found, source);
     }
     for (node, def) in &mut found {
         let span = decorated.get(&node.id()).unwrap_or(node);
@@ -388,6 +429,110 @@ fn definitions(
         defs.push(def);
     }
     defs
+}
+
+fn c_tag_name<'a>(tag: Node<'_>, source: &'a [u8]) -> Option<&'a str> {
+    match tag.kind() {
+        "struct_specifier" | "union_specifier" | "enum_specifier" => {
+            tag.child_by_field_name("name")?.utf8_text(source).ok()
+        }
+        _ => None,
+    }
+}
+
+fn c_same_name_typedef_tag<'tree>(
+    alias: Node<'tree>,
+    name: &str,
+    source: &[u8],
+) -> Option<Node<'tree>> {
+    let tag = alias.child_by_field_name("type")?;
+    (c_tag_name(tag, source)? == name).then_some(tag)
+}
+
+/// Prefer a complete tag before source order can give its descriptor to
+/// a forward alias. Only compare captures in the same syntactic scope.
+fn prefer_c_tag_definitions(found: &mut Vec<(Node<'_>, Definition)>, source: &[u8]) {
+    let forward_tags: HashSet<_> = found
+        .iter()
+        .filter_map(|(node, def)| {
+            let tag = c_forward_typedef_tag(*node, def, source)?;
+            Some((tag.kind(), def.name.as_str()))
+        })
+        .collect();
+    if forward_tags.is_empty() {
+        return;
+    }
+    let captured: HashSet<_> = found.iter().map(|(node, _)| node.id()).collect();
+    let mut complete_tags: HashMap<_, HashSet<_>> = HashMap::new();
+    for (tag, _) in found.iter() {
+        let Some(name) = c_tag_name(*tag, source) else {
+            continue;
+        };
+        let key = (tag.kind(), name);
+        if !forward_tags.contains(&key) {
+            continue;
+        }
+        // The C query only captures a tag definition with a body.
+        if let Some(scope) = c_tag_scope(*tag, &captured) {
+            complete_tags.entry(key).or_default().insert(scope);
+        }
+    }
+    if complete_tags.is_empty() {
+        return;
+    }
+    found.retain(|(node, def)| {
+        let Some(tag) = c_forward_typedef_tag(*node, def, source) else {
+            return true;
+        };
+        let Some(scopes) = complete_tags.get(&(tag.kind(), def.name.as_str())) else {
+            return true;
+        };
+        c_tag_scope(*node, &captured).is_none_or(|scope| !scopes.contains(&scope))
+    });
+}
+
+fn c_forward_typedef_tag<'tree>(
+    alias: Node<'tree>,
+    def: &Definition,
+    source: &[u8],
+) -> Option<Node<'tree>> {
+    if def.kind != Some(SymbolKind::TypeAlias) {
+        return None;
+    }
+    let tag = c_same_name_typedef_tag(alias, &def.name, source)?;
+    tag.child_by_field_name("body").is_none().then_some(tag)
+}
+
+/// The enclosing scope and its innermost conditional branch, if any.
+/// A captured ancestor before that scope would change the descriptor.
+/// Each `parent()` walks from the root, so give up rather than guess past
+/// the cap or inside parameter lists (which can have prototype scope).
+fn c_tag_scope(node: Node<'_>, captured: &HashSet<usize>) -> Option<(usize, Option<usize>)> {
+    let mut node = node;
+    let mut branch = None;
+    for _ in 0..MAX_C_SCOPE_ANCESTORS {
+        node = node.parent()?;
+        match node.kind() {
+            "translation_unit"
+            | "compound_statement"
+            | "field_declaration_list"
+            | "if_statement"
+            | "switch_statement"
+            | "for_statement"
+            | "while_statement"
+            | "do_statement" => return Some((node.id(), branch)),
+            "parameter_list" => return None,
+            "preproc_if" | "preproc_ifdef" | "preproc_elif" | "preproc_elifdef"
+            | "preproc_else" => {
+                branch.get_or_insert(node.id());
+            }
+            _ => {}
+        }
+        if captured.contains(&node.id()) {
+            return None;
+        }
+    }
+    None
 }
 
 /// The nodes that wrap a definition without naming it: `export`, and the
@@ -437,8 +582,9 @@ fn documented_start(language: Language, node: Node<'_>, source: &[u8]) -> usize 
 
 /// Whether `node` documents or annotates the definition below it: a doc
 /// comment or attribute in Rust (`///`, `/** */`, `#[...]`; not `//!`, which
-/// documents the module), any comment in Go, a JSDoc block or decorator in
-/// TypeScript and JavaScript, an XML doc comment in C# (`///`, `/** */`).
+/// documents the module), any comment in C or Go, a JSDoc block or decorator in
+/// TypeScript and JavaScript, an XML doc comment in C# (`///`, `/** */`),
+/// or a Javadoc block in Java. Java annotations are part of the definition.
 /// Python's decorators are part of the definition already, and its docstring
 /// sits inside it.
 fn attaches(language: Language, node: Node<'_>, source: &[u8]) -> bool {
@@ -449,10 +595,11 @@ fn attaches(language: Language, node: Node<'_>, source: &[u8]) -> bool {
         (Language::Rust, "attribute_item") => true,
         (Language::Rust, "line_comment") => doc_line,
         (Language::Rust, "block_comment") => doc_block,
-        (Language::Go, "comment") => true,
+        (Language::C | Language::Go, "comment") => true,
         (Language::TypeScript | Language::Tsx | Language::JavaScript, "decorator") => true,
         (Language::TypeScript | Language::Tsx | Language::JavaScript, "comment") => doc_block,
         (Language::CSharp, "comment") => doc_line || doc_block,
+        (Language::Java, "block_comment") => doc_block,
         _ => false,
     }
 }
@@ -477,10 +624,11 @@ fn symbol_kind(node: Node<'_>) -> SymbolKind {
         | "method_signature"
         | "method_elem"
         | "constructor_declaration" => SymbolKind::Method,
-        "struct_item" | "union_item" | "struct_declaration" => SymbolKind::Struct,
-        "enum_item" | "enum_declaration" => SymbolKind::Enum,
+        "struct_item" | "union_item" | "struct_declaration" | "struct_specifier"
+        | "union_specifier" => SymbolKind::Struct,
+        "enum_item" | "enum_declaration" | "enum_specifier" => SymbolKind::Enum,
         "trait_item" => SymbolKind::Trait,
-        "interface_declaration" => SymbolKind::Interface,
+        "interface_declaration" | "annotation_type_declaration" => SymbolKind::Interface,
         "class_definition"
         | "class_declaration"
         | "class"
