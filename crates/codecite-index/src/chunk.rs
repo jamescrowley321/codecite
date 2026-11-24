@@ -11,8 +11,8 @@ pub(crate) use text::{Heading, Lines, Slugs, markdown_headings, sections, sectio
 
 /// The version of the chunker's output. Raise it whenever the same file
 /// splits into different chunks, so each index run records which chunker
-/// wrote the corpus.
-pub const CHUNKER_VERSION: u32 = 3;
+/// wrote the corpus. Prerelease builds used 4–6 for earlier C typedef behavior.
+pub const CHUNKER_VERSION: u32 = 7;
 
 /// The longest window, in lines.
 pub const WINDOW_LINES: u32 = 60;
@@ -350,6 +350,254 @@ mod tests {
         ]);
         assert_eq!(outline("src/sample.c", text), want);
         assert_eq!(outline("include/sample.h", text), want);
+    }
+
+    #[test]
+    fn c_forward_typedefs_keep_aliases_and_inline_tags() {
+        let text = "typedef struct ForwardStruct ForwardStruct;\n\
+                    typedef union ForwardUnion ForwardUnion;\n\
+                    typedef enum ForwardEnum ForwardEnum;\n\
+                    typedef struct Other StructAlias;\n\
+                    typedef struct InlineStruct { int x; } InlineStruct;\n\
+                    typedef union InlineUnion { int x; } InlineUnion;\n\
+                    typedef enum InlineEnum { VALUE } InlineEnum;\n\
+                    typedef struct Named { int x; } NamedAlias;\n\
+                    typedef struct { int x; } Anonymous;\n";
+        assert_eq!(
+            outline("types.h", text),
+            expect(&[
+                ("type_alias", 1, 1, "ForwardStruct#"),
+                ("type_alias", 2, 2, "ForwardUnion#"),
+                ("type_alias", 3, 3, "ForwardEnum#"),
+                ("type_alias", 4, 4, "StructAlias#"),
+                ("class", 5, 5, "InlineStruct#"),
+                ("class", 6, 6, "InlineUnion#"),
+                ("class", 7, 7, "InlineEnum#"),
+                ("type_alias", 8, 8, "NamedAlias#"),
+                ("class", 8, 8, "NamedAlias#Named#"),
+                ("type_alias", 9, 9, "Anonymous#"),
+            ])
+        );
+    }
+
+    #[test]
+    fn c_forward_typedefs_with_no_or_unrelated_complete_tags_remain_symbols() {
+        let text = "typedef struct A A;\n\
+                    typedef union B B;\n\
+                    typedef enum C C;\n";
+        let want = expect(&[
+            ("type_alias", 1, 1, "A#"),
+            ("type_alias", 2, 2, "B#"),
+            ("type_alias", 3, 3, "C#"),
+        ]);
+        assert_eq!(outline("forward.h", text), want);
+
+        // An unrelated tag and a matching tag inside prototype scope cannot
+        // replace any alias. Adding a matching in-scope tag replaces only A.
+        let unrelated =
+            format!("{text}struct Other {{ int x; }};\nvoid f(union B {{ int x; }} b);\n");
+        assert_eq!(
+            outline("forward.h", &unrelated),
+            [
+                want.clone(),
+                expect(&[("class", 4, 4, "Other#"), ("class", 5, 5, "")]),
+            ]
+            .concat()
+        );
+        let mixed = format!("{unrelated}struct A {{ int x; }};\n");
+        assert_eq!(
+            outline("forward.h", &mixed),
+            expect(&[
+                ("window", 1, 1, ""),
+                ("type_alias", 2, 2, "B#"),
+                ("type_alias", 3, 3, "C#"),
+                ("class", 4, 4, "Other#"),
+                ("class", 5, 5, ""),
+                ("class", 6, 6, "A#"),
+            ])
+        );
+    }
+
+    #[test]
+    fn c_forward_typedef_prefers_same_scope_tag_in_either_order() {
+        for (tag, body) in [("struct", "int x;"), ("union", "int x;"), ("enum", "VALUE")] {
+            let alias = format!("typedef {tag} Node Node;");
+            let definition = format!("{tag} Node {{ {body} }};");
+            assert_eq!(
+                outline("types.h", &format!("{alias}\n{definition}\n")),
+                expect(&[("window", 1, 1, ""), ("class", 2, 2, "Node#")]),
+                "{tag} alias first"
+            );
+            assert_eq!(
+                outline("types.h", &format!("{definition}\n{alias}\n")),
+                expect(&[("class", 1, 1, "Node#"), ("window", 2, 2, "")]),
+                "{tag} tag first"
+            );
+        }
+    }
+
+    #[test]
+    fn c_forward_typedef_matches_each_same_named_tag_in_its_own_scope() {
+        let text = "void first(void) {\n\
+                    typedef struct Node Node;\n\
+                    struct Node { int x; };\n}\n\
+                    void second(void) {\n\
+                    typedef struct Node Node;\n\
+                    struct Node { int y; };\n}\n\
+                    void third(void) {\n\
+                    typedef struct Node Node;\n}\n";
+        assert_eq!(
+            outline("scopes.c", text),
+            expect(&[
+                ("function", 1, 4, "first()."),
+                ("class", 3, 3, "first().Node#"),
+                ("function", 5, 8, "second()."),
+                ("class", 7, 7, "second().Node#"),
+                ("function", 9, 11, "third()."),
+                ("type_alias", 10, 10, "third().Node#"),
+            ])
+        );
+    }
+
+    #[test]
+    fn c_forward_typedef_matches_inside_include_guards_and_the_same_branch() {
+        let text = "#ifndef SAMPLE_H\n#define SAMPLE_H\n\
+                    typedef struct Guarded Guarded;\nstruct Guarded { int x; };\n\
+                    #if USE_FIRST\n#else\n\
+                    typedef union Branch Branch;\nunion Branch { int x; };\n\
+                    #endif\n#endif\n\
+                    void f(void) {\n\
+                    typedef struct Block Block;\nstruct Block { int x; };\n}\n";
+        let chunks = Chunker::new().unwrap().chunk("guarded.h", text);
+        let symbols: Vec<_> = chunks
+            .iter()
+            .filter_map(|c| {
+                c.symbol
+                    .as_ref()
+                    .map(|s| (c.start_line, s.descriptor.as_str()))
+            })
+            .collect();
+        assert_eq!(
+            symbols,
+            [
+                (4, "Guarded#"),
+                (8, "Branch#"),
+                (11, "f()."),
+                (13, "f().Block#")
+            ]
+        );
+    }
+
+    #[test]
+    fn c_forward_typedef_does_not_match_different_tags_or_scopes() {
+        for (text, expect_tag) in [
+            ("typedef struct Node Node;\nunion Node { int x; };\n", ""),
+            (
+                "typedef struct Node Node;\ntypedef struct Node { int x; } Other;\n",
+                "Other#Node#",
+            ),
+            (
+                "typedef struct Node Node;\nvoid f(void) { struct Node { int x; }; }\n",
+                "f().Node#",
+            ),
+            (
+                "typedef struct Node Node;\nvoid prototype(struct Node { int x; } arg);\n",
+                "",
+            ),
+        ] {
+            let chunks = outline("types.h", text);
+            assert!(
+                chunks.contains(&("type_alias", 1, 1, "Node#".into())),
+                "{text}: {chunks:?}"
+            );
+            assert!(
+                chunks.contains(&("class", 2, 2, expect_tag.into())),
+                "{text}: {chunks:?}"
+            );
+        }
+        for inner in [
+            "{ struct Node { int x; }; }",
+            "for (struct Node { int x; } value;;) {}",
+        ] {
+            let text = format!("void g(void) {{\ntypedef struct Node Node;\n{inner}\n}}\n");
+            assert_eq!(
+                outline("types.c", &text),
+                expect(&[
+                    ("function", 1, 4, "g()."),
+                    ("type_alias", 2, 2, "g().Node#"),
+                    ("class", 3, 3, ""),
+                ]),
+                "{inner}"
+            );
+        }
+    }
+
+    #[test]
+    fn c_forward_typedef_does_not_match_across_conditional_branches() {
+        let alias = "typedef struct Node Node;";
+        let tag = "struct Node { int x; };";
+        for text in [
+            format!("#if A\n{alias}\n#else\n{tag}\n#endif\n"),
+            format!("#if A\n{alias}\n#elif B\n{tag}\n#endif\n"),
+            format!("#if A\n{alias}\n#endif\n#if B\n{tag}\n#endif\n"),
+            format!("{alias}\n#if A\n{tag}\n#endif\n"),
+        ] {
+            let chunks = Chunker::new().unwrap().chunk("types.h", &text);
+            assert!(
+                chunks.iter().any(|c| c.kind == ChunkKind::TypeAlias
+                    && c.text == alias
+                    && c.symbol.as_ref().is_some_and(|s| s.descriptor == "Node#")),
+                "{text}: {chunks:?}"
+            );
+            assert!(
+                chunks
+                    .iter()
+                    .any(|c| c.kind == ChunkKind::Class && c.symbol.is_none()),
+                "{text}: {chunks:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn c_forward_typedef_scope_walk_is_bounded() {
+        // From the tag: its declaration, N `preproc_if` nodes, then the
+        // translation unit. At 31 wrappers that's 33 ancestors (past 32).
+        for (depth, matched) in [(30, true), (31, false), (2048, false)] {
+            for tag_first in [false, true] {
+                let alias = "typedef struct Deep Deep;";
+                let tag = "struct Deep { int x; } value;";
+                let (first, second) = if tag_first {
+                    (tag, alias)
+                } else {
+                    (alias, tag)
+                };
+                let text = format!(
+                    "{}{first}\n{second}\n{}",
+                    "#if A\n".repeat(depth),
+                    "#endif\n".repeat(depth)
+                );
+                let chunks = Chunker::new().unwrap().chunk("deep.h", &text);
+                let alias_chunk = chunks.iter().find(|c| c.kind == ChunkKind::TypeAlias);
+                let tag_chunk = chunks.iter().find(|c| c.kind == ChunkKind::Class).unwrap();
+                assert_eq!(
+                    alias_chunk.is_none(),
+                    matched,
+                    "depth {depth}, tag first {tag_first}"
+                );
+                assert_eq!(
+                    tag_chunk.symbol.is_some(),
+                    matched || tag_first,
+                    "depth {depth}, tag first {tag_first}"
+                );
+                if let Some(c) = alias_chunk {
+                    assert_eq!(
+                        c.symbol.is_some(),
+                        !tag_first,
+                        "depth {depth}, tag first {tag_first}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
