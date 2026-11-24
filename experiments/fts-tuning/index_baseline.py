@@ -93,12 +93,19 @@ def main():
     parser.add_argument('--sqlite-version', type=Path, required=True,
                         help='sqlite_version helper linked to the locked release rusqlite')
     args = parser.parse_args()
-    binary, bench = (args.bin_dir.resolve() / name for name in ('codecite', 'codecite-bench'))
+    binary, bench = ((args.bin_dir / name).resolve(strict=True) for name in ('codecite', 'codecite-bench'))
     sqlite_version = args.sqlite_version.resolve(strict=True)
     run = args.run_dir.resolve(strict=True)
     inspection_sqlite = output('sqlite3', '-version')
     bundled_sqlite = output(sqlite_version)
     check_sqlite_version(inspection_sqlite, bundled_sqlite)
+    locals_ = tomllib.loads((HERE / 'corpora.toml').read_text())['corpus']
+    # Verify every pinned checkout before creating any run output.
+    checkouts = {}
+    for local in locals_:
+        checkout = (args.checkout_root / local['name']).resolve(strict=True)
+        check_checkout(checkout, local['commit'])
+        checkouts[local['name']] = checkout
     cache = run / 'cache'
     cache.mkdir(exist_ok=True)
     manifests = run / 'manifests'
@@ -109,11 +116,9 @@ def main():
     raw.touch(exist_ok=False)
 
     paths = {'fhir': REPO / 'corpora/fhir.toml'}
-    locals_ = tomllib.loads((HERE / 'corpora.toml').read_text())['corpus']
     for local in locals_:
         name = local['name']
-        checkout = (args.checkout_root / name).resolve(strict=True)
-        check_checkout(checkout, local['commit'])
+        checkout = checkouts[name]
         manifest = manifests / f'{name}.toml'
         settings = dict(kind='local', path=str(checkout), **{k: v for k, v in local.items() if k != 'commit'})
         manifest.write_text(f'name = "{name}"\n\n[[source]]\n' + ''.join(
@@ -140,7 +145,7 @@ def main():
             run_pair(binary, name, manifest, data / f'{name}-{pair}', cache, raw)
         for local in locals_:
             if local['name'] == name:
-                check_checkout((args.checkout_root / name).resolve(strict=True), local['commit'])
+                check_checkout(checkouts[name], local['commit'])
 
 
 if __name__ == '__main__':

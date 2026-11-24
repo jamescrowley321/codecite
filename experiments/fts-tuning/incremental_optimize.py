@@ -33,6 +33,7 @@ def main():
     p.add_argument('--bin-dir', type=Path, required=True)
     a = p.parse_args()
     baseline = a.baseline.resolve(strict=True)
+    helper = a.helper.resolve(strict=True)
     binary = a.bin_dir.resolve(strict=True) / 'codecite'
     bench = binary.with_name('codecite-bench')
     meta = json.loads((baseline / 'index-metadata.json').read_text())
@@ -76,7 +77,7 @@ def main():
             before = stats(db)
             wal = Path(str(db) + '-wal')
             start = time.perf_counter_ns()
-            proc = subprocess.Popen([a.helper.resolve(strict=True), db, str(fraction), arm],
+            proc = subprocess.Popen([helper, db, str(fraction), arm],
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             peak = 0
             while proc.poll() is None:

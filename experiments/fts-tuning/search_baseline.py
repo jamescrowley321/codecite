@@ -55,6 +55,20 @@ def write_all(stream, data):
     stream.flush()
 
 
+def check_strata(db, queries):
+    """Verify the predeclared rare/broad match counts and record them on each query."""
+    for q in queries:
+        if q['class'] not in ('rare-term', 'broad-term'):
+            continue
+        if not re.fullmatch(r'[a-z0-9]+', q['text']):
+            raise ValueError(f"stratum requires one lowercase token: {q['id']}")
+        sql = f'''SELECT count(*) FROM chunk_fts WHERE chunk_fts MATCH '"{q['text']}"';'''
+        count = int(subprocess.check_output(['sqlite3', '-readonly', db, sql], text=True))
+        if (q['class'] == 'rare-term' and not 1 <= count <= 200) or (q['class'] == 'broad-term' and count < 10_000):
+            raise ValueError(f"match-count stratum violated: {q['id']} {count}")
+        q['matches'] = count
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('run_dir', type=Path)
@@ -73,6 +87,9 @@ def main():
         if hashlib.file_digest(f, 'sha256').hexdigest() != metadata['binary_sha256']['codecite']:
             raise ValueError('binary differs from index baseline')
     labels = json.loads(LABELS.read_text())['corpora']
+    # Check every corpus's match-count strata before creating outputs or servers.
+    for corpus, queries in labels.items():
+        check_strata(run / 'data' / f'{corpus}-1' / 'codecite' / f'{corpus}.db', queries)
     output = run / f'{args.prefix}-search.jsonl'
     output.touch(exist_ok=False)
     (run / f'{args.prefix}-metadata.json').write_text(json.dumps({
@@ -86,16 +103,6 @@ def main():
     for corpus, queries in labels.items():
         data_home = run / 'data' / f'{corpus}-1'
         env = dict(os.environ, XDG_DATA_HOME=str(data_home), XDG_CACHE_HOME=str(run / 'cache'))
-        for q in queries:
-            if q['class'] not in ('rare-term', 'broad-term'):
-                continue
-            if not re.fullmatch(r'[a-z0-9]+', q['text']):
-                raise ValueError(f"stratum requires one lowercase token: {q['id']}")
-            sql = f'''SELECT count(*) FROM chunk_fts WHERE chunk_fts MATCH '"{q['text']}"';'''
-            count = int(subprocess.check_output(['sqlite3', '-readonly', data_home / 'codecite' / f'{corpus}.db', sql], text=True))
-            if (q['class'] == 'rare-term' and not 1 <= count <= 200) or (q['class'] == 'broad-term' and count < 10_000):
-                raise ValueError(f"match-count stratum violated: {q['id']} {count}")
-            q['matches'] = count
         process = subprocess.Popen([binary, 'mcp'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                    stderr=subprocess.DEVNULL, env=env, bufsize=0)
         reader = BufferedLineReader(process.stdout)

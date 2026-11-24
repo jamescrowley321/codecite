@@ -12,6 +12,10 @@ from unittest import mock
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
+import hashlib  # noqa: E402
+import json  # noqa: E402
+
+import incremental_optimize  # noqa: E402
 import index_baseline  # noqa: E402
 import optimize  # noqa: E402
 import search_baseline  # noqa: E402
@@ -142,6 +146,9 @@ class IndexBaselinePreflight(unittest.TestCase):
                 (checkout_root / name).mkdir(parents=True)
             helper = root / "sqlite-version"
             helper.touch()
+            (root / "bin").mkdir()
+            for name in ("codecite", "codecite-bench"):
+                (root / "bin" / name).touch()
             argv = [
                 "index_baseline.py",
                 str(run),
@@ -166,6 +173,71 @@ class IndexBaselinePreflight(unittest.TestCase):
                 mock.patch.object(index_baseline, "check_checkout"),
             ):
                 with self.assertRaisesRegex(ValueError, "differs from the bundled"):
+                    index_baseline.main()
+            self.assertEqual(list(run.iterdir()), [])
+
+    def _argv(self, root, run):
+        checkout_root = root / "checkouts"
+        for name in ("linux", "kubernetes", "keycloak"):
+            (checkout_root / name).mkdir(parents=True, exist_ok=True)
+        helper = root / "sqlite-version"
+        helper.touch()
+        (root / "bin").mkdir(exist_ok=True)
+        return [
+            "index_baseline.py",
+            str(run),
+            "--bin-dir",
+            str(root / "bin"),
+            "--checkout-root",
+            str(checkout_root),
+            "--sqlite-version",
+            str(helper),
+        ], helper
+
+    def test_bad_checkout_leaves_run_untouched(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = root / "run"
+            run.mkdir()
+            argv, helper = self._argv(root, run)
+            for name in ("codecite", "codecite-bench"):
+                (root / "bin" / name).touch()
+
+            def output(*args, **kwargs):
+                if args[:2] == ("sqlite3", "-version"):
+                    return "3.54.1 CLI"
+                if args[0] == helper:
+                    return "3.54.1"
+                raise AssertionError(f"unexpected command: {args}")
+
+            def check_checkout(path, commit):
+                if path.name == "keycloak":
+                    raise ValueError(f"{path} is not clean")
+
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(index_baseline, "output", side_effect=output),
+                mock.patch.object(
+                    index_baseline, "check_checkout", side_effect=check_checkout
+                ),
+            ):
+                with self.assertRaisesRegex(ValueError, "not clean"):
+                    index_baseline.main()
+            self.assertEqual(list(run.iterdir()), [])
+
+    def test_missing_binary_leaves_run_untouched(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = root / "run"
+            run.mkdir()
+            argv, _ = self._argv(root, run)
+            (root / "bin" / "codecite").touch()
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(index_baseline, "output", return_value="3.54.1"),
+                mock.patch.object(index_baseline, "check_checkout"),
+            ):
+                with self.assertRaises(FileNotFoundError):
                     index_baseline.main()
             self.assertEqual(list(run.iterdir()), [])
 
@@ -268,6 +340,79 @@ class SourceWalGuard(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "uncheckpointed WAL"):
                     optimize.main()
             copyfile.assert_not_called()
+            self.assertFalse(output.exists())
+
+
+class SearchBaselinePreflight(unittest.TestCase):
+    def test_stratum_violation_leaves_no_outputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            binary = run / "codecite"
+            binary.write_bytes(b"binary")
+            sha = hashlib.sha256(b"binary").hexdigest()
+            (run / "index-metadata.json").write_text(
+                json.dumps({"binary_sha256": {"codecite": sha}})
+            )
+            labels = run / "queries.json"
+            query = {"id": "r1", "class": "rare-term", "text": "rare", "answers": []}
+            labels.write_text(
+                json.dumps({"corpora": {"first": [], "second": [query]}})
+            )
+            argv = ["search_baseline.py", str(run), "--binary", str(binary)]
+            before = sorted(run.iterdir())
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(search_baseline, "LABELS", labels),
+                mock.patch.object(
+                    search_baseline.subprocess, "check_output", return_value="0\n"
+                ),
+                mock.patch.object(search_baseline.subprocess, "Popen") as popen,
+            ):
+                with self.assertRaisesRegex(ValueError, "stratum violated"):
+                    search_baseline.main()
+            popen.assert_not_called()
+            self.assertEqual(sorted(run.iterdir()), before)
+
+
+class IncrementalOptimizePreflight(unittest.TestCase):
+    def test_missing_helper_leaves_no_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            baseline = root / "baseline"
+            source = baseline / "data/identity-bench-1/codecite/identity-bench.db"
+            source.parent.mkdir(parents=True)
+            source.touch()
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            hashes = {}
+            for name in ("codecite", "codecite-bench"):
+                (bin_dir / name).write_bytes(name.encode())
+                hashes[name] = hashlib.sha256(name.encode()).hexdigest()
+            manifest = incremental_optimize.ROOT / "evals/retrieval/identity-bench.toml"
+            (baseline / "index-metadata.json").write_text(json.dumps({
+                "binary_sha256": hashes,
+                "manifest_sha256": {"identity-bench": incremental_optimize.sha(manifest)},
+            }))
+            output = root / "output"
+            argv = [
+                "incremental_optimize.py",
+                str(baseline),
+                str(output),
+                "--helper",
+                str(root / "missing-helper"),
+                "--bin-dir",
+                str(bin_dir),
+            ]
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(
+                    incremental_optimize.subprocess,
+                    "check_output",
+                    return_value='{"outcomes": [], "all": {}}',
+                ),
+            ):
+                with self.assertRaises(FileNotFoundError):
+                    incremental_optimize.main()
             self.assertFalse(output.exists())
 
 
