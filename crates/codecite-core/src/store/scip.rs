@@ -18,6 +18,9 @@ pub const SCIP_CONFIDENCE: u8 = 3;
 /// The SCIP role bit that marks a definition.
 pub const ROLE_DEFINITION: u32 = 0x1;
 
+/// The SCIP role bit that marks an import.
+pub const ROLE_IMPORT: u32 = 0x2;
+
 /// One file of a SCIP index, as codecite reads it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ScipDocument {
@@ -109,7 +112,7 @@ pub struct ScipSummary {
     pub occurrences: usize,
     /// Definitions and occurrences past the end of their file, skipped.
     pub past_end: usize,
-    /// `calls` and `references` edges written.
+    /// `calls`, `references` and `imports` edges written.
     pub edges: usize,
 }
 
@@ -124,8 +127,12 @@ impl Store {
     /// chunk follows it. A definition no tree-sitter symbol holds becomes a
     /// symbol of its own. Each occurrence is stored with the innermost
     /// definition holding it, and a reference inside a definition gives an
-    /// edge from that definition: `calls` to a method or function,
-    /// `references` to anything else, with the first such line as evidence.
+    /// edge from that definition, with the first line of each kind as
+    /// evidence: `imports` when the occurrence has the import role; `calls`
+    /// when the target is a method, function or term and the source text
+    /// after the name opens an argument list, or, when the occurrence's
+    /// column can't be read there, when the target is a method or function;
+    /// `references` otherwise.
     /// Documents the source doesn't have, and lines past a file's end, are
     /// counted and skipped.
     pub fn write_scip(
@@ -193,6 +200,32 @@ pub(super) fn is_callable(symbol: &str) -> bool {
     symbol.ends_with(").")
 }
 
+/// The kind of edge an occurrence that isn't a definition gives: see
+/// [`Store::write_scip`]. `line` is the text of the occurrence's last line,
+/// when the file has it.
+fn edge_kind(occ: &ScipOccurrence, line: Option<&str>, unit: ColumnUnit) -> &'static str {
+    if occ.roles & ROLE_IMPORT != 0 {
+        return "imports";
+    }
+    let callable = is_callable(&occ.symbol);
+    // A term, `name.`, may hold a function: an arrow function, a lambda.
+    let term = !callable && occ.symbol.ends_with('.');
+    if !callable && !term {
+        return "references";
+    }
+    let site = match (line, occ.end_column) {
+        (Some(line), Some(column)) => super::definition::symbol_name(&occ.symbol)
+            .and_then(|name| call_site(line, column, unit, &name)),
+        _ => None,
+    };
+    match site {
+        Some(true) => "calls",
+        // An unreadable site keeps the rule the symbol alone gives.
+        None if callable => "calls",
+        _ => "references",
+    }
+}
+
 /// Whether the occurrence of `name` that ends at `end_column` on `line` is a
 /// call: the text after it, past whitespace, an optional generic argument
 /// list (`::<T>` or `<T>`) and an optional `?.`, opens an argument list.
@@ -201,10 +234,6 @@ pub(super) fn is_callable(symbol: &str) -> bool {
 /// tried as UTF-16, UTF-8, then UTF-32. A unit is accepted only when the
 /// text before the column ends with `name`, so `None` means no unit puts
 /// the name there and the site can't be read.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "edge kinds use it from the next commit")
-)]
 fn call_site(line: &str, end_column: u32, unit: ColumnUnit, name: &str) -> Option<bool> {
     if name.is_empty() {
         return None;
@@ -229,10 +258,6 @@ fn call_site(line: &str, end_column: u32, unit: ColumnUnit, name: &str) -> Optio
 
 /// The byte offset of `column` on `line` when counted in `unit`, or `None`
 /// when the column is past the line or inside a character.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "edge kinds use it from the next commit")
-)]
 fn byte_offset(line: &str, column: u32, unit: ColumnUnit) -> Option<usize> {
     let column = column as usize;
     let width: fn(char) -> usize = match unit {
@@ -255,10 +280,6 @@ fn byte_offset(line: &str, column: u32, unit: ColumnUnit) -> Option<usize> {
 /// The text after the `>` that closes a generic argument list whose `<` was
 /// just before `text`, or `None` when the line ends first. The `>` of `->`
 /// closes nothing.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "edge kinds use it from the next commit")
-)]
 fn skip_generics(text: &str) -> Option<&str> {
     let mut depth = 1;
     let mut previous = '<';
@@ -467,6 +488,12 @@ fn write_occurrences(
         })?;
         rows.collect::<rusqlite::Result<_>>()?
     };
+    let text: String = tx.query_row(
+        "SELECT text FROM document WHERE id = ?1",
+        [document_id],
+        |row| row.get(0),
+    )?;
+    let text_lines = file_lines(&text);
     let mut occurrences: Vec<&ScipOccurrence> = doc.occurrences.iter().collect();
     occurrences.sort_by(|a, b| {
         (a.start_line, a.end_line, &a.symbol, a.roles).cmp(&(
@@ -477,7 +504,7 @@ fn write_occurrences(
         ))
     });
     // The first site of each edge, so its evidence is the earliest line.
-    let mut edges: BTreeMap<(&str, &str), u32> = BTreeMap::new();
+    let mut edges: BTreeMap<(&str, &str, &str), u32> = BTreeMap::new();
     let mut insert = tx.prepare_cached(
         "INSERT INTO occurrence (symbol_id, document_id, start_line, end_line, roles, enclosing,
                                  provider, confidence)
@@ -519,7 +546,15 @@ fn write_occurrences(
         if occ.roles & ROLE_DEFINITION == 0
             && let Some(from) = enclosing
         {
-            edges.entry((from, &occ.symbol)).or_insert(occ.start_line);
+            // The column counts on the range's last line, unless the file
+            // ends first.
+            let line = (end == occ.end_line)
+                .then(|| text_lines.get(end as usize - 1).copied())
+                .flatten();
+            let kind = edge_kind(occ, line, doc.encoding);
+            edges
+                .entry((from, &occ.symbol, kind))
+                .or_insert(occ.start_line);
         }
     }
     let mut edge = tx.prepare_cached(
@@ -527,12 +562,7 @@ fn write_occurrences(
                                      evidence_line)
          VALUES (?1, ?2, ?3, 'scip', ?4, ?5, ?6)",
     )?;
-    for ((from, to), line) in edges {
-        let kind = if is_callable(to) {
-            "calls"
-        } else {
-            "references"
-        };
+    for ((from, to, kind), line) in edges {
         summary.edges +=
             edge.execute(params![from, to, kind, SCIP_CONFIDENCE, document_id, line])?;
     }
@@ -613,8 +643,21 @@ pub fn validate(&self, token: &str) -> bool {\n        check(token) && !self.iss
         }
     }
 
-    /// The crate as tree-sitter alone indexes it, and its source's ID.
-    pub fn app() -> (tempfile::TempDir, Store, i64) {
+    /// A store holding one source, `app`, with these `(path, text)` files
+    /// and no tree-sitter symbols in them, and the source's ID.
+    pub fn files(files: &[(&'static str, &'static str)]) -> (tempfile::TempDir, Store, i64) {
+        let (dir, mut store, id) = empty();
+        for &(path, text) in files {
+            store
+                .write_document(id, &document(path, text, &[]))
+                .unwrap();
+        }
+        store.set_indexed_at(30).unwrap();
+        (dir, store, id)
+    }
+
+    /// A store holding the source `app` with no documents yet.
+    fn empty() -> (tempfile::TempDir, Store, i64) {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open_read_write(&dir.path().join("demo.db")).unwrap();
         let id = store
@@ -630,6 +673,12 @@ pub fn validate(&self, token: &str) -> bool {\n        check(token) && !self.iss
                 updated_by: None,
             })
             .unwrap();
+        (dir, store, id)
+    }
+
+    /// The crate as tree-sitter alone indexes it, and its source's ID.
+    pub fn app() -> (tempfile::TempDir, Store, i64) {
+        let (dir, mut store, id) = empty();
         store
             .write_document(
                 id,
@@ -759,7 +808,7 @@ pub fn validate(&self, token: &str) -> bool {\n        check(token) && !self.iss
 
 #[cfg(test)]
 mod tests {
-    use super::fixture::{app, index, local, scip};
+    use super::fixture::{app, files, index, local, scip};
     use super::*;
     use crate::Error;
 
@@ -879,12 +928,13 @@ mod tests {
             [(scip("login()."), "calls".into(), 15)]
         );
         // A top-level `use` is inside the crate's module; an `impl` line
-        // inside the file's.
+        // inside the file's. Line 5's `Client` has the import role, so it
+        // is an `imports` edge.
         assert_eq!(
             edges(&scip("crate/")),
             [
                 (scip("client/"), "references".into(), 3),
-                (scip("client/Client#"), "references".into(), 5),
+                (scip("client/Client#"), "imports".into(), 5),
             ]
         );
         assert_eq!(
@@ -1340,5 +1390,178 @@ mod tests {
         // Inside a multi-byte character: no unit ends `f` there.
         assert_eq!(call_site("é f(x)", 1, ColumnUnit::Utf8, "f"), None);
         assert_eq!(call_site("f(x)", 1, ColumnUnit::Utf8, ""), None);
+    }
+
+    /// The SCIP edges from `src`, as `(dst, kind, evidence line)`, sorted.
+    fn edges_from(store: &Store, src: &str) -> Vec<(String, String, u32)> {
+        let mut stmt = store
+            .conn
+            .prepare(
+                "SELECT dst, kind, evidence_line FROM edge WHERE src = ?1 AND provider = 'scip'
+                 ORDER BY dst, kind",
+            )
+            .unwrap();
+        stmt.query_map([src], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    }
+
+    /// A definition whose name is on its first line.
+    fn defined(symbol: &str, name: &str, kind: &str, lines: (u32, u32)) -> ScipDefinition {
+        ScipDefinition {
+            symbol: symbol.into(),
+            display_name: name.into(),
+            kind: kind.into(),
+            line: lines.0,
+            start_line: lines.0,
+            end_line: lines.1,
+        }
+    }
+
+    /// An occurrence on one line that ends at `end_column`.
+    fn site(symbol: &str, line: u32, end_column: u32, roles: u32) -> ScipOccurrence {
+        ScipOccurrence {
+            symbol: symbol.into(),
+            start_line: line,
+            end_line: line,
+            end_column: Some(end_column),
+            roles,
+        }
+    }
+
+    /// Where `name`'s first occurrence on `line` ends, in bytes.
+    fn end_of(line: &str, name: &str) -> u32 {
+        (line.find(name).unwrap() + name.len()) as u32
+    }
+
+    #[test]
+    fn a_call_to_an_arrow_function_is_a_call() {
+        const G: &str = "function g() { return f(); }";
+        let (_dir, mut store, id) = files(&[(
+            "src/a.ts",
+            "const f = () => 1;\nfunction g() { return f(); }\n",
+        )]);
+        let f = "scip-typescript npm app 0.1.0 src/`a.ts`/f.";
+        let g = "scip-typescript npm app 0.1.0 src/`a.ts`/g().";
+        let doc = ScipDocument {
+            path: "src/a.ts".into(),
+            definitions: vec![
+                defined(f, "f", "variable", (1, 1)),
+                defined(g, "g", "function", (2, 2)),
+            ],
+            occurrences: vec![
+                site(f, 1, 7, ROLE_DEFINITION),
+                site(g, 2, 10, ROLE_DEFINITION),
+                site(f, 2, end_of(G, "return f"), 0),
+            ],
+            encoding: ColumnUnit::Utf16,
+        };
+        store.write_scip(id, &[doc]).unwrap();
+        assert_eq!(edges_from(&store, g), [(f.into(), "calls".into(), 2)]);
+        let callers = store
+            .graph(&crate::GraphQuery {
+                symbol: f,
+                direction: crate::Direction::Callers,
+                depth: 1,
+                min_confidence: 0,
+                allow_stale: false,
+            })
+            .unwrap();
+        let ids: Vec<&str> = callers.results.iter().map(|n| n.id.as_str()).collect();
+        assert_eq!(ids, [g]);
+    }
+
+    #[test]
+    fn an_import_is_an_imports_edge_and_a_use_line_a_reference() {
+        const IMPORT: &str = r#"import { f, g } from "./a";"#;
+        const USE: &str = "use client::check;";
+        const RUN: &str = "pub fn run() { check() }";
+        let ts = Box::leak(format!("{IMPORT}\n").into_boxed_str());
+        let rs = Box::leak(format!("{USE}\n{RUN}\n").into_boxed_str());
+        let (_dir, mut store, id) = files(&[("src/b.ts", ts), ("src/lib.rs", rs)]);
+        let module = "scip-typescript npm app 0.1.0 src/`b.ts`/";
+        let f = "scip-typescript npm app 0.1.0 src/`a.ts`/f.";
+        let g = "scip-typescript npm app 0.1.0 src/`a.ts`/g().";
+        let krate = scip("crate/");
+        let run = scip("run().");
+        let check = scip("client/check().");
+        let docs = [
+            ScipDocument {
+                path: "src/b.ts".into(),
+                definitions: vec![defined(module, "b.ts", "module", (1, 1))],
+                occurrences: vec![
+                    site(f, 1, end_of(IMPORT, "{ f"), 2),
+                    site(g, 1, end_of(IMPORT, ", g"), 2),
+                ],
+                encoding: ColumnUnit::Utf16,
+            },
+            ScipDocument {
+                path: "src/lib.rs".into(),
+                definitions: vec![
+                    defined(&krate, "crate", "module", (1, 2)),
+                    defined(&run, "run", "function", (2, 2)),
+                ],
+                occurrences: vec![
+                    site(&check, 1, end_of(USE, "check"), 0),
+                    site(&check, 2, end_of(RUN, "check"), 0),
+                ],
+                encoding: ColumnUnit::Utf8,
+            },
+        ];
+        store.write_scip(id, &docs).unwrap();
+        // The import role names `g` without calling it.
+        assert_eq!(
+            edges_from(&store, module),
+            [
+                (f.into(), "imports".into(), 1),
+                (g.into(), "imports".into(), 1),
+            ]
+        );
+        // rust-analyzer sets no import role; the site shows no call.
+        assert_eq!(
+            edges_from(&store, &krate),
+            [(check.clone(), "references".into(), 1)]
+        );
+        assert_eq!(edges_from(&store, &run), [(check, "calls".into(), 2)]);
+    }
+
+    #[test]
+    fn a_handler_assignment_references_and_a_call_calls_from_one_definition() {
+        const ASSIGN: &str = "        parser.H = self.decl";
+        const CALL: &str = "        self.decl(1)";
+        let text = Box::leak(
+            format!(
+                "class P:\n    def start(self, parser):\n{ASSIGN}\n{CALL}\n    \
+                 def decl(self, x):\n        pass\n"
+            )
+            .into_boxed_str(),
+        );
+        let (_dir, mut store, id) = files(&[("src/p.py", text)]);
+        let class = "scip-python python app 0.1.0 `p`/P#";
+        let start = "scip-python python app 0.1.0 `p`/P#start().";
+        let decl = "scip-python python app 0.1.0 `p`/P#decl().";
+        let doc = ScipDocument {
+            path: "src/p.py".into(),
+            definitions: vec![
+                defined(class, "P", "class", (1, 6)),
+                defined(start, "start", "method", (2, 4)),
+                defined(decl, "decl", "method", (5, 6)),
+            ],
+            occurrences: vec![
+                site(decl, 3, end_of(ASSIGN, "decl"), 8),
+                site(decl, 4, end_of(CALL, "decl"), 8),
+            ],
+            encoding: ColumnUnit::Unspecified,
+        };
+        store.write_scip(id, &[doc]).unwrap();
+        // One row per kind, each with its own first line.
+        assert_eq!(
+            edges_from(&store, start),
+            [
+                (decl.into(), "calls".into(), 4),
+                (decl.into(), "references".into(), 3),
+            ]
+        );
     }
 }
