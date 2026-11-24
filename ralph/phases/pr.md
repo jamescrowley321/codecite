@@ -3,7 +3,7 @@
 `cd <worktree>`. Run the router's gates one last time.
 
 1. `git push -u origin <branch>`. Record `review_round: 1` in the task state.
-2. `gh pr create --base <base_branch> --head <branch> --title "<conventional title>"`, plus `--label eval` when the change touches indexing, search, ranking or the CLI's output (AGENTS.md step 6). The body (plain, specific prose) has these parts:
+2. `gh pr create --base <base_branch> --head <branch> --title "<conventional title>"`. Never add the `eval` label: the owner runs one eval on the combined changes once the queue lands. The history benchmark still judges each change (see the router). The body (plain, specific prose) has these parts:
    - `Closes #<issue>`. If `<base_branch>` isn't `main`: "Stacked on #<parent PR>. Review and merge that one first."
    - **What this adds:** what changed and why, file by file where useful.
    - **Rust notes:** each idiom or design choice the owner should learn from this change, a few sentences each. This is the most important part of the PR for a learning repo.

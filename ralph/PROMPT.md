@@ -18,7 +18,7 @@ Repo `jamescrowley321/codecite`: a Rust workspace (`crates/*`). Read `~/repos/co
 
 GitHub issues are the only queue and the only status. No status words in files.
 
-1. Scope: open issues in the `General purpose` milestone, taken in this order: `ORDER = 182 191 186 183 184 185 179 162`. List them with `gh issue list --state open --milestone "General purpose" --limit 200 --json number,title,body,milestone,labels`. An issue in the milestone but not in `ORDER` is out of scope until the owner adds it here.
+1. Scope: the open issues listed in `ORDER`, in any milestone, taken in this order: `ORDER = 298 269 299 300`. Read each with `gh issue view <N> --json number,title,body,state,milestone,labels`. An issue not in `ORDER` is out of scope until the owner adds it here.
 2. A candidate is an in-scope issue without the `blocked` label, not in the stack ledger and not in the parked list, whose every `Depends on #N` (from its body) is closed or in the ledger. Take the first candidate in `ORDER`. An issue that depends on a parked issue is never a candidate.
 3. No candidate → output `<promise>CODECITE_QUEUE_EMPTY</promise>`. There is no cap on the stack's depth.
 
@@ -73,6 +73,6 @@ A change to indexing, search, ranking or the CLI's output is judged on the histo
 - ONE issue per iteration's work. Never start a second issue.
 - Follow `AGENTS.md`: conventional commits, `<type>/<short-description>` branches, no private ID schemes (refer to `#N`), the code wins over the docs, so fix any stale doc in the same PR.
 - `git add <paths>`, never `git add .` or `-A`. Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
-- Never push to `main`, never merge, never force-push a branch that isn't in the ledger, never create or edit label definitions (adding the existing `eval` label to a loop PR is allowed), and never change GitHub repo settings (those live in Terraform in oss-admin).
+- Never push to `main`, never merge, never force-push a branch that isn't in the ledger, never create or edit label definitions, never add the `eval` label (the owner runs one eval on the combined changes once the queue lands), and never change GitHub repo settings (those live in Terraform in oss-admin).
 - A spec gap or decision the issue and `docs/design.md` cannot settle → park the issue (see Parking). Never guess at a design decision.
 - Block (`phase: blocked`, the reason under `## Blocked`, end) only when the stack itself is in trouble: a restack conflict, a loop PR closed without merging, or CI that still fails after 3 fix attempts. A PR still at BLOCK after two re-reviews stays open in the stack with a comment for the owner; the run continues.
