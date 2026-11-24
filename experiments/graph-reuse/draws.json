@@ -1,0 +1,2025 @@
+{
+ "issue": 295,
+ "sampler": "sample.py --n 10 --seed 295",
+ "note": "Definitions drawn in seed order from each corpus file's tree-sitter symbols, with every other line naming them. Paths and lines only; no source text. The cases in cases.json were labelled from these draws in order (some targets found while reading a drawn definition's source, as each case's draw field says).",
+ "repos": {
+  "django": {
+   "callers": [
+    {
+     "draw": 5882,
+     "name": "_resolve_combined_type",
+     "kind": "function",
+     "path": "django/db/models/expressions.py",
+     "start_line": 714,
+     "end_line": 721,
+     "defs": 1,
+     "mentions": [
+      "django/db/models/expressions.py:715",
+      "django/db/models/expressions.py:746"
+     ]
+    },
+    {
+     "draw": 2908,
+     "name": "create_collation",
+     "kind": "method",
+     "path": "django/contrib/postgres/operations.py",
+     "start_line": 197,
+     "end_line": 211,
+     "defs": 1,
+     "mentions": [
+      "django/contrib/postgres/operations.py:229",
+      "django/contrib/postgres/operations.py:264"
+     ]
+    },
+    {
+     "draw": 9555,
+     "name": "get_plural",
+     "kind": "method",
+     "path": "django/views/i18n.py",
+     "start_line": 166,
+     "end_line": 178,
+     "defs": 1,
+     "mentions": [
+      "django/views/i18n.py:211"
+     ]
+    },
+    {
+     "draw": 5241,
+     "name": "ensure_not_cyclic",
+     "kind": "method",
+     "path": "django/db/migrations/graph.py",
+     "start_line": 270,
+     "end_line": 293,
+     "defs": 1,
+     "mentions": [
+      "django/db/migrations/loader.py:342",
+      "tests/migrations/test_graph.py:163",
+      "tests/migrations/test_graph.py:175",
+      "tests/migrations/test_graph.py:439"
+     ]
+    },
+    {
+     "draw": 428,
+     "name": "checkValue",
+     "kind": "function",
+     "path": "django/contrib/admin/static/admin/js/nav_sidebar.js",
+     "start_line": 36,
+     "end_line": 64,
+     "defs": 1,
+     "mentions": [
+      "django/contrib/admin/static/admin/js/nav_sidebar.js:67",
+      "django/contrib/admin/static/admin/js/nav_sidebar.js:68",
+      "django/contrib/admin/static/admin/js/nav_sidebar.js:69",
+      "django/contrib/admin/static/admin/js/nav_sidebar.js:74"
+     ]
+    },
+    {
+     "draw": 3268,
+     "name": "save_manifest",
+     "kind": "method",
+     "path": "django/contrib/staticfiles/storage.py",
+     "start_line": 502,
+     "end_line": 515,
+     "defs": 1,
+     "mentions": [
+      "django/contrib/staticfiles/storage.py:500",
+      "tests/staticfiles_tests/test_storage.py:557",
+      "tests/staticfiles_tests/test_storage.py:581",
+      "tests/staticfiles_tests/test_storage.py:783",
+      "tests/staticfiles_tests/test_storage.py:791"
+     ]
+    },
+    {
+     "draw": 3009,
+     "name": "atest_cookie_worked",
+     "kind": "method",
+     "path": "django/contrib/sessions/backends/base.py",
+     "start_line": 113,
+     "end_line": 114,
+     "defs": 1,
+     "mentions": [
+      "docs/topics/http/sessions.txt:273",
+      "docs/topics/http/sessions.txt:275",
+      "tests/sessions_tests/tests.py:1398"
+     ]
+    },
+    {
+     "draw": 8647,
+     "name": "_route_to_regex",
+     "kind": "function",
+     "path": "django/urls/resolvers.py",
+     "start_line": 249,
+     "end_line": 290,
+     "defs": 1,
+     "mentions": [
+      "django/urls/converters.py:61",
+      "django/urls/converters.py:63",
+      "django/urls/resolvers.py:250",
+      "django/urls/resolvers.py:309",
+      "django/urls/resolvers.py:319"
+     ]
+    },
+    {
+     "draw": 4179,
+     "name": "b62_encode",
+     "kind": "function",
+     "path": "django/core/signing.py",
+     "start_line": 65,
+     "end_line": 74,
+     "defs": 1,
+     "mentions": [
+      "django/core/signing.py:257",
+      "tests/signing/tests.py:241"
+     ]
+    },
+    {
+     "draw": 4151,
+     "name": "unparsed_entity_decl",
+     "kind": "method",
+     "path": "django/core/serializers/xml_serializer.py",
+     "start_line": 466,
+     "end_line": 468,
+     "defs": 1,
+     "mentions": [
+      "django/core/serializers/xml_serializer.py:478"
+     ]
+    }
+   ],
+   "same_name": [
+    {
+     "draw": 3551,
+     "name": "unlock",
+     "kind": "function",
+     "path": "django/core/files/locks.py",
+     "start_line": 113,
+     "end_line": 115,
+     "defs": 3,
+     "mentions": [
+      "django/core/cache/backends/filebased.py:76",
+      "django/core/files/locks.py:22",
+      "django/core/files/locks.py:91",
+      "django/core/files/locks.py:126",
+      "django/core/files/move.py:69",
+      "django/core/files/storage/filesystem.py:123",
+      "tests/files/tests.py:198",
+      "tests/files/tests.py:205",
+      "tests/files/tests.py:206",
+      "tests/test_utils/test_serializemixin.py:21"
+     ]
+    },
+    {
+     "draw": 8489,
+     "name": "get_dirs",
+     "kind": "method",
+     "path": "django/template/loaders/cached.py",
+     "start_line": 20,
+     "end_line": 23,
+     "defs": 3,
+     "mentions": [
+      "django/contrib/admindocs/views.py:429",
+      "django/contrib/admindocs/views.py:430",
+      "django/template/autoreload.py:12",
+      "django/template/autoreload.py:23",
+      "django/template/autoreload.py:27",
+      "django/template/loaders/app_directories.py:12",
+      "django/template/loaders/cached.py:22",
+      "django/template/loaders/cached.py:23",
+      "django/template/loaders/filesystem.py:17",
+      "django/template/loaders/filesystem.py:33",
+      "tests/template_tests/test_loaders.py:115",
+      "tests/template_tests/test_loaders.py:117"
+     ]
+    },
+    {
+     "draw": 4131,
+     "name": "handle_m2m_field",
+     "kind": "method",
+     "path": "django/core/serializers/xml_serializer.py",
+     "start_line": 148,
+     "end_line": 194,
+     "defs": 3,
+     "mentions": [
+      "django/core/serializers/base.py:145",
+      "django/core/serializers/base.py:196",
+      "django/core/serializers/base.py:201",
+      "django/core/serializers/python.py:67"
+     ]
+    },
+    {
+     "draw": 4419,
+     "name": "conditional_expression_supported_in_where_clause",
+     "kind": "method",
+     "path": "django/db/backends/base/operations.py",
+     "start_line": 665,
+     "end_line": 670,
+     "defs": 3,
+     "mentions": [
+      "django/db/backends/mysql/operations.py:394",
+      "django/db/backends/mysql/operations.py:400",
+      "django/db/backends/mysql/operations.py:405",
+      "django/db/backends/oracle/operations.py:715",
+      "django/db/backends/oracle/operations.py:723",
+      "django/db/models/expressions.py:1561",
+      "django/db/models/expressions.py:1580",
+      "django/db/models/expressions.py:1938",
+      "django/db/models/lookups.py:155",
+      "django/db/models/lookups.py:400"
+     ]
+    },
+    {
+     "draw": 4297,
+     "name": "chunked_cursor",
+     "kind": "method",
+     "path": "django/db/backends/base/base.py",
+     "start_line": 669,
+     "end_line": 674,
+     "defs": 2,
+     "mentions": [
+      "django/db/backends/postgresql/base.py:446",
+      "django/db/models/sql/compiler.py:1620",
+      "django/test/testcases.py:215"
+     ]
+    },
+    {
+     "draw": 2167,
+     "name": "double_output",
+     "kind": "function",
+     "path": "django/contrib/gis/gdal/prototypes/generation.py",
+     "start_line": 35,
+     "end_line": 43,
+     "defs": 2,
+     "mentions": [
+      "django/contrib/gis/gdal/prototypes/ds.py:14",
+      "django/contrib/gis/gdal/prototypes/ds.py:94",
+      "django/contrib/gis/gdal/prototypes/geom.py:9",
+      "django/contrib/gis/gdal/prototypes/geom.py:29",
+      "django/contrib/gis/gdal/prototypes/geom.py:129",
+      "django/contrib/gis/gdal/prototypes/raster.py:13",
+      "django/contrib/gis/gdal/prototypes/raster.py:27",
+      "django/contrib/gis/gdal/prototypes/raster.py:103",
+      "django/contrib/gis/gdal/prototypes/srs.py:6",
+      "django/contrib/gis/gdal/prototypes/srs.py:20",
+      "django/contrib/gis/gdal/prototypes/srs.py:28"
+     ]
+    },
+    {
+     "draw": 8759,
+     "name": "check_availability",
+     "kind": "method",
+     "path": "django/utils/autoreload.py",
+     "start_line": 635,
+     "end_line": 650,
+     "defs": 3,
+     "mentions": [
+      "django/utils/autoreload.py:378",
+      "django/utils/autoreload.py:379",
+      "django/utils/autoreload.py:435",
+      "django/utils/autoreload.py:636",
+      "django/utils/autoreload.py:656",
+      "tests/utils_tests/test_autoreload.py:349",
+      "tests/utils_tests/test_autoreload.py:352",
+      "tests/utils_tests/test_autoreload.py:779",
+      "tests/utils_tests/test_autoreload.py:852",
+      "tests/utils_tests/test_autoreload.py:860",
+      "tests/utils_tests/test_autoreload.py:868"
+     ]
+    },
+    {
+     "draw": 169,
+     "name": "get_facet_counts",
+     "kind": "method",
+     "path": "django/contrib/admin/filters.py",
+     "start_line": 587,
+     "end_line": 598,
+     "defs": 8,
+     "mentions": [
+      "django/contrib/admin/filters.py:78",
+      "django/contrib/admin/filters.py:80",
+      "django/contrib/admin/filters.py:88",
+      "django/contrib/admin/filters.py:134",
+      "django/contrib/admin/filters.py:275",
+      "django/contrib/admin/filters.py:347",
+      "django/contrib/admin/filters.py:412",
+      "django/contrib/admin/filters.py:535",
+      "django/contrib/admin/filters.py:691",
+      "tests/admin_filters/tests.py:2054",
+      "tests/admin_filters/tests.py:2056"
+     ]
+    },
+    {
+     "draw": 4656,
+     "name": "combine_expression",
+     "kind": "method",
+     "path": "django/db/backends/mysql/operations.py",
+     "start_line": 269,
+     "end_line": 280,
+     "defs": 4,
+     "mentions": [
+      "django/db/backends/base/operations.py:672",
+      "django/db/backends/base/operations.py:683",
+      "django/db/backends/mysql/operations.py:280",
+      "django/db/backends/oracle/operations.py:626",
+      "django/db/backends/oracle/operations.py:642",
+      "django/db/backends/sqlite3/operations.py:354",
+      "django/db/backends/sqlite3/operations.py:361",
+      "django/db/models/expressions.py:771"
+     ]
+    },
+    {
+     "draw": 909,
+     "name": "getIterationMethod",
+     "kind": "function",
+     "path": "django/contrib/admin/static/admin/js/vendor/xregexp/xregexp.min.js",
+     "start_line": 17,
+     "end_line": 17,
+     "defs": 2,
+     "mentions": [
+      "django/contrib/admin/static/admin/js/vendor/xregexp/xregexp.js:3337",
+      "django/contrib/admin/static/admin/js/vendor/xregexp/xregexp.js:3353",
+      "django/contrib/admin/static/admin/js/vendor/xregexp/xregexp.js:3387",
+      "django/contrib/admin/static/admin/js/vendor/xregexp/xregexp.js:3388",
+      "django/contrib/admin/static/admin/js/vendor/xregexp/xregexp.js:3389"
+     ]
+    }
+   ],
+   "callees": [
+    {
+     "draw": 2111,
+     "name": "__getitem__",
+     "kind": "method",
+     "path": "django/contrib/gis/gdal/geometries.py",
+     "start_line": 712,
+     "end_line": 721,
+     "defs": 47
+    },
+    {
+     "draw": 8380,
+     "name": "render",
+     "kind": "method",
+     "path": "django/template/defaulttags.py",
+     "start_line": 540,
+     "end_line": 563,
+     "defs": 74
+    },
+    {
+     "draw": 1750,
+     "name": "get_field_type",
+     "kind": "method",
+     "path": "django/contrib/gis/db/backends/postgis/introspection.py",
+     "start_line": 17,
+     "end_line": 34,
+     "defs": 9
+    },
+    {
+     "draw": 6803,
+     "name": "process_lhs",
+     "kind": "method",
+     "path": "django/db/models/lookups.py",
+     "start_line": 106,
+     "end_line": 114,
+     "defs": 6
+    },
+    {
+     "draw": 2217,
+     "name": "vsi_buffer",
+     "kind": "method",
+     "path": "django/contrib/gis/gdal/raster/source.py",
+     "start_line": 244,
+     "end_line": 259,
+     "defs": 1
+    },
+    {
+     "draw": 3319,
+     "name": "set_many",
+     "kind": "method",
+     "path": "django/core/cache/backends/base.py",
+     "start_line": 303,
+     "end_line": 317,
+     "defs": 4
+    },
+    {
+     "draw": 1274,
+     "name": "clean",
+     "kind": "method",
+     "path": "django/contrib/auth/forms.py",
+     "start_line": 575,
+     "end_line": 578,
+     "defs": 62
+    },
+    {
+     "draw": 8493,
+     "name": "cache_key",
+     "kind": "method",
+     "path": "django/template/loaders/cached.py",
+     "start_line": 72,
+     "end_line": 93,
+     "defs": 3
+    },
+    {
+     "draw": 7593,
+     "name": "management_form",
+     "kind": "method",
+     "path": "django/forms/formsets.py",
+     "start_line": 146,
+     "end_line": 169,
+     "defs": 1
+    },
+    {
+     "draw": 4252,
+     "name": "check_database_version_supported",
+     "kind": "method",
+     "path": "django/db/backends/base/base.py",
+     "start_line": 190,
+     "end_line": 204,
+     "defs": 1
+    }
+   ]
+  },
+  "ripgrep": {
+   "callers": [
+    {
+     "draw": 1977,
+     "name": "find_cap_ref",
+     "kind": "function",
+     "path": "crates/matcher/src/interpolate.rs",
+     "start_line": 92,
+     "end_line": 134,
+     "defs": 1,
+     "mentions": [
+      "crates/matcher/src/interpolate.rs:37",
+      "crates/matcher/src/interpolate.rs:97",
+      "crates/matcher/src/interpolate.rs:147",
+      "crates/matcher/src/interpolate.rs:153",
+      "crates/matcher/src/interpolate.rs:159"
+     ]
+    },
+    {
+     "draw": 1769,
+     "name": "is_file_name",
+     "kind": "function",
+     "path": "crates/ignore/src/pathutil.rs",
+     "start_line": 124,
+     "end_line": 139,
+     "defs": 1,
+     "mentions": [
+      "crates/ignore/src/gitignore.rs:24",
+      "crates/ignore/src/gitignore.rs:323",
+      "crates/ignore/src/pathutil.rs:126"
+     ]
+    },
+    {
+     "draw": 2376,
+     "name": "max_columns_with_count_preview_two_matches",
+     "kind": "function",
+     "path": "crates/printer/src/standard.rs",
+     "start_line": 2608,
+     "end_line": 2633,
+     "defs": 1,
+     "mentions": [
+      "crates/printer/src/standard.rs:2609"
+     ]
+    },
+    {
+     "draw": 2409,
+     "name": "replacement_max_columns_preview2",
+     "kind": "function",
+     "path": "crates/printer/src/standard.rs",
+     "start_line": 3657,
+     "end_line": 3682,
+     "defs": 1,
+     "mentions": [
+      "crates/printer/src/standard.rs:3658"
+     ]
+    },
+    {
+     "draw": 1493,
+     "name": "incremental_ignored_parent",
+     "kind": "function",
+     "path": "crates/ignore/benches/workloads.rs",
+     "start_line": 379,
+     "end_line": 388,
+     "defs": 1,
+     "mentions": [
+      "crates/ignore/benches/README.md:36",
+      "crates/ignore/benches/README.md:87",
+      "crates/ignore/benches/workloads.rs:380"
+     ]
+    },
+    {
+     "draw": 1065,
+     "name": "test_vimgrep",
+     "kind": "function",
+     "path": "crates/core/flags/defs.rs",
+     "start_line": 7768,
+     "end_line": 7776,
+     "defs": 1,
+     "mentions": [
+      "crates/core/flags/defs.rs:7770"
+     ]
+    },
+    {
+     "draw": 1278,
+     "name": "search_preprocessor",
+     "kind": "method",
+     "path": "crates/core/search.rs",
+     "start_line": 296,
+     "end_line": 326,
+     "defs": 1,
+     "mentions": [
+      "crates/core/search.rs:261",
+      "crates/core/search.rs:298"
+     ]
+    },
+    {
+     "draw": 1491,
+     "name": "incremental_warm_deep",
+     "kind": "function",
+     "path": "crates/ignore/benches/workloads.rs",
+     "start_line": 351,
+     "end_line": 363,
+     "defs": 1,
+     "mentions": [
+      "crates/ignore/benches/README.md:35",
+      "crates/ignore/benches/workloads.rs:352"
+     ]
+    },
+    {
+     "draw": 2808,
+     "name": "find_by_line_fast",
+     "kind": "method",
+     "path": "crates/searcher/src/searcher/core.rs",
+     "start_line": 462,
+     "end_line": 506,
+     "defs": 1,
+     "mentions": [
+      "crates/searcher/src/searcher/core.rs:381",
+      "crates/searcher/src/searcher/core.rs:417",
+      "crates/searcher/src/searcher/core.rs:463"
+     ]
+    },
+    {
+     "draw": 2126,
+     "name": "reset_count",
+     "kind": "method",
+     "path": "crates/printer/src/counter.rs",
+     "start_line": 34,
+     "end_line": 39,
+     "defs": 1,
+     "mentions": [
+      "crates/printer/src/counter.rs:36",
+      "crates/printer/src/json.rs:835",
+      "crates/printer/src/standard.rs:851",
+      "crates/printer/src/summary.rs:712"
+     ]
+    }
+   ],
+   "same_name": [
+    {
+     "draw": 175,
+     "name": "flush",
+     "kind": "method",
+     "path": "crates/cli/src/wtr.rs",
+     "start_line": 78,
+     "end_line": 86,
+     "defs": 3,
+     "mentions": [
+      "benchsuite/benchsuite:1292",
+      "benchsuite/benchsuite:1309",
+      "crates/cli/src/wtr.rs:79",
+      "crates/cli/src/wtr.rs:83",
+      "crates/cli/src/wtr.rs:84",
+      "crates/core/logger.rs:69",
+      "crates/printer/src/counter.rs:62",
+      "crates/printer/src/counter.rs:63",
+      "tests/util.rs:142"
+     ]
+    },
+    {
+     "draw": 342,
+     "name": "completion_type",
+     "kind": "method",
+     "path": "crates/core/flags/defs.rs",
+     "start_line": 1630,
+     "end_line": 1632,
+     "defs": 10,
+     "mentions": [
+      "crates/core/flags/complete/fish.rs:29",
+      "crates/core/flags/complete/nushell.rs:40",
+      "crates/core/flags/defs.rs:2028",
+      "crates/core/flags/defs.rs:2980",
+      "crates/core/flags/defs.rs:3351",
+      "crates/core/flags/defs.rs:3472",
+      "crates/core/flags/defs.rs:3516",
+      "crates/core/flags/defs.rs:5890",
+      "crates/core/flags/defs.rs:7274",
+      "crates/core/flags/defs.rs:7496",
+      "crates/core/flags/mod.rs:154"
+     ]
+    },
+    {
+     "draw": 1817,
+     "name": "into_path",
+     "kind": "method",
+     "path": "crates/ignore/src/walk.rs",
+     "start_line": 147,
+     "end_line": 154,
+     "defs": 3,
+     "mentions": [
+      "crates/ignore/src/walk.rs:44",
+      "crates/ignore/src/walk.rs:45",
+      "crates/ignore/src/walk.rs:151",
+      "crates/ignore/src/walk.rs:152",
+      "crates/ignore/src/walk.rs:276"
+     ]
+    },
+    {
+     "draw": 39,
+     "name": "__str__",
+     "kind": "method",
+     "path": "benchsuite/benchsuite",
+     "start_line": 727,
+     "end_line": 728,
+     "defs": 2,
+     "mentions": [
+      "benchsuite/benchsuite:710"
+     ]
+    },
+    {
+     "draw": 2829,
+     "name": "sink_matched",
+     "kind": "method",
+     "path": "crates/searcher/src/searcher/glue.rs",
+     "start_line": 299,
+     "end_line": 309,
+     "defs": 2,
+     "mentions": [
+      "crates/searcher/src/searcher/core.rs:104",
+      "crates/searcher/src/searcher/core.rs:283",
+      "crates/searcher/src/searcher/core.rs:342",
+      "crates/searcher/src/searcher/core.rs:393",
+      "crates/searcher/src/searcher/core.rs:455",
+      "crates/searcher/src/searcher/core.rs:509",
+      "crates/searcher/src/searcher/glue.rs:181",
+      "crates/searcher/src/searcher/glue.rs:254",
+      "crates/searcher/src/searcher/glue.rs:292"
+     ]
+    },
+    {
+     "draw": 178,
+     "name": "set_color",
+     "kind": "method",
+     "path": "crates/cli/src/wtr.rs",
+     "start_line": 110,
+     "end_line": 118,
+     "defs": 2,
+     "mentions": [
+      "crates/cli/src/wtr.rs:111",
+      "crates/cli/src/wtr.rs:115",
+      "crates/cli/src/wtr.rs:116",
+      "crates/printer/src/counter.rs:79",
+      "crates/printer/src/counter.rs:80",
+      "crates/printer/src/path.rs:166",
+      "crates/printer/src/standard.rs:1444",
+      "crates/printer/src/standard.rs:1452",
+      "crates/printer/src/standard.rs:1491",
+      "crates/printer/src/standard.rs:1503",
+      "crates/printer/src/standard.rs:1519",
+      "crates/printer/src/summary.rs:627"
+     ]
+    },
+    {
+     "draw": 2030,
+     "name": "try_captures_iter",
+     "kind": "method",
+     "path": "crates/matcher/src/lib.rs",
+     "start_line": 788,
+     "end_line": 806,
+     "defs": 3,
+     "mentions": [
+      "crates/matcher/src/lib.rs:796",
+      "crates/matcher/src/lib.rs:1263",
+      "crates/matcher/src/lib.rs:1272",
+      "crates/matcher/tests/test_matcher.rs:128",
+      "crates/matcher/tests/test_matcher.rs:136"
+     ]
+    },
+    {
+     "draw": 2843,
+     "name": "empty_line1",
+     "kind": "function",
+     "path": "crates/searcher/src/searcher/glue.rs",
+     "start_line": 537,
+     "end_line": 544,
+     "defs": 2,
+     "mentions": [
+      "crates/searcher/src/searcher/glue.rs:538",
+      "crates/searcher/src/testutil.rs:735"
+     ]
+    },
+    {
+     "draw": 1828,
+     "name": "into_path",
+     "kind": "method",
+     "path": "crates/ignore/src/walk.rs",
+     "start_line": 276,
+     "end_line": 278,
+     "defs": 3,
+     "mentions": [
+      "crates/ignore/src/walk.rs:44",
+      "crates/ignore/src/walk.rs:45",
+      "crates/ignore/src/walk.rs:147",
+      "crates/ignore/src/walk.rs:151",
+      "crates/ignore/src/walk.rs:152"
+     ]
+    },
+    {
+     "draw": 1840,
+     "name": "from_entry_os",
+     "kind": "method",
+     "path": "crates/ignore/src/walk.rs",
+     "start_line": 376,
+     "end_line": 386,
+     "defs": 3,
+     "mentions": [
+      "crates/ignore/src/walk.rs:335",
+      "crates/ignore/src/walk.rs:339",
+      "crates/ignore/src/walk.rs:358",
+      "crates/ignore/src/walk.rs:377"
+     ]
+    }
+   ],
+   "callees": [
+    {
+     "draw": 2264,
+     "name": "max_columns_preview",
+     "kind": "method",
+     "path": "crates/printer/src/standard.rs",
+     "start_line": 313,
+     "end_line": 326,
+     "defs": 2
+    },
+    {
+     "draw": 2294,
+     "name": "finish",
+     "kind": "method",
+     "path": "crates/printer/src/standard.rs",
+     "start_line": 858,
+     "end_line": 876,
+     "defs": 10
+    },
+    {
+     "draw": 2479,
+     "name": "begin",
+     "kind": "method",
+     "path": "crates/printer/src/summary.rs",
+     "start_line": 705,
+     "end_line": 717,
+     "defs": 8
+    },
+    {
+     "draw": 1757,
+     "name": "case_insensitive",
+     "kind": "function",
+     "path": "crates/ignore/src/overrides.rs",
+     "start_line": 286,
+     "end_line": 299,
+     "defs": 6
+    },
+    {
+     "draw": 2881,
+     "name": "convert",
+     "kind": "method",
+     "path": "crates/searcher/src/searcher/mod.rs",
+     "start_line": 83,
+     "end_line": 97,
+     "defs": 1
+    },
+    {
+     "draw": 241,
+     "name": "doc_long",
+     "kind": "method",
+     "path": "crates/core/flags/defs.rs",
+     "start_line": 603,
+     "end_line": 613,
+     "defs": 109
+    },
+    {
+     "draw": 26,
+     "name": "bench_subtitles_en_alternate_casei",
+     "kind": "function",
+     "path": "benchsuite/benchsuite",
+     "start_line": 465,
+     "end_line": 487,
+     "defs": 1
+    },
+    {
+     "draw": 2357,
+     "name": "path_terminator",
+     "kind": "function",
+     "path": "crates/printer/src/standard.rs",
+     "start_line": 2114,
+     "end_line": 2136,
+     "defs": 3
+    },
+    {
+     "draw": 1739,
+     "name": "is_empty",
+     "kind": "method",
+     "path": "crates/ignore/src/overrides.rs",
+     "start_line": 62,
+     "end_line": 67,
+     "defs": 10
+    },
+    {
+     "draw": 2513,
+     "name": "lines",
+     "kind": "method",
+     "path": "crates/printer/src/util.rs",
+     "start_line": 247,
+     "end_line": 250,
+     "defs": 4
+    }
+   ]
+  },
+  "excalidraw": {
+   "callers": [
+    {
+     "draw": 303,
+     "name": "ShapesSwitcher",
+     "kind": "function",
+     "path": "packages/excalidraw/components/Actions.tsx",
+     "start_line": 269,
+     "end_line": 415,
+     "defs": 1,
+     "mentions": [
+      "packages/excalidraw/components/LayerUI.tsx:19",
+      "packages/excalidraw/components/LayerUI.tsx:293",
+      "packages/excalidraw/components/MobileMenu.tsx:20",
+      "packages/excalidraw/components/MobileMenu.tsx:85"
+     ]
+    },
+    {
+     "draw": 829,
+     "name": "resaveAsImageWithScene",
+     "kind": "function",
+     "path": "packages/excalidraw/data/resave.ts",
+     "start_line": 6,
+     "end_line": 41,
+     "defs": 1,
+     "mentions": [
+      "packages/excalidraw/actions/actionExport.tsx:7",
+      "packages/excalidraw/actions/actionExport.tsx:154"
+     ]
+    },
+    {
+     "draw": 141,
+     "name": "allElementsInSameGroup",
+     "kind": "function",
+     "path": "packages/excalidraw/actions/actionGroup.tsx",
+     "start_line": 39,
+     "end_line": 54,
+     "defs": 1,
+     "mentions": [
+      "packages/excalidraw/actions/actionGroup.tsx:68"
+     ]
+    },
+    {
+     "draw": 884,
+     "name": "updateBoundPoint",
+     "kind": "function",
+     "path": "packages/excalidraw/element/binding.ts",
+     "start_line": 1189,
+     "end_line": 1323,
+     "defs": 1,
+     "mentions": [
+      "packages/excalidraw/element/binding.ts:810"
+     ]
+    },
+    {
+     "draw": 1647,
+     "name": "initRuntime",
+     "kind": "method",
+     "path": "packages/excalidraw/subset/woff2/woff2-bindings.ts",
+     "start_line": 737,
+     "end_line": 742,
+     "defs": 1,
+     "mentions": [
+      "packages/excalidraw/subset/woff2/woff2-bindings.ts:3964"
+     ]
+    },
+    {
+     "draw": 501,
+     "name": "onPublishLibSuccess",
+     "kind": "function",
+     "path": "packages/excalidraw/components/LibraryMenuHeaderContent.tsx",
+     "start_line": 139,
+     "end_line": 152,
+     "defs": 1,
+     "mentions": [
+      "packages/excalidraw/components/LibraryMenuHeaderContent.tsx:257"
+     ]
+    },
+    {
+     "draw": 903,
+     "name": "getArrowLocalFixedPoints",
+     "kind": "function",
+     "path": "packages/excalidraw/element/binding.ts",
+     "start_line": 2234,
+     "end_line": 2244,
+     "defs": 1,
+     "mentions": [
+      "packages/excalidraw/element/resizeElements.ts:36",
+      "packages/excalidraw/element/resizeElements.ts:538"
+     ]
+    },
+    {
+     "draw": 1444,
+     "name": "drawElementOnCanvas",
+     "kind": "function",
+     "path": "packages/excalidraw/renderer/renderElement.ts",
+     "start_line": 383,
+     "end_line": 523,
+     "defs": 1,
+     "mentions": [
+      "packages/excalidraw/renderer/renderElement.ts:261",
+      "packages/excalidraw/renderer/renderElement.ts:775",
+      "packages/excalidraw/renderer/renderElement.ts:868",
+      "packages/excalidraw/renderer/renderElement.ts:913"
+     ]
+    },
+    {
+     "draw": 1769,
+     "name": "__embind_register_class_function",
+     "kind": "method",
+     "path": "packages/excalidraw/subset/woff2/woff2-bindings.ts",
+     "start_line": 2422,
+     "end_line": 2480,
+     "defs": 1,
+     "mentions": [
+      "packages/excalidraw/subset/woff2/woff2-bindings.ts:3059"
+     ]
+    },
+    {
+     "draw": 726,
+     "name": "getFontFamilyFallbacks",
+     "kind": "function",
+     "path": "packages/excalidraw/constants.ts",
+     "start_line": 147,
+     "end_line": 156,
+     "defs": 1,
+     "mentions": [
+      "packages/excalidraw/fonts/Fonts.ts:6",
+      "packages/excalidraw/fonts/Fonts.ts:173",
+      "packages/excalidraw/utils.ts:8",
+      "packages/excalidraw/utils.ts:99"
+     ]
+    }
+   ],
+   "same_name": [
+    {
+     "draw": 5,
+     "name": "HomepageFeatures",
+     "kind": "function",
+     "path": "dev-docs/src/components/Homepage/index.tsx",
+     "start_line": 58,
+     "end_line": 70,
+     "defs": 2,
+     "mentions": [
+      "dev-docs/src/components/Homepage/index.js:50",
+      "dev-docs/src/pages/index.tsx:7",
+      "dev-docs/src/pages/index.tsx:31"
+     ]
+    },
+    {
+     "draw": 1798,
+     "name": "destructorFunction",
+     "kind": "method",
+     "path": "packages/excalidraw/subset/woff2/woff2-bindings.ts",
+     "start_line": 2886,
+     "end_line": 2888,
+     "defs": 2,
+     "mentions": [
+      "packages/excalidraw/subset/woff2/woff2-bindings.ts:1484",
+      "packages/excalidraw/subset/woff2/woff2-bindings.ts:2029",
+      "packages/excalidraw/subset/woff2/woff2-bindings.ts:2032",
+      "packages/excalidraw/subset/woff2/woff2-bindings.ts:2342",
+      "packages/excalidraw/subset/woff2/woff2-bindings.ts:2405",
+      "packages/excalidraw/subset/woff2/woff2-bindings.ts:2408",
+      "packages/excalidraw/subset/woff2/woff2-bindings.ts:2553",
+      "packages/excalidraw/subset/woff2/woff2-bindings.ts:2598",
+      "packages/excalidraw/subset/woff2/woff2-bindings.ts:2708",
+      "packages/excalidraw/subset/woff2/woff2-bindings.ts:2837"
+     ]
+    },
+    {
+     "draw": 2095,
+     "name": "buildProd",
+     "kind": "function",
+     "path": "scripts/buildPackage.js",
+     "start_line": 48,
+     "end_line": 56,
+     "defs": 3,
+     "mentions": [
+      "scripts/buildMath.js:31",
+      "scripts/buildMath.js:47",
+      "scripts/buildPackage.js:71",
+      "scripts/buildUtils.js:32",
+      "scripts/buildUtils.js:53"
+     ]
+    },
+    {
+     "draw": 1453,
+     "name": "getSvgPathFromStroke",
+     "kind": "function",
+     "path": "packages/excalidraw/renderer/renderElement.ts",
+     "start_line": 1049,
+     "end_line": 1070,
+     "defs": 2,
+     "mentions": [
+      "packages/excalidraw/animated-trail.ts:5",
+      "packages/excalidraw/animated-trail.ts:147",
+      "packages/excalidraw/renderer/renderElement.ts:1037",
+      "packages/excalidraw/utils.ts:1093"
+     ]
+    },
+    {
+     "draw": 330,
+     "name": "componentDidMount",
+     "kind": "method",
+     "path": "packages/excalidraw/components/App.tsx",
+     "start_line": 2434,
+     "end_line": 2517,
+     "defs": 2,
+     "mentions": [
+      "excalidraw-app/collab/Collab.tsx:202"
+     ]
+    },
+    {
+     "draw": 2092,
+     "name": "createESMRawBuild",
+     "kind": "function",
+     "path": "scripts/buildMath.js",
+     "start_line": 42,
+     "end_line": 48,
+     "defs": 3,
+     "mentions": [
+      "scripts/buildMath.js:51",
+      "scripts/buildPackage.js:58",
+      "scripts/buildPackage.js:78",
+      "scripts/buildUtils.js:48",
+      "scripts/buildUtils.js:57"
+     ]
+    },
+    {
+     "draw": 13,
+     "name": "onUnload",
+     "kind": "function",
+     "path": "excalidraw-app/App.tsx",
+     "start_line": 560,
+     "end_line": 562,
+     "defs": 2,
+     "mentions": [
+      "excalidraw-app/App.tsx:577",
+      "excalidraw-app/App.tsx:583",
+      "excalidraw-app/collab/Collab.tsx:206",
+      "excalidraw-app/collab/Collab.tsx:258",
+      "excalidraw-app/collab/Collab.tsx:281",
+      "packages/excalidraw/components/App.tsx:2233",
+      "packages/excalidraw/components/App.tsx:2669",
+      "packages/excalidraw/data/library.ts:959",
+      "packages/excalidraw/data/library.ts:965",
+      "packages/excalidraw/data/library.ts:968"
+     ]
+    },
+    {
+     "draw": 363,
+     "name": "onPointerMoveFromPointerDownHandler",
+     "kind": "method",
+     "path": "packages/excalidraw/components/App.tsx",
+     "start_line": 7968,
+     "end_line": 8769,
+     "defs": 2,
+     "mentions": [
+      "examples/with-script-in-browser/components/ExampleApp.tsx:419",
+      "examples/with-script-in-browser/components/ExampleApp.tsx:509",
+      "packages/excalidraw/components/App.tsx:6632"
+     ]
+    },
+    {
+     "draw": 817,
+     "name": "getLibraryItems",
+     "kind": "method",
+     "path": "packages/excalidraw/data/library.ts",
+     "start_line": 534,
+     "end_line": 554,
+     "defs": 2,
+     "mentions": [
+      "packages/excalidraw/data/library.ts:572",
+      "packages/excalidraw/data/library.ts:573",
+      "packages/excalidraw/data/library.ts:600",
+      "packages/excalidraw/data/library.ts:836",
+      "packages/excalidraw/data/library.ts:871",
+      "packages/excalidraw/data/library.ts:876"
+     ]
+    },
+    {
+     "draw": 224,
+     "name": "applyTo",
+     "kind": "method",
+     "path": "packages/excalidraw/change.ts",
+     "start_line": 403,
+     "end_line": 408,
+     "defs": 4,
+     "mentions": [
+      "packages/excalidraw/change.ts:408",
+      "packages/excalidraw/change.ts:442",
+      "packages/excalidraw/change.ts:1072",
+      "packages/excalidraw/history.ts:113",
+      "packages/excalidraw/history.ts:180",
+      "packages/excalidraw/history.ts:186",
+      "packages/excalidraw/history.ts:189",
+      "packages/excalidraw/tests/history.test.tsx:109"
+     ]
+    }
+   ],
+   "callees": [
+    {
+     "draw": 1030,
+     "name": "getSceneVersion",
+     "kind": "function",
+     "path": "packages/excalidraw/element/index.ts",
+     "start_line": 59,
+     "end_line": 63,
+     "defs": 1
+    },
+    {
+     "draw": 1470,
+     "name": "maybeWrapNodesInFrameClipPath",
+     "kind": "function",
+     "path": "packages/excalidraw/renderer/staticSvgScene.ts",
+     "start_line": 58,
+     "end_line": 77,
+     "defs": 1
+    },
+    {
+     "draw": 1340,
+     "name": "removeFromSelectedGroups",
+     "kind": "function",
+     "path": "packages/excalidraw/groups.ts",
+     "start_line": 330,
+     "end_line": 333,
+     "defs": 1
+    },
+    {
+     "draw": 1520,
+     "name": "prepareElementsForRender",
+     "kind": "function",
+     "path": "packages/excalidraw/scene/export.ts",
+     "start_line": 127,
+     "end_line": 151,
+     "defs": 1
+    },
+    {
+     "draw": 1543,
+     "name": "makeNextSelectedElementIds",
+     "kind": "function",
+     "path": "packages/excalidraw/scene/selection.ts",
+     "start_line": 237,
+     "end_line": 250,
+     "defs": 1
+    },
+    {
+     "draw": 714,
+     "name": "Center",
+     "kind": "function",
+     "path": "packages/excalidraw/components/welcome-screen/WelcomeScreen.Center.tsx",
+     "start_line": 90,
+     "end_line": 108,
+     "defs": 1
+    },
+    {
+     "draw": 1956,
+     "name": "moveOneLeft",
+     "kind": "function",
+     "path": "packages/excalidraw/zindex.ts",
+     "start_line": 501,
+     "end_line": 506,
+     "defs": 1
+    },
+    {
+     "draw": 1161,
+     "name": "getLineBreakRegex",
+     "kind": "function",
+     "path": "packages/excalidraw/element/textWrapping.ts",
+     "start_line": 20,
+     "end_line": 30,
+     "defs": 1
+    },
+    {
+     "draw": 1211,
+     "name": "isFreeDrawElement",
+     "kind": "function",
+     "path": "packages/excalidraw/element/typeChecks.ts",
+     "start_line": 90,
+     "end_line": 94,
+     "defs": 1
+    },
+    {
+     "draw": 654,
+     "name": "updateMaxAvatars",
+     "kind": "method",
+     "path": "packages/excalidraw/components/UserList.tsx",
+     "start_line": 141,
+     "end_line": 144,
+     "defs": 1
+    }
+   ]
+  },
+  "keycloak": {
+   "callers": [
+    {
+     "draw": 45522,
+     "name": "updateRotateSecret",
+     "kind": "method",
+     "path": "services/src/main/java/org/keycloak/services/clientpolicy/executor/ClientSecretRotationExecutor.java",
+     "start_line": 174,
+     "end_line": 188,
+     "defs": 1,
+     "mentions": [
+      "services/src/main/java/org/keycloak/services/clientpolicy/executor/ClientSecretRotationExecutor.java:141",
+      "services/src/main/java/org/keycloak/services/clientpolicy/executor/ClientSecretRotationExecutor.java:150"
+     ]
+    },
+    {
+     "draw": 38835,
+     "name": "configureRetries",
+     "kind": "method",
+     "path": "services/src/main/java/org/keycloak/connections/httpclient/DefaultHttpClientFactory.java",
+     "start_line": 287,
+     "end_line": 330,
+     "defs": 1,
+     "mentions": [
+      "services/src/main/java/org/keycloak/connections/httpclient/DefaultHttpClientFactory.java:279",
+      "services/src/main/java/org/keycloak/connections/httpclient/DefaultHttpClientFactory.java:293"
+     ]
+    },
+    {
+     "draw": 42637,
+     "name": "isAllowTransientUserSession",
+     "kind": "method",
+     "path": "services/src/main/java/org/keycloak/protocol/oidc/encode/AccessTokenContext.java",
+     "start_line": 76,
+     "end_line": 78,
+     "defs": 1,
+     "mentions": [
+      "services/src/main/java/org/keycloak/services/util/UserSessionUtil.java:87"
+     ]
+    },
+    {
+     "draw": 2436,
+     "name": "getCompressionAlgorithm",
+     "kind": "method",
+     "path": "core/src/main/java/org/keycloak/jose/jwe/JWEHeader.java",
+     "start_line": 115,
+     "end_line": 117,
+     "defs": 1,
+     "mentions": [
+      "services/src/main/java/org/keycloak/protocol/oid4vc/issuance/OID4VCIssuerEndpoint.java:1234"
+     ]
+    },
+    {
+     "draw": 7291,
+     "name": "isEnableLdapPasswordPolicy",
+     "kind": "method",
+     "path": "federation/ldap/src/main/java/org/keycloak/storage/ldap/LDAPConfig.java",
+     "start_line": 265,
+     "end_line": 268,
+     "defs": 1,
+     "mentions": [
+      "federation/ldap/src/main/java/org/keycloak/storage/ldap/idm/store/ldap/LDAPOperationManager.java:767"
+     ]
+    },
+    {
+     "draw": 30457,
+     "name": "addVerifyProfile",
+     "kind": "method",
+     "path": "server-spi-private/src/main/java/org/keycloak/models/utils/DefaultRequiredActions.java",
+     "start_line": 190,
+     "end_line": 201,
+     "defs": 1,
+     "mentions": [
+      "server-spi-private/src/main/java/org/keycloak/models/utils/DefaultRequiredActions.java:87"
+     ]
+    },
+    {
+     "draw": 19369,
+     "name": "updateRememberMeColumn",
+     "kind": "method",
+     "path": "model/jpa/src/main/java/org/keycloak/models/jpa/session/UserSessionExpirationLogic.java",
+     "start_line": 337,
+     "end_line": 345,
+     "defs": 1,
+     "mentions": [
+      "model/jpa/src/main/java/org/keycloak/models/jpa/session/UserSessionExpirationLogic.java:232",
+      "model/jpa/src/main/java/org/keycloak/models/jpa/session/UserSessionExpirationLogic.java:234"
+     ]
+    },
+    {
+     "draw": 19626,
+     "name": "setScheduledStepId",
+     "kind": "method",
+     "path": "model/jpa/src/main/java/org/keycloak/models/workflow/WorkflowStateEntity.java",
+     "start_line": 89,
+     "end_line": 91,
+     "defs": 1,
+     "mentions": [
+      "model/jpa/src/main/java/org/keycloak/models/workflow/JpaWorkflowStateProvider.java:80",
+      "model/jpa/src/main/java/org/keycloak/models/workflow/JpaWorkflowStateProvider.java:85"
+     ]
+    },
+    {
+     "draw": 23072,
+     "name": "isKeycloakRuntime",
+     "kind": "method",
+     "path": "quarkus/runtime/src/main/java/org/keycloak/quarkus/runtime/configuration/mappers/PropertyMappers.java",
+     "start_line": 112,
+     "end_line": 117,
+     "defs": 1,
+     "mentions": [
+      "quarkus/runtime/src/main/java/org/keycloak/quarkus/runtime/configuration/mappers/PropertyMappers.java:83"
+     ]
+    },
+    {
+     "draw": 49735,
+     "name": "isUnknownOrDisabledClient",
+     "kind": "method",
+     "path": "services/src/main/java/org/keycloak/utils/RoleResolveUtil.java",
+     "start_line": 118,
+     "end_line": 122,
+     "defs": 1,
+     "mentions": [
+      "services/src/main/java/org/keycloak/utils/RoleResolveUtil.java:78"
+     ]
+    }
+   ],
+   "same_name": [
+    {
+     "draw": 41510,
+     "name": "CredentialOfferActionToken",
+     "kind": "method",
+     "path": "services/src/main/java/org/keycloak/protocol/oid4vc/issuance/requiredactions/CredentialOfferActionToken.java",
+     "start_line": 32,
+     "end_line": 33,
+     "defs": 4,
+     "mentions": [
+      "services/src/main/java/org/keycloak/protocol/oid4vc/issuance/requiredactions/CredentialOfferActionToken.java:8",
+      "services/src/main/java/org/keycloak/protocol/oid4vc/issuance/requiredactions/CredentialOfferActionToken.java:20",
+      "services/src/main/java/org/keycloak/protocol/oid4vc/issuance/requiredactions/CredentialOfferActionToken.java:27",
+      "services/src/main/java/org/keycloak/protocol/oid4vc/issuance/requiredactions/CredentialOfferActionTokenHandler.java:42",
+      "services/src/main/java/org/keycloak/protocol/oid4vc/issuance/requiredactions/CredentialOfferActionTokenHandler.java:48",
+      "services/src/main/java/org/keycloak/protocol/oid4vc/issuance/requiredactions/CredentialOfferActionTokenHandler.java:49",
+      "services/src/main/java/org/keycloak/protocol/oid4vc/issuance/requiredactions/CredentialOfferActionTokenHandler.java:57",
+      "services/src/main/java/org/keycloak/protocol/oid4vc/issuance/requiredactions/CredentialOfferActionTokenHandler.java:78",
+      "services/src/main/java/org/keycloak/protocol/oid4vc/issuance/requiredactions/CredentialOfferActionTokenHandler.java:129",
+      "services/src/main/java/org/keycloak/protocol/oid4vc/issuance/requiredactions/CredentialOfferActionTokenHandler.java:134",
+      "services/src/main/java/org/keycloak/protocol/oid4vc/resources/admin/UserVerifiableCredentialResource.java:38",
+      "services/src/main/java/org/keycloak/protocol/oid4vc/resources/admin/UserVerifiableCredentialResource.java:311"
+     ]
+    },
+    {
+     "draw": 46726,
+     "name": "isUseResourceRoleMappings",
+     "kind": "method",
+     "path": "services/src/main/java/org/keycloak/services/managers/ClientManager.java",
+     "start_line": 278,
+     "end_line": 280,
+     "defs": 2,
+     "mentions": [
+      "core/src/main/java/org/keycloak/representations/adapters/config/BaseAdapterConfig.java:67"
+     ]
+    },
+    {
+     "draw": 41564,
+     "name": "MdocCredentialSigner",
+     "kind": "method",
+     "path": "services/src/main/java/org/keycloak/protocol/oid4vc/issuance/signing/MdocCredentialSigner.java",
+     "start_line": 28,
+     "end_line": 30,
+     "defs": 2,
+     "mentions": [
+      "services/src/main/java/org/keycloak/protocol/oid4vc/issuance/signing/MdocCredentialSigner.java:26",
+      "services/src/main/java/org/keycloak/protocol/oid4vc/issuance/signing/MdocCredentialSignerFactory.java:33"
+     ]
+    },
+    {
+     "draw": 40470,
+     "name": "isEnabledAndOrganizationsPresent",
+     "kind": "method",
+     "path": "services/src/main/java/org/keycloak/organization/utils/Organizations.java",
+     "start_line": 251,
+     "end_line": 253,
+     "defs": 2,
+     "mentions": [
+      "services/src/main/java/org/keycloak/authentication/authenticators/browser/CookieAuthenticator.java:157",
+      "services/src/main/java/org/keycloak/organization/authentication/authenticators/broker/IdpAddOrganizationMemberAuthenticator.java:64",
+      "services/src/main/java/org/keycloak/organization/authentication/authenticators/broker/IdpAddOrganizationMemberAuthenticator.java:257",
+      "services/src/main/java/org/keycloak/organization/authentication/authenticators/browser/OrganizationAuthenticator.java:70",
+      "services/src/main/java/org/keycloak/organization/authentication/authenticators/browser/OrganizationAuthenticator.java:88",
+      "services/src/main/java/org/keycloak/organization/forms/login/freemarker/model/OrganizationAwareIdentityProviderBean.java:170",
+      "services/src/main/java/org/keycloak/organization/protocol/mappers/saml/OrganizationGroupMembershipMapper.java:54",
+      "services/src/main/java/org/keycloak/organization/protocol/mappers/saml/OrganizationGroupMembershipMapper.java:75",
+      "services/src/main/java/org/keycloak/organization/protocol/mappers/saml/OrganizationMembershipMapper.java:43",
+      "services/src/main/java/org/keycloak/organization/protocol/mappers/saml/OrganizationMembershipMapper.java:65",
+      "services/src/main/java/org/keycloak/organization/utils/Organizations.java:255",
+      "services/src/main/java/org/keycloak/organization/utils/Organizations.java:262"
+     ]
+    },
+    {
+     "draw": 52165,
+     "name": "resetToOriginalRepresentation",
+     "kind": "method",
+     "path": "test-framework/core/src/main/java/org/keycloak/testframework/realm/ManagedOrganizationCleanup.java",
+     "start_line": 28,
+     "end_line": 33,
+     "defs": 4,
+     "mentions": [
+      "test-framework/core/src/main/java/org/keycloak/testframework/realm/ManagedClient.java:67",
+      "test-framework/core/src/main/java/org/keycloak/testframework/realm/ManagedClientCleanup.java:24",
+      "test-framework/core/src/main/java/org/keycloak/testframework/realm/ManagedOrganization.java:201",
+      "test-framework/core/src/main/java/org/keycloak/testframework/realm/ManagedRealm.java:100",
+      "test-framework/core/src/main/java/org/keycloak/testframework/realm/ManagedRealmCleanup.java:24",
+      "test-framework/core/src/main/java/org/keycloak/testframework/realm/ManagedUser.java:49",
+      "test-framework/core/src/main/java/org/keycloak/testframework/realm/ManagedUserCleanup.java:20"
+     ]
+    },
+    {
+     "draw": 42584,
+     "name": "combiner",
+     "kind": "method",
+     "path": "services/src/main/java/org/keycloak/protocol/oidc/TokenManager.java",
+     "start_line": 1110,
+     "end_line": 1113,
+     "defs": 2,
+     "mentions": [
+      "server-spi-private/src/main/java/org/keycloak/utils/ClosingDoubleStream.java:151",
+      "server-spi-private/src/main/java/org/keycloak/utils/ClosingDoubleStream.java:153",
+      "server-spi-private/src/main/java/org/keycloak/utils/ClosingIntStream.java:152",
+      "server-spi-private/src/main/java/org/keycloak/utils/ClosingIntStream.java:154",
+      "server-spi-private/src/main/java/org/keycloak/utils/ClosingLongStream.java:152",
+      "server-spi-private/src/main/java/org/keycloak/utils/ClosingLongStream.java:154",
+      "server-spi-private/src/main/java/org/keycloak/utils/ClosingStream.java:181",
+      "server-spi-private/src/main/java/org/keycloak/utils/ClosingStream.java:183",
+      "server-spi-private/src/main/java/org/keycloak/utils/ClosingStream.java:190",
+      "server-spi-private/src/main/java/org/keycloak/utils/ClosingStream.java:192",
+      "services/src/main/java/org/keycloak/protocol/docker/DockerKeyIdentifier.java:113",
+      "services/src/main/java/org/keycloak/protocol/oidc/TokenManager.java:1111"
+     ]
+    },
+    {
+     "draw": 21353,
+     "name": "getErrorCode",
+     "kind": "method",
+     "path": "model/storage-services/src/main/java/org/keycloak/services/resources/admin/UserStorageProviderResource.java",
+     "start_line": 83,
+     "end_line": 90,
+     "defs": 4,
+     "mentions": [
+      "core/src/main/java/org/keycloak/representations/docker/DockerError.java:45",
+      "federation/ldap/src/main/java/org/keycloak/services/managers/LDAPServerCapabilitiesManager.java:124",
+      "federation/ldap/src/main/java/org/keycloak/services/resources/admin/TestLdapConnectionResource.java:78",
+      "federation/ldap/src/main/java/org/keycloak/services/resources/admin/TestLdapConnectionResource.java:96",
+      "model/storage-services/src/main/java/org/keycloak/services/resources/admin/UserStorageProviderResource.java:86",
+      "model/storage-services/src/main/java/org/keycloak/services/resources/admin/UserStorageProviderResource.java:89",
+      "model/storage-services/src/main/java/org/keycloak/services/resources/admin/UserStorageProviderResource.java:160",
+      "model/storage-services/src/main/java/org/keycloak/services/resources/admin/UserStorageProviderResource.java:167",
+      "model/storage-services/src/main/java/org/keycloak/services/resources/admin/UserStorageProviderResource.java:262",
+      "model/storage-services/src/main/java/org/keycloak/services/resources/admin/UserStorageProviderResource.java:269",
+      "services/src/main/java/org/keycloak/services/error/KeycloakErrorHandler.java:83",
+      "services/src/main/java/org/keycloak/services/error/KeycloakErrorHandler.java:140"
+     ]
+    },
+    {
+     "draw": 5976,
+     "name": "getConfigValues",
+     "kind": "method",
+     "path": "core/src/main/java/org/keycloak/representations/workflows/AbstractWorkflowComponentRepresentation.java",
+     "start_line": 73,
+     "end_line": 83,
+     "defs": 2,
+     "mentions": [
+      "core/src/main/java/org/keycloak/representations/workflows/WorkflowStateRepresentation.java:17",
+      "federation/ldap/src/main/java/org/keycloak/storage/ldap/mappers/membership/CommonLDAPGroupMapperConfig.java:88",
+      "federation/ldap/src/main/java/org/keycloak/storage/ldap/mappers/membership/group/GroupMapperConfig.java:125",
+      "federation/ldap/src/main/java/org/keycloak/storage/ldap/mappers/membership/group/GroupMapperConfig.java:130",
+      "federation/ldap/src/main/java/org/keycloak/storage/ldap/mappers/membership/role/RoleMapperConfig.java:101"
+     ]
+    },
+    {
+     "draw": 34214,
+     "name": "getIdentityProviderMapperByName",
+     "kind": "method",
+     "path": "server-spi/src/main/java/org/keycloak/models/RealmModel.java",
+     "start_line": 551,
+     "end_line": 555,
+     "defs": 6,
+     "mentions": [
+      "model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/RealmAdapter.java:1300",
+      "model/jpa/src/main/java/org/keycloak/models/jpa/RealmAdapter.java:1488",
+      "server-spi-private/src/main/java/org/keycloak/models/utils/RealmModelDelegate.java:836",
+      "server-spi-private/src/main/java/org/keycloak/models/utils/RealmModelDelegate.java:837",
+      "server-spi-private/src/test/java/org/keycloak/broker/provider/util/IdentityBrokerStateTestHelpers.java:1474",
+      "server-spi/src/main/java/org/keycloak/models/RealmModel.java:555",
+      "services/src/test/java/org/keycloak/protocol/saml/SamlProtocolTest.java:1119"
+     ]
+    },
+    {
+     "draw": 51515,
+     "name": "getMediation",
+     "kind": "method",
+     "path": "test-framework/builders/src/main/java/org/keycloak/testframework/realm/WebAuthnRealmData.java",
+     "start_line": 72,
+     "end_line": 78,
+     "defs": 2,
+     "mentions": [
+      "model/jpa/src/main/java/org/keycloak/models/jpa/RealmAdapter.java:1118",
+      "model/jpa/src/main/java/org/keycloak/models/jpa/RealmAdapter.java:1184",
+      "model/storage-private/src/main/java/org/keycloak/storage/datastore/DefaultExportImportManager.java:1508",
+      "server-spi-private/src/main/java/org/keycloak/models/utils/ModelToRepresentation.java:622",
+      "server-spi/src/main/java/org/keycloak/models/WebAuthnPolicy.java:174",
+      "services/src/main/java/org/keycloak/authentication/authenticators/browser/WebAuthnAuthenticator.java:136"
+     ]
+    }
+   ],
+   "callees": [
+    {
+     "draw": 35326,
+     "name": "setAttributeDisplayName",
+     "kind": "method",
+     "path": "server-spi/src/main/java/org/keycloak/userprofile/AttributeMetadata.java",
+     "start_line": 247,
+     "end_line": 251,
+     "defs": 1
+    },
+    {
+     "draw": 14492,
+     "name": "setUserSessionNote",
+     "kind": "method",
+     "path": "model/infinispan/src/main/java/org/keycloak/models/sessions/infinispan/AuthenticationSessionAdapter.java",
+     "start_line": 208,
+     "end_line": 222,
+     "defs": 4
+    },
+    {
+     "draw": 12903,
+     "name": "getAuthenticatorConfigByAlias",
+     "kind": "method",
+     "path": "model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/RealmAdapter.java",
+     "start_line": 1405,
+     "end_line": 1411,
+     "defs": 7
+    },
+    {
+     "draw": 1970,
+     "name": "getShortStackTrace",
+     "kind": "method",
+     "path": "common/src/main/java/org/keycloak/common/util/StackUtil.java",
+     "start_line": 18,
+     "end_line": 33,
+     "defs": 2
+    },
+    {
+     "draw": 32210,
+     "name": "getFederationLink",
+     "kind": "method",
+     "path": "server-spi-private/src/main/java/org/keycloak/storage/adapter/AbstractInMemoryUserAdapter.java",
+     "start_line": 238,
+     "end_line": 241,
+     "defs": 15
+    },
+    {
+     "draw": 26377,
+     "name": "bypassElementBlock",
+     "kind": "method",
+     "path": "saml-core/src/main/java/org/keycloak/saml/common/util/StaxParserUtil.java",
+     "start_line": 89,
+     "end_line": 105,
+     "defs": 3
+    },
+    {
+     "draw": 16610,
+     "name": "addScope",
+     "kind": "method",
+     "path": "model/jpa/src/main/java/org/keycloak/authorization/jpa/store/PolicyAdapter.java",
+     "start_line": 189,
+     "end_line": 193,
+     "defs": 10
+    },
+    {
+     "draw": 28061,
+     "name": "onDelete",
+     "kind": "method",
+     "path": "scim/model/src/main/java/org/keycloak/scim/model/user/UserResourceTypeProvider.java",
+     "start_line": 264,
+     "end_line": 268,
+     "defs": 7
+    },
+    {
+     "draw": 29570,
+     "name": "getProviderClass",
+     "kind": "method",
+     "path": "server-spi-private/src/main/java/org/keycloak/events/EventListenerSpi.java",
+     "start_line": 39,
+     "end_line": 42,
+     "defs": 168
+    },
+    {
+     "draw": 40951,
+     "name": "create",
+     "kind": "method",
+     "path": "services/src/main/java/org/keycloak/protocol/oid4vc/OID4VCLoginProtocolFactory.java",
+     "start_line": 300,
+     "end_line": 303,
+     "defs": 1030
+    }
+   ]
+  },
+  "linux": {
+   "callers": [
+    {
+     "draw": 121392,
+     "name": "twl6040gpo_direction_out",
+     "kind": "function",
+     "path": "drivers/gpio/gpio-twl6040.c",
+     "start_line": 59,
+     "end_line": 64,
+     "defs": 1,
+     "mentions": [
+      "drivers/gpio/gpio-twl6040.c:70"
+     ]
+    },
+    {
+     "draw": 609938,
+     "name": "bch_encode_unaligned",
+     "kind": "function",
+     "path": "lib/bch.c",
+     "start_line": 126,
+     "end_line": 147,
+     "defs": 1,
+     "mentions": [
+      "lib/bch.c:129",
+      "lib/bch.c:235",
+      "lib/bch.c:281"
+     ]
+    },
+    {
+     "draw": 245217,
+     "name": "dmz_iterate_devices",
+     "kind": "function",
+     "path": "drivers/md/dm-zoned-target.c",
+     "start_line": 1059,
+     "end_line": 1074,
+     "defs": 1,
+     "mentions": [
+      "drivers/md/dm-zoned-target.c:1152"
+     ]
+    },
+    {
+     "draw": 615965,
+     "name": "damon_sysfs_ui_dir_add_dirs",
+     "kind": "function",
+     "path": "mm/damon/sysfs.c",
+     "start_line": 1992,
+     "end_line": 2010,
+     "defs": 1,
+     "mentions": [
+      "mm/damon/sysfs.c:2047"
+     ]
+    },
+    {
+     "draw": 422334,
+     "name": "parse_mem",
+     "kind": "function",
+     "path": "drivers/pcmcia/cistpl.c",
+     "start_line": 1022,
+     "end_line": 1060,
+     "defs": 1,
+     "mentions": [
+      "drivers/pcmcia/cistpl.c:1179"
+     ]
+    },
+    {
+     "draw": 252305,
+     "name": "alvium_get_feat_inq",
+     "kind": "function",
+     "path": "drivers/media/i2c/alvium-csi2.c",
+     "start_line": 538,
+     "end_line": 553,
+     "defs": 1,
+     "mentions": [
+      "drivers/media/i2c/alvium-csi2.c:1589"
+     ]
+    },
+    {
+     "draw": 639704,
+     "name": "cmp_nla_table",
+     "kind": "function",
+     "path": "net/ipv6/seg6_local.c",
+     "start_line": 1734,
+     "end_line": 1740,
+     "defs": 1,
+     "mentions": [
+      "net/ipv6/seg6_local.c:2286"
+     ]
+    },
+    {
+     "draw": 340036,
+     "name": "esw_setup_decap_indir",
+     "kind": "function",
+     "path": "drivers/net/ethernet/mellanox/mlx5/core/eswitch_offloads.c",
+     "start_line": 174,
+     "end_line": 186,
+     "defs": 1,
+     "mentions": [
+      "drivers/net/ethernet/mellanox/mlx5/core/eswitch_offloads.c:175",
+      "drivers/net/ethernet/mellanox/mlx5/core/eswitch_offloads.c:238",
+      "drivers/net/ethernet/mellanox/mlx5/core/eswitch_offloads.c:399"
+     ]
+    },
+    {
+     "draw": 495268,
+     "name": "exit_kgdboc",
+     "kind": "function",
+     "path": "drivers/tty/serial/kgdboc.c",
+     "start_line": 322,
+     "end_line": 330,
+     "defs": 1,
+     "mentions": [
+      "drivers/tty/serial/kgdboc.c:646"
+     ]
+    },
+    {
+     "draw": 648772,
+     "name": "digital_tg_listen_nfca",
+     "kind": "function",
+     "path": "net/nfc/digital_technology.c",
+     "start_line": 1228,
+     "end_line": 1237,
+     "defs": 1,
+     "mentions": [
+      "net/nfc/digital.h:114",
+      "net/nfc/digital_core.c:535"
+     ]
+    }
+   ],
+   "same_name": [
+    {
+     "draw": 704234,
+     "name": "exit_rwsem",
+     "kind": "function",
+     "path": "tools/include/linux/rwsem.h",
+     "start_line": 16,
+     "end_line": 19,
+     "defs": 2,
+     "mentions": [
+      "tools/perf/util/dsos.c:47",
+      "tools/perf/util/rwsem.c:19",
+      "tools/perf/util/rwsem.h:22",
+      "tools/perf/util/thread.c:122",
+      "tools/perf/util/thread.c:123",
+      "tools/perf/util/threads.c:41"
+     ]
+    },
+    {
+     "draw": 382687,
+     "name": "ar9003_hw_rtt_clear_hist",
+     "kind": "function",
+     "path": "drivers/net/wireless/ath/ath9k/ar9003_rtt.h",
+     "start_line": 55,
+     "end_line": 57,
+     "defs": 2,
+     "mentions": [
+      "drivers/net/wireless/ath/ath9k/ar9003_calib.c:1422",
+      "drivers/net/wireless/ath/ath9k/ar9003_rtt.c:191",
+      "drivers/net/wireless/ath/ath9k/ar9003_rtt.h:27"
+     ]
+    },
+    {
+     "draw": 489966,
+     "name": "imx_thermal_unregister_legacy_cooling",
+     "kind": "function",
+     "path": "drivers/thermal/imx_thermal.c",
+     "start_line": 580,
+     "end_line": 582,
+     "defs": 2,
+     "mentions": [
+      "drivers/thermal/imx_thermal.c:567",
+      "drivers/thermal/imx_thermal.c:752",
+      "drivers/thermal/imx_thermal.c:765"
+     ]
+    },
+    {
+     "draw": 364565,
+     "name": "prueth_netdev_init",
+     "kind": "function",
+     "path": "drivers/net/ethernet/ti/icssg/icssg_prueth_sr1.c",
+     "start_line": 755,
+     "end_line": 893,
+     "defs": 2,
+     "mentions": [
+      "drivers/net/ethernet/ti/icssg/icssg_prueth.c:1181",
+      "drivers/net/ethernet/ti/icssg/icssg_prueth.c:1905",
+      "drivers/net/ethernet/ti/icssg/icssg_prueth.c:1919",
+      "drivers/net/ethernet/ti/icssg/icssg_prueth_sr1.c:1060",
+      "drivers/net/ethernet/ti/icssg/icssg_prueth_sr1.c:1074"
+     ]
+    },
+    {
+     "draw": 578721,
+     "name": "phy_link_topo_get_phy",
+     "kind": "function",
+     "path": "include/linux/phy_link_topology.h",
+     "start_line": 46,
+     "end_line": 60,
+     "defs": 2,
+     "mentions": [
+      "include/linux/phy_link_topology.h:47",
+      "include/linux/phy_link_topology.h:76",
+      "net/ethtool/netlink.c:236"
+     ]
+    },
+    {
+     "draw": 24992,
+     "name": "mm_pkey_is_allocated",
+     "kind": "function",
+     "path": "arch/powerpc/include/asm/pkeys.h",
+     "start_line": 68,
+     "end_line": 78,
+     "defs": 4,
+     "mentions": [
+      "arch/arm64/include/asm/pkeys.h:51",
+      "arch/arm64/include/asm/pkeys.h:98",
+      "arch/powerpc/include/asm/pkeys.h:115",
+      "arch/x86/include/asm/pkeys.h:55",
+      "arch/x86/include/asm/pkeys.h:110",
+      "include/linux/pkeys.h:23",
+      "mm/mprotect.c:900"
+     ]
+    },
+    {
+     "draw": 73484,
+     "name": "acpi_device_override_status",
+     "kind": "function",
+     "path": "drivers/acpi/x86/utils.c",
+     "start_line": 168,
+     "end_line": 207,
+     "defs": 2,
+     "mentions": [
+      "drivers/acpi/bus.c:100",
+      "include/acpi/acpi_bus.h:761",
+      "include/acpi/acpi_bus.h:767"
+     ]
+    },
+    {
+     "draw": 589745,
+     "name": "rd_load_image",
+     "kind": "function",
+     "path": "init/do_mounts_rd.c",
+     "start_line": 187,
+     "end_line": 275,
+     "defs": 2,
+     "mentions": [
+      "init/do_mounts.h:28",
+      "init/do_mounts.h:33",
+      "init/do_mounts_initrd.c:146",
+      "init/do_mounts_rd.c:281"
+     ]
+    },
+    {
+     "draw": 49108,
+     "name": "cc_get_mask",
+     "kind": "function",
+     "path": "arch/x86/include/asm/coco.h",
+     "start_line": 33,
+     "end_line": 36,
+     "defs": 2,
+     "mentions": [
+      "arch/x86/include/asm/coco.h:18",
+      "arch/x86/include/asm/pgtable_types.h:179"
+     ]
+    },
+    {
+     "draw": 2271,
+     "name": "set_domain",
+     "kind": "function",
+     "path": "arch/arm/include/asm/domain.h",
+     "start_line": 97,
+     "end_line": 103,
+     "defs": 2,
+     "mentions": [
+      "arch/arm/include/asm/domain.h:110",
+      "arch/arm/include/asm/uaccess.h:36",
+      "arch/arm/include/asm/uaccess.h:45",
+      "drivers/gpu/drm/i915/gem/i915_gem_domain.c:582",
+      "drivers/gpu/drm/nouveau/nouveau_gem.c:582",
+      "drivers/rapidio/switches/idt_gen2.c:410",
+      "drivers/rapidio/switches/idtcps.c:123",
+      "include/linux/rio.h:112",
+      "include/linux/rio.h:128"
+     ]
+    }
+   ],
+   "callees": [
+    {
+     "draw": 644639,
+     "name": "ip_vs_register_nl_ioctl",
+     "kind": "function",
+     "path": "net/netfilter/ipvs/ip_vs_ctl.c",
+     "start_line": 4502,
+     "end_line": 4523,
+     "defs": 1
+    },
+    {
+     "draw": 338611,
+     "name": "mlx5e_update_carrier",
+     "kind": "function",
+     "path": "drivers/net/ethernet/mellanox/mlx5/core/en_main.c",
+     "start_line": 126,
+     "end_line": 146,
+     "defs": 1
+    },
+    {
+     "draw": 611872,
+     "name": "__lc_find",
+     "kind": "function",
+     "path": "lib/lru_cache.c",
+     "start_line": 239,
+     "end_line": 257,
+     "defs": 1
+    },
+    {
+     "draw": 150046,
+     "name": "i2c_algo_dp_aux_stop",
+     "kind": "function",
+     "path": "drivers/gpu/drm/gma500/cdv_intel_dp.c",
+     "start_line": 97,
+     "end_line": 115,
+     "defs": 1
+    },
+    {
+     "draw": 267311,
+     "name": "rkvdec_request_validate",
+     "kind": "function",
+     "path": "drivers/media/platform/rockchip/rkvdec/rkvdec.c",
+     "start_line": 730,
+     "end_line": 741,
+     "defs": 1
+    },
+    {
+     "draw": 298198,
+     "name": "ksz_tc_ets_del",
+     "kind": "function",
+     "path": "drivers/net/dsa/microchip/ksz_common.c",
+     "start_line": 4409,
+     "end_line": 4428,
+     "defs": 1
+    },
+    {
+     "draw": 580759,
+     "name": "sched_info_on",
+     "kind": "function",
+     "path": "include/linux/sched/stat.h",
+     "start_line": 25,
+     "end_line": 28,
+     "defs": 1
+    },
+    {
+     "draw": 479255,
+     "name": "qpnpint_irq_domain_map",
+     "kind": "function",
+     "path": "drivers/spmi/spmi-pmic-arb.c",
+     "start_line": 944,
+     "end_line": 963,
+     "defs": 1
+    },
+    {
+     "draw": 328738,
+     "name": "igbvf_set_eeprom",
+     "kind": "function",
+     "path": "drivers/net/ethernet/intel/igbvf/ethtool.c",
+     "start_line": 163,
+     "end_line": 167,
+     "defs": 1
+    },
+    {
+     "draw": 518257,
+     "name": "mono_col",
+     "kind": "function",
+     "path": "drivers/video/fbdev/core/fbcon.h",
+     "start_line": 111,
+     "end_line": 117,
+     "defs": 1
+    }
+   ]
+  }
+ }
+}

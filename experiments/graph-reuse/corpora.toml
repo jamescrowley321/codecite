@@ -1,0 +1,90 @@
+# Inputs for the CodeGraph reuse benchmark (#295).
+#
+# The repositories, split and pins are #294's (experiments/retrieval-
+# generalization/corpora.toml on PR #294), so both benchmarks describe the
+# same source. `split` keeps evaluation repositories, where generalization is
+# claimed, apart from the Linux and Keycloak controls. #294 measured
+# definitions and search on the evaluation repositories; no edge output of
+# either tool on them had been read when this file and cases.json were
+# frozen (README, "Split").
+#
+# `scip` names the standard indexer that produced the SCIP index for the
+# codecite+SCIP baseline, or says why none exists. A repository without one
+# has *unavailable* SCIP coverage, never zero recall. `language` and `domain`
+# only describe the repository; nothing in the harness reads them.
+
+[producer.codegraph]
+package = "@colbymchenry/codegraph"
+version = "1.6.0"
+platform_bundle = "@colbymchenry/codegraph-linux-x64 1.6.0"
+license = "MIT"
+schema_version = 9                 # max(schema_versions.version)
+extraction_version = "25"          # project_metadata.indexed_with_extraction_version
+inclusion = "codegraph init -y <checkout> with its default include and exclude rules, run by #294's prepare.sh"
+
+[producer.codecite]
+build = "c65b4d8"                  # origin/main, release profile, --locked
+sha256 = "2e0988cada0c004d9938c1a677957889eb02687b16b72bd7cb0a0cadee35e73a"
+
+[[repo]]
+name = "django"
+split = "evaluation"
+url = "https://github.com/django/django"
+commit = "8f8ad09659d728423a00e0a3b5f16da5c3a38e24"  # tag 6.0.5
+license = "BSD-3-Clause"
+use = "adapt"
+language = "python"
+domain = "web framework and ORM"
+scip = "scip-python 0.6.8 (npm @sourcegraph/scip-python), `index . --project-name django --project-version 6.0.5`, no network"
+codegraph_sha256 = "749309442b28dcc2b23f0bcda6200a39a3c736fac59b2366045e32d514e2ebcc"
+scip_sha256 = "15ab0e01d9f80854e5d4daa32ab03b50a393cc86dce4ce802197c27b3437a195"
+
+[[repo]]
+name = "ripgrep"
+split = "evaluation"
+url = "https://github.com/BurntSushi/ripgrep"
+commit = "669cb4c755db20b26c3af3d923c042ae224c7496"  # tag 16.0.0
+license = "MIT OR Unlicense"
+use = "adapt"
+language = "rust"
+domain = "command-line text search"
+scip = "rust-analyzer 1.97.1 (8bab26f 2026-07-14), `rust-analyzer scip .`, after `cargo fetch --locked`, no network; runs build scripts, so trusted source only"
+codegraph_sha256 = "bbcba2e4b6079cca6091bb1b3ef394c0d5c55255fcd918f6a4977880bfb767af"
+scip_sha256 = "0ab6d146857b57d7585f010490f99f121d37c23e13908334cffd65c8f377817c"
+
+[[repo]]
+name = "excalidraw"
+split = "evaluation"
+url = "https://github.com/excalidraw/excalidraw"
+commit = "a2ec2889babf7d2295469c6d90ebe77fae57df84"  # tag v0.18.1
+license = "MIT"
+use = "adapt"
+language = "typescript"
+domain = "browser drawing application"
+scip = "scip-typescript 0.6.2 (npm @sourcegraph/scip-typescript), `index` with the root tsconfig.json, no node_modules installed, no network"
+codegraph_sha256 = "df41907072fc33d9943a560587989d9e389cd11d327550c5d2e63aa5db3d5808"
+scip_sha256 = "70984bf4be068fc584a08a98ebbecfbbeff4517c9cb17a2c072f8864d0f53cf8"
+
+[[repo]]
+name = "keycloak"
+split = "control"
+url = "https://github.com/keycloak/keycloak"
+commit = "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1"  # #255's pin
+license = "Apache-2.0"
+use = "adapt"
+language = "java"
+domain = "identity and access management server"
+scip = "unavailable: scip-java needs a full Maven build of the project, which runs project code and was not done"
+codegraph_sha256 = "b36cf521181e5c4ea7740bdf8449861ed55b8664f0c3405b104620ca6af07825"
+
+[[repo]]
+name = "linux"
+split = "control"
+url = "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git"
+commit = "7d0a66e4bb9081d75c82ec4957c50034cb0ea449"  # #255's pin
+license = "GPL-2.0-only"
+use = "approach_only"
+language = "c"
+domain = "operating system kernel"
+scip = "unavailable: scip-clang needs a compile_commands.json from a configured kernel build, which was not done"
+codegraph_sha256 = "e3a2fe45f5497acd6f29335d50ce515441db298f12b159c64e3cd855611a46be"

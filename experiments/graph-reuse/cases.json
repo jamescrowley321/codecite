@@ -1,0 +1,2102 @@
+{
+ "issue": 295,
+ "note": "Frozen before any edge output of codecite or CodeGraph was read on these repositories. Labels are paths and lines from the pinned source; see README, Cases.",
+ "cases": [
+  {
+   "id": "django/callers/_resolve_combined_type",
+   "repo": "django",
+   "class": "direct_call",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "_resolve_combined_type",
+    "path": "django/db/models/expressions.py",
+    "line": 715
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "django/db/models/expressions.py",
+       "line": 743,
+       "name": "_resolve_output_field"
+      }
+     ],
+     "sites": [
+      746
+     ]
+    }
+   ],
+   "forbid": [
+    {
+     "path": "django/db/models/expressions.py",
+     "line": 346,
+     "name": "_resolve_output_field",
+     "why": "BaseExpression's method of the same name does not call it"
+    }
+   ],
+   "certainty": "certain",
+   "draw": "callers bucket, first draw"
+  },
+  {
+   "id": "django/callers/create_collation",
+   "repo": "django",
+   "class": "identical_name",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "create_collation",
+    "path": "django/contrib/postgres/operations.py",
+    "line": 197
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "django/contrib/postgres/operations.py",
+       "line": 224,
+       "name": "database_forwards"
+      }
+     ],
+     "sites": [
+      229
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "django/contrib/postgres/operations.py",
+       "line": 261,
+       "name": "database_backwards"
+      }
+     ],
+     "sites": [
+      264
+     ]
+    }
+   ],
+   "forbid": [
+    {
+     "path": "django/contrib/postgres/operations.py",
+     "line": 231,
+     "name": "database_backwards",
+     "why": "CreateCollation.database_backwards calls remove_collation"
+    },
+    {
+     "path": "django/contrib/postgres/operations.py",
+     "line": 254,
+     "name": "database_forwards",
+     "why": "RemoveCollation.database_forwards calls remove_collation"
+    }
+   ],
+   "certainty": "certain",
+   "note": "inherited method called through self from two subclasses whose methods share names",
+   "draw": "callers bucket"
+  },
+  {
+   "id": "django/callers/ensure_not_cyclic",
+   "repo": "django",
+   "class": "direct_call",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "ensure_not_cyclic",
+    "path": "django/db/migrations/graph.py",
+    "line": 270
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "django/db/migrations/loader.py",
+       "line": 274,
+       "name": "build_graph"
+      }
+     ],
+     "sites": [
+      342
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "tests/migrations/test_graph.py",
+       "line": 145,
+       "name": "test_circular_graph"
+      }
+     ],
+     "sites": [
+      163
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "tests/migrations/test_graph.py",
+       "line": 165,
+       "name": "test_circular_graph_2"
+      }
+     ],
+     "sites": [
+      175
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "tests/migrations/test_graph.py",
+       "line": 408,
+       "name": "test_infinite_loop"
+      }
+     ],
+     "sites": [
+      439
+     ]
+    }
+   ],
+   "certainty": "certain",
+   "draw": "callers bucket"
+  },
+  {
+   "id": "django/callers/_route_to_regex",
+   "repo": "django",
+   "class": "identical_name",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "_route_to_regex",
+    "path": "django/urls/resolvers.py",
+    "line": 250
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "django/urls/resolvers.py",
+       "line": 294,
+       "name": "__get__"
+      }
+     ],
+     "sites": [
+      309
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "django/urls/resolvers.py",
+       "line": 317,
+       "name": "__init__"
+      }
+     ],
+     "sites": [
+      319
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "django/urls/converters.py",
+       "line": 55,
+       "name": "register_converter"
+      }
+     ],
+     "sites": [
+      63
+     ],
+     "required": false,
+     "why": "reads an attribute of the function object; not a call of it"
+    }
+   ],
+   "forbid": [
+    {
+     "path": "django/urls/resolvers.py",
+     "line": 131,
+     "name": "__get__",
+     "why": "LocaleRegexDescriptor.__get__ does not call it"
+    },
+    {
+     "path": "django/urls/resolvers.py",
+     "line": 195,
+     "name": "__init__",
+     "why": "RegexPattern.__init__ does not call it"
+    },
+    {
+     "path": "django/urls/resolvers.py",
+     "line": 389,
+     "name": "__init__",
+     "why": "LocalePrefixPattern.__init__ does not call it"
+    }
+   ],
+   "certainty": "certain",
+   "note": "callers are dunder methods that share names with others in the same file",
+   "draw": "callers bucket"
+  },
+  {
+   "id": "django/refs/_route_to_regex",
+   "repo": "django",
+   "class": "non_call_reference",
+   "op": "refs",
+   "query": "bare",
+   "symbol": {
+    "name": "_route_to_regex",
+    "path": "django/urls/resolvers.py",
+    "line": 250
+   },
+   "expect": [
+    {
+     "line_ref": {
+      "path": "django/urls/converters.py",
+      "line": 61
+     },
+     "kind": "import"
+    },
+    {
+     "line_ref": {
+      "path": "django/urls/converters.py",
+      "line": 63
+     },
+     "kind": "attribute"
+    },
+    {
+     "line_ref": {
+      "path": "django/urls/resolvers.py",
+      "line": 309
+     },
+     "kind": "call"
+    },
+    {
+     "line_ref": {
+      "path": "django/urls/resolvers.py",
+      "line": 319
+     },
+     "kind": "call"
+    }
+   ],
+   "certainty": "certain"
+  },
+  {
+   "id": "django/callers/b62_encode",
+   "repo": "django",
+   "class": "direct_call",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "b62_encode",
+    "path": "django/core/signing.py",
+    "line": 65
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "django/core/signing.py",
+       "line": 256,
+       "name": "timestamp"
+      }
+     ],
+     "sites": [
+      257
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "tests/signing/tests.py",
+       "line": 238,
+       "name": "test_base62"
+      }
+     ],
+     "sites": [
+      241
+     ]
+    }
+   ],
+   "certainty": "certain",
+   "note": "the test calls it through the module attribute signing.b62_encode",
+   "draw": "callers bucket"
+  },
+  {
+   "id": "django/miss/unparsed_entity_decl",
+   "repo": "django",
+   "class": "miss",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "unparsed_entity_decl",
+    "path": "django/core/serializers/xml_serializer.py",
+    "line": 466
+   },
+   "expect": [],
+   "certainty": "none",
+   "note": "registered as an expat handler at line 478 and invoked by the C parser; no repository code calls it, so DefusedExpatParser.reset is not a caller",
+   "draw": "callers bucket"
+  },
+  {
+   "id": "django/refs/unparsed_entity_decl",
+   "repo": "django",
+   "class": "non_call_reference",
+   "op": "refs",
+   "query": "bare",
+   "symbol": {
+    "name": "unparsed_entity_decl",
+    "path": "django/core/serializers/xml_serializer.py",
+    "line": 466
+   },
+   "expect": [
+    {
+     "line_ref": {
+      "path": "django/core/serializers/xml_serializer.py",
+      "line": 478
+     },
+     "kind": "attribute"
+    }
+   ],
+   "certainty": "certain"
+  },
+  {
+   "id": "django/callers/BaseDatabaseOperations.combine_expression",
+   "repo": "django",
+   "class": "qualified",
+   "op": "callers",
+   "query": "qualified",
+   "symbol": {
+    "name": "combine_expression",
+    "qualified": "BaseDatabaseOperations.combine_expression",
+    "path": "django/db/backends/base/operations.py",
+    "line": 672
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "django/db/backends/mysql/operations.py",
+       "line": 269,
+       "name": "combine_expression"
+      }
+     ],
+     "sites": [
+      280
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "django/db/backends/oracle/operations.py",
+       "line": 626,
+       "name": "combine_expression"
+      }
+     ],
+     "sites": [
+      642
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "django/db/backends/sqlite3/operations.py",
+       "line": 354,
+       "name": "combine_expression"
+      }
+     ],
+     "sites": [
+      361
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "django/db/backends/base/operations.py",
+       "line": 682,
+       "name": "combine_duration_expression"
+      }
+     ],
+     "sites": [
+      683
+     ],
+     "required": false,
+     "why": "self dispatch; a backend may override the target"
+    },
+    {
+     "targets": [
+      {
+       "path": "django/db/models/expressions.py",
+       "line": 760,
+       "name": "as_sql"
+      }
+     ],
+     "sites": [
+      771
+     ],
+     "required": false,
+     "why": "connection.ops is any backend's operations"
+    }
+   ],
+   "certainty": "certain",
+   "note": "the required callers reach the base method through super() and share its bare name",
+   "draw": "same_name bucket"
+  },
+  {
+   "id": "django/indirect/handle_m2m_field",
+   "repo": "django",
+   "class": "indirect",
+   "op": "callees",
+   "query": "qualified",
+   "symbol": {
+    "name": "serialize",
+    "qualified": "Serializer.serialize",
+    "path": "django/core/serializers/base.py",
+    "line": 84
+   },
+   "site": 145,
+   "call_name": "handle_m2m_field",
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "django/core/serializers/base.py",
+       "line": 196,
+       "name": "handle_m2m_field",
+       "role": "declaration"
+      },
+      {
+       "path": "django/core/serializers/python.py",
+       "line": 67,
+       "name": "handle_m2m_field",
+       "role": "implementation"
+      },
+      {
+       "path": "django/core/serializers/xml_serializer.py",
+       "line": 148,
+       "name": "handle_m2m_field",
+       "role": "implementation"
+      }
+     ],
+     "sites": [
+      145
+     ]
+    }
+   ],
+   "certainty": "indirect",
+   "note": "self dispatch to an abstract base method two subclasses override",
+   "draw": "same_name bucket"
+  },
+  {
+   "id": "django/indirect/get_dirs",
+   "repo": "django",
+   "class": "indirect",
+   "op": "callees",
+   "query": "qualified",
+   "symbol": {
+    "name": "get_dirs",
+    "qualified": "Loader.get_dirs",
+    "path": "django/template/loaders/cached.py",
+    "line": 20
+   },
+   "site": 23,
+   "call_name": "get_dirs",
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "django/template/loaders/filesystem.py",
+       "line": 17,
+       "name": "get_dirs",
+       "role": "implementation"
+      },
+      {
+       "path": "django/template/loaders/app_directories.py",
+       "line": 12,
+       "name": "get_dirs",
+       "role": "implementation"
+      },
+      {
+       "path": "django/template/loaders/cached.py",
+       "line": 20,
+       "name": "get_dirs",
+       "role": "implementation"
+      }
+     ],
+     "sites": [
+      23
+     ]
+    }
+   ],
+   "certainty": "indirect",
+   "note": "duck-typed after hasattr(loader, 'get_dirs'); no declaration exists, so one implementation alone is falsely unique",
+   "draw": "same_name bucket"
+  },
+  {
+   "id": "django/callees/BaseFormSet.management_form",
+   "repo": "django",
+   "class": "direct_call",
+   "op": "callees",
+   "query": "qualified",
+   "symbol": {
+    "name": "management_form",
+    "qualified": "BaseFormSet.management_form",
+    "path": "django/forms/formsets.py",
+    "line": 147
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "django/forms/forms.py",
+       "line": 324,
+       "name": "full_clean"
+      }
+     ],
+     "sites": [
+      156
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "django/forms/formsets.py",
+       "line": 171,
+       "name": "total_form_count"
+      }
+     ],
+     "sites": [
+      162
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "django/forms/formsets.py",
+       "line": 192,
+       "name": "initial_form_count"
+      },
+      {
+       "path": "django/forms/models.py",
+       "line": 715,
+       "name": "initial_form_count"
+      },
+      {
+       "path": "django/forms/models.py",
+       "line": 1143,
+       "name": "initial_form_count"
+      },
+      {
+       "path": "django/contrib/contenttypes/forms.py",
+       "line": 49,
+       "name": "initial_form_count"
+      }
+     ],
+     "sites": [
+      163
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "django/forms/formsets.py",
+       "line": 28,
+       "name": "ManagementForm"
+      }
+     ],
+     "sites": [
+      150,
+      158
+     ],
+     "required": false,
+     "why": "instantiation, not a call edge in every tool"
+    }
+   ],
+   "forbid": [
+    {
+     "path": "django/forms/formsets.py",
+     "line": 396,
+     "name": "full_clean",
+     "why": "BaseFormSet.full_clean; the receiver is a ManagementForm"
+    }
+   ],
+   "certainty": "certain",
+   "draw": "callees bucket"
+  },
+  {
+   "id": "django/callees/Loader.cache_key",
+   "repo": "django",
+   "class": "direct_call",
+   "op": "callees",
+   "query": "qualified",
+   "symbol": {
+    "name": "cache_key",
+    "qualified": "Loader.cache_key",
+    "path": "django/template/loaders/cached.py",
+    "line": 72
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "django/template/loaders/cached.py",
+       "line": 95,
+       "name": "generate_hash"
+      }
+     ],
+     "sites": [
+      91
+     ]
+    }
+   ],
+   "certainty": "certain",
+   "note": "str() is a builtin, unscored",
+   "draw": "callees bucket"
+  },
+  {
+   "id": "ripgrep/callers/find_cap_ref",
+   "repo": "ripgrep",
+   "class": "direct_call",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "find_cap_ref",
+    "path": "crates/matcher/src/interpolate.rs",
+    "line": 97
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "crates/matcher/src/interpolate.rs",
+       "line": 14,
+       "name": "interpolate"
+      }
+     ],
+     "sites": [
+      37
+     ]
+    },
+    {
+     "region": {
+      "path": "crates/matcher/src/interpolate.rs",
+      "from": 145,
+      "to": 400
+     },
+     "required": false,
+     "why": "test functions generated by the find! macro"
+    }
+   ],
+   "certainty": "certain",
+   "draw": "callers bucket, first draw"
+  },
+  {
+   "id": "ripgrep/refs/find_cap_ref",
+   "repo": "ripgrep",
+   "class": "non_call_reference",
+   "op": "refs",
+   "query": "bare",
+   "symbol": {
+    "name": "find_cap_ref",
+    "path": "crates/matcher/src/interpolate.rs",
+    "line": 97
+   },
+   "expect": [
+    {
+     "line_ref": {
+      "path": "crates/matcher/src/interpolate.rs",
+      "line": 37
+     },
+     "kind": "call"
+    },
+    {
+     "line_ref": {
+      "path": "crates/matcher/src/interpolate.rs",
+      "line": 147
+     },
+     "kind": "import"
+    },
+    {
+     "line_ref": {
+      "path": "crates/matcher/src/interpolate.rs",
+      "line": 153
+     },
+     "kind": "call",
+     "required": false,
+     "why": "inside a macro_rules body"
+    },
+    {
+     "line_ref": {
+      "path": "crates/matcher/src/interpolate.rs",
+      "line": 159
+     },
+     "kind": "call",
+     "required": false,
+     "why": "inside a macro_rules body"
+    }
+   ],
+   "certainty": "certain"
+  },
+  {
+   "id": "ripgrep/callers/is_file_name",
+   "repo": "ripgrep",
+   "class": "direct_call",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "is_file_name",
+    "path": "crates/ignore/src/pathutil.rs",
+    "line": 126
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "crates/ignore/src/gitignore.rs",
+       "line": 304,
+       "name": "strip"
+      }
+     ],
+     "sites": [
+      323
+     ]
+    }
+   ],
+   "certainty": "certain",
+   "draw": "callers bucket, second draw"
+  },
+  {
+   "id": "ripgrep/refs/is_file_name",
+   "repo": "ripgrep",
+   "class": "non_call_reference",
+   "op": "refs",
+   "query": "bare",
+   "symbol": {
+    "name": "is_file_name",
+    "path": "crates/ignore/src/pathutil.rs",
+    "line": 126
+   },
+   "expect": [
+    {
+     "line_ref": {
+      "path": "crates/ignore/src/gitignore.rs",
+      "line": 24
+     },
+     "kind": "import"
+    },
+    {
+     "line_ref": {
+      "path": "crates/ignore/src/gitignore.rs",
+      "line": 323
+     },
+     "kind": "call"
+    }
+   ],
+   "certainty": "certain"
+  },
+  {
+   "id": "ripgrep/callers/search_preprocessor",
+   "repo": "ripgrep",
+   "class": "direct_call",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "search_preprocessor",
+    "path": "crates/core/search.rs",
+    "line": 298
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "crates/core/search.rs",
+       "line": 244,
+       "name": "search"
+      }
+     ],
+     "sites": [
+      261
+     ]
+    }
+   ],
+   "certainty": "certain",
+   "draw": "callers bucket"
+  },
+  {
+   "id": "ripgrep/callers/find_by_line_fast",
+   "repo": "ripgrep",
+   "class": "direct_call",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "find_by_line_fast",
+    "path": "crates/searcher/src/searcher/core.rs",
+    "line": 463
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "crates/searcher/src/searcher/core.rs",
+       "line": 361,
+       "name": "match_by_line_fast"
+      }
+     ],
+     "sites": [
+      381
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "crates/searcher/src/searcher/core.rs",
+       "line": 411,
+       "name": "match_by_line_fast_invert"
+      }
+     ],
+     "sites": [
+      417
+     ]
+    }
+   ],
+   "certainty": "certain",
+   "draw": "callers bucket"
+  },
+  {
+   "id": "ripgrep/callers/reset_count",
+   "repo": "ripgrep",
+   "class": "identical_name",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "reset_count",
+    "path": "crates/printer/src/counter.rs",
+    "line": 36
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "crates/printer/src/json.rs",
+       "line": 834,
+       "name": "begin"
+      }
+     ],
+     "sites": [
+      835
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "crates/printer/src/standard.rs",
+       "line": 850,
+       "name": "begin"
+      }
+     ],
+     "sites": [
+      851
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "crates/printer/src/summary.rs",
+       "line": 705,
+       "name": "begin"
+      }
+     ],
+     "sites": [
+      712
+     ]
+    }
+   ],
+   "certainty": "certain",
+   "note": "three distinct callers share the bare name `begin`; they must stay three endpoints",
+   "draw": "callers bucket"
+  },
+  {
+   "id": "ripgrep/callers/MultiLine.sink_matched",
+   "repo": "ripgrep",
+   "class": "qualified",
+   "op": "callers",
+   "query": "qualified",
+   "symbol": {
+    "name": "sink_matched",
+    "qualified": "MultiLine.sink_matched",
+    "path": "crates/searcher/src/searcher/glue.rs",
+    "line": 299
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "crates/searcher/src/searcher/glue.rs",
+       "line": 166,
+       "name": "run"
+      }
+     ],
+     "sites": [
+      181
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "crates/searcher/src/searcher/glue.rs",
+       "line": 208,
+       "name": "sink"
+      }
+     ],
+     "sites": [
+      254
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "crates/searcher/src/searcher/glue.rs",
+       "line": 260,
+       "name": "sink_matched_inverted"
+      }
+     ],
+     "sites": [
+      292
+     ]
+    }
+   ],
+   "forbid": [
+    {
+     "path": "crates/searcher/src/searcher/core.rs",
+     "line": 99,
+     "name": "matched",
+     "why": "calls Core::sink_matched"
+    },
+    {
+     "path": "crates/searcher/src/searcher/core.rs",
+     "line": 262,
+     "name": "after_context_by_line",
+     "why": "calls Core::sink_matched"
+    },
+    {
+     "path": "crates/searcher/src/searcher/core.rs",
+     "line": 316,
+     "name": "match_by_line_slow",
+     "why": "calls Core::sink_matched"
+    },
+    {
+     "path": "crates/searcher/src/searcher/core.rs",
+     "line": 361,
+     "name": "match_by_line_fast",
+     "why": "calls Core::sink_matched"
+    },
+    {
+     "path": "crates/searcher/src/searcher/core.rs",
+     "line": 411,
+     "name": "match_by_line_fast_invert",
+     "why": "calls Core::sink_matched"
+    }
+   ],
+   "certainty": "certain",
+   "draw": "same_name bucket"
+  },
+  {
+   "id": "ripgrep/callers/sink_matched",
+   "repo": "ripgrep",
+   "class": "identical_name",
+   "op": "callers",
+   "query": "bare",
+   "defs": 2,
+   "symbol": {
+    "name": "sink_matched",
+    "path": "crates/searcher/src/searcher/glue.rs",
+    "line": 299
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "crates/searcher/src/searcher/glue.rs",
+       "line": 166,
+       "name": "run"
+      }
+     ],
+     "sites": [
+      181
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "crates/searcher/src/searcher/glue.rs",
+       "line": 208,
+       "name": "sink"
+      }
+     ],
+     "sites": [
+      254
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "crates/searcher/src/searcher/glue.rs",
+       "line": 260,
+       "name": "sink_matched_inverted"
+      }
+     ],
+     "sites": [
+      292
+     ]
+    }
+   ],
+   "forbid": [
+    {
+     "path": "crates/searcher/src/searcher/core.rs",
+     "line": 99,
+     "name": "matched",
+     "why": "calls Core::sink_matched"
+    },
+    {
+     "path": "crates/searcher/src/searcher/core.rs",
+     "line": 262,
+     "name": "after_context_by_line",
+     "why": "calls Core::sink_matched"
+    },
+    {
+     "path": "crates/searcher/src/searcher/core.rs",
+     "line": 316,
+     "name": "match_by_line_slow",
+     "why": "calls Core::sink_matched"
+    },
+    {
+     "path": "crates/searcher/src/searcher/core.rs",
+     "line": 361,
+     "name": "match_by_line_fast",
+     "why": "calls Core::sink_matched"
+    },
+    {
+     "path": "crates/searcher/src/searcher/core.rs",
+     "line": 411,
+     "name": "match_by_line_fast_invert",
+     "why": "calls Core::sink_matched"
+    }
+   ],
+   "certainty": "ambiguous",
+   "note": "bare name defined twice (Core::sink_matched, MultiLine::sink_matched); a name-only answer must expose the ambiguity",
+   "draw": "same_name bucket"
+  },
+  {
+   "id": "ripgrep/callers/DirEntryRaw.into_path",
+   "repo": "ripgrep",
+   "class": "qualified",
+   "op": "callers",
+   "query": "qualified",
+   "symbol": {
+    "name": "into_path",
+    "qualified": "DirEntryRaw.into_path",
+    "path": "crates/ignore/src/walk.rs",
+    "line": 276
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "crates/ignore/src/walk.rs",
+       "line": 147,
+       "name": "into_path"
+      }
+     ],
+     "sites": [
+      152
+     ]
+    }
+   ],
+   "forbid": [
+    {
+     "path": "crates/ignore/src/walk.rs",
+     "line": 44,
+     "name": "into_path",
+     "why": "DirEntry::into_path calls DirEntryInner::into_path"
+    }
+   ],
+   "certainty": "certain",
+   "note": "caller and callee share the bare name",
+   "draw": "same_name bucket"
+  },
+  {
+   "id": "ripgrep/callees/StandardSink.finish",
+   "repo": "ripgrep",
+   "class": "direct_call",
+   "op": "callees",
+   "query": "qualified",
+   "symbol": {
+    "name": "finish",
+    "qualified": "StandardSink.finish",
+    "path": "crates/printer/src/standard.rs",
+    "line": 858
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "crates/printer/src/standard.rs",
+       "line": 895,
+       "name": "new"
+      }
+     ],
+     "sites": [
+      864
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "crates/printer/src/standard.rs",
+       "line": 1397,
+       "name": "write_binary_message"
+      }
+     ],
+     "sites": [
+      864
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "crates/printer/src/stats.rs",
+       "line": 72,
+       "name": "add_elapsed"
+      }
+     ],
+     "sites": [
+      867
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "crates/printer/src/stats.rs",
+       "line": 77,
+       "name": "add_searches"
+      }
+     ],
+     "sites": [
+      868
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "crates/printer/src/stats.rs",
+       "line": 82,
+       "name": "add_searches_with_match"
+      }
+     ],
+     "sites": [
+      870
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "crates/printer/src/stats.rs",
+       "line": 87,
+       "name": "add_bytes_searched"
+      }
+     ],
+     "sites": [
+      872
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "crates/searcher/src/sink.rs",
+       "line": 348,
+       "name": "byte_count"
+      }
+     ],
+     "sites": [
+      872
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "crates/printer/src/stats.rs",
+       "line": 92,
+       "name": "add_bytes_printed"
+      }
+     ],
+     "sites": [
+      873
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "crates/printer/src/counter.rs",
+       "line": 24,
+       "name": "count"
+      }
+     ],
+     "sites": [
+      873
+     ]
+    }
+   ],
+   "forbid": [
+    {
+     "path": "crates/searcher/src/searcher/glue.rs",
+     "line": 133,
+     "name": "byte_count",
+     "why": "another type's byte_count"
+    },
+    {
+     "path": "crates/searcher/src/searcher/glue.rs",
+     "line": 345,
+     "name": "byte_count",
+     "why": "another type's byte_count"
+    },
+    {
+     "path": "crates/searcher/src/searcher/core.rs",
+     "line": 83,
+     "name": "count",
+     "why": "Core::count"
+    },
+    {
+     "path": "crates/searcher/src/lines.rs",
+     "line": 129,
+     "name": "count",
+     "why": "free function lines::count"
+    }
+   ],
+   "certainty": "certain",
+   "note": "std calls (elapsed, borrow, as_mut) are outside the repository and unscored",
+   "draw": "callees bucket"
+  },
+  {
+   "id": "ripgrep/callees/SummarySink.begin",
+   "repo": "ripgrep",
+   "class": "direct_call",
+   "op": "callees",
+   "query": "qualified",
+   "symbol": {
+    "name": "begin",
+    "qualified": "SummarySink.begin",
+    "path": "crates/printer/src/summary.rs",
+    "line": 705
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "crates/printer/src/summary.rs",
+       "line": 105,
+       "name": "requires_path"
+      }
+     ],
+     "sites": [
+      706
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "crates/searcher/src/sink.rs",
+       "line": 43,
+       "name": "error_message",
+       "role": "implementation"
+      },
+      {
+       "path": "crates/searcher/src/sink.rs",
+       "line": 21,
+       "name": "error_message",
+       "role": "declaration"
+      }
+     ],
+     "sites": [
+      707
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "crates/printer/src/counter.rs",
+       "line": 36,
+       "name": "reset_count"
+      }
+     ],
+     "sites": [
+      712
+     ]
+    }
+   ],
+   "forbid": [
+    {
+     "path": "crates/searcher/src/sink.rs",
+     "line": 55,
+     "name": "error_message",
+     "why": "the Box<dyn Error> impl; the receiver here is io::Error"
+    }
+   ],
+   "certainty": "certain",
+   "draw": "callees bucket"
+  },
+  {
+   "id": "ripgrep/indirect/find_candidate_line",
+   "repo": "ripgrep",
+   "class": "indirect",
+   "op": "callees",
+   "query": "bare",
+   "symbol": {
+    "name": "find_by_line_fast",
+    "path": "crates/searcher/src/searcher/core.rs",
+    "line": 463
+   },
+   "site": 475,
+   "call_name": "find_candidate_line",
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "crates/matcher/src/lib.rs",
+       "line": 1125,
+       "name": "find_candidate_line",
+       "role": "declaration"
+      },
+      {
+       "path": "crates/matcher/src/lib.rs",
+       "line": 1373,
+       "name": "find_candidate_line",
+       "role": "implementation"
+      },
+      {
+       "path": "crates/regex/src/matcher.rs",
+       "line": 491,
+       "name": "find_candidate_line",
+       "role": "implementation"
+      }
+     ],
+     "sites": [
+      475
+     ]
+    }
+   ],
+   "certainty": "indirect",
+   "note": "generic M: Matcher; the trait method (with a default body) or any implementation is acceptable, one implementation alone is falsely unique"
+  },
+  {
+   "id": "ripgrep/unknown/matched",
+   "repo": "ripgrep",
+   "class": "unknown",
+   "op": "callees",
+   "query": "bare",
+   "symbol": {
+    "name": "try_captures_iter_at",
+    "path": "crates/matcher/src/lib.rs",
+    "line": 820
+   },
+   "site": 855,
+   "call_name": "matched",
+   "expect": [],
+   "certainty": "unknown",
+   "note": "`matched` is the closure parameter F; no repository definition is its target, and many methods are named `matched`"
+  },
+  {
+   "id": "ripgrep/miss/test_vimgrep",
+   "repo": "ripgrep",
+   "class": "miss",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "test_vimgrep",
+    "path": "crates/core/flags/defs.rs",
+    "line": 7770
+   },
+   "expect": [],
+   "certainty": "none",
+   "note": "a #[test] function; nothing calls it",
+   "draw": "callers bucket (rejected as a callers target: test code)"
+  },
+  {
+   "id": "excalidraw/callers/resaveAsImageWithScene",
+   "repo": "excalidraw",
+   "class": "direct_call",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "resaveAsImageWithScene",
+    "path": "packages/excalidraw/data/resave.ts",
+    "line": 6
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "packages/excalidraw/actions/actionExport.tsx",
+       "within": [
+        137,
+        190
+       ],
+       "why": "the perform arrow function of the actionSaveToActiveFile object"
+      }
+     ],
+     "sites": [
+      154
+     ]
+    }
+   ],
+   "certainty": "certain",
+   "draw": "callers bucket"
+  },
+  {
+   "id": "excalidraw/refs/resaveAsImageWithScene",
+   "repo": "excalidraw",
+   "class": "non_call_reference",
+   "op": "refs",
+   "query": "bare",
+   "symbol": {
+    "name": "resaveAsImageWithScene",
+    "path": "packages/excalidraw/data/resave.ts",
+    "line": 6
+   },
+   "expect": [
+    {
+     "line_ref": {
+      "path": "packages/excalidraw/actions/actionExport.tsx",
+      "line": 7
+     },
+     "kind": "import"
+    },
+    {
+     "line_ref": {
+      "path": "packages/excalidraw/actions/actionExport.tsx",
+      "line": 154
+     },
+     "kind": "call"
+    }
+   ],
+   "certainty": "certain"
+  },
+  {
+   "id": "excalidraw/callers/allElementsInSameGroup",
+   "repo": "excalidraw",
+   "class": "direct_call",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "allElementsInSameGroup",
+    "path": "packages/excalidraw/actions/actionGroup.tsx",
+    "line": 39
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "packages/excalidraw/actions/actionGroup.tsx",
+       "line": 56,
+       "name": "enableActionGroup"
+      }
+     ],
+     "sites": [
+      68
+     ]
+    }
+   ],
+   "certainty": "certain",
+   "draw": "callers bucket"
+  },
+  {
+   "id": "excalidraw/callers/updateBoundPoint",
+   "repo": "excalidraw",
+   "class": "direct_call",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "updateBoundPoint",
+    "path": "packages/excalidraw/element/binding.ts",
+    "line": 1189
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "packages/excalidraw/element/binding.ts",
+       "line": 733,
+       "name": "updateBoundElements"
+      }
+     ],
+     "sites": [
+      810
+     ]
+    }
+   ],
+   "certainty": "certain",
+   "draw": "callers bucket"
+  },
+  {
+   "id": "excalidraw/callers/drawElementOnCanvas",
+   "repo": "excalidraw",
+   "class": "direct_call",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "drawElementOnCanvas",
+    "path": "packages/excalidraw/renderer/renderElement.ts",
+    "line": 383
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "packages/excalidraw/renderer/renderElement.ts",
+       "line": 204,
+       "name": "generateElementCanvas"
+      }
+     ],
+     "sites": [
+      261
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "packages/excalidraw/renderer/renderElement.ts",
+       "line": 698,
+       "name": "renderElement"
+      }
+     ],
+     "sites": [
+      775,
+      868,
+      913
+     ]
+    }
+   ],
+   "certainty": "certain",
+   "draw": "callers bucket"
+  },
+  {
+   "id": "excalidraw/callers/getFontFamilyFallbacks",
+   "repo": "excalidraw",
+   "class": "direct_call",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "getFontFamilyFallbacks",
+    "path": "packages/excalidraw/constants.ts",
+    "line": 147
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "packages/excalidraw/fonts/Fonts.ts",
+       "line": 165,
+       "name": "generateFontFaceDeclarations"
+      }
+     ],
+     "sites": [
+      173
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "packages/excalidraw/utils.ts",
+       "line": 91,
+       "name": "getFontFamilyString"
+      }
+     ],
+     "sites": [
+      99
+     ]
+    }
+   ],
+   "certainty": "certain",
+   "draw": "callers bucket"
+  },
+  {
+   "id": "excalidraw/refs/getFontFamilyFallbacks",
+   "repo": "excalidraw",
+   "class": "non_call_reference",
+   "op": "refs",
+   "query": "bare",
+   "symbol": {
+    "name": "getFontFamilyFallbacks",
+    "path": "packages/excalidraw/constants.ts",
+    "line": 147
+   },
+   "expect": [
+    {
+     "line_ref": {
+      "path": "packages/excalidraw/fonts/Fonts.ts",
+      "line": 6
+     },
+     "kind": "import"
+    },
+    {
+     "line_ref": {
+      "path": "packages/excalidraw/fonts/Fonts.ts",
+      "line": 173
+     },
+     "kind": "call"
+    },
+    {
+     "line_ref": {
+      "path": "packages/excalidraw/utils.ts",
+      "line": 8
+     },
+     "kind": "import"
+    },
+    {
+     "line_ref": {
+      "path": "packages/excalidraw/utils.ts",
+      "line": 99
+     },
+     "kind": "call"
+    }
+   ],
+   "certainty": "certain"
+  },
+  {
+   "id": "excalidraw/callers/getSvgPathFromStroke",
+   "repo": "excalidraw",
+   "class": "identical_name",
+   "op": "callers",
+   "query": "bare",
+   "defs": 2,
+   "symbol": {
+    "name": "getSvgPathFromStroke",
+    "path": "packages/excalidraw/utils.ts",
+    "line": 1093
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "packages/excalidraw/animated-trail.ts",
+       "line": 135,
+       "name": "drawTrail"
+      }
+     ],
+     "sites": [
+      147
+     ]
+    }
+   ],
+   "forbid": [
+    {
+     "path": "packages/excalidraw/renderer/renderElement.ts",
+     "line": 1018,
+     "name": "getFreeDrawSvgPath",
+     "why": "calls renderElement.ts's own getSvgPathFromStroke (line 1049)"
+    }
+   ],
+   "certainty": "ambiguous",
+   "note": "two module-level functions share the name in different files; a name-only answer must expose the ambiguity",
+   "draw": "same_name bucket"
+  },
+  {
+   "id": "excalidraw/callees/HistoryEntry.applyTo",
+   "repo": "excalidraw",
+   "class": "qualified",
+   "op": "callees",
+   "query": "qualified",
+   "symbol": {
+    "name": "applyTo",
+    "qualified": "HistoryEntry.applyTo",
+    "path": "packages/excalidraw/history.ts",
+    "line": 180
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "packages/excalidraw/change.ts",
+       "line": 1072,
+       "name": "applyTo"
+      },
+      {
+       "path": "packages/excalidraw/change.ts",
+       "line": 408,
+       "name": "applyTo",
+       "role": "declaration"
+      }
+     ],
+     "sites": [
+      186
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "packages/excalidraw/change.ts",
+       "line": 442,
+       "name": "applyTo"
+      },
+      {
+       "path": "packages/excalidraw/change.ts",
+       "line": 408,
+       "name": "applyTo",
+       "role": "declaration"
+      }
+     ],
+     "sites": [
+      189
+     ]
+    }
+   ],
+   "forbid": [
+    {
+     "path": "packages/excalidraw/history.ts",
+     "line": 180,
+     "name": "applyTo",
+     "why": "not recursive; the receivers are typed ElementsChange and AppStateChange"
+    }
+   ],
+   "certainty": "certain",
+   "note": "four methods named applyTo; the fields' declared types fix both targets",
+   "draw": "same_name bucket"
+  },
+  {
+   "id": "excalidraw/callers/AdapterTransaction.getLibraryItems.static",
+   "repo": "excalidraw",
+   "class": "identical_name",
+   "op": "callers",
+   "query": "qualified",
+   "symbol": {
+    "name": "getLibraryItems",
+    "qualified": "AdapterTransaction.getLibraryItems",
+    "path": "packages/excalidraw/data/library.ts",
+    "line": 534
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "packages/excalidraw/data/library.ts",
+       "line": 572,
+       "name": "getLibraryItems"
+      }
+     ],
+     "sites": [
+      573
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "packages/excalidraw/data/library.ts",
+       "within": [
+        654,
+        978
+       ],
+       "why": "useHandleLibrary or an arrow function inside it"
+      }
+     ],
+     "sites": [
+      836,
+      871,
+      876
+     ]
+    }
+   ],
+   "forbid": [
+    {
+     "path": "packages/excalidraw/data/library.ts",
+     "line": 591,
+     "name": "persistLibraryUpdate",
+     "why": "calls the instance method, not the static one"
+    }
+   ],
+   "certainty": "ambiguous",
+   "note": "a static and an instance method share the qualified name in one class; only location tells them apart",
+   "draw": "same_name bucket"
+  },
+  {
+   "id": "excalidraw/callers/AdapterTransaction.getLibraryItems.instance",
+   "repo": "excalidraw",
+   "class": "identical_name",
+   "op": "callers",
+   "query": "qualified",
+   "symbol": {
+    "name": "getLibraryItems",
+    "qualified": "AdapterTransaction.getLibraryItems",
+    "path": "packages/excalidraw/data/library.ts",
+    "line": 572
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "packages/excalidraw/data/library.ts",
+       "line": 591,
+       "name": "persistLibraryUpdate"
+      }
+     ],
+     "sites": [
+      600
+     ]
+    }
+   ],
+   "forbid": [
+    {
+     "path": "packages/excalidraw/data/library.ts",
+     "line": 572,
+     "name": "getLibraryItems",
+     "why": "the instance method calls the static one, not itself"
+    },
+    {
+     "path": "packages/excalidraw/data/library.ts",
+     "line": 654,
+     "name": "useHandleLibrary",
+     "why": "calls the static method"
+    }
+   ],
+   "certainty": "ambiguous",
+   "note": "the instance method of the pair above",
+   "draw": "same_name bucket"
+  },
+  {
+   "id": "excalidraw/unknown/promiseTry.fn",
+   "repo": "excalidraw",
+   "class": "unknown",
+   "op": "callees",
+   "query": "bare",
+   "symbol": {
+    "name": "promiseTry",
+    "path": "packages/excalidraw/utils.ts",
+    "line": 1168
+   },
+   "site": 1173,
+   "call_name": "fn",
+   "expect": [],
+   "certainty": "unknown",
+   "note": "fn is a parameter; any function can be passed"
+  },
+  {
+   "id": "excalidraw/miss/onUnload",
+   "repo": "excalidraw",
+   "class": "miss",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "onUnload",
+    "path": "excalidraw-app/App.tsx",
+    "line": 560
+   },
+   "expect": [],
+   "certainty": "none",
+   "note": "a local closure registered as an event listener; nothing calls it, and five other definitions share its name",
+   "draw": "same_name bucket"
+  },
+  {
+   "id": "excalidraw/callees/prepareElementsForRender",
+   "repo": "excalidraw",
+   "class": "direct_call",
+   "op": "callees",
+   "query": "bare",
+   "symbol": {
+    "name": "prepareElementsForRender",
+    "path": "packages/excalidraw/scene/export.ts",
+    "line": 127
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "packages/excalidraw/frame.ts",
+       "line": 927,
+       "name": "getElementsOverlappingFrame"
+      }
+     ],
+     "sites": [
+      141
+     ]
+    },
+    {
+     "targets": [
+      {
+       "path": "packages/excalidraw/scene/export.ts",
+       "line": 83,
+       "name": "addFrameLabelsAsTextElements"
+      }
+     ],
+     "sites": [
+      143
+     ]
+    }
+   ],
+   "certainty": "certain",
+   "draw": "callees bucket"
+  },
+  {
+   "id": "keycloak/callers/updateRememberMeColumn",
+   "repo": "keycloak",
+   "class": "direct_call",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "updateRememberMeColumn",
+    "path": "model/jpa/src/main/java/org/keycloak/models/jpa/session/UserSessionExpirationLogic.java",
+    "line": 337
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "model/jpa/src/main/java/org/keycloak/models/jpa/session/UserSessionExpirationLogic.java",
+       "line": 214,
+       "name": "handleRememberMeColumnValue"
+      }
+     ],
+     "sites": [
+      232,
+      234
+     ]
+    }
+   ],
+   "certainty": "certain",
+   "draw": "callers bucket"
+  },
+  {
+   "id": "keycloak/callers/updateRotateSecret",
+   "repo": "keycloak",
+   "class": "direct_call",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "updateRotateSecret",
+    "path": "services/src/main/java/org/keycloak/services/clientpolicy/executor/ClientSecretRotationExecutor.java",
+    "line": 174
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "services/src/main/java/org/keycloak/services/clientpolicy/executor/ClientSecretRotationExecutor.java",
+       "line": 135,
+       "name": "rotateSecret"
+      }
+     ],
+     "sites": [
+      141,
+      150
+     ]
+    }
+   ],
+   "certainty": "certain",
+   "draw": "callers bucket, first draw"
+  },
+  {
+   "id": "keycloak/callers/setScheduledStepId",
+   "repo": "keycloak",
+   "class": "direct_call",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "setScheduledStepId",
+    "path": "model/jpa/src/main/java/org/keycloak/models/workflow/WorkflowStateEntity.java",
+    "line": 89
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "model/jpa/src/main/java/org/keycloak/models/workflow/JpaWorkflowStateProvider.java",
+       "line": 68,
+       "name": "scheduleStep"
+      }
+     ],
+     "sites": [
+      80,
+      85
+     ]
+    }
+   ],
+   "certainty": "certain",
+   "draw": "callers bucket"
+  },
+  {
+   "id": "linux/callers/bch_encode_unaligned",
+   "repo": "linux",
+   "class": "direct_call",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "bch_encode_unaligned",
+    "path": "lib/bch.c",
+    "line": 129
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "lib/bch.c",
+       "line": 207,
+       "name": "bch_encode"
+      }
+     ],
+     "sites": [
+      235,
+      281
+     ]
+    }
+   ],
+   "certainty": "certain",
+   "draw": "callers bucket"
+  },
+  {
+   "id": "linux/callers/prueth_netdev_init",
+   "repo": "linux",
+   "class": "identical_name",
+   "op": "callers",
+   "query": "bare",
+   "defs": 2,
+   "symbol": {
+    "name": "prueth_netdev_init",
+    "path": "drivers/net/ethernet/ti/icssg/icssg_prueth_sr1.c",
+    "line": 755
+   },
+   "expect": [
+    {
+     "targets": [
+      {
+       "path": "drivers/net/ethernet/ti/icssg/icssg_prueth_sr1.c",
+       "line": 895,
+       "name": "prueth_probe"
+      }
+     ],
+     "sites": [
+      1060,
+      1074
+     ]
+    }
+   ],
+   "forbid": [
+    {
+     "path": "drivers/net/ethernet/ti/icssg/icssg_prueth.c",
+     "line": 1709,
+     "name": "prueth_probe",
+     "why": "the other file's prueth_probe calls its own static prueth_netdev_init"
+    }
+   ],
+   "certainty": "ambiguous",
+   "note": "two static functions share the name, and so do their callers; only the file tells them apart",
+   "draw": "same_name bucket"
+  },
+  {
+   "id": "linux/miss/twl6040gpo_direction_out",
+   "repo": "linux",
+   "class": "miss",
+   "op": "callers",
+   "query": "bare",
+   "symbol": {
+    "name": "twl6040gpo_direction_out",
+    "path": "drivers/gpio/gpio-twl6040.c",
+    "line": 59
+   },
+   "expect": [],
+   "certainty": "none",
+   "note": "only stored in an ops struct (line 70) and called through a function pointer",
+   "draw": "callers bucket, first draw"
+  }
+ ]
+}
