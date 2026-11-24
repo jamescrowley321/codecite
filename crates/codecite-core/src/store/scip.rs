@@ -469,6 +469,76 @@ fn write_definitions(
     Ok(())
 }
 
+/// One definition's line range in a file, and whether it may hold a
+/// reference.
+struct Range {
+    id: String,
+    start: u32,
+    end: u32,
+    holds_references: bool,
+}
+
+/// Kinds that name a value rather than a body of code.
+const VALUE_KINDS: &str = "'field', 'property', 'variable', 'constant', 'term', 'enum_member',
+                           'parameter', 'type_parameter'";
+
+/// Every definition in the file, SCIP's and tree-sitter's. A value only
+/// SCIP found (a field set in `__init__`, say) never holds a reference when
+/// it lies inside another definition: the code on its line belongs to that
+/// one. Tree-sitter's symbols hold references whatever their kind, so the
+/// body of `const f = () => { … }` keeps its callees.
+fn file_ranges(tx: &Connection, document_id: i64) -> Result<Vec<Range>> {
+    let mut stmt = tx.prepare_cached(&format!(
+        "SELECT id, start_line, end_line,
+                provider = 'scip' AND local_id IS NULL AND kind IN ({VALUE_KINDS})
+         FROM symbol WHERE document_id = ?1 ORDER BY id"
+    ))?;
+    let rows = stmt.query_map([document_id], |row| {
+        Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+    })?;
+    let rows: Vec<(String, u32, u32, bool)> = rows.collect::<rusqlite::Result<_>>()?;
+    Ok(rows
+        .iter()
+        .map(|(id, start, end, value)| {
+            let inside = rows
+                .iter()
+                .any(|(other, s, e, _)| other != id && s <= start && end <= e);
+            Range {
+                id: id.clone(),
+                start: *start,
+                end: *end,
+                holds_references: !(*value && inside),
+            }
+        })
+        .collect())
+}
+
+/// The definition holding an occurrence: a definition is inside the next
+/// definition out; a reference, a recursive call included, is inside the
+/// innermost one that may hold references.
+fn innermost<'a>(ranges: &'a [Range], occ: &ScipOccurrence) -> Option<&'a str> {
+    let definition = occ.roles & ROLE_DEFINITION != 0;
+    ranges
+        .iter()
+        .filter(|r| {
+            (if definition {
+                r.id != occ.symbol
+            } else {
+                r.holds_references
+            }) && r.start <= occ.start_line
+                && occ.start_line <= r.end
+        })
+        // Shortest first, then the one starting later, then by ID.
+        .min_by_key(|r| {
+            (
+                r.end.saturating_sub(r.start),
+                std::cmp::Reverse(r.start),
+                &r.id,
+            )
+        })
+        .map(|r| r.id.as_str())
+}
+
 /// Writes one document's occurrences, each with the innermost definition
 /// holding it, and the edges its references give.
 fn write_occurrences(
@@ -479,15 +549,7 @@ fn write_occurrences(
     summary: &mut ScipSummary,
 ) -> Result<()> {
     // Every definition in the file, SCIP's and tree-sitter's.
-    let ranges: Vec<(String, u32, u32)> = {
-        let mut stmt = tx.prepare_cached(
-            "SELECT id, start_line, end_line FROM symbol WHERE document_id = ?1 ORDER BY id",
-        )?;
-        let rows = stmt.query_map([document_id], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-        })?;
-        rows.collect::<rusqlite::Result<_>>()?
-    };
+    let ranges = file_ranges(tx, document_id)?;
     let text: String = tx.query_row(
         "SELECT text FROM document WHERE id = ?1",
         [document_id],
@@ -516,23 +578,7 @@ fn write_occurrences(
             continue;
         }
         let end = occ.end_line.clamp(occ.start_line, lines);
-        let enclosing = ranges
-            .iter()
-            // A definition is inside the next definition out; a reference,
-            // a recursive call included, is inside the innermost one.
-            .filter(|(id, start, end)| {
-                (occ.roles & ROLE_DEFINITION == 0 || *id != occ.symbol)
-                    && *start <= occ.start_line
-                    && occ.start_line <= *end
-            })
-            .min_by(|a, b| {
-                (a.2.saturating_sub(a.1), std::cmp::Reverse(a.1), &a.0).cmp(&(
-                    b.2.saturating_sub(b.1),
-                    std::cmp::Reverse(b.1),
-                    &b.0,
-                ))
-            })
-            .map(|(id, _, _)| id.as_str());
+        let enclosing = innermost(&ranges, occ);
         insert.execute(params![
             occ.symbol,
             document_id,
@@ -1563,5 +1609,51 @@ mod tests {
                 (decl.into(), "references".into(), 3),
             ]
         );
+    }
+
+    #[test]
+    fn a_scip_only_field_never_encloses_a_reference() {
+        const LINE: &str = "        self._regex, self._converters = _route_to_regex(route)";
+        let text = Box::leak(
+            format!(
+                "class RoutePattern:\n    def __init__(self, route):\n{LINE}\n\n\
+                 def _route_to_regex(route):\n    return 1, 2\n"
+            )
+            .into_boxed_str(),
+        );
+        let (_dir, mut store, id) = files(&[("src/r.py", text)]);
+        let class = "scip-python python app 0.1.0 `r`/RoutePattern#";
+        let init = "scip-python python app 0.1.0 `r`/RoutePattern#__init__().";
+        let regex = "scip-python python app 0.1.0 `r`/RoutePattern#_regex.";
+        let to_regex = "scip-python python app 0.1.0 `r`/_route_to_regex().";
+        let doc = ScipDocument {
+            path: "src/r.py".into(),
+            definitions: vec![
+                defined(class, "RoutePattern", "class", (1, 3)),
+                defined(init, "__init__", "method", (2, 3)),
+                defined(regex, "_regex", "field", (3, 3)),
+                defined(to_regex, "_route_to_regex", "function", (5, 6)),
+            ],
+            occurrences: vec![
+                site(regex, 3, end_of(LINE, "_regex"), ROLE_DEFINITION),
+                site(to_regex, 3, end_of(LINE, "_route_to_regex"), 0),
+            ],
+            encoding: ColumnUnit::Utf8,
+        };
+        store.write_scip(id, &[doc]).unwrap();
+        assert_eq!(edges_from(&store, regex), []);
+        assert_eq!(
+            edges_from(&store, init),
+            [(to_regex.into(), "calls".into(), 3)]
+        );
+        let enclosing: Option<String> = store
+            .conn
+            .query_row(
+                "SELECT enclosing FROM occurrence WHERE symbol_id = ?1",
+                [to_regex],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(enclosing.as_deref(), Some(init));
     }
 }
