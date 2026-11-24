@@ -193,6 +193,91 @@ pub(super) fn is_callable(symbol: &str) -> bool {
     symbol.ends_with(").")
 }
 
+/// Whether the occurrence of `name` that ends at `end_column` on `line` is a
+/// call: the text after it, past whitespace, an optional generic argument
+/// list (`::<T>` or `<T>`) and an optional `?.`, opens an argument list.
+///
+/// `end_column` counts in `unit`; with [`ColumnUnit::Unspecified`] it is
+/// tried as UTF-16, UTF-8, then UTF-32. A unit is accepted only when the
+/// text before the column ends with `name`, so `None` means no unit puts
+/// the name there and the site can't be read.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "edge kinds use it from the next commit")
+)]
+fn call_site(line: &str, end_column: u32, unit: ColumnUnit, name: &str) -> Option<bool> {
+    if name.is_empty() {
+        return None;
+    }
+    let units: &[ColumnUnit] = match unit {
+        ColumnUnit::Unspecified => &[ColumnUnit::Utf16, ColumnUnit::Utf8, ColumnUnit::Utf32],
+        _ => std::slice::from_ref(&unit),
+    };
+    let end = units
+        .iter()
+        .filter_map(|&unit| byte_offset(line, end_column, unit))
+        .find(|&end| line[..end].ends_with(name))?;
+    let mut rest = line[end..].trim_start();
+    if let Some(after) = rest.strip_prefix("::").unwrap_or(rest).strip_prefix('<') {
+        rest = skip_generics(after)?.trim_start();
+    }
+    if let Some(after) = rest.strip_prefix("?.") {
+        rest = after.trim_start();
+    }
+    Some(rest.starts_with('('))
+}
+
+/// The byte offset of `column` on `line` when counted in `unit`, or `None`
+/// when the column is past the line or inside a character.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "edge kinds use it from the next commit")
+)]
+fn byte_offset(line: &str, column: u32, unit: ColumnUnit) -> Option<usize> {
+    let column = column as usize;
+    let width: fn(char) -> usize = match unit {
+        ColumnUnit::Utf8 => {
+            return line.is_char_boundary(column).then_some(column);
+        }
+        ColumnUnit::Utf16 => char::len_utf16,
+        ColumnUnit::Utf32 | ColumnUnit::Unspecified => |_| 1,
+    };
+    let mut units = 0;
+    for (byte, c) in line.char_indices() {
+        if units == column {
+            return Some(byte);
+        }
+        units += width(c);
+    }
+    (units == column).then_some(line.len())
+}
+
+/// The text after the `>` that closes a generic argument list whose `<` was
+/// just before `text`, or `None` when the line ends first. The `>` of `->`
+/// closes nothing.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "edge kinds use it from the next commit")
+)]
+fn skip_generics(text: &str) -> Option<&str> {
+    let mut depth = 1;
+    let mut previous = '<';
+    for (byte, c) in text.char_indices() {
+        match c {
+            '<' => depth += 1,
+            '>' if previous != '-' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&text[byte + 1..]);
+                }
+            }
+            _ => {}
+        }
+        previous = c;
+    }
+    None
+}
+
 /// The source's code documents with their text, as `(ID, line count)` by
 /// path.
 fn stored_documents(tx: &Connection, source_id: i64) -> Result<HashMap<String, (i64, u32)>> {
@@ -1185,5 +1270,75 @@ mod tests {
         assert!(!is_callable("a b c d T#field."));
         assert!(!is_callable("a b c d f().(param)"));
         assert!(!is_callable("a b c d T#"));
+    }
+
+    #[test]
+    fn a_call_site_opens_an_argument_list_after_the_name() {
+        // `end` is the column just past `name` in UTF-8, the unit these
+        // ASCII lines share with every other.
+        let call = |line: &str, name: &str, unit| {
+            let end = line.find(name).unwrap() + name.len();
+            call_site(line, end as u32, unit, name)
+        };
+        for unit in [ColumnUnit::Utf8, ColumnUnit::Unspecified] {
+            // Rust
+            assert_eq!(call("    check(token)", "check", unit), Some(true));
+            assert_eq!(call("    check (token)", "check", unit), Some(true));
+            assert_eq!(call("    Self::new()", "new", unit), Some(true));
+            assert_eq!(call("    x.check::<T>(a)", "check", unit), Some(true));
+            assert_eq!(call("    x.f::<fn() -> u8>(a)", "f", unit), Some(true));
+            assert_eq!(
+                call("use crate::client::check;", "check", unit),
+                Some(false)
+            );
+            assert_eq!(call("    v.map(Self::check)", "check", unit), Some(false));
+            // Python
+            assert_eq!(
+                call(
+                    "        parser.UnparsedEntityDeclHandler = self.unparsed_entity_decl",
+                    "unparsed_entity_decl",
+                    unit
+                ),
+                Some(false)
+            );
+            assert_eq!(
+                call("        super().__init__(x)", "__init__", unit),
+                Some(true)
+            );
+            // TypeScript
+            assert_eq!(call("  return f(a);", "f", unit), Some(true));
+            assert_eq!(call("  return f<T>(a);", "f", unit), Some(true));
+            assert_eq!(call("  return f?.(a);", "f", unit), Some(true));
+            assert_eq!(call(r#"import { f } from "./a";"#, "f", unit), Some(false));
+            assert_eq!(call("  <b onClick={f}>", "f", unit), Some(false));
+        }
+    }
+
+    #[test]
+    fn a_call_site_reads_columns_in_the_documents_unit() {
+        // `é` is two UTF-8 bytes but one UTF-16 or UTF-32 unit, so `f` ends
+        // at byte 7 and at code unit 6.
+        let line = r#""é"; f(x)"#;
+        assert_eq!(call_site(line, 7, ColumnUnit::Utf8, "f"), Some(true));
+        assert_eq!(call_site(line, 6, ColumnUnit::Utf16, "f"), Some(true));
+        assert_eq!(call_site(line, 6, ColumnUnit::Utf32, "f"), Some(true));
+        assert_eq!(call_site(line, 6, ColumnUnit::Unspecified, "f"), Some(true));
+        assert_eq!(call_site(line, 7, ColumnUnit::Unspecified, "f"), Some(true));
+        // `𝑥` is one UTF-32 unit, two UTF-16 units and four bytes.
+        let line = "𝑥; f(x)";
+        assert_eq!(call_site(line, 4, ColumnUnit::Utf32, "f"), Some(true));
+        assert_eq!(call_site(line, 5, ColumnUnit::Utf16, "f"), Some(true));
+        assert_eq!(call_site(line, 7, ColumnUnit::Utf8, "f"), Some(true));
+        assert_eq!(call_site(line, 4, ColumnUnit::Unspecified, "f"), Some(true));
+    }
+
+    #[test]
+    fn a_column_that_does_not_end_the_name_is_unknown() {
+        assert_eq!(call_site("f(x)", 9, ColumnUnit::Utf8, "f"), None);
+        assert_eq!(call_site("f(x)", 9, ColumnUnit::Unspecified, "f"), None);
+        assert_eq!(call_site("g(f)", 1, ColumnUnit::Unspecified, "f"), None);
+        // Inside a multi-byte character: no unit ends `f` there.
+        assert_eq!(call_site("é f(x)", 1, ColumnUnit::Utf8, "f"), None);
+        assert_eq!(call_site("f(x)", 1, ColumnUnit::Utf8, ""), None);
     }
 }
