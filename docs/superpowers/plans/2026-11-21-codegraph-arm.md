@@ -6,7 +6,7 @@
 
 **Architecture:** A third arm, `codegraph`, joins `config.ARMS` under a new `tools` set. The arm reaches the sandbox as an MCP server plus a CLI on `PATH`, mirroring the codecite arm exactly; the image bakes CodeGraph and its `.codegraph/` indexes in at build time and every other arm strips them at sample time. `report.py` stops assuming two arms and compares every pair, gating only the codecite arm against the reference.
 
-**Tech Stack:** Python 3.15 on the eval host (package compatibility: Python 3.12+; sandbox and frozen task interpreters unchanged), Inspect AI, pytest, Docker, `@colbymchenry/codegraph` 1.6.4 (npm, MIT).
+**Tech Stack:** Python 3.12+, Inspect AI, pytest, Docker, `@colbymchenry/codegraph` 1.6.4 (npm, MIT).
 
 **Spec:** `docs/superpowers/specs/2026-11-21-codegraph-arm-design.md`
 

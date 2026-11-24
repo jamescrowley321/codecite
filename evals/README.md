@@ -332,8 +332,10 @@ Every task takes `-T arms=baseline` to run the baseline arm alone, a
 calibration (see below). `-T arms=tools` runs baseline, codecite and codegraph
 in one run on the same host (`docs/superpowers/specs/2026-11-21-codegraph-arm-design.md`).
 The codegraph arm gets a mirrored prompt note on coding tasks, CodeGraph 1.6.4
-baked into the image and indexes built at image build time; every other arm strips CodeGraph
-and its indexes. `used` counts each arm's own tool. CodeGraph comparisons are
+baked into the image and indexes built at image build time over the sources
+codecite's `eval` corpus indexes, no more; every other arm strips CodeGraph
+and its indexes, and every arm without codecite strips codecite's index with
+its binary. `used` counts each arm's own tool. CodeGraph comparisons are
 reported, never gated, and the direct CodeGraph-vs-codecite comparison is
 `not measured` if either tool was used in fewer than half its usable runs.
 The codecite-vs-baseline gate is unchanged.
@@ -489,10 +491,7 @@ transcript measures blank.
 
 Needs Docker, [uv](https://docs.astral.sh/uv/), a release build of codecite
 and an identity-model checkout (`IDENTITY_MODEL_REPO`, default
-`~/repos/auth/identity-model`). The eval host's uv commands default to Python
-3.15 via `evals/.python-version`; the package remains compatible with Python
-3.12 and later. This does not change the sandbox image's interpreter or the
-frozen tasks' own environments.
+`~/repos/auth/identity-model`).
 
 ```
 cargo build --release

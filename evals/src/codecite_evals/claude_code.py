@@ -75,8 +75,8 @@ def runs(model) -> bool:
 
 def command(condition: str, prompt: str, model: str, timeout: int) -> list[str]:
     """Claude Code's command line for an arm, its stream-json written to
-    OUTPUT. Only the codecite arm gets an MCP config; --strict-mcp-config
-    keeps any other out of every arm. Only the assist arm gets the settings
+    OUTPUT. Only the codecite and codegraph arms get an MCP config, each its
+    own tool's; --strict-mcp-config keeps any other out of every arm. Only the assist arm gets the settings
     holding its grep and glob hook. `timeout` stops it a little before
     Inspect would."""
     mcp = {"codecite": ["--mcp-config", MCP], "codegraph": ["--mcp-config", GRAPH_MCP]}.get(condition, [])

@@ -185,7 +185,7 @@ def test_the_token_never_goes_in_an_execs_env(monkeypatch):
 
 def test_the_baseline_arm_loses_codecite(monkeypatch):
     _, _, sb = run_claude(monkeypatch, finished(stream(DONE)), arm="baseline")
-    assert ["rm", "-rf", "/opt/codecite"] in sb.commands and claude_code.MCP not in sb.files
+    assert task.STRIP_CODECITE in sb.commands and claude_code.MCP not in sb.files
     assert not sb.envs[0]["PATH"].startswith("/opt/codecite")
 
 
@@ -258,7 +258,7 @@ def test_the_assist_arm_keeps_its_hooks_measures(monkeypatch):
     monkeypatch.setattr(task, "store", lambda: store)
     asyncio.run(task.claude("claude-sonnet-5-5")(AgentState(messages=[ChatMessageUser(content="do the task")])))
     assert (store["assist_calls"], store["assist_blocks"], store["assist_bytes"]) == (2, 1, 300)
-    assert not any(c == ["rm", "-rf", "/opt/codecite"] for c in sb.commands) and claude_code.MCP not in sb.files
+    assert not any(c == task.STRIP_CODECITE for c in sb.commands) and claude_code.MCP not in sb.files
 
 
 def test_other_arms_keep_no_assist_measures(monkeypatch):
@@ -297,5 +297,5 @@ def test_only_one_mcp_config_per_arm():
 def test_the_codegraph_arm_writes_claude_graph_mcp_and_strips_codecite(monkeypatch):
     _, _, sb = run_claude(monkeypatch, finished(stream(DONE)), arm="codegraph")
     assert json.loads(sb.files[claude_code.GRAPH_MCP]) == claude_code.GRAPH_MCP_CONFIG
-    assert ["rm", "-rf", "/opt/codecite"] in sb.commands
+    assert task.STRIP_CODECITE in sb.commands
     assert sb.envs[0]["PATH"].startswith("/opt/codegraph/bin:")

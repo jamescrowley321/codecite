@@ -33,7 +33,7 @@ class Sandbox:
         self.commands.append(cmd)
         if cmd[0] == "pi":
             raise self.error
-        if cmd == ["rm", "-rf", "/opt/codecite"] or (
+        if cmd == task.STRIP_CODECITE or (
             cmd[:2] == ["sh", "-c"] and "/opt/codegraph" in cmd[2]
         ):
             return ExecResult(success=True, returncode=0, stdout="", stderr="")
@@ -62,7 +62,7 @@ def test_only_the_codecite_arm_has_codecite_tools(monkeypatch):
     run_pi(monkeypatch, TimeoutError(), "baseline", base)
     config = json.loads(code.files[task.PI_MCP])["mcpServers"]["codecite"]
     assert (config["command"], config["args"], config["exposure"]) == (task.CODECITE, ["mcp"], "direct")
-    assert base.files == {} and ["rm", "-rf", "/opt/codecite"] in base.commands
+    assert base.files == {} and task.STRIP_CODECITE in base.commands
     (code_pi,), (base_pi,) = ([c for c in sb.commands if c[0] == "pi"] for sb in (code, base))
     tools = lambda cmd: cmd[cmd.index("--tools") + 1].split(",")
     assert tools(code_pi) == task.PI_TOOLS + [
@@ -427,7 +427,7 @@ def test_every_arm_but_the_codegraph_one_loses_codegraph():
             for c in sb.commands
         )
         if condition == "assist":
-            assert ["rm", "-rf", "/opt/codecite"] not in sb.commands
+            assert task.STRIP_CODECITE not in sb.commands
 
 
 def test_codegraph_arm_writes_pi_mcp_json_and_strips_codecite():
@@ -435,8 +435,19 @@ def test_codegraph_arm_writes_pi_mcp_json_and_strips_codecite():
     env = asyncio.run(task.prepare_arm(sb, "codegraph", task.PI_MCP, task.GRAPH_MCP_CONFIG))
     assert env["PATH"].startswith("/opt/codegraph/bin:")
     assert json.loads(sb.files[task.PI_MCP]) == task.GRAPH_MCP_CONFIG
-    assert ["rm", "-rf", "/opt/codecite"] in sb.commands
+    assert task.STRIP_CODECITE in sb.commands
     assert not any(c[:2] == ["sh", "-c"] and "/opt/codegraph" in c[2] for c in sb.commands)
+
+
+def test_arms_that_lose_codecite_lose_its_index_too():
+    """codecite's index outlives its binary unless removed with it: an arm
+    without codecite holds neither, as an arm without codegraph holds no
+    `.codegraph/`."""
+    assert task.STRIP_CODECITE == ["rm", "-rf", "/opt/codecite", "/root/.local/share/codecite"]
+    for condition, strips in (("baseline", True), ("codegraph", True), ("codecite", False), ("assist", False)):
+        sb = Sandbox(TimeoutError())
+        asyncio.run(task.prepare_arm(sb, condition, task.PI_MCP, task.MCP_CONFIG))
+        assert (task.STRIP_CODECITE in sb.commands) == strips, condition
 
 
 def test_prepare_arm_fails_on_cleanup_error():
@@ -451,7 +462,7 @@ def test_prepare_arm_fails_on_cleanup_error():
 def _run_dockerfile_codegraph_loop(tmp_path, fail_at=""):
     dockerfile = (config.EVALS_DIR / "inspect" / "Dockerfile").read_text()
     joined = re.sub(r"\\\n\s*", " ", dockerfile)
-    m = re.search(r"(for d in /work/project /opt/identity-model /opt/corpus/\*; do .*?;\s*done)", joined)
+    m = re.search(r"(if \[ -n \"\$\(ls -A /opt/identity-model\)\" \]; then .*?;\s*done)", joined)
     assert m, "Dockerfile has no codegraph init loop"
     loop = (
         m.group(1)
@@ -495,6 +506,35 @@ def test_dockerfile_codegraph_loop_skips_empty_project_and_succeeds(tmp_path):
 
     assert status == 0
     assert calls == ["init -y opt/identity-model"]
+
+def test_dockerfile_codegraph_indexes_what_codecite_indexes_for_an_identity_model_task(tmp_path):
+    """codecite's corpus for an identity-model task is identity-model alone,
+    not the agent's project, so codegraph indexes only identity-model too."""
+    (tmp_path / "work/project").mkdir(parents=True)
+    (tmp_path / "work/project/app.py").write_text("x = 1\n")
+    (tmp_path / "opt/identity-model").mkdir(parents=True)
+    (tmp_path / "opt/identity-model/model.py").write_text("y = 2\n")
+    (tmp_path / "opt/corpus").mkdir(parents=True)
+
+    status, calls = _run_dockerfile_codegraph_loop(tmp_path)
+
+    assert status == 0
+    assert calls == ["init -y opt/identity-model"]
+
+
+def test_dockerfile_codegraph_indexes_the_project_and_corpus_when_codecite_does(tmp_path):
+    """A replay or size-dial task stages an empty identity-model; codecite's
+    corpus is the project and /opt/corpus, and so is codegraph's."""
+    for d, f in (("work/project", "app.py"), ("opt/corpus/lib", "lib.py")):
+        (tmp_path / d).mkdir(parents=True)
+        (tmp_path / d / f).write_text("x = 1\n")
+    (tmp_path / "opt/identity-model").mkdir(parents=True)
+
+    status, calls = _run_dockerfile_codegraph_loop(tmp_path)
+
+    assert status == 0
+    assert calls == ["init -y work/project", "init -y opt/corpus/lib"]
+
 
 @pytest.mark.parametrize("task_id", TASKS)
 def test_codegraph_scoring_removes_generated_index_before_real_frozen_scope_check(monkeypatch, tmp_path, task_id):

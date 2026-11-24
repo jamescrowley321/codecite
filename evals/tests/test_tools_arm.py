@@ -61,3 +61,13 @@ def test_codegraph_corpus_note_excludes_documents_and_targets_sources():
     assert "specifications" not in note
     assert task.PROJECT in note and task.CORPUS_DIR in note
     assert "--path" in note and "projectPath" in note
+
+
+def test_codegraph_note_targets_each_source_of_a_multi_source_corpus():
+    """Each source has its own `.codegraph/`: the project, the agent's working
+    directory, is the default, and every other source needs its path."""
+    note = task.codegraph_note(config.task_dir("house-rules"), "m")
+    assert f"the identity-stack source at `{task.PROJECT}` and the identity-model source" in note
+    assert f"`{task.PROJECT}` by default" in note
+    assert f"--path {task.CORPUS_DIR}/<name>" in note
+    assert abs(len(note) - len(task.codecite_note(config.task_dir("house-rules"), "m"))) <= len(note) / 4
