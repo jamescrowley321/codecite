@@ -1,4 +1,6 @@
-# Claude Code: runs the blind-peer-review lenses on every non-draft pull
+# Claude Code. Currently manual: the triggers under `on:` are cut to
+# workflow_dispatch to save Claude credits (see the note there). With its
+# triggers in place it runs the blind-peer-review lenses on every non-draft pull
 # request when it opens, and responds when an owner or collaborator mentions
 # @claude in an issue or PR ("@claude review this PR" re-runs the review).
 # Ported from identity-model's claude.yml; the issue numbers below are that
@@ -66,6 +68,15 @@
 name: Claude Code
 
 on:
+  # MANUAL ONLY, to save Claude credits. The automatic triggers below are
+  # commented out, so opening a PR or commenting "@claude review this PR" runs
+  # nothing. workflow_dispatch keeps the workflow listed in the Actions tab, but
+  # the job's `if:` still gates on the PR and comment events, so a dispatched
+  # run skips the job rather than reviewing a PR. To turn the review back on,
+  # uncomment the triggers (each line that starts `# pull_request:`,
+  # `# issue_comment:` and so on, with its `types:` line) and drop
+  # workflow_dispatch; the job below is unchanged.
+  workflow_dispatch:
   # Re-opened 2026-09-16. The trigger was removed by identity-model#445 for two reasons: a
   # review posted per lens on EVERY push, and a paid provider billed per pull
   # request. Both are addressed rather than ignored — `opened` and
@@ -78,14 +89,14 @@ on:
   # so the job's `if:` tests `draft == false`. Without that, the ordinary
   # open-as-draft-then-mark-ready flow billed two full reviews per pull request,
   # the first on deliberately incomplete work (identity-model#704).
-  pull_request:
-    types: [opened, ready_for_review]
-  issue_comment:
-    types: [created]
-  pull_request_review_comment:
-    types: [created]
-  pull_request_review:
-    types: [submitted]
+  # pull_request:
+  #   types: [opened, ready_for_review]
+  # issue_comment:
+  #   types: [created]
+  # pull_request_review_comment:
+  #   types: [created]
+  # pull_request_review:
+  #   types: [submitted]
   # `opened` only. `assigned` was here, and the `if:` below tests the ISSUE
   # AUTHOR's association — on an `assigned` event the person acting is whoever
   # assigned, which needs only triage permission, while the author may have
@@ -94,8 +105,8 @@ on:
   # `@claude` fired a full lens run on every re-assign, and a triager toggling
   # assign/unassign bought one 30-minute session per toggle. With `opened`, the
   # author IS the actor and the association test means what it says (identity-model#698).
-  issues:
-    types: [opened]
+  # issues:
+  #   types: [opened]
 
 permissions: {}
 

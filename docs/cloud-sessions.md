@@ -2,8 +2,11 @@
 
 codecite issues can be worked unattended in [Claude Code cloud
 sessions](https://code.claude.com/docs/en/claude-code-on-the-web). Each session
-takes one issue and follows `AGENTS.md` ("Working an issue end to end"). CI and
-the blind peer review (`claude.yml`, on James's Claude subscription) give the feedback, and the eval workflow runs the A/B eval.
+takes one issue and follows `AGENTS.md` ("Working an issue end to end"). CI gives the
+feedback, and the eval workflow runs the A/B eval. The blind peer review
+(`claude.yml`, on James's Claude subscription) is currently manual: its
+triggers are cut to `workflow_dispatch`, so it does not run on a session's PR
+or on its `@claude review this PR` comments.
 James merges.
 
 ## Which issues
@@ -54,9 +57,10 @@ verdict of the latest blind peer review (`stale` when commits landed after it),
 the issue it closes, and whether the eval scorecard is posted. Sessions watch their own PRs, so a PR
 comment reaches the session working it.
 
-A session opens a PR against `main` and answers the review. After pushing
-fixes it comments `@claude review this PR` for a fresh one; the session posts
-as James, so the workflow's owner check lets it through. If the
+A session opens a PR against `main` and answers any review posted on it. While
+`claude.yml` runs on PR events, a session comments `@claude review this PR`
+after pushing fixes for a fresh review; the session posts as James, so the
+workflow's owner check lets it through. If the
 change touches indexing, search, ranking or the CLI's output, it adds the
 `eval` label, and the eval workflow posts the quick A/B scorecard on the PR.
 Sessions never merge.

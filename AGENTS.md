@@ -85,15 +85,20 @@ loop.
    warnings` and `cargo test --workspace --locked`.
 4. **Open the PR against `main`**, never stacked. Only the ralph loop stacks its PRs (`ralph/README.md`). Use a conventional title and put `Closes #<n>`, the issue's
    acceptance criteria and the provenance section in the body.
-5. **Read the feedback.** CI and the blind peer review come back on the PR.
-   `claude.yml` runs the review when the PR opens and posts one comment,
-   "Blind peer review — PR #<n>", with a table per lens and a `Verdict:` line
-   (PASS or BLOCK). Fix every MUST FIX at its cause, test-first. Lenses see
+5. **Read the feedback.** CI comes back on the PR. The blind peer review in
+   `claude.yml` is currently manual: its triggers are cut to
+   `workflow_dispatch`, to save Claude credits, so it does not run when a PR
+   opens or on an `@claude review this PR` comment. When a review is wanted,
+   run the `blind-peer-review:check` skill locally with
+   `--base origin/main` and post its output as one PR comment. Either way
+   the review is one comment, "Blind peer review — PR #<n>", with a table per
+   lens and a `Verdict:` line (PASS or BLOCK). Fix every MUST FIX at its cause, test-first. Lenses see
    only diff hunks, so before fixing a "missing" line read the whole file; for
    a false positive, reply on the PR saying why. Fix every SHOULD FIX and
    actionable NITPICK (an Acceptance Criteria NITPICK that only restates a
-   pass needs nothing). After pushing fixes, comment `@claude review this PR`
-   to get a fresh review of the new head. After three review rounds, stop and
+   pass needs nothing). After pushing fixes, run the review again for a fresh
+   look at the new head (while `claude.yml` runs on PR events,
+   `@claude review this PR` does this). After three review rounds, stop and
    summarise what's left in a PR comment.
 6. **Ask for an eval.** If the PR changes indexing, search, ranking or the
    CLI's output, add the `eval` label. The eval workflow runs the quick A/B
