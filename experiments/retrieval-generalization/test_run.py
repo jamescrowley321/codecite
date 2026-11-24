@@ -202,6 +202,26 @@ class ClassifyTest(unittest.TestCase):
         self.assertEqual(run.classify(case(score=False), 'codecite', 'search', 'ok', 1, None, []), 'unscored')
 
 
+class MechanismTest(unittest.TestCase):
+    def diag(self, covers, roles, span=20):
+        text = 'total\t9\n' + ''.join(f'cover\tsrc/lib.rs:2\t{r}\t{a}\t{b}\t{k}\tx\t1.0\n' for r, a, b, k in covers)
+        text += f'above\tsrc/lib.rs:2\t{roles}\tfunction:3\t0\t{span}\n'
+        return run.parse_candidates(text)
+
+    def test_mechanisms(self):
+        self.assertEqual(run.mechanism(self.diag([(5, 1, 60, 'window')], 'source:4', span=60)), 'granularity:window-only')
+        # A whole class that is the answer is judged by its length, not as a container.
+        self.assertEqual(run.mechanism(self.diag([(5, 1, 300, 'class')], 'source:4')), 'length:long-answer-chunk')
+        # The smallest covering definition is the answer's own chunk, not a better-ranked enclosing one.
+        self.assertEqual(run.mechanism(self.diag([(5, 1, 300, 'class'), (9, 2, 9, 'function')], 'source:4')),
+                         'lexical:other-source-shares-more-terms')
+        self.assertEqual(run.mechanism(self.diag([(5, 2, 9, 'function')], 'source:1,test:3')), 'role:non-source-above')
+        self.assertEqual(run.mechanism(self.diag([(5, 2, 90, 'function')], 'source:4')), 'length:long-answer-chunk')
+        self.assertEqual(run.mechanism(self.diag([(5, 2, 9, 'function')], 'source:4')),
+                         'lexical:other-source-shares-more-terms')
+        self.assertIsNone(run.mechanism(None))
+
+
 class ScheduleTest(unittest.TestCase):
     def test_pairs_alternate_order_and_every_call_runs_once_per_round(self):
         pairs = [('c1', 'g1'), ('c2', 'g2'), ('c3', None)]

@@ -215,6 +215,48 @@ fn run(args: &[String]) -> Result<(), String> {
             ),
             None => println!("target\t{target}\t0\t-\t-\t-\t-\t-\t-"),
         }
+        // Every candidate chunk that covers the line, so the definition's
+        // own chunk is told apart from an enclosing one.
+        for (i, r) in rows.iter().enumerate() {
+            if r.path == path && r.start <= line && line <= r.end {
+                println!(
+                    "cover\t{target}\t{}\t{}\t{}\t{}\t{}\t{}",
+                    i + 1,
+                    r.start,
+                    r.end,
+                    r.kind,
+                    clean(&r.symbol),
+                    r.score
+                );
+            }
+        }
+        // What ranks above the best covering chunk, by role and kind, and
+        // how long those chunks are.
+        if let Some((best_rank, _)) = best {
+            let above = &rows[..best_rank];
+            let mut roles = std::collections::BTreeMap::<&str, usize>::new();
+            let mut kinds = std::collections::BTreeMap::<&str, usize>::new();
+            let mut spans: Vec<u32> = Vec::new();
+            for r in above {
+                *roles.entry(r.role.as_str()).or_default() += 1;
+                *kinds.entry(r.kind.as_str()).or_default() += 1;
+                spans.push(r.end - r.start + 1);
+            }
+            spans.sort_unstable();
+            let fmt = |m: &std::collections::BTreeMap<&str, usize>| {
+                m.iter()
+                    .map(|(k, v)| format!("{k}:{v}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            };
+            println!(
+                "above\t{target}\t{}\t{}\t{}\t{}",
+                fmt(&roles),
+                fmt(&kinds),
+                above.iter().filter(|r| r.path == path).count(),
+                spans.get(spans.len() / 2).copied().unwrap_or(0)
+            );
+        }
         let doc = describe_doc(&conn, &path, line).map_err(|e| e.to_string())?;
         println!("doc\t{target}\t{doc}");
     }

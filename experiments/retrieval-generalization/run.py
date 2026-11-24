@@ -279,7 +279,7 @@ def measure(args):
             k = (case['id'], tool, op)
             if tool == 'codegraph' and keys[k] and not any(b == k for _, b in pairs):
                 pairs.append((k, None))
-    meta = dict(started=time.strftime('%Y-%m-%dT%H:%M:%S%z'), host=platform.node(), platform=platform.platform(),
+    meta = dict(started=time.strftime('%Y-%m-%dT%H:%M:%S%z'), platform=platform.platform(),
                 cpus=os.cpu_count(), loadavg_start=os.getloadavg(), rounds=args.rounds, seed=args.seed, limit=LIMIT,
                 codecite_version=subprocess.check_output([args.codecite, '--version'], text=True).strip(),
                 codecite_sha256=digest(args.codecite),
@@ -340,9 +340,44 @@ def parse_candidates(text):
             d['docs'][f[1]] = dict(present=f[2] == '1', language=f[3], role=f[4], chunks=int(f[5]),
                                    chunk_kinds=f[6] if len(f) > 6 else '',
                                    symbols=[s.split('|')[0] for s in (f[7] if len(f) > 7 else '').split(';') if s])
+        elif f[0] == 'cover':
+            d.setdefault('covers', []).append(dict(rank=int(f[2]), start=int(f[3]), end=int(f[4]), kind=f[5],
+                                                   symbol=f[6]))
+        elif f[0] == 'above':
+            d['above'] = dict(roles=dict(x.split(':') for x in f[2].split(',') if x),
+                              kinds=dict(x.split(':') for x in f[3].split(',') if x),
+                              same_file=int(f[4]), median_span=int(f[5]))
         elif f[0] == 'error':
             d['error'] = f[1]
     return d
+
+
+WINDOWS = ('window',)
+
+
+def mechanism(diag):
+    """Why a codecite search answer is not first, from the untruncated list.
+
+    The answer's own chunk is the smallest covering chunk that is not a
+    fixed-size window. Rules apply in order: only windows cover the answer
+    (no definition chunk); most chunks above it are tests, docs or examples;
+    its own chunk is at least three times longer than the median chunk above
+    it; otherwise other source chunks simply share more of the query's terms."""
+    covers = (diag or {}).get('covers') or []
+    above = (diag or {}).get('above')
+    if not covers or not above:
+        return None
+    own = [c for c in covers if c['kind'] not in WINDOWS]
+    if not own:
+        return 'granularity:window-only'
+    roles = {k: int(v) for k, v in above['roles'].items()}
+    n = sum(roles.values())
+    if n and (n - roles.get('source', 0)) * 2 >= n:
+        return 'role:non-source-above'
+    best = min(own, key=lambda c: c['end'] - c['start'])
+    if above['median_span'] and best['end'] - best['start'] + 1 >= 3 * above['median_span']:
+        return 'length:long-answer-chunk'
+    return 'lexical:other-source-shares-more-terms'
 
 
 def classify(case, tool, op, status, rank, diag, observed):
@@ -437,7 +472,7 @@ def diagnose(args):
         rank = first_hit(rows, case['answers']) if case['answers'] else None
         diag = None
         positive = case['class'] in POSITIVE and case.get('score', True)
-        if positive and r['status'] in ('ok', 'empty') and (rank is None or rank > LIMIT):
+        if positive and r['status'] in ('ok', 'empty') and rank != 1:
             if r['tool'] == 'codecite':
                 targets = [f'{a["path"]}:{a["line"]}' for a in case['answers']]
                 mode = 'def' if r['op'] == 'def' else 'search'
@@ -459,6 +494,8 @@ def diagnose(args):
                                   cls=case['class'], tool=r['tool'], op=r['op'], status=r['status'],
                                   rank=rank, outcome=outcome, total=r.get('total'),
                                   top=[f'{p}#L{s}-L{e}' for p, s, e in rows[:LIMIT]],
+                                  mechanism=mechanism(diag) if r['tool'] == 'codecite' and r['op'] == 'search'
+                                  and outcome.startswith('rank') else None,
                                   diag=summarise_diag(diag))) + '\n')
     out.close()
     # Citation round trips, outside any timed run.
@@ -481,8 +518,9 @@ def summarise_diag(diag):
         return None
     keep = {k: diag[k] for k in ('total', 'deftotal', 'deferror', 'error', 'file', 'nodes', 'helper_seconds')
             if k in diag}
-    if 'targets' in diag:
-        keep['targets'] = diag['targets']
+    for k in ('targets', 'covers', 'above'):
+        if k in diag:
+            keep[k] = diag[k]
     if 'docs' in diag:
         keep['docs'] = {k: dict(v, symbols=v['symbols'][:8]) for k, v in diag['docs'].items()}
     if diag.get('top'):
@@ -531,6 +569,9 @@ def report(args):
     with (out / 'per-query.jsonl').open('w') as f:
         for d in diag:
             f.write(json.dumps(d) + '\n')
+    meta.pop('host', None)
+    meta['harness_revision_at_report'] = subprocess.check_output(['git', '-C', str(HERE), 'rev-parse', 'HEAD'],
+                                                               text=True).strip()
     (out / 'metadata.json').write_text(json.dumps(meta, indent=1) + '\n')
     trips = json.loads((run / 'citations.json').read_text())
     summary = dict(citations=dict(checked=len(trips), resolved=sum(t['ok'] for t in trips)), quality=[], timing=[],
@@ -564,6 +605,8 @@ def report(args):
     for (split, tool, op), counter in sorted(fc.items()):
         summary['outcomes'].append(dict(split=split, tool=tool, op=op,
                                         by_repo={f'{r}:{o}': n for (r, o), n in sorted(counter.items())}))
+    mech = Counter((d['split'], d['repo'], d['mechanism']) for d in diag if d.get('mechanism'))
+    summary['mechanisms'] = [dict(split=a, repo=b, mechanism=c, misses=n) for (a, b, c), n in sorted(mech.items())]
     (out / 'summary.json').write_text(json.dumps(summary, indent=1) + '\n')
     (out / 'summary.md').write_text(markdown(summary, corpora))
 
@@ -586,6 +629,9 @@ def markdown(summary, corpora):
         lines.append(f"| {r['split']} | {r['repo']} | {r['tool']} | {r['op']} | {r['cls']} | {r['samples']} | "
                      f"{r['queries']} | {r['p50_ms']:.1f} | {r['p95_ms']:.1f} | {r['errors']} | "
                      f"{r['median_stdout_bytes']} |")
+    lines += ['', '## Why codecite search answers are not first', '',
+              '| split | repo | mechanism | misses |', '| --- | --- | --- | ---: |']
+    lines += [f"| {m['split']} | {m['repo']} | {m['mechanism']} | {m['misses']} |" for m in summary['mechanisms']]
     c = summary['citations']
     lines += ['', f"Citation round trips through `codecite read`: {c['resolved']} of {c['checked']} resolved.", '']
     return '\n'.join(lines)
