@@ -7,3 +7,9 @@ a304f6a8e52f48a2991e6640e644f927873c5bce:evals/lib/sandbox.test.mjs:generic-api-
 d6b6d5885f1a1fc7327766629a0b12399c855cd5:crates/codecite-index/src/walk.rs:private-key:520
 # The same fixture quoted in that feature's plan.
 d6b6d5885f1a1fc7327766629a0b12399c855cd5:docs/superpowers/plans/2026-10-19-local-source-walk.md:private-key:699
+# Public hashes keyed by the corpus name keycloak: its pinned commit (line 9)
+# and its generated manifest's SHA-256 (line 17) in the #255 run metadata.
+3d72fa6b0159baca03489b1b8e119b6011cdb3ab:experiments/fts-tuning/results/index-metadata.json:generic-api-key:9
+3d72fa6b0159baca03489b1b8e119b6011cdb3ab:experiments/fts-tuning/results/index-metadata.json:generic-api-key:17
+7227a5c279985e89beefc76c5822704decc0fb16:experiments/fts-tuning/results/detail-column/metadata.json:generic-api-key:9
+7227a5c279985e89beefc76c5822704decc0fb16:experiments/fts-tuning/results/detail-column/metadata.json:generic-api-key:17
