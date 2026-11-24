@@ -775,9 +775,11 @@ each symbol once at its nearest distance, at most 50:
 ```
 
 A callee outside the corpus, such as a standard library function, is listed by
-its SCIP ID, with no citation. A reference to a method or function inside
-another definition counts as a call, so a function passed as a value is a call
-too. `--min-confidence` keeps only edges at least that sure (3 exact, 2
+its SCIP ID, with no citation. A reference inside another definition counts
+as a call when the source right after it opens an argument list (`check(`,
+`check::<T>(`, `check?.(`), to a method or to a value holding a function such
+as an arrow function; a function passed or assigned as a value, `handler =
+check`, is a reference, and an import is an import. `--min-confidence` keeps only edges at least that sure (3 exact, 2
 extracted, 1 inferred, 0 ambiguous); SCIP's are exact. `--json` prints
 `{"symbol", "id", "total", "results"}` for `refs`, each result with
 `citation`, `enclosing`, `access`, `role`, `text`, `truncated`,
@@ -789,7 +791,9 @@ each result with `id`, `name`, `kind`, `distance`, `citation`, `via`,
 `defined_in`.
 
 A name that several symbols the graph tools can walk from have is an error
-listing their IDs, rather than a merged answer; pass one of them. A name that
+listing their IDs, rather than a merged answer; pass one of them. Parameters
+and type parameters never count toward a name, so a parameter named `check`
+doesn't make `check` ambiguous. A name that
 only one of them has resolves to it, even when tree-sitter has other
 definitions of it. A definition the index didn't name but that
 holds references it found, such as a function SCIP and tree-sitter name
