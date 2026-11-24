@@ -3,7 +3,7 @@
 //! wrote. Each write first undoes the previous one, so the layer always
 //! matches the index it was last given.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, hash_map::Entry};
 
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -417,22 +417,11 @@ fn write_definitions(
             // whatever order the manifest lists them in; otherwise the
             // first keeps the ID.
             if scip_only && other != source_id && holder.is_some() {
-                // The losing source's references stay, but no longer inside
-                // the definition it lost: its edges from it go, and its
-                // occurrences lose it as their enclosing definition.
-                const LOSER: &str = "(SELECT id FROM document WHERE source_id = ?2)";
+                // The losing source's references stay, now inside the next
+                // definition out, as if it had lost the ID before it wrote.
                 tx.prepare_cached("DELETE FROM symbol WHERE id = ?1")?
                     .execute([&def.symbol])?;
-                tx.prepare_cached(&format!(
-                    "DELETE FROM edge WHERE src = ?1 AND provider = 'scip'
-                       AND evidence_doc IN {LOSER}"
-                ))?
-                .execute(params![def.symbol, other])?;
-                tx.prepare_cached(&format!(
-                    "UPDATE occurrence SET enclosing = NULL WHERE enclosing = ?1
-                       AND document_id IN {LOSER}"
-                ))?
-                .execute(params![def.symbol, other])?;
+                reassign(tx, &def.symbol, other)?;
                 summary.taken_over += 1;
             } else {
                 summary.conflicts += 1;
@@ -537,6 +526,79 @@ fn innermost<'a>(ranges: &'a [Range], occ: &ScipOccurrence) -> Option<&'a str> {
             )
         })
         .map(|r| r.id.as_str())
+}
+
+/// Moves the losing source's rows off the definition `lost`, once it is
+/// deleted: each occurrence it held gets the innermost definition left
+/// around it, and each edge from it becomes an edge from the definition now
+/// holding its evidence line, keeping the earlier line when that edge
+/// exists already. Edges from a definition come only from its own
+/// document, so the two lines always share one.
+fn reassign(tx: &Connection, lost: &str, loser: i64) -> Result<()> {
+    const LOSER: &str = "(SELECT id FROM document WHERE source_id = ?2)";
+    // `rowid` is SQLite's implicit row key: `occurrence` has no other.
+    let held: Vec<(i64, i64, String, u32, u32)> = {
+        let mut stmt = tx.prepare_cached(&format!(
+            "SELECT rowid, document_id, symbol_id, start_line, roles FROM occurrence
+             WHERE enclosing = ?1 AND document_id IN {LOSER} ORDER BY rowid"
+        ))?;
+        let rows = stmt.query_map(params![lost, loser], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
+        })?;
+        rows.collect::<rusqlite::Result<_>>()?
+    };
+    let edges: Vec<(String, String, i64, u32)> = {
+        let mut stmt = tx.prepare_cached(&format!(
+            "DELETE FROM edge WHERE src = ?1 AND provider = 'scip' AND evidence_doc IN {LOSER}
+             RETURNING dst, kind, evidence_doc, evidence_line"
+        ))?;
+        let rows = stmt.query_map(params![lost, loser], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })?;
+        rows.collect::<rusqlite::Result<_>>()?
+    };
+    // Each document's ranges, read once.
+    let mut ranges: HashMap<i64, Vec<Range>> = HashMap::new();
+    let mut holder = |document_id: i64, symbol: &str, line: u32, roles: u32| -> Result<_> {
+        // `entry` looks the key up once; `?` can't run inside
+        // `or_insert_with`, so the vacant arm reads the ranges itself.
+        let doc_ranges = match ranges.entry(document_id) {
+            Entry::Occupied(e) => e.into_mut(),
+            Entry::Vacant(e) => e.insert(file_ranges(tx, document_id)?),
+        };
+        let occ = ScipOccurrence {
+            symbol: symbol.to_owned(),
+            start_line: line,
+            end_line: line,
+            end_column: None,
+            roles,
+        };
+        Ok(innermost(doc_ranges, &occ).map(str::to_owned))
+    };
+    for (rowid, document_id, symbol, line, roles) in held {
+        let enclosing = holder(document_id, &symbol, line, roles)?;
+        tx.prepare_cached("UPDATE occurrence SET enclosing = ?2 WHERE rowid = ?1")?
+            .execute(params![rowid, enclosing])?;
+    }
+    for (dst, kind, document_id, line) in edges {
+        let Some(src) = holder(document_id, &dst, line, 0)? else {
+            continue;
+        };
+        tx.prepare_cached(
+            "INSERT INTO edge (src, dst, kind, provider, confidence, evidence_doc, evidence_line)
+             VALUES (?1, ?2, ?3, 'scip', ?4, ?5, ?6)
+             ON CONFLICT (src, dst, kind, provider)
+             DO UPDATE SET evidence_line = min(evidence_line, excluded.evidence_line)",
+        )?
+        .execute(params![src, dst, kind, SCIP_CONFIDENCE, document_id, line])?;
+    }
+    Ok(())
 }
 
 /// Writes one document's occurrences, each with the innermost definition
@@ -1350,6 +1412,129 @@ mod tests {
             )
             .unwrap();
         assert_eq!(held, 0, "the loser's references are no longer inside login");
+    }
+
+    /// `other`'s login, SCIP-only inside its SCIP-only `outer` module, calls
+    /// `check` on line 3; `outer` calls it again on line 4.
+    fn nested_other_source(store: &mut Store) -> (i64, Vec<ScipDocument>) {
+        let (id, _) = other_source(store);
+        store
+            .write_document(
+                id,
+                &crate::DocumentRecord {
+                    path: "src/outer.rs",
+                    language: Some("rust"),
+                    content_hash: b"outer",
+                    size_bytes: 5,
+                    dirty: false,
+                    text: Some("mod outer {\n  // login\n  check\n  check\n}\n"),
+                    chunks: vec![],
+                },
+            )
+            .unwrap();
+        let reference = |line| ScipOccurrence {
+            symbol: scip("check()."),
+            start_line: line,
+            end_line: line,
+            end_column: None,
+            roles: 0,
+        };
+        let docs = vec![ScipDocument {
+            encoding: Default::default(),
+            path: "src/outer.rs".into(),
+            definitions: vec![
+                defined(&scip("outer/"), "outer", "module", (1, 5)),
+                ScipDefinition {
+                    line: 2,
+                    ..defined(&scip("login()."), "login", "function", (2, 3))
+                },
+            ],
+            occurrences: vec![
+                ScipOccurrence {
+                    symbol: scip("login()."),
+                    roles: ROLE_DEFINITION,
+                    ..reference(2)
+                },
+                reference(3),
+                reference(4),
+            ],
+        }];
+        (id, docs)
+    }
+
+    /// The source's occurrences as `(symbol, line, enclosing)` and the edges
+    /// its documents give as `(src, dst, kind, line)`.
+    #[allow(clippy::type_complexity)]
+    fn source_rows(
+        store: &Store,
+        source_id: i64,
+    ) -> (
+        Vec<(String, u32, Option<String>)>,
+        Vec<(String, String, String, u32)>,
+    ) {
+        const DOCS: &str = "(SELECT id FROM document WHERE source_id = ?1)";
+        let mut stmt = store
+            .conn
+            .prepare(&format!(
+                "SELECT symbol_id, start_line, enclosing FROM occurrence
+                 WHERE document_id IN {DOCS} ORDER BY 1, 2, 3"
+            ))
+            .unwrap();
+        let occurrences = stmt
+            .query_map([source_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let mut stmt = store
+            .conn
+            .prepare(&format!(
+                "SELECT src, dst, kind, evidence_line FROM edge
+                 WHERE evidence_doc IN {DOCS} ORDER BY 1, 2, 3"
+            ))
+            .unwrap();
+        let edges = stmt
+            .query_map([source_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        (occurrences, edges)
+    }
+
+    #[test]
+    fn taking_an_id_over_leaves_the_loser_as_if_it_had_lost_first() {
+        // app first: `other` loses login while it writes.
+        let (_dir, mut store, app_id) = app();
+        let (other, docs) = nested_other_source(&mut store);
+        store.write_scip(app_id, &index()).unwrap();
+        store.write_scip(other, &docs).unwrap();
+        let lost_first = source_rows(&store, other);
+
+        // `other` first: app takes login over afterwards.
+        let (_dir, mut store, app_id) = app();
+        let (other, docs) = nested_other_source(&mut store);
+        store.write_scip(other, &docs).unwrap();
+        let summary = store.write_scip(app_id, &index()).unwrap();
+        assert_eq!(summary.taken_over, 1);
+        let taken_over = source_rows(&store, other);
+
+        let outer = Some(scip("outer/"));
+        assert_eq!(
+            lost_first.0,
+            [
+                (scip("check()."), 3, outer.clone()),
+                (scip("check()."), 4, outer.clone()),
+                (scip("login()."), 2, outer.clone()),
+            ]
+        );
+        assert_eq!(
+            lost_first.1,
+            [(scip("outer/"), scip("check()."), "calls".to_owned(), 3)]
+        );
+        assert_eq!(taken_over, lost_first);
     }
 
     #[test]
