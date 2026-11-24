@@ -374,6 +374,85 @@ class SearchBaselinePreflight(unittest.TestCase):
             self.assertEqual(sorted(run.iterdir()), before)
 
 
+class CitationReadBack(unittest.TestCase):
+    def read_back(self, results):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "citations.json"
+            with mock.patch.object(
+                search_baseline.subprocess, "run", side_effect=results
+            ):
+                try:
+                    search_baseline.read_back_citations(
+                        Path("codecite"), "corpus", ["c:a#L1", "c:b#L2"], {}, path
+                    )
+                finally:
+                    recorded = json.loads(path.read_text())
+        return recorded
+
+    def test_resolved_citations_are_recorded(self):
+        ok = subprocess.CompletedProcess([], 0, "", "")
+        recorded = self.read_back([ok, ok])
+        self.assertEqual([entry["exit"] for entry in recorded], [0, 0])
+
+    def test_unresolved_citation_fails_after_recording(self):
+        ok = subprocess.CompletedProcess([], 0, "", "")
+        bad = subprocess.CompletedProcess([], 1, "", "no such span\n")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "citations.json"
+            with mock.patch.object(
+                search_baseline.subprocess, "run", side_effect=[ok, bad]
+            ):
+                with self.assertRaisesRegex(RuntimeError, "1 of 2 citations.*c:b#L2"):
+                    search_baseline.read_back_citations(
+                        Path("codecite"), "corpus", ["c:a#L1", "c:b#L2"], {}, path
+                    )
+            recorded = json.loads(path.read_text())
+        self.assertEqual(recorded[1]["error"], "no such span\n")
+
+
+class ColdCache(unittest.TestCase):
+    def test_evict_drops_existing_files_and_skips_missing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            present = Path(directory) / "corpus.db"
+            present.write_bytes(b"pages")
+            missing = Path(directory) / "corpus.db-wal"
+            with mock.patch.object(search_baseline.os, "posix_fadvise") as fadvise:
+                search_baseline.evict([present, missing])
+        self.assertEqual(fadvise.call_count, 1)
+        _, offset, length, advice = fadvise.call_args.args
+        self.assertEqual((offset, length, advice), (0, 0, os.POSIX_FADV_DONTNEED))
+
+    def test_stop_twice_is_harmless(self):
+        # cli-cold stops the server before its sweeps; the finally block stops it again.
+        process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        search_baseline.stop(process)
+        search_baseline.stop(process)
+        self.assertIsNotNone(process.returncode)
+
+    def test_unknown_corpus_is_rejected_before_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            binary = run / "codecite"
+            binary.write_bytes(b"binary")
+            sha = hashlib.sha256(b"binary").hexdigest()
+            (run / "index-metadata.json").write_text(
+                json.dumps({"binary_sha256": {"codecite": sha}})
+            )
+            labels = run / "queries.json"
+            labels.write_text(json.dumps({"corpora": {"first": []}}))
+            argv = ["search_baseline.py", str(run), "--binary", str(binary),
+                    "--corpus", "other"]
+            before = sorted(run.iterdir())
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(search_baseline, "LABELS", labels),
+                self.assertRaises(SystemExit),
+                mock.patch("sys.stderr"),
+            ):
+                search_baseline.main()
+            self.assertEqual(sorted(run.iterdir()), before)
+
+
 class IncrementalOptimizePreflight(unittest.TestCase):
     def test_missing_helper_leaves_no_output(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -1,0 +1,10 @@
+{
+  "corpus": "fhir",
+  "source_revision": "9b779886c0e3aabd084e2226d3481b235bbc0df0",
+  "codecite_sha256": "ed39022becaa3eece17ed750a92ce6e01b4a54dde87a33e8c62fe4c79f5af55e",
+  "manifest_sha256": "b8764afb376aa36afc07996c6b7fd092fde66857105a801b7d9da91a7b20cb28",
+  "chunks": 231843,
+  "database_bytes": 806481920,
+  "note": "fresh index rebuilt with the byte-identical baseline binary into a new private run directory; ranked citations matched frozen-search.jsonl for every FHIR query; the host was shared and busy during the search run (load average 7.9 at the start and 14.2 at the end, 22 cores)",
+  "eviction_check": "fincore: fhir.db 769.1M resident after reading it, 0B after one evict(); the binary kept 4.8M resident while an MCP server mapped it and 0B after it stopped, so cli-cold runs after the server stops"
+}

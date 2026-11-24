@@ -55,6 +55,29 @@ def write_all(stream, data):
     stream.flush()
 
 
+def evict(paths):
+    """Drop each existing file's clean pages from the OS page cache. Needs no root."""
+    for path in paths:
+        try:
+            fd = os.open(path, os.O_RDONLY)
+        except FileNotFoundError:
+            continue
+        try:
+            os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+        finally:
+            os.close(fd)
+
+
+def stop(process):
+    """Terminate a server and wait for it, killing it after ten seconds."""
+    process.terminate()
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+
+
 def check_strata(db, queries):
     """Verify the predeclared rare/broad match counts and record them on each query."""
     for q in queries:
@@ -69,12 +92,29 @@ def check_strata(db, queries):
         q['matches'] = count
 
 
+def read_back_citations(binary, corpus, citations, env, path):
+    """Read every citation back, record each exit code, and fail if any did not resolve."""
+    checks = []
+    for citation in citations:
+        result = subprocess.run([binary, 'read', corpus, citation, '--json'], env=env,
+                                capture_output=True, text=True)
+        checks.append({'citation': citation, 'exit': result.returncode,
+                       'error': result.stderr if result.returncode else ''})
+    path.write_text(json.dumps(checks, indent=2) + '\n')
+    failed = [c['citation'] for c in checks if c['exit']]
+    if failed:
+        raise RuntimeError(f'{corpus}: {len(failed)} of {len(checks)} citations did not resolve: {", ".join(failed)}')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('run_dir', type=Path)
     parser.add_argument('--binary', type=Path, required=True)
     parser.add_argument('--rounds', type=int, default=5)
     parser.add_argument('--prefix', default='frozen', help='new output filename prefix')
+    parser.add_argument('--corpus', action='append', help='measure only this corpus (repeatable)')
+    parser.add_argument('--cold', action='store_true',
+                        help='add a cli-cold mode: evict the database and binary from the page cache before every call')
     args = parser.parse_args()
     if not re.fullmatch(r'[a-zA-Z0-9_-]+', args.prefix):
         parser.error('prefix must contain only letters, digits, underscores or hyphens')
@@ -87,18 +127,33 @@ def main():
         if hashlib.file_digest(f, 'sha256').hexdigest() != metadata['binary_sha256']['codecite']:
             raise ValueError('binary differs from index baseline')
     labels = json.loads(LABELS.read_text())['corpora']
+    if args.corpus:
+        unknown = sorted(set(args.corpus) - set(labels))
+        if unknown:
+            parser.error(f'unknown corpus: {", ".join(unknown)}')
+        labels = {c: q for c, q in labels.items() if c in args.corpus}
     # Check every corpus's match-count strata before creating outputs or servers.
     for corpus, queries in labels.items():
         check_strata(run / 'data' / f'{corpus}-1' / 'codecite' / f'{corpus}.db', queries)
     output = run / f'{args.prefix}-search.jsonl'
     output.touch(exist_ok=False)
-    (run / f'{args.prefix}-metadata.json').write_text(json.dumps({
+    modes = ('cli', 'mcp', 'cli-cold') if args.cold else ('cli', 'mcp')
+    metadata = {
         'query_sha256': hashlib.sha256(LABELS.read_bytes()).hexdigest(),
+        'corpora': list(labels),
         'rounds': args.rounds, 'seed': 255, 'limit': 10,
-        'cache': 'one untimed sweep per mode; warm OS page cache; no cache eviction',
+        'cache': 'cli and mcp: one untimed warmup sweep per mode, not recorded; warm OS page cache; no cache eviction',
         'cli': 'one new process per query, startup included',
         'mcp': 'one initialized persistent process per corpus; store reopened per call',
-    }, indent=2) + '\n')
+    }
+    if args.cold:
+        metadata['cli-cold'] = ('as cli, but before every call posix_fadvise(DONTNEED) evicts the corpus database, '
+                                'its -wal and -shm, and the binary from the page cache; shared libraries, '
+                                'directory entries and inodes stay cached; runs after the MCP server stops, so nothing maps the binary; '
+                                'round 0 is excluded from summaries like the other modes')
+    else:
+        metadata['cli-cold'] = 'not measured'
+    (run / f'{args.prefix}-metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
     all_records = []
     for corpus, queries in labels.items():
         data_home = run / 'data' / f'{corpus}-1'
@@ -133,13 +188,20 @@ def main():
             write_all(process.stdin, b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
             rng = random.Random(255)
             references = {}
-            for mode in ('cli', 'mcp'):
+            db = data_home / 'codecite' / f'{corpus}.db'
+            cold_files = [binary, db, db.with_name(db.name + '-wal'), db.with_name(db.name + '-shm')]
+            for mode in modes:
+                if mode == 'cli-cold':
+                    # A running server maps the binary, which keeps its pages resident.
+                    stop(process)
                 for iteration in range(args.rounds + 1):
                     order = list(queries)
                     rng.shuffle(order)
                     for q in order:
+                        if mode == 'cli-cold':
+                            evict(cold_files)
                         t = time.perf_counter_ns()
-                        if mode == 'cli':
+                        if mode in ('cli', 'cli-cold'):
                             command = [binary, 'search', corpus, q['text'], '--limit', '10', '--json']
                             if 'path' in q:
                                 command += ['--path', q['path']]
@@ -169,20 +231,10 @@ def main():
                         with output.open('a') as f:
                             f.write(json.dumps(record, sort_keys=True) + '\n')
                         all_records.append(record)
-            citation_check = []
-            for citation in sorted({c for citations in references.values() for c in citations}):
-                result = subprocess.run([binary, 'read', corpus, citation, '--json'], env=env,
-                                        capture_output=True, text=True)
-                citation_check.append({'citation': citation, 'exit': result.returncode,
-                                       'error': result.stderr if result.returncode else ''})
-            (run / f'{args.prefix}-{corpus}-citations.json').write_text(json.dumps(citation_check, indent=2) + '\n')
+            read_back_citations(binary, corpus, sorted({c for citations in references.values() for c in citations}),
+                                env, run / f'{args.prefix}-{corpus}-citations.json')
         finally:
-            process.terminate()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
+            stop(process)
         print(corpus, 'complete', flush=True)
     groups = collections.defaultdict(list)
     for r in all_records:
