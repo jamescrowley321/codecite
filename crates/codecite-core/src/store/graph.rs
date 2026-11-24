@@ -808,6 +808,7 @@ mod tests {
             symbol: scip("client/impl#[Client]validate()."),
             start_line: 21,
             end_line: 21,
+            end_column: None,
             roles: 0,
         });
         store.write_scip(id, &docs).unwrap();
@@ -845,6 +846,7 @@ mod tests {
             symbol: scip("client/check()."),
             start_line: 18,
             end_line: 18,
+            end_column: None,
             roles: 0,
         });
         store.write_scip(id, &docs).unwrap();
@@ -900,6 +902,7 @@ mod tests {
             .write_scip(
                 other,
                 &[ScipDocument {
+                    encoding: Default::default(),
                     path: "src/run.rs".into(),
                     definitions: vec![ScipDefinition {
                         symbol: run.into(),
@@ -913,6 +916,7 @@ mod tests {
                         symbol: scip("client/check()."),
                         start_line: 2,
                         end_line: 2,
+                        end_column: None,
                         roles: 0,
                     }],
                 }],
@@ -951,6 +955,7 @@ mod tests {
             symbol: scip("login()."),
             start_line: 20,
             end_line: 20,
+            end_column: None,
             roles: 0,
         });
         store.write_scip(id, &docs).unwrap();

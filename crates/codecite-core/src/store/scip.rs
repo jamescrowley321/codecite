@@ -28,6 +28,23 @@ pub struct ScipDocument {
     pub definitions: Vec<ScipDefinition>,
     /// Every occurrence of a global symbol, definitions included.
     pub occurrences: Vec<ScipOccurrence>,
+    /// The unit the occurrences' columns count in.
+    pub encoding: ColumnUnit,
+}
+
+/// The unit a SCIP document's columns count in: its `PositionEncoding`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ColumnUnit {
+    /// UTF-8 code units: bytes.
+    Utf8,
+    /// UTF-16 code units.
+    Utf16,
+    /// UTF-32 code units: Unicode scalar values, Rust `char`s.
+    Utf32,
+    /// The index doesn't say.
+    #[default]
+    Unspecified,
 }
 
 /// A symbol a SCIP index defines.
@@ -59,6 +76,10 @@ pub struct ScipOccurrence {
     pub start_line: u32,
     /// The last line, inclusive.
     pub end_line: u32,
+    /// Where the range ends on its last line: the half-open end character
+    /// in the document's [`ColumnUnit`]. `None` when the range doesn't give
+    /// one.
+    pub end_column: Option<u32>,
     /// The SCIP `SymbolRole` bits: 1 definition, 2 import, 4 write, 8
     /// read, 16 generated, 32 test.
     pub roles: u32,
@@ -580,6 +601,7 @@ pub fn validate(&self, token: &str) -> bool {\n        check(token) && !self.iss
             symbol,
             start_line: line,
             end_line: line,
+            end_column: None,
             roles,
         }
     }
@@ -591,6 +613,7 @@ pub fn validate(&self, token: &str) -> bool {\n        check(token) && !self.iss
     pub fn index() -> Vec<ScipDocument> {
         let d = ROLE_DEFINITION;
         let mut lib = ScipDocument {
+            encoding: Default::default(),
             path: "src/lib.rs".into(),
             definitions: vec![
                 def("crate/", "crate", "module", 1, (1, 21)),
@@ -613,6 +636,7 @@ pub fn validate(&self, token: &str) -> bool {\n        check(token) && !self.iss
         };
         lib.occurrences.reverse();
         let client = ScipDocument {
+            encoding: Default::default(),
             path: "src/client.rs".into(),
             definitions: vec![
                 def("client/", "client", "module", 1, (1, 22)),
@@ -806,6 +830,7 @@ mod tests {
             symbol: scip("login()."),
             start_line: 10,
             end_line: 10,
+            end_column: None,
             roles: 0,
         });
         store.write_scip(id, &docs).unwrap();
@@ -927,6 +952,7 @@ mod tests {
             symbol: scip("login()."),
             start_line: 99,
             end_line: 99,
+            end_column: None,
             roles: 0,
         });
         docs[0].definitions.push(ScipDefinition {
@@ -947,6 +973,7 @@ mod tests {
             end_line: 21,
         });
         docs.push(ScipDocument {
+            encoding: Default::default(),
             path: "src/missing.rs".into(),
             ..ScipDocument::default()
         });
@@ -1022,6 +1049,7 @@ mod tests {
             )
             .unwrap();
         let docs = vec![ScipDocument {
+            encoding: Default::default(),
             path: "src/lib.rs".into(),
             definitions: vec![ScipDefinition {
                 symbol: scip("login()."),
@@ -1080,6 +1108,7 @@ mod tests {
                 symbol: scip(callee),
                 start_line: 1,
                 end_line: 1,
+                end_column: None,
                 roles: 0,
             });
         }

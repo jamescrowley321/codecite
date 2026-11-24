@@ -37,8 +37,8 @@ pub use role::Role;
 
 mod store;
 pub use store::{
-    APPROACH_ONLY_INSTRUCTION, ChunkRecord, CiteOptions, CiteResult, Context, ContextQuery,
-    ContextTarget, Corpora, CorpusInfo, DEFAULT_MAX_AGE_DAYS, DEFAULT_MAX_LINES,
+    APPROACH_ONLY_INSTRUCTION, ChunkRecord, CiteOptions, CiteResult, ColumnUnit, Context,
+    ContextQuery, ContextTarget, Corpora, CorpusInfo, DEFAULT_MAX_AGE_DAYS, DEFAULT_MAX_LINES,
     DEFAULT_SEARCH_LIMIT, Definition, Definitions, DiffOptions, DiffResult, Direction,
     DocumentRecord, FTS_TOKENIZER, Finding, Freshness, Graph, GraphNode, GraphQuery, GrepMatch,
     GrepQuery, GrepResults, IndexRun, MAX_CONFIDENCE, MAX_CONTEXT_BYTES, MAX_GRAPH_DEPTH,

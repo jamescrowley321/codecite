@@ -890,15 +890,18 @@ mod tests {
             symbol: symbol.into(),
             start_line: 1,
             end_line: 1,
+            end_column: None,
             roles,
         };
         let docs = [
             ScipDocument {
+                encoding: Default::default(),
                 path: "src/lib.rs".into(),
                 definitions: vec![def(SCIP_VALIDATE, "validate", 3)],
                 occurrences: vec![at(SCIP_VALIDATE, 1)],
             },
             ScipDocument {
+                encoding: Default::default(),
                 path: "src/check.rs".into(),
                 definitions: vec![def(SCIP_CHECK, "check", 1)],
                 occurrences: vec![at(SCIP_CHECK, 1), at(SCIP_VALIDATE, 8)],
