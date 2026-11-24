@@ -33,3 +33,4 @@
 evals/**/node_modules/
 evals/**/.venv/
 evals/**/__pycache__/
+experiments/**/__pycache__/
