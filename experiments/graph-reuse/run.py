@@ -368,6 +368,10 @@ class Context:
         return 'scip_sha256' in self.repos[repo]
 
     def scrub(self, text):
+        if self.codecite and text == self.codecite:
+            return 'codecite'
+        if text == sys.executable:
+            return 'python3'
         return text.replace(str(self.run), '$RUN').replace(str(self.src), '$SRC').replace(str(HERE), '$HERE')
 
 
@@ -806,7 +810,6 @@ def latency(data):
 
 def index_costs(ctx):
     out = {}
-    prior = HERE.parent / 'retrieval-generalization' / 'results' / 'index.json'
     for name, repo in ctx.repos.items():
         row = {}
         for corpus in (name, f'{name}-scip'):
@@ -825,11 +828,9 @@ def index_costs(ctx):
             wall, rss = st.read_text().split()
             row['scip_indexer'] = {'wall_seconds': float(wall), 'peak_rss_kib': int(rss)}
         out[name] = row
-    if prior.exists():
-        prior_data = json.loads(prior.read_text())
-        for name in out:
-            if name in prior_data:
-                out[name]['codegraph_init'] = prior_data[name].get('codegraph')
+    for name in out:
+        if 'codegraph_init' in ctx.repos[name]:
+            out[name]['codegraph_init'] = ctx.repos[name]['codegraph_init']
     return out
 
 
@@ -948,7 +949,7 @@ def metadata(ctx, data):
             'cases_sha256': hashlib.sha256((HERE / 'cases.json').read_bytes()).hexdigest(),
             'corpora_sha256': hashlib.sha256((HERE / 'corpora.toml').read_bytes()).hexdigest(),
             'normalize_sha256': hashlib.sha256((HERE / 'normalize.py').read_bytes()).hexdigest(),
-            'pins': {n: r['commit'] for n, r in ctx.repos.items()}, 'measure': data['meta']}
+            'pins': [{'repo': n, 'commit': r['commit']} for n, r in ctx.repos.items()], 'measure': data['meta']}
 
 
 def main():

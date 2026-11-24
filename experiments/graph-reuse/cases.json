@@ -804,7 +804,7 @@
      "targets": [
       {
        "path": "crates/core/search.rs",
-       "line": 244,
+       "line": 245,
        "name": "search"
       }
      ],
@@ -814,7 +814,8 @@
     }
    ],
    "certainty": "certain",
-   "draw": "callers bucket"
+   "draw": "callers bucket",
+   "erratum": "target line was 244 (the doc comment above `fn search`); corrected to 245 after the audit found the extra edge at 245"
   },
   {
    "id": "ripgrep/callers/find_by_line_fast",

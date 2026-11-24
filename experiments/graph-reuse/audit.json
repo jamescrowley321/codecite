@@ -1,0 +1,567 @@
+{
+ "note": "Every extra edge (returned, not in the labels) checked by a person against the pinned source. verdict false: the edge is wrong; label-miss: a real edge the labels lacked (none were found; the one label error, ripgrep/callers/search_preprocessor, is corrected in cases.json as an erratum).",
+ "extras": [
+  {
+   "case": "django/callees/BaseFormSet.management_form",
+   "path": "django/forms/formsets.py",
+   "line": 14,
+   "name": "TOTAL_FORM_COUNT",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a type or constant reference listed as a callee; nothing is called"
+  },
+  {
+   "case": "django/callees/BaseFormSet.management_form",
+   "path": "django/forms/formsets.py",
+   "line": 15,
+   "name": "INITIAL_FORM_COUNT",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a type or constant reference listed as a callee; nothing is called"
+  },
+  {
+   "case": "django/callees/BaseFormSet.management_form",
+   "path": "django/forms/formsets.py",
+   "line": 16,
+   "name": "MIN_NUM_FORM_COUNT",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a type or constant reference listed as a callee; nothing is called"
+  },
+  {
+   "case": "django/callees/BaseFormSet.management_form",
+   "path": "django/forms/formsets.py",
+   "line": 17,
+   "name": "MAX_NUM_FORM_COUNT",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a type or constant reference listed as a callee; nothing is called"
+  },
+  {
+   "case": "django/callers/_route_to_regex",
+   "path": "django/urls/resolvers.py",
+   "line": 319,
+   "name": "_regex",
+   "arms": [
+    "codecite+scip/id"
+   ],
+   "verdict": "false",
+   "reason": "a scip-python attribute definition (self._regex) taken as the enclosing caller; the caller is RoutePattern.__init__"
+  },
+  {
+   "case": "django/miss/unparsed_entity_decl",
+   "path": "django/core/serializers/xml_serializer.py",
+   "line": 473,
+   "name": "reset",
+   "arms": [
+    "codecite+scip/id"
+   ],
+   "verdict": "false",
+   "reason": "a reference to the method (handler registration), stored as a calls edge"
+  },
+  {
+   "case": "excalidraw/callees/HistoryEntry.applyTo",
+   "path": "packages/excalidraw/element/types.ts",
+   "line": 394,
+   "name": "SceneElementsMap",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a type or constant reference listed as a callee; nothing is called"
+  },
+  {
+   "case": "excalidraw/callees/HistoryEntry.applyTo",
+   "path": "packages/excalidraw/history.ts",
+   "line": 180,
+   "name": "applyTo",
+   "arms": [
+    "codegraph/normalized",
+    "codegraph/normalized",
+    "codegraph/normalized-trusted",
+    "codegraph/normalized-trusted"
+   ],
+   "verdict": "false",
+   "reason": "the method itself, bound by bare name; the receivers are fields typed ElementsChange and AppStateChange"
+  },
+  {
+   "case": "excalidraw/callees/HistoryEntry.applyTo",
+   "path": "packages/excalidraw/store.ts",
+   "line": 265,
+   "name": "Snapshot",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a type or constant reference listed as a callee; nothing is called"
+  },
+  {
+   "case": "excalidraw/callees/HistoryEntry.applyTo",
+   "path": "packages/excalidraw/types.ts",
+   "line": 239,
+   "name": "AppState",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a type or constant reference listed as a callee; nothing is called"
+  },
+  {
+   "case": "excalidraw/callees/prepareElementsForRender",
+   "path": "packages/excalidraw/element/types.ts",
+   "line": 171,
+   "name": "ExcalidrawFrameLikeElement",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a type or constant reference listed as a callee; nothing is called"
+  },
+  {
+   "case": "excalidraw/callees/prepareElementsForRender",
+   "path": "packages/excalidraw/element/types.ts",
+   "line": 203,
+   "name": "ExcalidrawElement",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a type or constant reference listed as a callee; nothing is called"
+  },
+  {
+   "case": "excalidraw/callees/prepareElementsForRender",
+   "path": "packages/excalidraw/types.ts",
+   "line": 239,
+   "name": "AppState",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a type or constant reference listed as a callee; nothing is called"
+  },
+  {
+   "case": "excalidraw/callers/AdapterTransaction.getLibraryItems.static",
+   "path": "packages/excalidraw/data/library.ts",
+   "line": 591,
+   "name": "persistLibraryUpdate",
+   "arms": [
+    "codecite+scip/id",
+    "codegraph/normalized"
+   ],
+   "verdict": "false",
+   "reason": "static and instance methods share one SCIP symbol / name; this caller calls the instance method"
+  },
+  {
+   "case": "excalidraw/callers/getFontFamilyFallbacks",
+   "path": "packages/excalidraw/fonts/Fonts.ts",
+   "line": 1,
+   "name": "Fonts.ts",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a file- or module-level import or reference (the whole file as caller), not a call"
+  },
+  {
+   "case": "excalidraw/callers/getFontFamilyFallbacks",
+   "path": "packages/excalidraw/utils.ts",
+   "line": 1,
+   "name": "utils.ts",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a file- or module-level import or reference (the whole file as caller), not a call"
+  },
+  {
+   "case": "excalidraw/callers/getSvgPathFromStroke",
+   "path": "packages/excalidraw/animated-trail.ts",
+   "line": 1,
+   "name": "animated-trail.ts",
+   "arms": [
+    "codecite+scip/id",
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a file- or module-level import or reference (the whole file as caller), not a call"
+  },
+  {
+   "case": "excalidraw/callers/getSvgPathFromStroke",
+   "path": "packages/excalidraw/renderer/renderElement.ts",
+   "line": 1018,
+   "name": "getFreeDrawSvgPath",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a known wrong target named in the case's forbid list"
+  },
+  {
+   "case": "excalidraw/callers/resaveAsImageWithScene",
+   "path": "packages/excalidraw/actions/actionExport.tsx",
+   "line": 1,
+   "name": "actionExport.tsx",
+   "arms": [
+    "codegraph/cli",
+    "codegraph/normalized"
+   ],
+   "verdict": "false",
+   "reason": "the call site (154) is right, but the caller is reported as the whole file, not the function holding the call"
+  },
+  {
+   "case": "excalidraw/miss/onUnload",
+   "path": "excalidraw-app/collab/Collab.tsx",
+   "line": 202,
+   "name": "componentDidMount",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "another definition of the same bare name; the call binds elsewhere"
+  },
+  {
+   "case": "excalidraw/miss/onUnload",
+   "path": "excalidraw-app/collab/Collab.tsx",
+   "line": 254,
+   "name": "componentWillUnmount",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "another definition of the same bare name; the call binds elsewhere"
+  },
+  {
+   "case": "excalidraw/miss/onUnload",
+   "path": "packages/excalidraw/components/App.tsx",
+   "line": 2574,
+   "name": "addEventListeners",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "another definition of the same bare name; the call binds elsewhere"
+  },
+  {
+   "case": "excalidraw/unknown/promiseTry.fn",
+   "path": "packages/excalidraw/utils.ts",
+   "line": 554,
+   "name": "resolve",
+   "arms": [
+    "codegraph/normalized",
+    "codegraph/normalized-trusted"
+   ],
+   "verdict": "false",
+   "reason": "a call through a parameter bound by name to an unrelated definition"
+  },
+  {
+   "case": "linux/callers/prueth_netdev_init",
+   "path": "drivers/net/ethernet/ti/icssg/icssg_prueth.c",
+   "line": 1709,
+   "name": "prueth_probe",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a known wrong target named in the case's forbid list"
+  },
+  {
+   "case": "linux/miss/twl6040gpo_direction_out",
+   "path": "drivers/gpio/gpio-mpc8xxx.c",
+   "line": 79,
+   "name": "mpc5121_gpio_dir_out",
+   "arms": [
+    "codegraph/cli",
+    "codegraph/normalized"
+   ],
+   "verdict": "false",
+   "reason": "a call through a function-pointer field bound by field name; this function is never called directly"
+  },
+  {
+   "case": "linux/miss/twl6040gpo_direction_out",
+   "path": "drivers/gpio/gpio-mpc8xxx.c",
+   "line": 90,
+   "name": "mpc5125_gpio_dir_out",
+   "arms": [
+    "codegraph/cli",
+    "codegraph/normalized"
+   ],
+   "verdict": "false",
+   "reason": "a call through a function-pointer field bound by field name; this function is never called directly"
+  },
+  {
+   "case": "linux/miss/twl6040gpo_direction_out",
+   "path": "drivers/gpio/gpio-twl6040.c",
+   "line": 1,
+   "name": "gpio-twl6040.c",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a file- or module-level import or reference (the whole file as caller), not a call"
+  },
+  {
+   "case": "linux/miss/twl6040gpo_direction_out",
+   "path": "drivers/gpio/gpiolib.c",
+   "line": 2802,
+   "name": "gpiochip_direction_output",
+   "arms": [
+    "codegraph/cli",
+    "codegraph/normalized"
+   ],
+   "verdict": "false",
+   "reason": "a call through a function-pointer field bound by field name; this function is never called directly"
+  },
+  {
+   "case": "linux/miss/twl6040gpo_direction_out",
+   "path": "drivers/pinctrl/bcm/pinctrl-bcm6358.c",
+   "line": 253,
+   "name": "bcm6358_pinctrl_set_mux",
+   "arms": [
+    "codegraph/cli",
+    "codegraph/normalized"
+   ],
+   "verdict": "false",
+   "reason": "a call through a function-pointer field bound by field name; this function is never called directly"
+  },
+  {
+   "case": "linux/miss/twl6040gpo_direction_out",
+   "path": "drivers/pinctrl/bcm/pinctrl-bcm6368.c",
+   "line": 378,
+   "name": "bcm6368_pinctrl_set_mux",
+   "arms": [
+    "codegraph/cli",
+    "codegraph/normalized"
+   ],
+   "verdict": "false",
+   "reason": "a call through a function-pointer field bound by field name; this function is never called directly"
+  },
+  {
+   "case": "linux/miss/twl6040gpo_direction_out",
+   "path": "drivers/pinctrl/pinctrl-equilibrium.c",
+   "line": 452,
+   "name": "eqbr_pinconf_set",
+   "arms": [
+    "codegraph/cli",
+    "codegraph/normalized"
+   ],
+   "verdict": "false",
+   "reason": "a call through a function-pointer field bound by field name; this function is never called directly"
+  },
+  {
+   "case": "linux/miss/twl6040gpo_direction_out",
+   "path": "drivers/pinctrl/pinctrl-rockchip.c",
+   "line": 3260,
+   "name": "rockchip_pinconf_set",
+   "arms": [
+    "codegraph/cli",
+    "codegraph/normalized"
+   ],
+   "verdict": "false",
+   "reason": "a call through a function-pointer field bound by field name; this function is never called directly"
+  },
+  {
+   "case": "ripgrep/callees/StandardSink.finish",
+   "path": "crates/core/flags/parse.rs",
+   "line": 29,
+   "name": "Ok",
+   "arms": [
+    "codegraph/cli",
+    "codegraph/normalized",
+    "codegraph/normalized-trusted"
+   ],
+   "verdict": "false",
+   "reason": "a std or enum constructor (Ok, Err, Some) bound by bare name to an unrelated repository definition"
+  },
+  {
+   "case": "ripgrep/callees/StandardSink.finish",
+   "path": "crates/globset/src/lib.rs",
+   "line": 162,
+   "name": "Error",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a type or constant reference listed as a callee; nothing is called"
+  },
+  {
+   "case": "ripgrep/callees/StandardSink.finish",
+   "path": "crates/ignore/src/lib.rs",
+   "line": 489,
+   "name": "Result",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a type or constant reference listed as a callee; nothing is called"
+  },
+  {
+   "case": "ripgrep/callees/StandardSink.finish",
+   "path": "crates/searcher/src/searcher/mod.rs",
+   "line": 612,
+   "name": "Searcher",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a type or constant reference listed as a callee; nothing is called"
+  },
+  {
+   "case": "ripgrep/callees/StandardSink.finish",
+   "path": "crates/searcher/src/sink.rs",
+   "line": 340,
+   "name": "SinkFinish",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a type or constant reference listed as a callee; nothing is called"
+  },
+  {
+   "case": "ripgrep/callees/SummarySink.begin",
+   "path": "crates/core/flags/parse.rs",
+   "line": 29,
+   "name": "Ok",
+   "arms": [
+    "codegraph/cli",
+    "codegraph/normalized",
+    "codegraph/normalized-trusted"
+   ],
+   "verdict": "false",
+   "reason": "a std or enum constructor (Ok, Err, Some) bound by bare name to an unrelated repository definition"
+  },
+  {
+   "case": "ripgrep/callees/SummarySink.begin",
+   "path": "crates/globset/src/lib.rs",
+   "line": 162,
+   "name": "Error",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a type or constant reference listed as a callee; nothing is called"
+  },
+  {
+   "case": "ripgrep/callees/SummarySink.begin",
+   "path": "crates/ignore/src/lib.rs",
+   "line": 489,
+   "name": "Result",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a type or constant reference listed as a callee; nothing is called"
+  },
+  {
+   "case": "ripgrep/callees/SummarySink.begin",
+   "path": "crates/printer/src/color.rs",
+   "line": 312,
+   "name": "Err",
+   "arms": [
+    "codegraph/cli",
+    "codegraph/normalized",
+    "codegraph/normalized-trusted"
+   ],
+   "verdict": "false",
+   "reason": "a std or enum constructor (Ok, Err, Some) bound by bare name to an unrelated repository definition"
+  },
+  {
+   "case": "ripgrep/callees/SummarySink.begin",
+   "path": "crates/searcher/src/searcher/mod.rs",
+   "line": 612,
+   "name": "Searcher",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a type or constant reference listed as a callee; nothing is called"
+  },
+  {
+   "case": "ripgrep/callers/is_file_name",
+   "path": "crates/ignore/src/gitignore.rs",
+   "line": 1,
+   "name": "gitignore",
+   "arms": [
+    "codecite+scip/name",
+    "codecite+scip/id",
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a file- or module-level import or reference (the whole file as caller), not a call"
+  },
+  {
+   "case": "ripgrep/callers/sink_matched",
+   "path": "crates/searcher/src/searcher/core.rs",
+   "line": 99,
+   "name": "matched",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a known wrong target named in the case's forbid list"
+  },
+  {
+   "case": "ripgrep/callers/sink_matched",
+   "path": "crates/searcher/src/searcher/core.rs",
+   "line": 262,
+   "name": "after_context_by_line",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a known wrong target named in the case's forbid list"
+  },
+  {
+   "case": "ripgrep/callers/sink_matched",
+   "path": "crates/searcher/src/searcher/core.rs",
+   "line": 316,
+   "name": "match_by_line_slow",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a known wrong target named in the case's forbid list"
+  },
+  {
+   "case": "ripgrep/callers/sink_matched",
+   "path": "crates/searcher/src/searcher/core.rs",
+   "line": 361,
+   "name": "match_by_line_fast",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a known wrong target named in the case's forbid list"
+  },
+  {
+   "case": "ripgrep/callers/sink_matched",
+   "path": "crates/searcher/src/searcher/core.rs",
+   "line": 411,
+   "name": "match_by_line_fast_invert",
+   "arms": [
+    "codegraph/cli"
+   ],
+   "verdict": "false",
+   "reason": "a known wrong target named in the case's forbid list"
+  },
+  {
+   "case": "ripgrep/unknown/matched",
+   "path": "crates/ignore/src/dir.rs",
+   "line": 542,
+   "name": "matched",
+   "arms": [
+    "codegraph/cli",
+    "codegraph/normalized"
+   ],
+   "verdict": "false",
+   "reason": "a call through a parameter bound by name to an unrelated definition"
+  }
+ ]
+}
