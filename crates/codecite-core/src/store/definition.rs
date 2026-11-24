@@ -297,7 +297,8 @@ pub(super) fn qualified(symbol: &str) -> Option<Vec<&str>> {
 /// ``rust-analyzer cargo app 0.1.0 client/impl#[Client]validate().``.
 /// Namespaces (a path segment, a module) and parameters are left out; a
 /// type parameter's name counts, since rust-analyzer names an `impl` block
-/// by its type that way. `None` when the ID is neither the form an index
+/// by its type that way, except a trait impl's trait: `impl#[Foo][Iterator]`
+/// gives `["impl", "Foo"]`. `None` when the ID is neither the form an index
 /// run writes nor a global SCIP symbol.
 pub(super) fn names_in_file(id: &str) -> Option<Vec<String>> {
     descriptor_names(id, false)
@@ -332,13 +333,31 @@ fn descriptor_names(id: &str, namespaces: bool) -> Option<Vec<String>> {
         rest
     };
     let mut names = Vec::new();
+    // rust-analyzer writes a trait impl as `impl#[Type][Trait]`: the
+    // type's name counts, the trait's doesn't, so `Type.method` matches.
+    // `Impl::Type` is set right after `impl#`, `Impl::Trait` right after
+    // its first type parameter.
+    #[derive(PartialEq)]
+    enum Impl {
+        None,
+        Type,
+        Trait,
+    }
+    let mut after_impl = Impl::None;
     while !descriptors.is_empty() {
         if let Some(rest) = descriptors.strip_prefix('[') {
             let (name, after) = descriptor_name(rest)?;
-            names.push(name);
+            if after_impl != Impl::Trait {
+                names.push(name);
+            }
+            after_impl = match after_impl {
+                Impl::Type => Impl::Trait,
+                _ => Impl::None,
+            };
             descriptors = after.strip_prefix(']')?;
             continue;
         }
+        after_impl = Impl::None;
         if let Some(rest) = descriptors.strip_prefix('(') {
             let (_, after) = descriptor_name(rest)?;
             descriptors = after.strip_prefix(')')?;
@@ -353,6 +372,9 @@ fn descriptor_names(id: &str, namespaces: bool) -> Option<Vec<String>> {
             '(' => (after.find(").")? + 2, true),
             _ => return None,
         };
+        if name == "impl" && after.starts_with('#') {
+            after_impl = Impl::Type;
+        }
         if in_file {
             names.push(name);
         }
@@ -829,6 +851,16 @@ mod tests {
         assert_eq!(
             names("rust-analyzer cargo app 0.1.0 client/impl#[Client]validate()."),
             Some(vec!["impl".into(), "Client".into(), "validate".into()])
+        );
+        // A trait impl names the type, then the trait, which isn't in the
+        // file's names: `Foo.into_iter` must find the method.
+        assert_eq!(
+            names("rust-analyzer cargo app 0.1.0 impl#[Foo][IntoIterator]into_iter()."),
+            Some(vec!["impl".into(), "Foo".into(), "into_iter".into()])
+        );
+        assert_eq!(
+            names("rust-analyzer cargo app 0.1.0 a/impl#[Foo][`Iterator`]Item#"),
+            Some(vec!["impl".into(), "Foo".into(), "Item".into()])
         );
         assert_eq!(
             names("scip-python python my  pkg 1.0 `app.client`/Client#run().(self)"),

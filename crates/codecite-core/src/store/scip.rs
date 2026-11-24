@@ -648,7 +648,7 @@ pub fn validate(&self, token: &str) -> bool {\n        check(token) && !self.iss
     }
 
     /// One tree-sitter definition: `(descriptors, name, kind, lines)`.
-    type Def<'a> = (&'a str, &'a str, &'a str, (u32, u32));
+    pub type Def<'a> = (&'a str, &'a str, &'a str, (u32, u32));
 
     fn document<'a>(path: &'a str, text: &'a str, defs: &[Def<'a>]) -> DocumentRecord<'a> {
         let lines: Vec<&str> = text.lines().collect();
@@ -698,6 +698,21 @@ pub fn validate(&self, token: &str) -> bool {\n        check(token) && !self.iss
                 .write_document(id, &document(path, text, &[]))
                 .unwrap();
         }
+        store.set_indexed_at(30).unwrap();
+        (dir, store, id)
+    }
+
+    /// A store holding the source `app` with one file whose tree-sitter
+    /// definitions are `defs`, and the source's ID.
+    pub fn file(
+        path: &'static str,
+        text: &'static str,
+        defs: &[Def<'static>],
+    ) -> (tempfile::TempDir, Store, i64) {
+        let (dir, mut store, id) = empty();
+        store
+            .write_document(id, &document(path, text, defs))
+            .unwrap();
         store.set_indexed_at(30).unwrap();
         (dir, store, id)
     }
@@ -854,7 +869,7 @@ pub fn validate(&self, token: &str) -> bool {\n        check(token) && !self.iss
 
 #[cfg(test)]
 mod tests {
-    use super::fixture::{app, files, index, local, scip};
+    use super::fixture::{app, file, files, index, local, scip};
     use super::*;
     use crate::Error;
 
@@ -1701,5 +1716,54 @@ mod tests {
             panic!("{err:?}");
         };
         assert!(candidates.is_empty(), "no parameter names: {candidates:?}");
+    }
+
+    #[test]
+    fn a_dotted_name_finds_a_trait_impl_method() {
+        const FOO: &str = "pub struct Foo;\n\nimpl IntoIterator for Foo {\n    fn into_iter(self) -> Iter {\n        helper()\n    }\n}\n\nfn helper() -> Iter { todo!() }\n";
+        let (_dir, mut store, id) = file(
+            "src/foo.rs",
+            FOO,
+            &[
+                ("Foo#", "Foo", "struct", (1, 1)),
+                ("Foo#into_iter().", "into_iter", "method", (4, 6)),
+                ("helper().", "helper", "function", (9, 9)),
+            ],
+        );
+        let into_iter = scip("impl#[Foo][IntoIterator]into_iter().");
+        let helper = scip("helper().");
+        let doc = ScipDocument {
+            path: "src/foo.rs".into(),
+            definitions: vec![
+                defined(&scip("Foo#"), "Foo", "struct", (1, 1)),
+                defined(&into_iter, "into_iter", "method", (4, 6)),
+                defined(&helper, "helper", "function", (9, 9)),
+            ],
+            occurrences: vec![
+                site(&scip("Foo#"), 1, 14, ROLE_DEFINITION),
+                site(&into_iter, 4, 16, ROLE_DEFINITION),
+                site(&helper, 5, 14, 0),
+                site(&helper, 9, 9, ROLE_DEFINITION),
+            ],
+            encoding: ColumnUnit::Utf8,
+        };
+        store.write_scip(id, &[doc]).unwrap();
+        let found = store.definition("Foo.into_iter", false).unwrap();
+        assert_eq!(found.total, 1);
+        assert_eq!(found.results[0].id, into_iter);
+        let callees = store
+            .graph(&crate::GraphQuery {
+                symbol: "Foo.into_iter",
+                direction: crate::Direction::Callees,
+                depth: 1,
+                min_confidence: 0,
+                allow_stale: false,
+            })
+            .unwrap();
+        assert_eq!(callees.id, into_iter);
+        assert_eq!(
+            edges_from(&store, &into_iter),
+            [(helper, "calls".into(), 5)]
+        );
     }
 }
