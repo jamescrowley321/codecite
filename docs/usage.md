@@ -791,7 +791,9 @@ listing their IDs, rather than a merged answer; pass one of them. A name that
 only one of them has resolves to it, even when tree-sitter has other
 definitions of it. A definition the index didn't name but that
 holds references it found, such as a function SCIP and tree-sitter name
-differently, keeps codecite's own ID and still answers. A symbol with no SCIP
+differently, keeps codecite's own ID and still answers `callees`; nothing the
+index found refers to or calls it, so `references` and `callers` on it are
+`no_graph`. A symbol with no SCIP
 data at all is a `no_graph` error, never an empty list that would read as "nothing calls
 this":
 
