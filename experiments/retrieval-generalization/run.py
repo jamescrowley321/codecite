@@ -285,7 +285,7 @@ def measure(args):
                 codecite_sha256=digest(args.codecite),
                 codegraph_version=subprocess.check_output(['codegraph', '--version'], text=True, env=env).strip(),
                 cases_sha256=digest(HERE / 'cases.json'), corpora_sha256=digest(HERE / 'corpora.toml'),
-                pins={n: r['commit'] for n, r in corpora.items()},
+                pins=[dict(repo=n, commit=r['commit']) for n, r in corpora.items()],
                 warmup='one untimed sweep of every call before the timed rounds',
                 network='every call under unshare -rn')
     log = (out / 'calls.jsonl').open('w')
@@ -570,6 +570,8 @@ def report(args):
         for d in diag:
             f.write(json.dumps(d) + '\n')
     meta.pop('host', None)
+    if isinstance(meta.get('pins'), dict):
+        meta['pins'] = [dict(repo=n, commit=c) for n, c in meta['pins'].items()]
     meta['harness_revision_at_report'] = subprocess.check_output(['git', '-C', str(HERE), 'rev-parse', 'HEAD'],
                                                                text=True).strip()
     (out / 'metadata.json').write_text(json.dumps(meta, indent=1) + '\n')
