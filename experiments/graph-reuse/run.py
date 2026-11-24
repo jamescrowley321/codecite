@@ -522,8 +522,11 @@ def verify_snapshots(ctx):
 
 
 def normalize_sha(ctx, repo):
+    """The snapshot's sha256, read in blocks: Linux's snapshot is 4.7 GB."""
+    sys.path.insert(0, str(HERE))
+    import normalize
     db = ctx.src / repo / '.codegraph' / 'codegraph.db'
-    return hashlib.sha256(db.read_bytes()).hexdigest() if db.exists() else None
+    return normalize.sha256_file(db) if db.exists() else None
 
 
 # ---------------------------------------------------------------------------
@@ -683,7 +686,7 @@ def outcome_rows(ctx, data):
                 got, unresolved = parse_normalized(out, case['op'], trusted=arm.endswith('trusted')) \
                     if status == 'ok' else ([], [])
             row['status'] = status
-            row['truncated'] = status == 'ok' and len(got) >= LIMIT
+            row['truncated'] = is_truncated(arm, status, got)
             if status == 'ok' and arm.startswith('codecite') and case['op'] != 'refs':
                 total = json.loads(out).get('total', len(got))
                 row['truncated'] = total > len(got)
@@ -704,23 +707,41 @@ def outcome_rows(ctx, data):
     return rows
 
 
+def is_truncated(arm, status, got):
+    """Only `codegraph/cli` is asked with `--limit`; codecite reports its own total, the normalized arms have no limit."""
+    return arm == 'codegraph/cli' and status == 'ok' and len(got) >= LIMIT
+
+
 def apply_audit(rows, audit):
-    """Audited extras: a `label-miss` (a real edge the labels lacked) moves from fp to tp; `false` stays fp."""
+    """Audited extras. A `label-miss` (a real edge the labels lacked) counts as a required label of its case: one
+    tp for each arm that returned it, however often, and one fn for each arm that did not. `false` stays fp."""
+    missed_labels = defaultdict(set)
+    for (case, path, line), verdict in audit.items():
+        if verdict['verdict'] == 'label-miss':
+            missed_labels[case].add((path, line))
     for row in rows:
         score = row.get('score')
         if not score:
             continue
         audited = dict(score)
-        label_miss = 0
+        found = set()
+        repeats = 0
         unaudited = 0
         for extra in score.get('extras', []):
-            verdict = audit.get((row['case'], extra['path'], extra['line']))
+            key = (extra['path'], extra['line'])
+            verdict = audit.get((row['case'], *key))
             if verdict is None:
                 unaudited += 1
             elif verdict['verdict'] == 'label-miss':
-                label_miss += 1
+                if key in found:
+                    repeats += 1
+                found.add(key)
+        label_miss = len(found)
         audited['tp'] = score['tp'] + label_miss
-        audited['fp'] = score['fp'] - label_miss
+        audited['fp'] = score['fp'] - label_miss - repeats
+        audited['fn'] = score['fn'] + len(missed_labels[row['case']] - found)
+        if repeats:
+            audited['dup'] = score.get('dup', 0) + repeats
         audited['label_miss'] = label_miss
         audited['unaudited'] = unaudited
         row['audited'] = audited
@@ -808,6 +829,12 @@ def latency(data):
                    for arm, t in sorted(arms.items())} for repo, arms in sorted(out.items())}
 
 
+def time_line(path):
+    """Wall seconds and peak RSS from GNU `time -f '%e %M' -o`, which puts a "Command exited with non-zero status"
+    line first when the timed command fails."""
+    return path.read_text().strip().splitlines()[-1].split()
+
+
 def index_costs(ctx):
     out = {}
     for name, repo in ctx.repos.items():
@@ -816,7 +843,7 @@ def index_costs(ctx):
             t = ctx.run / 'index' / f'{corpus}.codecite.time'
             db = ctx.run / 'data' / 'codecite' / f'{corpus}.db'
             if t.exists():
-                wall, rss = t.read_text().split()
+                wall, rss = time_line(t)
                 row[corpus] = {'wall_seconds': float(wall), 'peak_rss_kib': int(rss),
                                'db_bytes': db.stat().st_size if db.exists() else None}
         cg = ctx.src / name / '.codegraph' / 'codegraph.db'
@@ -825,7 +852,7 @@ def index_costs(ctx):
         row['scip_bytes'] = scip.stat().st_size if scip.exists() else None
         st = ctx.run.parent / 'logs' / f'{name}.scip.time'
         if st.exists():
-            wall, rss = st.read_text().split()
+            wall, rss = time_line(st)
             row['scip_indexer'] = {'wall_seconds': float(wall), 'peak_rss_kib': int(rss)}
         out[name] = row
     for name in out:
@@ -916,7 +943,8 @@ def render_md(summary):
         cg_cell = (f'{cg["wall_seconds"]:.1f} / {cg["peak_rss_kib"] // 1024} / {cg["db_bytes"] / 1e6:.0f}'
                    if cg else 'unrecorded')
         scip = row.get('scip_indexer')
-        scip_cell = (f'{scip["wall_seconds"]:.1f} / {scip["peak_rss_kib"] // 1024} / {row["scip_bytes"] / 1e6:.0f}'
+        scip_cell = (f'{scip["wall_seconds"]:.1f} / {scip["peak_rss_kib"] // 1024} / '
+                     f'{"–" if row["scip_bytes"] is None else format(row["scip_bytes"] / 1e6, ".0f")}'
                      if scip else 'unavailable')
         lines.append(f'| {repo} | {cell(row.get(repo))} | {cell(row.get(repo + "-scip"))} | {scip_cell} | {cg_cell} |')
     check = summary.get('check') or {}

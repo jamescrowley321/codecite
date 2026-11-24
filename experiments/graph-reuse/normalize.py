@@ -92,8 +92,9 @@ class Artifact:
             if actual != pin['sha256']:
                 raise ArtifactError(f'{db}: sha256 {actual} does not match the pin {pin["sha256"]}')
         self.sha256 = pin['sha256']
-        # immutable=1: SQLite takes no locks and writes no WAL or journal.
-        self.con = sqlite3.connect(f'file:{db}?mode=ro&immutable=1', uri=True)
+        # immutable=1: SQLite takes no locks and writes no WAL or journal. as_uri() percent-escapes `?`, `#` and
+        # `%`, so SQLite opens the file that was hashed and not a path truncated at one of them.
+        self.con = sqlite3.connect(f'{db.resolve().as_uri()}?mode=ro&immutable=1', uri=True)
         self.con.row_factory = sqlite3.Row
         self._check_schema(pin)
         self._files = {}
@@ -280,11 +281,19 @@ class Artifact:
         return {'status': 'ok', 'ids': [node], 'edges': edges, 'unresolved': unresolved}
 
 
+OPS = ('callers', 'callees', 'refs')
+
+
 def main(argv):
-    if len(argv) < 5:
+    if len(argv) != 6 or argv[4] not in OPS + ('resolve',):
         print(__doc__, file=sys.stderr)
         return 2
-    db, root, pin_path, op = argv[1:5]
+    db, root, pin_path, op, target = argv[1:6]
+    if op != 'resolve':
+        path, _, line = target.rpartition(':')
+        if not path or not line.isdigit():
+            print(f'{target}: expected <path>:<line>', file=sys.stderr)
+            return 2
     pin = json.loads(Path(pin_path).read_text())
     try:
         art = Artifact(db, root, pin)
@@ -292,9 +301,8 @@ def main(argv):
         print(json.dumps({'status': 'rejected', 'error': str(err)}))
         return 1
     if op == 'resolve':
-        result = art.resolve_name(argv[5])
+        result = art.resolve_name(target)
     else:
-        path, line = argv[5].rsplit(':', 1)
         result = art.query(op, path, int(line))
     print(json.dumps(result, indent=1))
     return 0

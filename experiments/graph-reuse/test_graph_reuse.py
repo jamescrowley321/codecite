@@ -12,8 +12,12 @@ import os
 import sqlite3
 import sys
 import tempfile
+import types
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -98,12 +102,12 @@ class Fixture:
     """A source tree and a CodeGraph-shaped database built from it."""
 
     def __init__(self, tmp, *, schema_version=9, producer='1.6.0', extraction='25', state='complete',
-                 hashes=None, nodes=NODES, edges=EDGES):
+                 hashes=None, nodes=NODES, edges=EDGES, snap='snap'):
         self.root = Path(tmp) / 'repo'
         (self.root / 'pkg').mkdir(parents=True)
         (self.root / 'pkg' / 'a.py').write_text(SOURCE)
         (self.root / 'pkg' / 'other.py').write_text(OTHER)
-        self.db = Path(tmp) / 'snap' / 'codegraph.db'
+        self.db = Path(tmp) / snap / 'codegraph.db'
         self.db.parent.mkdir()
         con = sqlite3.connect(self.db)
         con.executescript(SCHEMA)
@@ -220,6 +224,21 @@ class NormalizeTest(unittest.TestCase):
         with self.assertRaisesRegex(normalize.ArtifactError, 'producer'):
             fx.open()
 
+    def test_rejects_other_extraction_version(self):
+        fx = self.fixture(extraction='26')
+        with self.assertRaisesRegex(normalize.ArtifactError, 'extraction'):
+            fx.open()
+
+    def test_database_path_with_uri_characters_opens_the_hashed_file(self):
+        # A decoy at the path an unescaped URI would truncate to must never be opened in its place.
+        decoy = self.fixture(snap='snap')
+        fx = Fixture(Path(self.tmp.name) / 'other', snap='snap?x=1#%41')
+        decoy.db.unlink()
+        decoy.db.write_bytes(b'not a database')
+        art = fx.open()
+        self.assertEqual(art.resolve_name('B::run'), {'status': 'unique', 'ids': ['method:B.run']})
+        art.close()
+
     def test_rejects_incomplete_index(self):
         fx = self.fixture(state='indexing')
         with self.assertRaisesRegex(normalize.ArtifactError, 'complete'):
@@ -324,6 +343,39 @@ class NormalizeTest(unittest.TestCase):
         art.close()
         self.assertEqual(sha(fx.db.read_bytes()), before)
         self.assertFalse(Path(str(fx.db) + '-wal').exists())
+
+
+class NormalizeMainTest(unittest.TestCase):
+    """The normalize.py command line refuses malformed input with exit code 2 instead of crashing."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.fx = Fixture(self.tmp.name)
+        self.pin = Path(self.tmp.name) / 'pin.json'
+        self.pin.write_text(json.dumps(self.fx.pin()))
+
+    def main(self, *args):
+        out, err = StringIO(), StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = normalize.main(['normalize.py', str(self.fx.db), str(self.fx.root), str(self.pin), *args])
+        return code, out.getvalue()
+
+    def test_valid_query(self):
+        code, out = self.main('callers', 'pkg/a.py:15')
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)['status'], 'ok')
+
+    def test_missing_target(self):
+        self.assertEqual(self.main('callers')[0], 2)
+        self.assertEqual(self.main('resolve')[0], 2)
+
+    def test_unknown_op(self):
+        self.assertEqual(self.main('caller', 'pkg/a.py:15')[0], 2)
+
+    def test_malformed_location(self):
+        self.assertEqual(self.main('callers', 'pkg/a.py')[0], 2)
+        self.assertEqual(self.main('callers', 'pkg/a.py:x')[0], 2)
 
 
 class RunTest(unittest.TestCase):
@@ -466,6 +518,53 @@ class RunTest(unittest.TestCase):
                                   'required': False}])
         score = run.score_case(case, [{'path': 'pkg/a.py', 'line': 19, 'end': 22, 'name': 'main', 'site': 22}])
         self.assertEqual((score['tp'], score['fp'], score['fn'], score['optional']), (0, 0, 1, 1))
+
+    def test_only_the_limited_cli_arm_can_be_truncated(self):
+        full = [{}] * run.LIMIT
+        self.assertTrue(run.is_truncated('codegraph/cli', 'ok', full))
+        self.assertFalse(run.is_truncated('codegraph/cli', 'ok', full[1:]))
+        self.assertFalse(run.is_truncated('codegraph/cli', 'not_found', full))
+        for arm in ('codegraph/normalized', 'codegraph/normalized-trusted'):
+            self.assertFalse(run.is_truncated(arm, 'ok', full))
+
+    def test_label_miss_is_deduped_and_counted_missing_for_arms_without_it(self):
+        edge = {'path': 'pkg/a.py', 'line': 19, 'end': 22, 'name': 'main', 'site': None, 'certainty': None}
+        found = {'case': 'c', 'score': {'tp': 1, 'fp': 2, 'fn': 0, 'extras': [edge, dict(edge)]}}
+        missed = {'case': 'c', 'score': {'tp': 1, 'fp': 0, 'fn': 0, 'extras': []}}
+        other = {'case': 'd', 'score': {'tp': 1, 'fp': 0, 'fn': 0, 'extras': []}}
+        audit = {('c', 'pkg/a.py', 19): {'verdict': 'label-miss'}}
+        run.apply_audit([found, missed, other], audit)
+        self.assertEqual((found['audited']['tp'], found['audited']['fp'], found['audited']['fn']), (2, 0, 0))  # a repeat is a dup, as in score_case
+        self.assertEqual(found['audited']['dup'], 1)
+        self.assertEqual((missed['audited']['tp'], missed['audited']['fn']), (1, 1))
+        self.assertEqual((other['audited']['tp'], other['audited']['fn']), (1, 0))
+
+    def test_normalize_sha_streams_the_snapshot(self):
+        db = self.root / '.codegraph' / 'codegraph.db'
+        db.parent.mkdir()
+        db.write_bytes(b'snapshot')
+        ctx = types.SimpleNamespace(src=self.root.parent)
+        with mock.patch.object(Path, 'read_bytes', side_effect=AssertionError('read whole file')):
+            self.assertEqual(run.normalize_sha(ctx, 'toy'), sha(b'snapshot'))
+        self.assertIsNone(run.normalize_sha(ctx, 'missing'))
+
+    def test_index_costs_survive_failed_commands_and_a_missing_scip_file(self):
+        work = Path(self.tmp.name) / 'work'
+        (work / 'run' / 'index').mkdir(parents=True)
+        (work / 'logs').mkdir()
+        failed = 'Command exited with non-zero status 1\n12.5 2048\n'
+        (work / 'run' / 'index' / 'toy.codecite.time').write_text(failed)
+        (work / 'logs' / 'toy.scip.time').write_text(failed)
+        ctx = types.SimpleNamespace(run=work / 'run', src=self.root.parent, repos=self.repos)
+        costs = run.index_costs(ctx)
+        self.assertEqual(costs['toy']['toy']['wall_seconds'], 12.5)
+        self.assertEqual(costs['toy']['scip_indexer'], {'wall_seconds': 12.5, 'peak_rss_kib': 2048})
+        self.assertIsNone(costs['toy']['scip_bytes'])
+        summary = {'by_split': {}, 'by_op': {}, 'by_class': {}, 'by_repo': {}, 'ambiguity': {}, 'latency': {},
+                   'index': costs, 'check': {}}
+        md = run.render_md(summary)
+        self.assertIn('| toy | 12.5 / 2 / 0 |', md)
+        self.assertIn('| 12.5 / 2 / – |', md)  # SCIP file size unknown, not zero
 
     def test_refs_scoring_is_by_line(self):
         case = self.case(op='refs', expect=[{'line_ref': {'path': 'pkg/a.py', 'line': 8}, 'kind': 'call'}])
