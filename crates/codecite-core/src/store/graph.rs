@@ -162,9 +162,10 @@ pub struct GraphNode {
     /// When its definition's source was last indexed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub indexed_at: Option<String>,
-    /// The source its definition is in, when that isn't the call site's:
-    /// SCIP IDs are global, so another source indexing the same package
-    /// can hold the definition a call resolves to.
+    /// The source its definition is in, when that isn't the asked symbol's
+    /// (its definition's, else its first call site's): SCIP IDs are global,
+    /// so another source indexing the same package can hold the definitions
+    /// a walk reaches.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub defined_in: Option<String>,
 }
@@ -374,6 +375,7 @@ impl Store {
         // Nearest first; at one distance, the corpus's definitions in file
         // and line order, then symbols defined outside it, by ID.
         ranked.sort_by(|a, b| (a.0, a.1.is_none(), a.1, a.2).cmp(&(b.0, b.1.is_none(), b.1, b.2)));
+        let home = self.home_source(&id)?;
         let mut nodes = Vec::new();
         for (distance, _, node) in ranked.into_iter().take(limit) {
             nodes.push(self.graph_node(
@@ -382,6 +384,7 @@ impl Store {
                 &distances,
                 (near, far),
                 query.min_confidence,
+                home.as_deref(),
             )?);
         }
         Ok(Graph {
@@ -394,8 +397,35 @@ impl Store {
         })
     }
 
+    /// The source the asked symbol `id` belongs to: its definition's, or,
+    /// for a symbol defined outside the corpus, the source of its first
+    /// call site (by source, path and line). `None` when no current source
+    /// has either.
+    fn home_source(&self, id: &str) -> Result<Option<String>> {
+        Ok(self
+            .conn
+            .prepare_cached(
+                "SELECT s.name FROM symbol sym
+                   JOIN document d ON d.id = sym.document_id
+                   JOIN source s ON s.id = d.source_id
+                   WHERE sym.id = ?1 AND s.is_current
+                 UNION ALL
+                 SELECT name FROM (
+                   SELECT s.name FROM edge e
+                   JOIN document d ON d.id = e.evidence_doc
+                   JOIN source s ON s.id = d.source_id
+                   WHERE e.dst = ?1 AND e.kind = 'calls' AND s.is_current
+                   ORDER BY s.name, d.path, e.evidence_line
+                 )
+                 LIMIT 1",
+            )?
+            .query_row([id], |row| row.get(0))
+            .optional()?)
+    }
+
     /// One reached symbol, with its definition when the corpus has one and
-    /// the call that links it to a symbol one edge nearer.
+    /// the call that links it to a symbol one edge nearer. `home` is the
+    /// asked symbol's source (see [`Store::home_source`]).
     fn graph_node(
         &self,
         node: &str,
@@ -403,6 +433,7 @@ impl Store {
         distances: &HashMap<String, u32>,
         (near, far): (&str, &str),
         min_confidence: u8,
+        home: Option<&str>,
     ) -> Result<GraphNode> {
         // The edges between `node` and the symbols one step nearer, the
         // nearest by ID first, its providers' rows together.
@@ -430,9 +461,9 @@ impl Store {
         let link: Vec<_> = edges.iter().filter(|e| e.0 == via).collect();
         let providers: BTreeSet<String> = link.iter().map(|e| e.1.clone()).collect();
         let confidence = link.iter().map(|e| e.2).max().unwrap_or_default();
-        let (call_site, call_source) = match link.first() {
-            Some((_, _, _, Some(doc), Some(line))) => self.line_citation(*doc, *line)?.unzip(),
-            _ => (None, None),
+        let call_site = match link.first() {
+            Some((_, _, _, Some(doc), Some(line))) => self.line_citation(*doc, *line)?,
+            _ => None,
         };
         let defined = self
             .conn
@@ -469,9 +500,9 @@ impl Store {
             ),
             None => (descriptor_name(node), None, None, None, None, None),
         };
-        // SCIP IDs are global, so a call in one source can resolve to a
+        // SCIP IDs are global, so a walk from one source can reach a
         // definition in another; say so rather than cite it silently.
-        let defined_in = source.filter(|s| call_source.as_ref().is_some_and(|c| c != s));
+        let defined_in = source.filter(|s| home.is_some_and(|h| h != s));
         Ok(GraphNode {
             id: node.into(),
             name,
@@ -488,9 +519,9 @@ impl Store {
         })
     }
 
-    /// One line of a stored document, cited, with its source's name, or
-    /// `None` when the document isn't a current code file.
-    fn line_citation(&self, document_id: i64, line: u32) -> Result<Option<(String, String)>> {
+    /// One line of a stored document, cited, or `None` when the document
+    /// isn't a current code file.
+    fn line_citation(&self, document_id: i64, line: u32) -> Result<Option<String>> {
         Ok(self
             .conn
             .prepare_cached(
@@ -501,7 +532,7 @@ impl Store {
                 let path: String = row.get(0)?;
                 let source: String = row.get(1)?;
                 let revision: String = row.get(2)?;
-                Ok((code_citation(&source, &revision, &path, line, line), source))
+                Ok(code_citation(&source, &revision, &path, line, line))
             })
             .optional()?)
     }
@@ -906,11 +937,11 @@ mod tests {
     }
 
     #[test]
-    fn a_definition_in_another_source_than_the_call_is_marked() {
+    fn a_definition_in_another_source_than_the_asked_symbol_is_marked() {
         use crate::{DocumentRecord, ScipDefinition, SourceRecord};
         let (_dir, mut store, id) = app();
         store.write_scip(id, &index()).unwrap();
-        // `other` has a function that calls app's `check`.
+        // `other` has a function that calls app's `check` and `login`.
         let other = store
             .upsert_source(&SourceRecord {
                 name: "other",
@@ -924,7 +955,7 @@ mod tests {
                 updated_by: None,
             })
             .unwrap();
-        let text = "fn run() {\n    check(\"x\");\n}\n";
+        let text = "fn run() {\n    check(\"x\");\n    login(\"x\");\n}\n";
         store
             .write_document(
                 other,
@@ -940,6 +971,13 @@ mod tests {
             )
             .unwrap();
         let run = "rust-analyzer cargo other 0.1.0 run().";
+        let call = |symbol: String, line| ScipOccurrence {
+            symbol,
+            start_line: line,
+            end_line: line,
+            end_column: None,
+            roles: 0,
+        };
         store
             .write_scip(
                 other,
@@ -952,25 +990,44 @@ mod tests {
                         kind: "function".into(),
                         line: 1,
                         start_line: 1,
-                        end_line: 3,
+                        end_line: 4,
                     }],
-                    occurrences: vec![ScipOccurrence {
-                        symbol: scip("client/check()."),
-                        start_line: 2,
-                        end_line: 2,
-                        end_column: None,
-                        roles: 0,
-                    }],
+                    occurrences: vec![call(scip("client/check()."), 2), call(scip("login()."), 3)],
                 }],
             )
             .unwrap();
-        let callees = walk(&store, run, Direction::Callees, 1);
-        assert_eq!(callees.results[0].id, scip("client/check()."));
-        assert_eq!(callees.results[0].defined_in.as_deref(), Some("app"));
-        // A caller in the call's own source isn't marked.
-        let callers = walk(&store, &scip("client/check()."), Direction::Callers, 1);
-        assert!(
-            callers.results.iter().all(|n| n.defined_in.is_none()),
+        let marks = |graph: &Graph| -> Vec<(String, Option<String>)> {
+            graph
+                .results
+                .iter()
+                .map(|n| (n.name.clone(), n.defined_in.clone()))
+                .collect()
+        };
+        let app = || Some("app".to_owned());
+        // Every node app defines is marked, two hops out as well as one:
+        // `new` and `validate` are called from app's `login`, but `run`,
+        // the asked symbol, is in `other`.
+        let callees = walk(&store, run, Direction::Callees, 2);
+        assert_eq!(
+            marks(&callees),
+            [
+                ("check".to_owned(), app()),
+                ("login".to_owned(), app()),
+                ("new".to_owned(), app()),
+                ("validate".to_owned(), app()),
+                ("is_empty".to_owned(), None),
+            ],
+            "{callees:?}"
+        );
+        // A caller in the asked symbol's own source isn't marked; one in
+        // another source is.
+        let callers = walk(&store, &scip("login()."), Direction::Callers, 1);
+        assert_eq!(
+            marks(&callers),
+            [
+                ("relogin".to_owned(), None),
+                ("run".to_owned(), Some("other".to_owned())),
+            ],
             "{callers:?}"
         );
     }

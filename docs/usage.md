@@ -734,9 +734,11 @@ crate and version) can't both hold it: a definition on a tree-sitter symbol
 of the same name wins over one only SCIP found, and otherwise the source
 listed first keeps it; the summary's `IDs already defined by <source>` names
 the other. The losing source's references stay but are no longer inside that
-definition. Since a call in one source can resolve to a definition in
-another this way, a `graph` result whose definition is in another source than
-its call site says `defined in <source>` (`defined_in` in JSON). Symbols and
+definition. Since a walk from one source can reach a definition in another
+this way, a `graph` result whose definition is in another source than the
+asked symbol (its definition's, or for a symbol outside the corpus its first
+call site's) says `defined in <source>` (`defined_in` in JSON), however many
+calls away it is. Symbols and
 names holding control or invisible format characters, and symbols in
 codecite's own `codecite` scheme, are skipped. A missing or unreadable index stops the run before anything is written, and
 so does one whose hash isn't its `scip_sha256`. Pin an index you didn't build
