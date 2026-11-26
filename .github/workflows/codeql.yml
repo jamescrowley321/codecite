@@ -14,9 +14,11 @@ permissions:
 
 # The matrix job names, `Analyze (actions)` and `Analyze (rust)`, are
 # required-check contexts in oss-admin terraform/codecite.
+# `Analyze (javascript-typescript)` covers the documentation site's
+# TypeScript (config, sidebar, remark plugin), scoped to website/.
 jobs:
   analyze:
-    name: Analyze
+    name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
     permissions:
       security-events: write # upload results to code scanning
@@ -25,19 +27,30 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [actions, rust]
+        include:
+          - language: actions
+          - language: rust
+          - language: javascript-typescript
+            config: |
+              paths:
+                - website
+              paths-ignore:
+                - website/node_modules
+                - website/build
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      # Both languages are analysed from source, so there is no build step.
+      # Every language is analysed from source, so there is no build step.
+      # `config` is empty except where a matrix entry scopes the analysis.
       - name: Initialize CodeQL
         uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           languages: ${{ matrix.language }}
           build-mode: none
+          config: ${{ matrix.config }}
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3

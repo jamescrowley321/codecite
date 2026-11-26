@@ -50,3 +50,19 @@ updates:
       npm-minor-patch:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+
+  # The documentation site (website/). Docusaurus releases its packages
+  # together, so one group keeps them in step.
+  - package-ecosystem: "npm"
+    directory: "/website"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "fix(deps)"
+    groups:
+      website-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]

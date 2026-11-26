@@ -1,7 +1,8 @@
 name: OSV-Scanner
 
-# Scans Cargo.lock and the eval fixture's package-lock.json against the OSV
-# database. No `branches:` filter on pull_request, so stacked PRs are scanned too.
+# Scans every lockfile in the repository recursively against the OSV
+# database: Cargo.lock, the documentation site's website/package-lock.json,
+# the eval fixture's package-lock.json and the uv lockfiles. No `branches:` filter on pull_request, so stacked PRs are scanned too.
 on:
   pull_request:
   push:
