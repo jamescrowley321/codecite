@@ -51,6 +51,7 @@ fn data_home() -> tempfile::TempDir {
         is_current: true,
         obsoleted_by: None,
         updated_by: None,
+        role_globs: None,
     };
     let app = store.upsert_source(&source).unwrap();
     let code = DocumentRecord {
@@ -518,6 +519,7 @@ fn mcp_cuts_a_mebibyte_line_as_the_cli_does() {
             is_current: true,
             obsoleted_by: None,
             updated_by: None,
+            role_globs: None,
         })
         .unwrap();
     let chunk = ChunkRecord {

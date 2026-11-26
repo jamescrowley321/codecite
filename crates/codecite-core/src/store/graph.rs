@@ -7,11 +7,11 @@ use rusqlite::{OptionalExtension, params};
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use super::Store;
 use super::definition::{names_in_file, qualified, rank};
 use super::read::{byte_prefix, copy_instruction, file_lines};
 use super::scip::ROLE_DEFINITION;
 use super::search::{MAX_SEARCH_LIMIT, MAX_SNIPPET_BYTES, code_citation};
+use super::{Store, stored_role};
 use crate::{Error, Result, Role};
 
 /// The deepest `callers` and `callees` walk.
@@ -201,7 +201,7 @@ impl Store {
         let id = self.graph_symbol(symbol, Walk::References, allow_stale)?;
         let mut stmt = self.conn.prepare_cached(
             "SELECT o.start_line, o.roles, o.enclosing, o.provider, o.confidence, d.id, d.path,
-                    d.dirty, s.name, s.kind, s.revision, s.license_class, s.indexed_at
+                    d.dirty, s.name, s.revision, s.license_class, s.indexed_at, d.role
              FROM occurrence o
              JOIN document d ON d.id = o.document_id
              JOIN source s ON s.id = d.source_id
@@ -213,9 +213,8 @@ impl Store {
             let roles: u32 = row.get(1)?;
             let path: String = row.get(6)?;
             let source: String = row.get(8)?;
-            let source_kind: String = row.get(9)?;
-            let revision: String = row.get(10)?;
-            let role = Role::of(&path, &source_kind);
+            let revision: String = row.get(9)?;
+            let role = stored_role(row, 12)?;
             let reference = Reference {
                 citation: code_citation(&source, &revision, &path, line, line),
                 enclosing: row.get(2)?,
@@ -227,9 +226,9 @@ impl Store {
                 role: role.as_str(),
                 text: String::new(),
                 truncated: false,
-                instruction: copy_instruction(&row.get::<_, String>(11)?),
-                license_class: row.get(11)?,
-                indexed_at: row.get(12)?,
+                instruction: copy_instruction(&row.get::<_, String>(10)?),
+                license_class: row.get(10)?,
+                indexed_at: row.get(11)?,
                 dirty: row.get(7)?,
                 providers: vec![row.get(3)?],
                 confidence: row.get(4)?,
@@ -785,6 +784,17 @@ mod tests {
             .conn
             .execute("UPDATE source SET license_class = 'adapt'", [])
             .unwrap();
+        // The role is the stored one, which a source's role globs can set
+        // whatever the path says (#300).
+        store
+            .conn
+            .execute(
+                "UPDATE document SET role = 'test' WHERE path = 'src/lib.rs'",
+                [],
+            )
+            .unwrap();
+        let found = store.references("login", 0, false).unwrap();
+        assert_eq!(found.results[0].role, "test");
         // Above the confidence any provider gives, nothing is left.
         assert_eq!(store.references("login", 4, false).unwrap().total, 0);
         // An ID outside the corpus works as written.
@@ -971,6 +981,7 @@ mod tests {
                 is_current: true,
                 obsoleted_by: None,
                 updated_by: None,
+                role_globs: None,
             })
             .unwrap();
         let text = "fn run() {\n    check(\"x\");\n    login(\"x\");\n}\n";

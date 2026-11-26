@@ -9,8 +9,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::Store;
 use super::read::{byte_prefix, copy_instruction};
+use super::{Store, stored_role};
 use crate::{Error, Result, Role, text_terms};
 
 /// The most lines of a chunk a result's snippet holds. Agents read the
@@ -205,8 +205,8 @@ impl Store {
     /// tests and examples rank below the source they use, and multiplied by
     /// [`NAME_BOOST`] when a word of the query, or the whole query, is the
     /// chunk's symbol's name (ignoring case, `_` and `-`) and at most
-    /// [`MAX_NAME_DEFINITIONS`] definitions have that name. Java methods
-    /// sharing their enclosing class's name count with that class. Only the
+    /// [`MAX_NAME_DEFINITIONS`] definitions have that name. A method sharing
+    /// its enclosing class's name counts with that class. Only the
     /// current version of each document is searched.
     ///
     /// Code, repository prose, fetched documents and specs are ranked
@@ -309,7 +309,7 @@ impl Store {
             let fetched = source_kind == "document";
             let is_spec = fetched && !has_text;
             let (snippet, snippet_truncated) = snippet(&text);
-            let role = Role::of_stored(&path, &source_kind, has_text).as_str();
+            let role = stored_role(row, 17)?.as_str();
             let license_class: String = row.get(11)?;
             let citation = if is_spec {
                 spec_citation(&source, &revision, &kind, number, parent_number)
@@ -366,8 +366,8 @@ impl Store {
     }
 
     /// The [`query_names`] shared by at least one and at most
-    /// [`MAX_NAME_DEFINITIONS`] definitions, counting Java same-name
-    /// methods with their enclosing class.
+    /// [`MAX_NAME_DEFINITIONS`] definitions, counting a method that shares
+    /// its enclosing class's name with that class.
     fn boosted_names(&self, text: &str) -> Result<Vec<String>> {
         let mut count = self.conn.prepare_cached(BOOSTED_NAME_COUNT)?;
         let mut names = Vec::new();
@@ -406,7 +406,9 @@ impl Store {
 /// `codecite_role_weight(path, source_kind, has_text)` and
 /// `codecite_name_key(name)`. Search reads the stored `document.role_weight`
 /// and `symbol.name_key` instead (#251), so no query of codecite's calls
-/// these two; they compute the stored values for ad hoc SQL.
+/// these two; they compute the stored values for ad hoc SQL. The role
+/// weight is the path convention's: a source whose manifest gives role
+/// globs stores weights this function does not know (#300).
 pub(super) fn register_functions(conn: &Connection) -> rusqlite::Result<()> {
     conn.create_scalar_function(
         "codecite_role_weight",
@@ -506,7 +508,7 @@ const RANK_LEGACY: &str = "SELECT c.id,
 const FETCH: &str = "SELECT c.kind, c.start_line, c.end_line, c.number, p.number,
        coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line)), d.path,
        d.dirty, s.name, s.kind, s.revision, s.license_class, s.indexed_at, sym.display_name,
-       d.text IS NOT NULL, c.title, c.anchor
+       d.text IS NOT NULL, c.title, c.anchor, d.role
      FROM chunk c
      JOIN document d ON d.id = c.document_id
      JOIN source s ON s.id = d.source_id
@@ -514,17 +516,16 @@ const FETCH: &str = "SELECT c.kind, c.start_line, c.end_line, c.number, p.number
      LEFT JOIN symbol sym ON sym.id = c.symbol_id
      WHERE c.id = ?1";
 
-/// How many definitions share the name key `?1`. Java constructors and
-/// other methods with their enclosing class's name count with that class.
-/// Other methods, languages and classes in different files count separately.
+/// How many definitions share the name key `?1`. A method nested in a class
+/// of the same name in the same file (a Java or C# constructor, say) counts
+/// with that class, in every language. Other methods, and classes in
+/// different files, count separately.
 const BOOSTED_NAME_COUNT: &str = "SELECT count(*)
     FROM symbol s
     WHERE s.name_key = ?1
       AND NOT (coalesce(s.kind, '') = 'method' AND EXISTS (
         SELECT 1 FROM symbol parent
-        JOIN document d ON d.id = parent.document_id
         WHERE parent.document_id = s.document_id
-          AND d.language = 'java'
           AND parent.kind = 'class'
           AND parent.display_name = s.display_name
           AND parent.start_line <= s.start_line
@@ -721,6 +722,7 @@ mod tests {
             is_current: true,
             obsoleted_by: None,
             updated_by: None,
+            role_globs: None,
         }
     }
 
@@ -804,6 +806,7 @@ mod tests {
             is_current,
             obsoleted_by: None,
             updated_by: None,
+            role_globs: None,
         }
     }
 
@@ -1486,6 +1489,33 @@ mod tests {
         }
         store
             .write_document(app, &file("Widget.java", "java", false, chunks))
+            .unwrap();
+        assert_eq!(store.boosted_names("Widget").unwrap(), ["widget"]);
+    }
+
+    #[test]
+    fn same_name_methods_count_with_their_class_in_any_language() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open_read_write(&dir.path().join("demo.db")).unwrap();
+        let app = store.upsert_source(&code_source("app")).unwrap();
+        let mut class = chunk("class", (1, 20), "class Widget {}", None);
+        class.symbol = Some(SymbolRecord {
+            id: "codecite . app . Widget.cs/Widget#".into(),
+            display_name: "Widget",
+            kind: "class",
+        });
+        let mut chunks = vec![class];
+        for (i, line) in [2, 4, 6].into_iter().enumerate() {
+            let mut constructor = chunk("function", (line, line), "Widget() {}", None);
+            constructor.symbol = Some(SymbolRecord {
+                id: format!("codecite . app . Widget.cs/Widget#Widget(+{i})."),
+                display_name: "Widget",
+                kind: "method",
+            });
+            chunks.push(constructor);
+        }
+        store
+            .write_document(app, &file("Widget.cs", "csharp", false, chunks))
             .unwrap();
         assert_eq!(store.boosted_names("Widget").unwrap(), ["widget"]);
     }

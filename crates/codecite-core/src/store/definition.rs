@@ -5,9 +5,9 @@ use rusqlite::params;
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use super::Store;
 use super::read::copy_instruction;
 use super::search::{MAX_SEARCH_LIMIT, code_citation, name_key, snippet};
+use super::{Store, stored_role};
 use crate::{Error, Result, Role};
 
 /// How sure a tree-sitter definition is: extracted (2) on the confidence
@@ -180,27 +180,26 @@ impl Store {
         let mut stmt = self.conn.prepare_cached(DEFINITIONS)?;
         let rows = stmt.query_map([name], |row| {
             let path: String = row.get(4)?;
-            let source_kind: String = row.get(7)?;
             let source: String = row.get(6)?;
-            let revision: String = row.get(8)?;
-            let text: String = row.get(11)?;
-            let role = Role::of(&path, &source_kind);
+            let revision: String = row.get(7)?;
+            let text: String = row.get(10)?;
+            let role = stored_role(row, 14)?;
             let (snippet, snippet_truncated) = snippet(&text);
-            let provider: String = row.get(13)?;
-            let local_id: Option<String> = row.get(14)?;
+            let provider: String = row.get(12)?;
+            let local_id: Option<String> = row.get(13)?;
             let (providers, confidence) = provenance(&provider, local_id.as_deref());
-            let license_class: String = row.get(9)?;
+            let license_class: String = row.get(8)?;
             let start: u32 = row.get(2)?;
             let end: u32 = row.get(3)?;
             let definition = Definition {
                 citation: code_citation(&source, &revision, &path, start, end),
-                symbol: row.get(12)?,
+                symbol: row.get(11)?,
                 id: row.get(0)?,
                 kind: row.get(1)?,
                 role: role.as_str(),
                 instruction: copy_instruction(&license_class),
                 license_class,
-                indexed_at: row.get(10)?,
+                indexed_at: row.get(9)?,
                 dirty: row.get(5)?,
                 snippet,
                 snippet_truncated,
@@ -262,9 +261,9 @@ const SIMILAR_GRAPH_NAMES: &str = "SELECT DISTINCT sym.display_name FROM symbol 
 /// The definitions with one name as written, `?1`. A symbol's lines are its
 /// chunk's, which the index run wrote with it.
 const DEFINITIONS: &str = "SELECT sym.id, coalesce(sym.kind, c.kind), c.start_line, c.end_line,
-       d.path, d.dirty, s.name, s.kind, s.revision, s.license_class, s.indexed_at,
+       d.path, d.dirty, s.name, s.revision, s.license_class, s.indexed_at,
        coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line)),
-       sym.display_name, sym.provider, sym.local_id
+       sym.display_name, sym.provider, sym.local_id, d.role
      FROM symbol sym
      JOIN chunk c ON c.symbol_id = sym.id
      JOIN document d ON d.id = sym.document_id
@@ -517,6 +516,7 @@ mod tests {
                 is_current: true,
                 obsoleted_by: None,
                 updated_by: None,
+                role_globs: None,
             })
             .unwrap();
         let docs = [
@@ -692,6 +692,7 @@ mod tests {
                 is_current: true,
                 obsoleted_by: None,
                 updated_by: None,
+                role_globs: None,
             })
             .unwrap();
         let paths: Vec<String> = (0..60).map(|i| format!("src/m{i:02}.rs")).collect();
@@ -726,6 +727,7 @@ mod tests {
                 is_current: true,
                 obsoleted_by: None,
                 updated_by: None,
+                role_globs: None,
             })
             .unwrap();
         for doc in docs {
@@ -962,5 +964,101 @@ mod tests {
             assert_eq!(read.instruction.as_deref(), expected, "{class} read");
             assert_eq!(cite.instruction.as_deref(), expected, "{class} cite");
         }
+    }
+
+    /// A source whose globs make `spec/` its tests, so `spec/client.rs`
+    /// is a test though no convention says so, and `tests/client.rs` is
+    /// source.
+    fn globbed() -> (tempfile::TempDir, Store) {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open_read_write(&dir.path().join("demo.db")).unwrap();
+        let globs = crate::RoleGlobs {
+            test: Some(vec!["spec/**".into()]),
+            ..crate::RoleGlobs::default()
+        };
+        let app = store
+            .upsert_source(&SourceRecord {
+                name: "app",
+                kind: "local",
+                url: "/src/app",
+                revision: HEAD,
+                license_spdx: Some("MIT"),
+                license_class: "adapt",
+                is_current: true,
+                obsoleted_by: None,
+                updated_by: None,
+                role_globs: Some(&globs),
+            })
+            .unwrap();
+        for doc in [
+            file(
+                "spec/client.rs",
+                FREE,
+                &[("callback().", "callback", "function", (1, 3))],
+            ),
+            file(
+                "tests/client.rs",
+                SERVER,
+                &[("Server#callback().", "callback", "method", (2, 2))],
+            ),
+        ] {
+            store.write_document(app, &doc).unwrap();
+        }
+        store.set_indexed_at(30).unwrap();
+        (dir, store)
+    }
+
+    #[test]
+    fn every_reader_reports_the_role_a_sources_globs_gave() {
+        let (_dir, store) = globbed();
+        let found = store.definition("callback", false).unwrap();
+        let roles: Vec<(&str, &str)> = found
+            .results
+            .iter()
+            .map(|r| (r.citation.as_str(), r.role))
+            .collect();
+        // The source definition sorts first though its path sorts last.
+        assert_eq!(
+            roles,
+            [
+                (format!("app@{HEAD}:tests/client.rs#L2").as_str(), "source"),
+                (format!("app@{HEAD}:spec/client.rs#L1-L3").as_str(), "test"),
+            ]
+        );
+        let hits = store
+            .search(&crate::SearchQuery {
+                text: "callback",
+                language: None,
+                path: Some("spec/*"),
+                only: None,
+                limit: 10,
+                allow_stale: false,
+            })
+            .unwrap();
+        assert!(!hits.is_empty());
+        assert!(hits.iter().all(|h| h.role == "test"), "{hits:?}");
+        let lines = store
+            .grep(&crate::GrepQuery {
+                pattern: "callback",
+                fixed: true,
+                ignore_case: false,
+                language: None,
+                path: None,
+                only: None,
+                limit: 50,
+                allow_stale: false,
+            })
+            .unwrap();
+        let roles: Vec<(&str, &str)> = lines
+            .iter()
+            .map(|m| (m.citation.as_str(), m.role))
+            .collect();
+        assert_eq!(
+            roles,
+            [
+                (format!("app@{HEAD}:spec/client.rs#L1").as_str(), "test"),
+                (format!("app@{HEAD}:tests/client.rs#L2").as_str(), "source"),
+            ]
+        );
     }
 }

@@ -800,6 +800,7 @@ pub fn validate(&self, token: &str) -> bool {\n        check(token) && !self.iss
                 is_current: true,
                 obsoleted_by: None,
                 updated_by: None,
+                role_globs: None,
             })
             .unwrap();
         (dir, store, id)
@@ -1296,6 +1297,7 @@ mod tests {
                 is_current: true,
                 obsoleted_by: None,
                 updated_by: None,
+                role_globs: None,
             })
             .unwrap();
         store

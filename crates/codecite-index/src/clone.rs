@@ -370,6 +370,7 @@ mod tests {
             exclude: Vec::new(),
             scip: None,
             scip_sha256: None,
+            roles: Default::default(),
         }
     }
 

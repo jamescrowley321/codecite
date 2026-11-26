@@ -83,6 +83,7 @@ imports = ["requests", "httpx"]
 | `path` | `local`, `guidance` | The top of a git work tree, or a guidance Markdown file (a relative one starts at the manifest's directory); `~` expands |
 | `url`, `commit` | `git` | The repository and a 40-character lowercase commit |
 | `include`, `exclude` | `local`, `git` | Globs over paths |
+| `roles` | `local`, `git` | Globs for `test`, `example` and `docs` files, each replacing that role's path convention for the source. See Set a source's roles |
 | `scip` | `local`, `git` | A SCIP index of the source (a relative path starts at the manifest's directory); `~` expands. See Find references and callers |
 | `scip_sha256` | `local`, `git` with `scip` | The 64-character lowercase hash the index must have; without it the run's summary names the source as unpinned |
 | `url`, `sha256` | `document`, `guidance` | The page and the 64-character lowercase hash of its bytes; a guidance source has `url` and `sha256`, or `path` with an optional `sha256` |
@@ -93,6 +94,47 @@ imports = ["requests", "httpx"]
 | `obsoleted_by`, `updated_by` | `document` | Hand-written relations to later documents |
 
 Unknown keys are errors, and every error names the source and the field.
+
+### Set a source's roles
+
+Every file has a role: `source`, `test`, `example` or `docs`. Search ranks a
+match in a test at 0.4 of the same match in source, an example at 0.6 and
+docs at 0.8, and results, `grep`, `def` and `refs` show the role. By default
+the role comes from the path: files under a `test`, `tests`, `__tests__`,
+`testdata` or `conformance` directory and names such as `test_x.py`,
+`x_test.go`, `x.spec.ts` and `XTests.cs` are tests; files under an
+`example`, `examples`, `sample`, `samples`, `demo` or `demos` directory are
+examples; Markdown, reStructuredText, AsciiDoc and plain text are docs;
+anything else is source.
+
+A repository with other conventions can say so under `[source.roles]`:
+
+```toml
+[[source]]
+url = "https://github.com/acme/app.git"
+commit = "<40-character SHA>"
+license = "MIT"
+use = "adapt"
+
+[source.roles]
+test = ["spec/**", "**/*_spec.rb"]
+example = ["playground/**"]
+docs = []
+```
+
+- A list that is given replaces that role's convention for this source:
+  here `spec/` and `*_spec.rb` files are tests, and `tests/` no longer is.
+- An empty list means no file has the role: here a README ranks as source.
+- A role left out keeps its convention.
+- A test wins over an example, and both over docs; everything else is
+  source.
+- Globs match paths from the top of the source, as `include` does: `*` stays
+  in one directory and `**` crosses them. A glob that doesn't compile stops
+  the run, naming the source and the role (`roles.test`).
+
+Changing or removing `roles` takes effect on the next `codecite index`, for
+every file in the source, changed or not. A `document` or `guidance` source
+has no `roles`.
 
 `use = "adapt"` is refused when `license` is an SPDX expression that can't
 be met without a copyleft or source-available license (GPL, AGPL, LGPL,

@@ -315,6 +315,15 @@ pub enum Error {
         /// How many lines the file has.
         lines: u32,
     },
+
+    /// A source's role glob doesn't compile.
+    #[error("invalid role glob {pattern:?}: {source}")]
+    RoleGlob {
+        /// The glob as given.
+        pattern: String,
+        /// Why it doesn't compile.
+        source: globset::Error,
+    },
 }
 
 impl Error {
@@ -351,6 +360,7 @@ impl Error {
             Error::NoGraph { .. } => "no_graph",
             Error::NoSectionOnTopic { .. } => "no_section_on_topic",
             Error::LinesPastEnd { .. } => "lines_past_end",
+            Error::RoleGlob { .. } => "role_glob",
         }
     }
 

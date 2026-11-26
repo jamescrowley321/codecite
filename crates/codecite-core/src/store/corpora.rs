@@ -353,6 +353,7 @@ mod tests {
             is_current: true,
             obsoleted_by: None,
             updated_by: None,
+            role_globs: None,
         }
     }
 
@@ -607,15 +608,15 @@ mod tests {
 
     #[test]
     fn a_corpus_from_before_the_scip_layer_reports_an_error() {
-        // One version back lacks migration 14, which isn't read-compatible,
-        // so `corpora` reports the file as unreadable rather than warning.
+        // Version 13 lacks migration 14, which isn't read-compatible, so
+        // `corpora` reports the file as unreadable rather than warning.
         let dir = tempfile::tempdir().unwrap();
         indexed(dir.path(), "app", &["app"]);
         rusqlite::Connection::open(dir.path().join("app.db"))
             .unwrap()
             .execute(
                 "UPDATE meta SET value = ?1 WHERE key = 'schema_version'",
-                [(crate::SCHEMA_VERSION - 1).to_string()],
+                ["13"],
             )
             .unwrap();
         let app = &corpora(dir.path(), None).unwrap().corpora[0];

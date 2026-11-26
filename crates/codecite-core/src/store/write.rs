@@ -10,7 +10,10 @@ use rusqlite::{Connection, OptionalExtension, params};
 use super::Store;
 use super::lines::LineStarts;
 use super::search::name_key;
-use crate::{Keyword, Result, Role, SpecAliases, TERMS_VERSION, identifier_terms, text_terms};
+use crate::{
+    Keyword, Result, Role, RoleGlobs, RoleRules, SpecAliases, TERMS_VERSION, identifier_terms,
+    text_terms,
+};
 
 /// A source to create or update. A document is matched by its name and
 /// revision, since each pinned version is its own source; any other source
@@ -36,6 +39,9 @@ pub struct SourceRecord<'a> {
     pub obsoleted_by: Option<&'a str>,
     /// A document that amends this one, as the manifest names it.
     pub updated_by: Option<&'a str>,
+    /// The source's own role globs, which replace the path conventions for
+    /// the roles they name. `None` keeps every convention.
+    pub role_globs: Option<&'a RoleGlobs>,
 }
 
 /// A stored document, as an index run compares it with the file.
@@ -128,6 +134,15 @@ impl Store {
     /// document with the same name and revision; any other source is the
     /// stored one with the same name that isn't a document.
     pub fn upsert_source(&mut self, source: &SourceRecord<'_>) -> Result<i64> {
+        // Compile the globs before writing anything, so a bad one changes
+        // nothing.
+        let rules = source.role_globs.map(RoleRules::new).transpose()?;
+        let globs = source
+            .role_globs
+            .filter(|g| !g.is_default())
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
         // An upsert names the unique index it conflicts on, and a partial
         // index is named by its columns plus its `WHERE`.
         let conflict = if source.kind == "document" {
@@ -135,16 +150,34 @@ impl Store {
         } else {
             "(name) WHERE kind <> 'document'"
         };
-        let id = self.conn.query_row(
+        // A `Savepoint` rolls back when it is dropped without `commit`, so
+        // an error on any `?` below leaves no half-updated roles.
+        let tx = self.conn.savepoint()?;
+        // The globs stored before this upsert: `None` for a new source,
+        // which has no documents to re-derive.
+        let before: Option<Option<String>> = tx
+            .query_row(
+                // The row the upsert below conflicts with: the same name,
+                // and the same revision for a document.
+                "SELECT role_globs FROM source
+                 WHERE name = ?1 AND (kind = 'document') = ?3
+                   AND (kind <> 'document' OR revision = ?2)",
+                params![source.name, source.revision, source.kind == "document"],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let id = tx.query_row(
             &format!(
                 "INSERT INTO source (name, kind, url, revision, is_current, obsoleted_by,
-                   updated_by, license_spdx, license_class, indexed_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+                   updated_by, license_spdx, license_class, role_globs, indexed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+                         strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
                  ON CONFLICT {conflict} DO UPDATE SET
                    kind = excluded.kind, url = excluded.url, revision = excluded.revision,
                    is_current = excluded.is_current, obsoleted_by = excluded.obsoleted_by,
                    updated_by = excluded.updated_by, license_spdx = excluded.license_spdx,
-                   license_class = excluded.license_class, indexed_at = excluded.indexed_at
+                   license_class = excluded.license_class, role_globs = excluded.role_globs,
+                   indexed_at = excluded.indexed_at
                  RETURNING id"
             ),
             params![
@@ -157,9 +190,14 @@ impl Store {
                 source.updated_by,
                 source.license_spdx,
                 source.license_class,
+                globs,
             ],
             |row| row.get(0),
         )?;
+        if before.is_some_and(|before| before != globs) {
+            rederive_roles(&tx, id, source.kind, &rules.unwrap_or_default())?;
+        }
+        tx.commit()?;
         Ok(id)
     }
 
@@ -248,12 +286,8 @@ impl Store {
         let tx = self.conn.savepoint()?;
         // What the document is for, stored so that search reads its weight
         // instead of working it out for every candidate it ranks.
-        let source_kind: String = tx.query_row(
-            "SELECT kind FROM source WHERE id = ?1",
-            [source_id],
-            |row| row.get(0),
-        )?;
-        let role = Role::of_stored(document.path, &source_kind, document.text.is_some());
+        let (source_kind, rules) = source_rules(&tx, source_id)?;
+        let role = Role::classify(document.path, &source_kind, document.text.is_some(), &rules);
         let document_id: i64 = tx.query_row(
             "INSERT INTO document (source_id, path, language, content_hash, size_bytes, dirty, text,
                                    role, role_weight, chunker_version, terms_version)
@@ -453,6 +487,59 @@ fn insert_chunks(tx: &Connection, document_id: i64, document: &DocumentRecord<'_
     Ok(())
 }
 
+/// The source's kind and its compiled role rules: its stored globs, or the
+/// conventions when it has none.
+fn source_rules(conn: &Connection, source_id: i64) -> Result<(String, RoleRules)> {
+    let (kind, globs): (String, Option<String>) = conn.query_row(
+        "SELECT kind, role_globs FROM source WHERE id = ?1",
+        [source_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    let rules = match globs {
+        None => RoleRules::default(),
+        Some(json) => {
+            let globs: RoleGlobs = serde_json::from_str(&json).map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    1,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?;
+            RoleRules::new(&globs)?
+        }
+    };
+    Ok((kind, rules))
+}
+
+/// Works out the role and its weight again for every document of the
+/// source under `rules`, after its globs changed. Only `document` changes:
+/// chunks and their full-text rows don't hold the role.
+fn rederive_roles(
+    conn: &Connection,
+    source_id: i64,
+    source_kind: &str,
+    rules: &RoleRules,
+) -> Result<()> {
+    let mut select =
+        conn.prepare("SELECT id, path, text IS NOT NULL FROM document WHERE source_id = ?1")?;
+    let documents = select
+        .query_map([source_id], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, bool>(2)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut update =
+        conn.prepare("UPDATE document SET role = ?2, role_weight = ?3 WHERE id = ?1")?;
+    for (id, path, has_text) in documents {
+        let role = Role::classify(&path, source_kind, has_text, rules);
+        update.execute(params![id, role.as_str(), role.weight()])?;
+    }
+    Ok(())
+}
+
 /// The text to store in `chunk.text`: `None` when `lines`, the document's
 /// stored text, holds the chunk's text as its line range.
 fn own_text<'a>(lines: Option<&LineStarts<'_>>, chunk: &ChunkRecord<'a>) -> Option<&'a str> {
@@ -496,6 +583,7 @@ mod tests {
             is_current: true,
             obsoleted_by: None,
             updated_by: None,
+            role_globs: None,
         }
     }
 
@@ -511,6 +599,7 @@ mod tests {
             is_current,
             obsoleted_by: None,
             updated_by: None,
+            role_globs: None,
         }
     }
 
@@ -723,6 +812,154 @@ mod tests {
             .query_row("SELECT name_key FROM symbol", [], |row| row.get(0))
             .unwrap();
         assert_eq!(key, "validatetoken");
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Each stored document's (path, role, role weight), by path.
+    fn roles(store: &Store) -> Vec<(String, String, f64)> {
+        let mut stmt = store
+            .conn
+            .prepare("SELECT path, role, role_weight FROM document ORDER BY path")
+            .unwrap();
+        stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    }
+
+    fn spec_tests() -> RoleGlobs {
+        RoleGlobs {
+            test: Some(vec!["spec/**".into()]),
+            ..RoleGlobs::default()
+        }
+    }
+
+    #[test]
+    fn a_sources_globs_decide_its_documents_roles() {
+        let (mut store, dir) = store("role-globs");
+        let globs = spec_tests();
+        let id = store
+            .upsert_source(&SourceRecord {
+                role_globs: Some(&globs),
+                ..source("app")
+            })
+            .unwrap();
+        store
+            .write_document(id, &document("spec/a.rb", "def a; end"))
+            .unwrap();
+        store
+            .write_document(id, &document("tests/a.rb", "def b; end"))
+            .unwrap();
+        // The globs replace the test convention: `spec/` is tests, `tests/`
+        // isn't.
+        assert_eq!(
+            roles(&store),
+            [
+                ("spec/a.rb".into(), "test".into(), Role::Test.weight()),
+                ("tests/a.rb".into(), "source".into(), 1.0),
+            ]
+        );
+        let stored: Option<String> = store
+            .conn
+            .query_row("SELECT role_globs FROM source", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(stored.as_deref(), Some(r#"{"test":["spec/**"]}"#));
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn changing_a_sources_globs_re_derives_every_documents_role() {
+        let (mut store, dir) = store("role-globs-change");
+        let globs = spec_tests();
+        let id = store
+            .upsert_source(&SourceRecord {
+                role_globs: Some(&globs),
+                ..source("app")
+            })
+            .unwrap();
+        store
+            .write_document(id, &document("spec/a.rb", "def a; end"))
+            .unwrap();
+        store
+            .write_document(id, &document("tests/a.rb", "def b; end"))
+            .unwrap();
+
+        // Dropping the globs, without writing either document again, puts
+        // the conventions back.
+        assert_eq!(store.upsert_source(&source("app")).unwrap(), id);
+        assert_eq!(
+            roles(&store),
+            [
+                ("spec/a.rb".into(), "source".into(), 1.0),
+                ("tests/a.rb".into(), "test".into(), Role::Test.weight()),
+            ]
+        );
+        let stored: Option<String> = store
+            .conn
+            .query_row("SELECT role_globs FROM source", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(stored, None);
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn unchanged_globs_leave_stored_roles_alone() {
+        let (mut store, dir) = store("role-globs-same");
+        let globs = spec_tests();
+        let record = SourceRecord {
+            role_globs: Some(&globs),
+            ..source("app")
+        };
+        let id = store.upsert_source(&record).unwrap();
+        store
+            .write_document(id, &document("spec/a.rb", "def a; end"))
+            .unwrap();
+        // A role changed by hand stays: nothing re-derives it.
+        store
+            .conn
+            .execute("UPDATE document SET role = 'docs', role_weight = 0.8", [])
+            .unwrap();
+        store.upsert_source(&record).unwrap();
+        assert_eq!(roles(&store), [("spec/a.rb".into(), "docs".into(), 0.8)]);
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_glob_that_does_not_compile_writes_nothing() {
+        let (mut store, dir) = store("role-globs-bad");
+        let id = store.upsert_source(&source("app")).unwrap();
+        store
+            .write_document(id, &document("tests/a.rb", "def b; end"))
+            .unwrap();
+        let bad = RoleGlobs {
+            test: Some(vec!["spec/[".into()]),
+            ..RoleGlobs::default()
+        };
+        let err = store
+            .upsert_source(&SourceRecord {
+                role_globs: Some(&bad),
+                url: "/elsewhere",
+                ..source("app")
+            })
+            .unwrap_err();
+        assert!(
+            matches!(&err, crate::Error::RoleGlob { pattern, .. } if pattern == "spec/["),
+            "{err:?}"
+        );
+        // Neither the source nor its documents changed.
+        let url: String = store
+            .conn
+            .query_row("SELECT url FROM source", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(url, "/src/app");
+        assert_eq!(
+            roles(&store),
+            [("tests/a.rb".into(), "test".into(), Role::Test.weight())]
+        );
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }

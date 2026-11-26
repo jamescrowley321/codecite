@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use codecite_core::{RuleScope, SectionNumber};
+use codecite_core::{RoleGlobs, RoleRules, RuleScope, SectionNumber};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -64,6 +64,10 @@ pub struct GitSource {
     pub scip: Option<PathBuf>,
     /// The sha256 the SCIP index must have: 64 lowercase hex digits.
     pub scip_sha256: Option<String>,
+    /// Globs that replace the path conventions giving files the test,
+    /// example and docs roles (`[source.roles]`); the default keeps them.
+    #[serde(default)]
+    pub roles: RoleGlobs,
 }
 
 /// A working tree indexed in place, without fetching.
@@ -91,6 +95,10 @@ pub struct LocalSource {
     pub scip: Option<PathBuf>,
     /// The sha256 the SCIP index must have: 64 lowercase hex digits.
     pub scip_sha256: Option<String>,
+    /// Globs that replace the path conventions giving files the test,
+    /// example and docs roles (`[source.roles]`); the default keeps them.
+    #[serde(default)]
+    pub roles: RoleGlobs,
 }
 
 /// A document (a spec, an RFC) fetched by URL and pinned by its hash.
@@ -285,6 +293,17 @@ pub enum ManifestError {
         /// `scope`, or `rules."<number>"`.
         field: String,
         /// What is wrong, naming the glob or language.
+        message: String,
+    },
+
+    /// A `[source.roles]` glob does not compile.
+    #[error("source {source_name}: in `roles.{role}`, {message}")]
+    RoleGlob {
+        /// The source's label: its name, URL or path, else its position.
+        source_name: String,
+        /// `test`, `example` or `docs`.
+        role: &'static str,
+        /// What is wrong, naming the glob.
         message: String,
     },
 
@@ -496,6 +515,14 @@ fn parse_source(
             _ => {}
         }
     }
+    if let Source::Git(GitSource { roles, .. }) | Source::Local(LocalSource { roles, .. }) = &source
+    {
+        check_roles(roles).map_err(|(role, message)| ManifestError::RoleGlob {
+            source_name: source_name.clone(),
+            role,
+            message,
+        })?;
+    }
     if let Source::Git(GitSource { scip, .. }) | Source::Local(LocalSource { scip, .. }) =
         &mut source
         && let Some(path) = scip.as_ref().and_then(|p| p.to_str())
@@ -520,6 +547,38 @@ fn parse_source(
 }
 
 /// Whether `s` is exactly `len` digits of lowercase hex.
+/// Compiles each role's globs on its own, so an error names the role whose
+/// glob is bad.
+fn check_roles(roles: &RoleGlobs) -> Result<(), (&'static str, String)> {
+    let one = [
+        (
+            "test",
+            RoleGlobs {
+                test: roles.test.clone(),
+                ..RoleGlobs::default()
+            },
+        ),
+        (
+            "example",
+            RoleGlobs {
+                example: roles.example.clone(),
+                ..RoleGlobs::default()
+            },
+        ),
+        (
+            "docs",
+            RoleGlobs {
+                docs: roles.docs.clone(),
+                ..RoleGlobs::default()
+            },
+        ),
+    ];
+    for (role, globs) in one {
+        RoleRules::new(&globs).map_err(|e| (role, e.to_string()))?;
+    }
+    Ok(())
+}
+
 pub(crate) fn is_lower_hex(s: &str, len: usize) -> bool {
     s.len() == len && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
@@ -1076,6 +1135,79 @@ updated_by = "openid-connect-core-1_0-errata2"
         )))
         .unwrap_err();
         assert!(err.to_string().contains("unknown field `globs`"), "{err}");
+    }
+
+    #[test]
+    fn git_and_local_sources_take_role_globs() {
+        let m = Manifest::parse(&manifest(&format!(
+            "[[source]]\nurl = \"u\"\ncommit = \"{COMMIT}\"\nuse = \"adapt\"\n\
+             [source.roles]\ntest = [\"spec/**\", \"**/*_spec.rb\"]\nexample = []\n\
+             docs = [\"notes/**\"]\n\
+             [[source]]\nkind = \"local\"\npath = \"/a\"\nuse = \"adapt\"\n\
+             [source.roles]\nexample = [\"playground/**\"]\n\
+             [[source]]\nkind = \"local\"\npath = \"/b\"\nuse = \"adapt\"\n"
+        )))
+        .unwrap();
+        let Source::Git(git) = &m.sources[0] else {
+            panic!("{:?}", m.sources[0])
+        };
+        assert_eq!(
+            git.roles,
+            RoleGlobs {
+                test: Some(vec!["spec/**".into(), "**/*_spec.rb".into()]),
+                example: Some(vec![]),
+                docs: Some(vec!["notes/**".into()]),
+            }
+        );
+        let Source::Local(local) = &m.sources[1] else {
+            panic!("{:?}", m.sources[1])
+        };
+        assert_eq!(
+            local.roles,
+            RoleGlobs {
+                example: Some(vec!["playground/**".into()]),
+                ..RoleGlobs::default()
+            }
+        );
+        let Source::Local(plain) = &m.sources[2] else {
+            panic!("{:?}", m.sources[2])
+        };
+        assert!(plain.roles.is_default());
+    }
+
+    #[test]
+    fn role_globs_are_checked() {
+        let base = "[[source]]\nkind = \"local\"\nname = \"me\"\npath = \"/a\"\nuse = \"adapt\"\n";
+        let err = Manifest::parse(&manifest(&format!(
+            "{base}[source.roles]\ntests = [\"t/**\"]\n"
+        )))
+        .unwrap_err();
+        assert!(err.to_string().contains("unknown field `tests`"), "{err}");
+
+        let err = Manifest::parse(&manifest(&format!(
+            "{base}[source.roles]\nexample = [\"ok/**\"]\ntest = [\"a/[b\"]\n"
+        )))
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .starts_with("source `me`: in `roles.test`, invalid role glob \"a/[b\""),
+            "{err}"
+        );
+
+        let err = Manifest::parse(&manifest(&format!(
+            "[[source]]\nkind = \"document\"\nname = \"rfc\"\nurl = \"u\"\n\
+             sha256 = \"{SHA256}\"\nuse = \"quote\"\ncurrent = true\n\
+             [source.roles]\ntest = []\n"
+        )))
+        .unwrap_err();
+        assert!(err.to_string().contains("unknown field `roles`"), "{err}");
+
+        let err = Manifest::parse(&manifest(
+            "[[source]]\nkind = \"guidance\"\nname = \"g\"\npath = \"/a\"\nuse = \"quote\"\n\
+             [source.roles]\ntest = []\n",
+        ))
+        .unwrap_err();
+        assert!(err.to_string().contains("unknown field `roles`"), "{err}");
     }
 
     #[test]
