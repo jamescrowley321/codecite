@@ -1,0 +1,1217 @@
+{
+  "binary": "/var/tmp/r308/t1/codecite-base",
+  "results": [
+    {
+      "corpus": "linux",
+      "query": "vfs_read",
+      "page_reads": 226851,
+      "sequential": 72206,
+      "seconds_under_strace": 12.988,
+      "btrees": [
+        {
+          "btree": "document",
+          "pagetype": "overflow",
+          "reads": 169087,
+          "share": 0.7454
+        },
+        {
+          "btree": "chunk",
+          "pagetype": "leaf",
+          "reads": 26268,
+          "share": 0.1158
+        },
+        {
+          "btree": "document",
+          "pagetype": "leaf",
+          "reads": 24204,
+          "share": 0.1067
+        },
+        {
+          "btree": "chunk_fts_docsize",
+          "pagetype": "leaf",
+          "reads": 6206,
+          "share": 0.0274
+        },
+        {
+          "btree": "chunk_fts_data",
+          "pagetype": "leaf",
+          "reads": 732,
+          "share": 0.0032
+        },
+        {
+          "btree": "document",
+          "pagetype": "internal",
+          "reads": 132,
+          "share": 0.0006
+        },
+        {
+          "btree": "chunk",
+          "pagetype": "internal",
+          "reads": 98,
+          "share": 0.0004
+        },
+        {
+          "btree": "chunk_fts_data",
+          "pagetype": "internal",
+          "reads": 57,
+          "share": 0.0003
+        },
+        {
+          "btree": "chunk_fts_docsize",
+          "pagetype": "internal",
+          "reads": 18,
+          "share": 0.0001
+        },
+        {
+          "btree": "chunk_fts_idx",
+          "pagetype": "leaf",
+          "reads": 17,
+          "share": 0.0001
+        },
+        {
+          "btree": "sqlite_autoindex_symbol_1",
+          "pagetype": "internal",
+          "reads": 7,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_autoindex_symbol_1",
+          "pagetype": "leaf",
+          "reads": 4,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_schema",
+          "pagetype": "internal",
+          "reads": 3,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol",
+          "pagetype": "internal",
+          "reads": 3,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol",
+          "pagetype": "leaf",
+          "reads": 3,
+          "share": 0.0
+        },
+        {
+          "btree": "chunk_fts_idx",
+          "pagetype": "internal",
+          "reads": 3,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_schema",
+          "pagetype": "leaf",
+          "reads": 2,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol_name_key",
+          "pagetype": "internal",
+          "reads": 2,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_autoindex_meta_1",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "meta",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol_name_key",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "chunk_fts_config",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "source",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        }
+      ]
+    },
+    {
+      "corpus": "linux",
+      "query": "vfs_write",
+      "page_reads": 201461,
+      "sequential": 66109,
+      "seconds_under_strace": 11.874,
+      "btrees": [
+        {
+          "btree": "document",
+          "pagetype": "overflow",
+          "reads": 151797,
+          "share": 0.7535
+        },
+        {
+          "btree": "chunk",
+          "pagetype": "leaf",
+          "reads": 22843,
+          "share": 0.1134
+        },
+        {
+          "btree": "document",
+          "pagetype": "leaf",
+          "reads": 19813,
+          "share": 0.0983
+        },
+        {
+          "btree": "chunk_fts_docsize",
+          "pagetype": "leaf",
+          "reads": 5980,
+          "share": 0.0297
+        },
+        {
+          "btree": "chunk_fts_data",
+          "pagetype": "leaf",
+          "reads": 666,
+          "share": 0.0033
+        },
+        {
+          "btree": "document",
+          "pagetype": "internal",
+          "reads": 132,
+          "share": 0.0007
+        },
+        {
+          "btree": "chunk",
+          "pagetype": "internal",
+          "reads": 99,
+          "share": 0.0005
+        },
+        {
+          "btree": "chunk_fts_data",
+          "pagetype": "internal",
+          "reads": 56,
+          "share": 0.0003
+        },
+        {
+          "btree": "chunk_fts_docsize",
+          "pagetype": "internal",
+          "reads": 18,
+          "share": 0.0001
+        },
+        {
+          "btree": "chunk_fts_idx",
+          "pagetype": "leaf",
+          "reads": 12,
+          "share": 0.0001
+        },
+        {
+          "btree": "sqlite_autoindex_symbol_1",
+          "pagetype": "internal",
+          "reads": 10,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_autoindex_symbol_1",
+          "pagetype": "leaf",
+          "reads": 8,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol",
+          "pagetype": "leaf",
+          "reads": 7,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol",
+          "pagetype": "internal",
+          "reads": 5,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_schema",
+          "pagetype": "internal",
+          "reads": 3,
+          "share": 0.0
+        },
+        {
+          "btree": "chunk_fts_idx",
+          "pagetype": "internal",
+          "reads": 3,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_schema",
+          "pagetype": "leaf",
+          "reads": 2,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol_name_key",
+          "pagetype": "internal",
+          "reads": 2,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_autoindex_meta_1",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "meta",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol_name_key",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "chunk_fts_config",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "source",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        }
+      ]
+    },
+    {
+      "corpus": "linux",
+      "query": "do_sys_openat2",
+      "page_reads": 223596,
+      "sequential": 72517,
+      "seconds_under_strace": 12.632,
+      "btrees": [
+        {
+          "btree": "document",
+          "pagetype": "overflow",
+          "reads": 168880,
+          "share": 0.7553
+        },
+        {
+          "btree": "document",
+          "pagetype": "leaf",
+          "reads": 24672,
+          "share": 0.1103
+        },
+        {
+          "btree": "chunk",
+          "pagetype": "leaf",
+          "reads": 22900,
+          "share": 0.1024
+        },
+        {
+          "btree": "chunk_fts_docsize",
+          "pagetype": "leaf",
+          "reads": 6215,
+          "share": 0.0278
+        },
+        {
+          "btree": "chunk_fts_data",
+          "pagetype": "leaf",
+          "reads": 438,
+          "share": 0.002
+        },
+        {
+          "btree": "chunk_fts_data",
+          "pagetype": "internal",
+          "reads": 187,
+          "share": 0.0008
+        },
+        {
+          "btree": "document",
+          "pagetype": "internal",
+          "reads": 132,
+          "share": 0.0006
+        },
+        {
+          "btree": "chunk",
+          "pagetype": "internal",
+          "reads": 98,
+          "share": 0.0004
+        },
+        {
+          "btree": "chunk_fts_idx",
+          "pagetype": "leaf",
+          "reads": 22,
+          "share": 0.0001
+        },
+        {
+          "btree": "chunk_fts_docsize",
+          "pagetype": "internal",
+          "reads": 18,
+          "share": 0.0001
+        },
+        {
+          "btree": "sqlite_autoindex_symbol_1",
+          "pagetype": "internal",
+          "reads": 7,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol",
+          "pagetype": "internal",
+          "reads": 4,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol",
+          "pagetype": "leaf",
+          "reads": 4,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_autoindex_symbol_1",
+          "pagetype": "leaf",
+          "reads": 4,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_schema",
+          "pagetype": "internal",
+          "reads": 3,
+          "share": 0.0
+        },
+        {
+          "btree": "chunk_fts_idx",
+          "pagetype": "internal",
+          "reads": 3,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_schema",
+          "pagetype": "leaf",
+          "reads": 2,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol_name_key",
+          "pagetype": "internal",
+          "reads": 2,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_autoindex_meta_1",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "meta",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol_name_key",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "chunk_fts_config",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "source",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        }
+      ]
+    },
+    {
+      "corpus": "linux",
+      "query": "tcp_v4_connect",
+      "page_reads": 75738,
+      "sequential": 25668,
+      "seconds_under_strace": 4.91,
+      "btrees": [
+        {
+          "btree": "document",
+          "pagetype": "overflow",
+          "reads": 58368,
+          "share": 0.7707
+        },
+        {
+          "btree": "chunk",
+          "pagetype": "leaf",
+          "reads": 7236,
+          "share": 0.0955
+        },
+        {
+          "btree": "document",
+          "pagetype": "leaf",
+          "reads": 6499,
+          "share": 0.0858
+        },
+        {
+          "btree": "chunk_fts_docsize",
+          "pagetype": "leaf",
+          "reads": 2939,
+          "share": 0.0388
+        },
+        {
+          "btree": "chunk_fts_data",
+          "pagetype": "leaf",
+          "reads": 271,
+          "share": 0.0036
+        },
+        {
+          "btree": "document",
+          "pagetype": "internal",
+          "reads": 133,
+          "share": 0.0018
+        },
+        {
+          "btree": "chunk_fts_data",
+          "pagetype": "internal",
+          "reads": 111,
+          "share": 0.0015
+        },
+        {
+          "btree": "chunk",
+          "pagetype": "internal",
+          "reads": 100,
+          "share": 0.0013
+        },
+        {
+          "btree": "chunk_fts_idx",
+          "pagetype": "leaf",
+          "reads": 22,
+          "share": 0.0003
+        },
+        {
+          "btree": "chunk_fts_docsize",
+          "pagetype": "internal",
+          "reads": 18,
+          "share": 0.0002
+        },
+        {
+          "btree": "sqlite_autoindex_symbol_1",
+          "pagetype": "internal",
+          "reads": 10,
+          "share": 0.0001
+        },
+        {
+          "btree": "symbol",
+          "pagetype": "leaf",
+          "reads": 6,
+          "share": 0.0001
+        },
+        {
+          "btree": "sqlite_autoindex_symbol_1",
+          "pagetype": "leaf",
+          "reads": 6,
+          "share": 0.0001
+        },
+        {
+          "btree": "symbol",
+          "pagetype": "internal",
+          "reads": 4,
+          "share": 0.0001
+        },
+        {
+          "btree": "sqlite_schema",
+          "pagetype": "internal",
+          "reads": 3,
+          "share": 0.0
+        },
+        {
+          "btree": "chunk_fts_idx",
+          "pagetype": "internal",
+          "reads": 3,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_schema",
+          "pagetype": "leaf",
+          "reads": 2,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol_name_key",
+          "pagetype": "internal",
+          "reads": 2,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_autoindex_meta_1",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "meta",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol_name_key",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "chunk_fts_config",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "source",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        }
+      ]
+    },
+    {
+      "corpus": "linux",
+      "query": "task_struct",
+      "page_reads": 267813,
+      "sequential": 74878,
+      "seconds_under_strace": 15.074,
+      "btrees": [
+        {
+          "btree": "document",
+          "pagetype": "overflow",
+          "reads": 185717,
+          "share": 0.6935
+        },
+        {
+          "btree": "document",
+          "pagetype": "leaf",
+          "reads": 36352,
+          "share": 0.1357
+        },
+        {
+          "btree": "chunk",
+          "pagetype": "leaf",
+          "reads": 34461,
+          "share": 0.1287
+        },
+        {
+          "btree": "chunk_fts_docsize",
+          "pagetype": "leaf",
+          "reads": 6255,
+          "share": 0.0234
+        },
+        {
+          "btree": "chunk_fts_data",
+          "pagetype": "leaf",
+          "reads": 4575,
+          "share": 0.0171
+        },
+        {
+          "btree": "document",
+          "pagetype": "internal",
+          "reads": 125,
+          "share": 0.0005
+        },
+        {
+          "btree": "chunk_fts_data",
+          "pagetype": "internal",
+          "reads": 124,
+          "share": 0.0005
+        },
+        {
+          "btree": "chunk",
+          "pagetype": "internal",
+          "reads": 101,
+          "share": 0.0004
+        },
+        {
+          "btree": "chunk_fts_idx",
+          "pagetype": "leaf",
+          "reads": 24,
+          "share": 0.0001
+        },
+        {
+          "btree": "chunk_fts_docsize",
+          "pagetype": "internal",
+          "reads": 18,
+          "share": 0.0001
+        },
+        {
+          "btree": "symbol",
+          "pagetype": "leaf",
+          "reads": 13,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol",
+          "pagetype": "internal",
+          "reads": 12,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_autoindex_symbol_1",
+          "pagetype": "internal",
+          "reads": 11,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_autoindex_symbol_1",
+          "pagetype": "leaf",
+          "reads": 7,
+          "share": 0.0
+        },
+        {
+          "btree": "chunk_fts_idx",
+          "pagetype": "internal",
+          "reads": 6,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_schema",
+          "pagetype": "internal",
+          "reads": 3,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_schema",
+          "pagetype": "leaf",
+          "reads": 2,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol_name_key",
+          "pagetype": "internal",
+          "reads": 2,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_autoindex_meta_1",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "meta",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol_name_key",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "chunk_fts_config",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "source",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        }
+      ]
+    },
+    {
+      "corpus": "linux",
+      "query": "sock_create",
+      "page_reads": 124722,
+      "sequential": 37087,
+      "seconds_under_strace": 8.206,
+      "btrees": [
+        {
+          "btree": "document",
+          "pagetype": "overflow",
+          "reads": 92333,
+          "share": 0.7403
+        },
+        {
+          "btree": "chunk",
+          "pagetype": "leaf",
+          "reads": 13911,
+          "share": 0.1115
+        },
+        {
+          "btree": "document",
+          "pagetype": "leaf",
+          "reads": 13008,
+          "share": 0.1043
+        },
+        {
+          "btree": "chunk_fts_docsize",
+          "pagetype": "leaf",
+          "reads": 4811,
+          "share": 0.0386
+        },
+        {
+          "btree": "chunk_fts_data",
+          "pagetype": "leaf",
+          "reads": 283,
+          "share": 0.0023
+        },
+        {
+          "btree": "document",
+          "pagetype": "internal",
+          "reads": 133,
+          "share": 0.0011
+        },
+        {
+          "btree": "chunk",
+          "pagetype": "internal",
+          "reads": 100,
+          "share": 0.0008
+        },
+        {
+          "btree": "chunk_fts_data",
+          "pagetype": "internal",
+          "reads": 66,
+          "share": 0.0005
+        },
+        {
+          "btree": "chunk_fts_docsize",
+          "pagetype": "internal",
+          "reads": 18,
+          "share": 0.0001
+        },
+        {
+          "btree": "chunk_fts_idx",
+          "pagetype": "leaf",
+          "reads": 17,
+          "share": 0.0001
+        },
+        {
+          "btree": "sqlite_autoindex_symbol_1",
+          "pagetype": "internal",
+          "reads": 9,
+          "share": 0.0001
+        },
+        {
+          "btree": "sqlite_autoindex_symbol_1",
+          "pagetype": "leaf",
+          "reads": 7,
+          "share": 0.0001
+        },
+        {
+          "btree": "symbol",
+          "pagetype": "leaf",
+          "reads": 6,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol",
+          "pagetype": "internal",
+          "reads": 5,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_schema",
+          "pagetype": "internal",
+          "reads": 3,
+          "share": 0.0
+        },
+        {
+          "btree": "chunk_fts_idx",
+          "pagetype": "internal",
+          "reads": 3,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_schema",
+          "pagetype": "leaf",
+          "reads": 2,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol_name_key",
+          "pagetype": "internal",
+          "reads": 2,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_autoindex_meta_1",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "meta",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol_name_key",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "chunk_fts_config",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "source",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        }
+      ]
+    },
+    {
+      "corpus": "fhir",
+      "query": "FhirContext",
+      "page_reads": 55524,
+      "sequential": 15798,
+      "seconds_under_strace": 3.21,
+      "btrees": [
+        {
+          "btree": "document",
+          "pagetype": "overflow",
+          "reads": 37014,
+          "share": 0.6666
+        },
+        {
+          "btree": "document",
+          "pagetype": "leaf",
+          "reads": 9733,
+          "share": 0.1753
+        },
+        {
+          "btree": "chunk",
+          "pagetype": "leaf",
+          "reads": 6706,
+          "share": 0.1208
+        },
+        {
+          "btree": "chunk_fts_data",
+          "pagetype": "leaf",
+          "reads": 947,
+          "share": 0.0171
+        },
+        {
+          "btree": "chunk_fts_docsize",
+          "pagetype": "leaf",
+          "reads": 859,
+          "share": 0.0155
+        },
+        {
+          "btree": "chunk_fts_data",
+          "pagetype": "internal",
+          "reads": 65,
+          "share": 0.0012
+        },
+        {
+          "btree": "symbol",
+          "pagetype": "leaf",
+          "reads": 52,
+          "share": 0.0009
+        },
+        {
+          "btree": "document",
+          "pagetype": "internal",
+          "reads": 33,
+          "share": 0.0006
+        },
+        {
+          "btree": "chunk_fts_idx",
+          "pagetype": "leaf",
+          "reads": 30,
+          "share": 0.0005
+        },
+        {
+          "btree": "chunk",
+          "pagetype": "internal",
+          "reads": 23,
+          "share": 0.0004
+        },
+        {
+          "btree": "symbol",
+          "pagetype": "internal",
+          "reads": 14,
+          "share": 0.0003
+        },
+        {
+          "btree": "symbol_document",
+          "pagetype": "leaf",
+          "reads": 13,
+          "share": 0.0002
+        },
+        {
+          "btree": "sqlite_autoindex_symbol_1",
+          "pagetype": "internal",
+          "reads": 9,
+          "share": 0.0002
+        },
+        {
+          "btree": "sqlite_autoindex_symbol_1",
+          "pagetype": "leaf",
+          "reads": 6,
+          "share": 0.0001
+        },
+        {
+          "btree": "sqlite_schema",
+          "pagetype": "internal",
+          "reads": 3,
+          "share": 0.0001
+        },
+        {
+          "btree": "chunk_fts_docsize",
+          "pagetype": "internal",
+          "reads": 3,
+          "share": 0.0001
+        },
+        {
+          "btree": "sqlite_schema",
+          "pagetype": "leaf",
+          "reads": 2,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol_name_key",
+          "pagetype": "internal",
+          "reads": 2,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol_document",
+          "pagetype": "internal",
+          "reads": 2,
+          "share": 0.0
+        },
+        {
+          "btree": "source",
+          "pagetype": "leaf",
+          "reads": 2,
+          "share": 0.0
+        },
+        {
+          "btree": "sqlite_autoindex_meta_1",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "meta",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol_name_key",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "chunk_fts_config",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "source",
+          "pagetype": "internal",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "chunk_fts_idx",
+          "pagetype": "internal",
+          "reads": 1,
+          "share": 0.0
+        }
+      ]
+    },
+    {
+      "corpus": "fhir",
+      "query": "RestfulServer",
+      "page_reads": 38642,
+      "sequential": 11932,
+      "seconds_under_strace": 2.333,
+      "btrees": [
+        {
+          "btree": "document",
+          "pagetype": "overflow",
+          "reads": 27115,
+          "share": 0.7017
+        },
+        {
+          "btree": "document",
+          "pagetype": "leaf",
+          "reads": 5831,
+          "share": 0.1509
+        },
+        {
+          "btree": "chunk",
+          "pagetype": "leaf",
+          "reads": 4534,
+          "share": 0.1173
+        },
+        {
+          "btree": "chunk_fts_docsize",
+          "pagetype": "leaf",
+          "reads": 808,
+          "share": 0.0209
+        },
+        {
+          "btree": "chunk_fts_data",
+          "pagetype": "leaf",
+          "reads": 210,
+          "share": 0.0054
+        },
+        {
+          "btree": "chunk_fts_data",
+          "pagetype": "internal",
+          "reads": 44,
+          "share": 0.0011
+        },
+        {
+          "btree": "document",
+          "pagetype": "internal",
+          "reads": 30,
+          "share": 0.0008
+        },
+        {
+          "btree": "chunk",
+          "pagetype": "internal",
+          "reads": 20,
+          "share": 0.0005
+        },
+        {
+          "btree": "chunk_fts_idx",
+          "pagetype": "leaf",
+          "reads": 17,
+          "share": 0.0004
+        },
+        {
+          "btree": "sqlite_autoindex_symbol_1",
+          "pagetype": "internal",
+          "reads": 4,
+          "share": 0.0001
+        },
+        {
+          "btree": "sqlite_schema",
+          "pagetype": "internal",
+          "reads": 3,
+          "share": 0.0001
+        },
+        {
+          "btree": "symbol",
+          "pagetype": "leaf",
+          "reads": 3,
+          "share": 0.0001
+        },
+        {
+          "btree": "chunk_fts_docsize",
+          "pagetype": "internal",
+          "reads": 3,
+          "share": 0.0001
+        },
+        {
+          "btree": "sqlite_autoindex_symbol_1",
+          "pagetype": "leaf",
+          "reads": 3,
+          "share": 0.0001
+        },
+        {
+          "btree": "sqlite_schema",
+          "pagetype": "leaf",
+          "reads": 2,
+          "share": 0.0001
+        },
+        {
+          "btree": "symbol_name_key",
+          "pagetype": "internal",
+          "reads": 2,
+          "share": 0.0001
+        },
+        {
+          "btree": "symbol",
+          "pagetype": "internal",
+          "reads": 2,
+          "share": 0.0001
+        },
+        {
+          "btree": "symbol_document",
+          "pagetype": "internal",
+          "reads": 2,
+          "share": 0.0001
+        },
+        {
+          "btree": "source",
+          "pagetype": "leaf",
+          "reads": 2,
+          "share": 0.0001
+        },
+        {
+          "btree": "sqlite_autoindex_meta_1",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "meta",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol_name_key",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "symbol_document",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "chunk_fts_config",
+          "pagetype": "leaf",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "source",
+          "pagetype": "internal",
+          "reads": 1,
+          "share": 0.0
+        },
+        {
+          "btree": "chunk_fts_idx",
+          "pagetype": "internal",
+          "reads": 1,
+          "share": 0.0
+        }
+      ]
+    }
+  ]
+}

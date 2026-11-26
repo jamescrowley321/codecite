@@ -1,0 +1,18 @@
+{
+  "binary_sha256": {
+    "codecite": "5f29aea6bef7cfe13a7fc37333b10fe4e54bc716c4046a47049df5e915ed0e84"
+  },
+  "codecite_version": "codecite 0.0.1",
+  "local_pins": {
+    "keycloak": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+    "kubernetes": "2b40648ce66b6061d48e8b468e65ee69cc18c424",
+    "linux": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449"
+  },
+  "manifest_sha256": {
+    "fhir": "b8764afb376aa36afc07996c6b7fd092fde66857105a801b7d9da91a7b20cb28",
+    "keycloak": "ab2c41d750e0ba376743c4796c0ae1dececae7d21f45c5fec07d3ea59a7a5163",
+    "kubernetes": "f74087521fd2a0460cf8df3702e0990a9ba56e917d84be35f244ffd3e249c537",
+    "linux": "bab350325d3ad63e3c4c50c49c7e924f6710a78dea50170d3b6ec379920dfdba"
+  },
+  "source_revision": "74ee2e4eba4b9068dc2a9cd791e49c40a5e1e8be"
+}
