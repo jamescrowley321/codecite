@@ -618,6 +618,11 @@ codecite earns its place only if agents using it do no worse than agents without
 - `codecite-bench` runs each query through a `codecite` binary and prints Recall@1, Recall@10 and MRR per class, with every query whose answer isn't first. A spec result counts when it is the labelled section or a step in it; a code result when its lines hold the labelled line. CI runs it on every PR and posts the table to the job summary.
 - Recall@10 and MRR for BM25 alone, BM25 plus vectors, and BM25 plus graph boosts.
 
+**Generic retrieval benchmark**
+
+- `experiments/retrieval-generalization/` (#287) runs local `codecite` and `codegraph` processes with no network, over repositories split into development (Linux, Keycloak) and evaluation (Django, ripgrep, Excalidraw) sets pinned before measurement, and classifies each miss as extraction, candidate retrieval, rank or latency from the production search on an untruncated list. An evaluation repository is measured once per accepted design and then moves to development.
+- First round: every codecite miss was a rank miss; exact and qualified names score Hit@1 1.00; descriptive queries score Hit@1 0.13 and Hit@10 0.80 on the held-out repositories, outranked by source sharing more query words or sunk by a long answer chunk. Latency misses the target only at Linux's 1.37M chunks. It is observational, not a gate.
+
 **Rework**
 
 - The general-purpose design's measure of success is less rework. `experiments/rework/` counts it, observationally and never as a gate: over the history benchmark's repositories, each merged PR's spec and convention findings from its blind peer review comments and the rounds before it passed, split by whether its plan carries codecite citations (#179).
