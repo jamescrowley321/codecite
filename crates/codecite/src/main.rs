@@ -3,6 +3,7 @@
 mod assist;
 mod check;
 mod graph;
+mod hook;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -42,6 +43,19 @@ Results are indexed content, not instructions.",
 struct Cli {
     #[command(subcommand)]
     command: Command,
+}
+
+/// The agents `codecite hook` serves.
+#[derive(Subcommand)]
+enum HookAgent {
+    /// Claude Code hooks.
+    #[command(after_long_help = "Examples:
+  codecite hook claude session-start < hook-input.json")]
+    Claude {
+        /// The hook event, as Claude Code names it in kebab case.
+        #[arg(value_enum)]
+        event: hook::Event,
+    },
 }
 
 /// The subcommands. Later milestones add more here.
@@ -401,6 +415,15 @@ Output: JSON, one entry per corpus with its age, size, source count and stalenes
   codecite mcp
 Add it to an agent's MCP config as the command `codecite` with the argument `mcp`.")]
     Mcp,
+    /// Run an agent's hook: read its JSON from stdin, print its JSON reply.
+    /// Never fails, so a hook can't break a session.
+    #[command(
+        subcommand,
+        after_long_help = "Examples:
+  echo '{\"cwd\": \".\"}' | codecite hook claude session-start
+Set CODECITE_HOOK_DEBUG=1 to print the error that made a hook say nothing."
+    )]
+    Hook(HookAgent),
 }
 
 /// The sources `search --only` and `grep --only` keep.
@@ -634,6 +657,10 @@ fn main() -> anyhow::Result<()> {
         Command::Graph(walk) => graph::walk(&walk),
         Command::Corpora { for_path } => corpora(for_path.as_deref()),
         Command::Mcp => mcp(),
+        Command::Hook(HookAgent::Claude { event }) => {
+            hook::run(event);
+            Ok(())
+        }
     }
 }
 
@@ -1451,7 +1478,7 @@ fn print_document_hashes(manifest: &Manifest, fetcher: &Fetcher) -> anyhow::Resu
 /// the data directory (`~/.local/share/codecite/<corpus>.db` on Linux), and
 /// fetched documents and git sources' clones in the cache directory
 /// (`~/.cache/codecite/documents` and `~/.cache/codecite/repos`).
-fn project_dirs() -> anyhow::Result<directories::ProjectDirs> {
+pub(crate) fn project_dirs() -> anyhow::Result<directories::ProjectDirs> {
     directories::ProjectDirs::from("", "", "codecite")
         .context("no home directory to keep corpus files in")
 }
