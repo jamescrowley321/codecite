@@ -1,0 +1,877 @@
+{
+ "linux": {
+  "head": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+  "seed": 287,
+  "files": 57121,
+  "draws": [
+   {
+    "draw": 0,
+    "path": "include/uapi/drm/asahi_drm.h",
+    "line": 1152,
+    "name": "drm_asahi_get_time",
+    "defs": 1
+   },
+   {
+    "draw": 1,
+    "path": "arch/s390/pci/pci_iov.c",
+    "line": 25,
+    "name": "zpci_iov_map_resources",
+    "defs": 2
+   },
+   {
+    "draw": 2,
+    "path": "drivers/cpufreq/armada-8k-cpufreq.c",
+    "line": 39,
+    "name": "freq_table",
+    "defs": 3
+   },
+   {
+    "draw": 3,
+    "path": "kernel/crash_dump_dm_crypt.c",
+    "line": 16,
+    "name": "dm_crypt_key",
+    "defs": 1
+   },
+   {
+    "draw": 4,
+    "path": "drivers/gpu/drm/amd/amdgpu/amdgpu_bios.c",
+    "line": 351,
+    "name": "amdgpu_read_disabled_bios",
+    "defs": 1
+   },
+   {
+    "draw": 5,
+    "path": "drivers/net/wireless/realtek/rtw89/debug.c",
+    "line": 925,
+    "name": "rtw89_debug_priv_txpwr_table_get",
+    "defs": 1
+   },
+   {
+    "draw": 6,
+    "path": "drivers/net/dsa/hirschmann/hellcreek_hwtstamp.h",
+    "line": 48,
+    "name": "hellcreek_port_txtstamp",
+    "defs": 2
+   },
+   {
+    "draw": 7,
+    "path": "drivers/scsi/vmw_pvscsi.h",
+    "line": 321,
+    "name": "PVSCSIRingReqDesc",
+    "defs": 1
+   },
+   {
+    "draw": 8,
+    "path": "drivers/mmc/host/sdhci-msm.c",
+    "line": 1808,
+    "name": "sdhci_msm_pwr_irq",
+    "defs": 1
+   },
+   {
+    "draw": 9,
+    "path": "drivers/net/wireless/intel/iwlwifi/pcie/utils.h",
+    "line": 13,
+    "name": "_iwl_trans_set_bits_mask",
+    "defs": 1
+   },
+   {
+    "draw": 10,
+    "path": "drivers/soc/fsl/qe/usb.c",
+    "line": 19,
+    "name": "qe_usb_clock_set",
+    "defs": 1
+   },
+   {
+    "draw": 11,
+    "path": "arch/x86/kernel/cpu/scattered.c",
+    "line": 13,
+    "name": "cpuid_bit",
+    "defs": 1
+   },
+   {
+    "draw": 12,
+    "path": "sound/soc/soc-utils-test.c",
+    "line": 118,
+    "name": "test_tdm_params_to_bclk_one",
+    "defs": 1
+   },
+   {
+    "draw": 13,
+    "path": "drivers/net/ethernet/mellanox/mlx5/core/en_accel/ipsec_rxtx.c",
+    "line": 175,
+    "name": "mlx5e_ipsec_set_iv",
+    "defs": 2
+   },
+   {
+    "draw": 14,
+    "path": "drivers/gpu/drm/amd/display/dc/bios/bios_parser_types_internal2.h",
+    "line": 39,
+    "name": "object_info_table",
+    "defs": 2
+   },
+   {
+    "draw": 15,
+    "path": "include/uapi/linux/vboxguest.h",
+    "line": 110,
+    "name": "vbg_ioctl_hgcm_connect",
+    "defs": 2
+   },
+   {
+    "draw": 16,
+    "path": "drivers/clk/renesas/clk-r8a7779.c",
+    "line": 113,
+    "name": "r8a7779_cpg_clocks_init",
+    "defs": 1
+   },
+   {
+    "draw": 17,
+    "path": "sound/pci/ak4531_codec.c",
+    "line": 209,
+    "name": "snd_ak4531_get_input_sw",
+    "defs": 1
+   },
+   {
+    "draw": 18,
+    "path": "arch/x86/kernel/unwind_orc.c",
+    "line": 124,
+    "name": "orc_module_find",
+    "defs": 4
+   },
+   {
+    "draw": 19,
+    "path": "fs/hfsplus/bfind.c",
+    "line": 81,
+    "name": "hfs_find_rec_by_key",
+    "defs": 2
+   },
+   {
+    "draw": 20,
+    "path": "drivers/gpu/drm/amd/display/dc/hwss/dcn302/dcn302_init.c",
+    "line": 34,
+    "name": "dcn302_hw_sequencer_construct",
+    "defs": 1
+   },
+   {
+    "draw": 21,
+    "path": "drivers/net/ethernet/marvell/octeontx2/af/rvu_reg.c",
+    "line": 21,
+    "name": "hw_reg_map",
+    "defs": 1
+   },
+   {
+    "draw": 22,
+    "path": "drivers/iio/trigger/stm32-timer-trigger.c",
+    "line": 451,
+    "name": "stm32_counter_read_raw",
+    "defs": 1
+   },
+   {
+    "draw": 23,
+    "path": "net/xfrm/espintcp.c",
+    "line": 54,
+    "name": "espintcp_rcv",
+    "defs": 1
+   }
+  ]
+ },
+ "keycloak": {
+  "head": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+  "seed": 287,
+  "files": 6786,
+  "draws": [
+   {
+    "draw": 0,
+    "path": "quarkus/runtime/src/main/java/org/keycloak/quarkus/runtime/configuration/mappers/OpenApiPropertyMappers.java",
+    "line": 14,
+    "name": "getPropertyMappers",
+    "defs": 24
+   },
+   {
+    "draw": 1,
+    "path": "model/infinispan/src/main/java/org/keycloak/models/sessions/infinispan/changes/PersistentUpdate.java",
+    "line": 51,
+    "name": "fail",
+    "defs": 1
+   },
+   {
+    "draw": 2,
+    "path": "services/src/main/java/org/keycloak/protocol/saml/mappers/NameIdMapperHelper.java",
+    "line": 18,
+    "name": "setConfigProperties",
+    "defs": 2
+   },
+   {
+    "draw": 3,
+    "path": "services/src/main/java/org/keycloak/services/resources/admin/ClientResource.java",
+    "line": 979,
+    "name": "computeMaxResults",
+    "defs": 1
+   },
+   {
+    "draw": 4,
+    "path": "core/src/main/java/org/keycloak/jose/jwe/alg/DirectAlgorithmProvider.java",
+    "line": 30,
+    "name": "DirectAlgorithmProvider",
+    "defs": 1
+   },
+   {
+    "draw": 5,
+    "path": "misc/vuln-to-issues/src/main/java/org/keycloak/misc/vulns/Vuln.java",
+    "line": 87,
+    "name": "equals",
+    "defs": 293
+   },
+   {
+    "draw": 6,
+    "path": "model/jpa/src/main/java/org/keycloak/models/jpa/entities/RequiredCredentialEntity.java",
+    "line": 59,
+    "name": "setRealm",
+    "defs": 35
+   },
+   {
+    "draw": 7,
+    "path": "core/src/main/java/org/keycloak/jose/jwk/ECPublicJWK.java",
+    "line": 26,
+    "name": "ECPublicJWK",
+    "defs": 1
+   },
+   {
+    "draw": 8,
+    "path": "model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/entities/AbstractRevisioned.java",
+    "line": 27,
+    "name": "getRevision",
+    "defs": 12
+   },
+   {
+    "draw": 9,
+    "path": "saml-core-api/src/main/java/org/keycloak/dom/saml/v1/assertion/SAML11NameIdentifierType.java",
+    "line": 54,
+    "name": "setFormat",
+    "defs": 13
+   },
+   {
+    "draw": 10,
+    "path": "model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/authorization/PolicyAdapter.java",
+    "line": 129,
+    "name": "getDecisionStrategy",
+    "defs": 10
+   },
+   {
+    "draw": 11,
+    "path": "test-framework/oauth/src/main/java/org/keycloak/testframework/oauth/CibaProvider.java",
+    "line": 127,
+    "name": "handlePushNotification",
+    "defs": 1
+   },
+   {
+    "draw": 12,
+    "path": "core/src/main/java/org/keycloak/sdjwt/consumer/SimplePresentationDefinition.java",
+    "line": 101,
+    "name": "build",
+    "defs": 83
+   },
+   {
+    "draw": 13,
+    "path": "services/src/main/java/org/keycloak/crypto/HS384SignatureProviderFactory.java",
+    "line": 28,
+    "name": "getId",
+    "defs": 958
+   },
+   {
+    "draw": 14,
+    "path": "services/src/main/java/org/keycloak/services/resources/admin/fgap/RolePermissionEvaluator.java",
+    "line": 29,
+    "name": "RolePermissionEvaluator",
+    "defs": 1
+   },
+   {
+    "draw": 15,
+    "path": "test-framework/builders/src/main/java/org/keycloak/testframework/realm/IdentityProviderMapperBuilder.java",
+    "line": 38,
+    "name": "build",
+    "defs": 83
+   },
+   {
+    "draw": 16,
+    "path": "services/src/main/java/org/keycloak/social/facebook/FacebookIdentityProvider.java",
+    "line": 92,
+    "name": "supportsExternalExchange",
+    "defs": 11
+   },
+   {
+    "draw": 17,
+    "path": "services/src/main/java/org/keycloak/services/clientpolicy/ClientPoliciesUtil.java",
+    "line": 478,
+    "name": "convertClientPoliciesJsonToRepresentation",
+    "defs": 1
+   },
+   {
+    "draw": 18,
+    "path": "model/jpa/src/main/java/org/keycloak/models/workflow/RunWorkflowTask.java",
+    "line": 151,
+    "name": "completeWorkflowExecution",
+    "defs": 1
+   },
+   {
+    "draw": 19,
+    "path": "crypto/fips1402/src/main/java/org/keycloak/crypto/fips/BCFIPSCertificateUtilsProvider.java",
+    "line": 92,
+    "name": "generateV3Certificate",
+    "defs": 5
+   },
+   {
+    "draw": 20,
+    "path": "model/storage-private/src/main/java/org/keycloak/migration/migrators/MigrateTo26_4_3.java",
+    "line": 20,
+    "name": "migrateRealm",
+    "defs": 37
+   },
+   {
+    "draw": 21,
+    "path": "services/src/main/java/org/keycloak/utils/SearchQueryUtils.java",
+    "line": 63,
+    "name": "splitTerms",
+    "defs": 1
+   },
+   {
+    "draw": 22,
+    "path": "core/src/main/java/org/keycloak/representations/idm/ProtocolMapperRepresentation.java",
+    "line": 87,
+    "name": "getConsentText",
+    "defs": 1
+   },
+   {
+    "draw": 23,
+    "path": "model/jpa/src/main/java/org/keycloak/models/jpa/ClientAdapter.java",
+    "line": 176,
+    "name": "removeWebOrigin",
+    "defs": 5
+   }
+  ]
+ },
+ "django": {
+  "head": "8f8ad09659d728423a00e0a3b5f16da5c3a38e24",
+  "seed": 287,
+  "files": 891,
+  "draws": [
+   {
+    "draw": 0,
+    "path": "django/template/response.py",
+    "line": 78,
+    "name": "resolve_context",
+    "defs": 1
+   },
+   {
+    "draw": 1,
+    "path": "django/core/management/commands/startapp.py",
+    "line": 4,
+    "name": "Command",
+    "defs": 34
+   },
+   {
+    "draw": 2,
+    "path": "django/http/response.py",
+    "line": 107,
+    "name": "HttpResponseBase",
+    "defs": 1
+   },
+   {
+    "draw": 3,
+    "path": "django/db/backends/oracle/functions.py",
+    "line": 19,
+    "name": "SecondsToInterval",
+    "defs": 1
+   },
+   {
+    "draw": 4,
+    "path": "django/contrib/gis/db/backends/postgis/adapter.py",
+    "line": 48,
+    "name": "_fix_polygon",
+    "defs": 3
+   },
+   {
+    "draw": 5,
+    "path": "django/contrib/auth/migrations/0012_alter_user_first_name_max_length.py",
+    "line": 4,
+    "name": "Migration",
+    "defs": 27
+   },
+   {
+    "draw": 6,
+    "path": "django/db/migrations/recorder.py",
+    "line": 84,
+    "name": "applied_migrations",
+    "defs": 1
+   },
+   {
+    "draw": 7,
+    "path": "django/contrib/gis/db/backends/mysql/schema.py",
+    "line": 23,
+    "name": "quote_value",
+    "defs": 7
+   },
+   {
+    "draw": 8,
+    "path": "django/contrib/messages/test.py",
+    "line": 8,
+    "name": "assertMessages",
+    "defs": 1
+   },
+   {
+    "draw": 9,
+    "path": "django/contrib/sessions/backends/db.py",
+    "line": 68,
+    "name": "create",
+    "defs": 12
+   },
+   {
+    "draw": 10,
+    "path": "django/core/management/commands/compilemessages.py",
+    "line": 71,
+    "name": "handle",
+    "defs": 36
+   },
+   {
+    "draw": 11,
+    "path": "django/contrib/gis/gdal/feature.py",
+    "line": 101,
+    "name": "geom_type",
+    "defs": 4
+   },
+   {
+    "draw": 12,
+    "path": "django/views/decorators/cache.py",
+    "line": 44,
+    "name": "_view_wrapper",
+    "defs": 20
+   },
+   {
+    "draw": 13,
+    "path": "django/contrib/gis/db/backends/oracle/schema.py",
+    "line": 79,
+    "name": "add_field",
+    "defs": 7
+   },
+   {
+    "draw": 14,
+    "path": "django/template/loader.py",
+    "line": 22,
+    "name": "select_template",
+    "defs": 2
+   },
+   {
+    "draw": 15,
+    "path": "django/db/models/expressions.py",
+    "line": 1224,
+    "name": "RawSQL",
+    "defs": 1
+   },
+   {
+    "draw": 16,
+    "path": "django/core/management/commands/inspectdb.py",
+    "line": 18,
+    "name": "add_arguments",
+    "defs": 35
+   },
+   {
+    "draw": 17,
+    "path": "django/views/decorators/csrf.py",
+    "line": 59,
+    "name": "_view_wrapper",
+    "defs": 20
+   },
+   {
+    "draw": 18,
+    "path": "django/contrib/gis/db/backends/postgis/base.py",
+    "line": 85,
+    "name": "PostGISBinaryDumper",
+    "defs": 1
+   },
+   {
+    "draw": 19,
+    "path": "django/utils/http.py",
+    "line": 188,
+    "name": "urlsafe_base64_decode",
+    "defs": 1
+   },
+   {
+    "draw": 20,
+    "path": "django/utils/decorators.py",
+    "line": 124,
+    "name": "make_middleware_decorator",
+    "defs": 1
+   },
+   {
+    "draw": 21,
+    "path": "django/template/defaulttags.py",
+    "line": 1269,
+    "name": "partial_func",
+    "defs": 1
+   },
+   {
+    "draw": 22,
+    "path": "django/views/decorators/csp.py",
+    "line": 37,
+    "name": "csp_report_only_override",
+    "defs": 1
+   },
+   {
+    "draw": 23,
+    "path": "django/db/backends/postgresql/psycopg_any.py",
+    "line": 25,
+    "name": "BaseTzLoader",
+    "defs": 1
+   }
+  ]
+ },
+ "ripgrep": {
+  "head": "669cb4c755db20b26c3af3d923c042ae224c7496",
+  "seed": 287,
+  "files": 79,
+  "draws": [
+   {
+    "draw": 0,
+    "path": "crates/core/haystack.rs",
+    "line": 108,
+    "name": "path",
+    "defs": 14
+   },
+   {
+    "draw": 1,
+    "path": "crates/pcre2/src/error.rs",
+    "line": 35,
+    "name": "description",
+    "defs": 6
+   },
+   {
+    "draw": 2,
+    "path": "build.rs",
+    "line": 12,
+    "name": "set_windows_exe_options",
+    "defs": 1
+   },
+   {
+    "draw": 3,
+    "path": "crates/core/flags/mod.rs",
+    "line": 90,
+    "name": "name_long",
+    "defs": 109
+   },
+   {
+    "draw": 4,
+    "path": "crates/searcher/src/lines.rs",
+    "line": 34,
+    "name": "next",
+    "defs": 5
+   },
+   {
+    "draw": 5,
+    "path": "crates/core/flags/config.rs",
+    "line": 164,
+    "name": "error",
+    "defs": 4
+   },
+   {
+    "draw": 6,
+    "path": "crates/cli/src/pattern.rs",
+    "line": 104,
+    "name": "patterns_from_stdin",
+    "defs": 1
+   },
+   {
+    "draw": 7,
+    "path": "crates/cli/src/escape.rs",
+    "line": 127,
+    "name": "nothing_simple",
+    "defs": 1
+   },
+   {
+    "draw": 8,
+    "path": "crates/cli/src/decompress.rs",
+    "line": 37,
+    "name": "default",
+    "defs": 25
+   },
+   {
+    "draw": 9,
+    "path": "crates/matcher/src/lib.rs",
+    "line": 1368,
+    "name": "line_terminator",
+    "defs": 10
+   },
+   {
+    "draw": 10,
+    "path": "crates/core/flags/hiargs.rs",
+    "line": 627,
+    "name": "printer_standard",
+    "defs": 1
+   },
+   {
+    "draw": 11,
+    "path": "crates/searcher/src/sink.rs",
+    "line": 340,
+    "name": "SinkFinish",
+    "defs": 1
+   },
+   {
+    "draw": 12,
+    "path": "crates/ignore/src/overrides.rs",
+    "line": 97,
+    "name": "matched",
+    "defs": 17
+   },
+   {
+    "draw": 13,
+    "path": "crates/printer/src/hyperlink/mod.rs",
+    "line": 700,
+    "name": "inactive",
+    "defs": 1
+   },
+   {
+    "draw": 14,
+    "path": "crates/core/search.rs",
+    "line": 450,
+    "name": "search_reader",
+    "defs": 4
+   },
+   {
+    "draw": 15,
+    "path": "crates/regex/src/ban.rs",
+    "line": 61,
+    "name": "check",
+    "defs": 2
+   },
+   {
+    "draw": 16,
+    "path": "crates/regex/src/config.rs",
+    "line": 344,
+    "name": "line_anchor_start",
+    "defs": 1
+   },
+   {
+    "draw": 17,
+    "path": "crates/globset/src/lib.rs",
+    "line": 935,
+    "name": "RequiredExtensionStrategy",
+    "defs": 1
+   },
+   {
+    "draw": 18,
+    "path": "crates/ignore/src/pathutil.rs",
+    "line": 56,
+    "name": "is_hidden_entry",
+    "defs": 1
+   },
+   {
+    "draw": 19,
+    "path": "crates/core/logger.rs",
+    "line": 16,
+    "name": "Logger",
+    "defs": 1
+   },
+   {
+    "draw": 20,
+    "path": "crates/regex/src/strip.rs",
+    "line": 132,
+    "name": "roundtrip_crlf",
+    "defs": 1
+   },
+   {
+    "draw": 21,
+    "path": "crates/printer/src/color.rs",
+    "line": 242,
+    "name": "line",
+    "defs": 2
+   },
+   {
+    "draw": 22,
+    "path": "crates/ignore/src/dir.rs",
+    "line": 1118,
+    "name": "resolve_git_commondir",
+    "defs": 1
+   },
+   {
+    "draw": 23,
+    "path": "crates/regex/src/non_matching.rs",
+    "line": 141,
+    "name": "literal",
+    "defs": 3
+   }
+  ]
+ },
+ "excalidraw": {
+  "head": "a2ec2889babf7d2295469c6d90ebe77fae57df84",
+  "seed": 287,
+  "files": 408,
+  "draws": [
+   {
+    "draw": 0,
+    "path": "packages/excalidraw/data/filesystem.ts",
+    "line": 49,
+    "name": "checkForFile",
+    "defs": 1
+   },
+   {
+    "draw": 1,
+    "path": "packages/excalidraw/subset/woff2/woff2-bindings.ts",
+    "line": 3040,
+    "name": "nullFunc_viiiii",
+    "defs": 1
+   },
+   {
+    "draw": 2,
+    "path": "packages/excalidraw/polyfill.ts",
+    "line": 1,
+    "name": "polyfill",
+    "defs": 1
+   },
+   {
+    "draw": 3,
+    "path": "packages/excalidraw/components/ExcalidrawLogo.tsx",
+    "line": 17,
+    "name": "LogoText",
+    "defs": 1
+   },
+   {
+    "draw": 4,
+    "path": "packages/excalidraw/emitter.ts",
+    "line": 5,
+    "name": "Emitter",
+    "defs": 1
+   },
+   {
+    "draw": 5,
+    "path": "packages/excalidraw/queue.ts",
+    "line": 13,
+    "name": "Queue",
+    "defs": 1
+   },
+   {
+    "draw": 6,
+    "path": "packages/excalidraw/reactUtils.ts",
+    "line": 33,
+    "name": "isRenderThrottlingEnabled",
+    "defs": 1
+   },
+   {
+    "draw": 7,
+    "path": "packages/excalidraw/element/flowchart.ts",
+    "line": 42,
+    "name": "getLinkDirectionFromKey",
+    "defs": 1
+   },
+   {
+    "draw": 8,
+    "path": "packages/math/vector.ts",
+    "line": 92,
+    "name": "vectorSubtract",
+    "defs": 1
+   },
+   {
+    "draw": 9,
+    "path": "packages/excalidraw/i18n.ts",
+    "line": 166,
+    "name": "useI18n",
+    "defs": 1
+   },
+   {
+    "draw": 10,
+    "path": "packages/excalidraw/components/App.tsx",
+    "line": 522,
+    "name": "useDevice",
+    "defs": 1
+   },
+   {
+    "draw": 11,
+    "path": "packages/excalidraw/context/ui-appState.ts",
+    "line": 5,
+    "name": "useUIAppState",
+    "defs": 1
+   },
+   {
+    "draw": 12,
+    "path": "packages/excalidraw/components/ToolButton.tsx",
+    "line": 77,
+    "name": "onClick",
+    "defs": 1
+   },
+   {
+    "draw": 13,
+    "path": "packages/excalidraw/components/canvases/NewElementCanvas.tsx",
+    "line": 21,
+    "name": "NewElementCanvas",
+    "defs": 1
+   },
+   {
+    "draw": 14,
+    "path": "packages/excalidraw/zindex.ts",
+    "line": 156,
+    "name": "indexFilter",
+    "defs": 1
+   },
+   {
+    "draw": 15,
+    "path": "packages/excalidraw/index.tsx",
+    "line": 86,
+    "name": "importPolyfill",
+    "defs": 1
+   },
+   {
+    "draw": 16,
+    "path": "packages/excalidraw/actions/shortcuts.ts",
+    "line": 119,
+    "name": "getShortcutFromShortcutName",
+    "defs": 1
+   },
+   {
+    "draw": 17,
+    "path": "packages/math/segment.ts",
+    "line": 160,
+    "name": "lineSegmentIntersectionPoints",
+    "defs": 1
+   },
+   {
+    "draw": 18,
+    "path": "packages/excalidraw/components/PublishLibrary.tsx",
+    "line": 341,
+    "name": "renderLibraryItems",
+    "defs": 1
+   },
+   {
+    "draw": 19,
+    "path": "packages/excalidraw/components/SVGLayer.tsx",
+    "line": 10,
+    "name": "SVGLayer",
+    "defs": 1
+   },
+   {
+    "draw": 20,
+    "path": "packages/excalidraw/components/welcome-screen/WelcomeScreen.tsx",
+    "line": 6,
+    "name": "WelcomeScreen",
+    "defs": 1
+   },
+   {
+    "draw": 21,
+    "path": "packages/excalidraw/element/typeChecks.ts",
+    "line": 332,
+    "name": "isBounds",
+    "defs": 1
+   },
+   {
+    "draw": 22,
+    "path": "packages/excalidraw/components/OverwriteConfirm/OverwriteConfirmState.ts",
+    "line": 22,
+    "name": "openConfirmModal",
+    "defs": 1
+   },
+   {
+    "draw": 23,
+    "path": "packages/math/range.ts",
+    "line": 21,
+    "name": "rangeInclusiveFromPair",
+    "defs": 1
+   }
+  ]
+ }
+}
