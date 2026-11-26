@@ -1,6 +1,6 @@
 {
   "all": {
-    "mrr": 0.5016865079365079,
+    "mrr": 0.5010251322751322,
     "queries": 36,
     "recall_at_1": 0.3611111111111111,
     "recall_at_10": 0.8888888888888888
@@ -13,7 +13,7 @@
       "recall_at_10": 1.0
     },
     "history-title": {
-      "mrr": 0.4818080357142857,
+      "mrr": 0.4810639880952381,
       "queries": 32,
       "recall_at_1": 0.34375,
       "recall_at_10": 0.875
@@ -22,7 +22,7 @@
   "engine": "codecite",
   "groups": {
     "history": {
-      "mrr": 0.5016865079365079,
+      "mrr": 0.5010251322751322,
       "queries": 36,
       "recall_at_1": 0.3611111111111111,
       "recall_at_10": 0.8888888888888888
@@ -102,7 +102,7 @@
     {
       "class": "history-title",
       "id": "blind-peer-review-pr126-title",
-      "rank": 6,
+      "rank": 7,
       "text": "fix(lenses): align personas with the CI tool contract and the manifest",
       "top": "blind-peer-review@39e9e62aacec63b9df3416cb355ca40408a31dce:scripts/vendor.mjs#L50"
     },
