@@ -50,7 +50,9 @@ struct Cli {
 enum HookAgent {
     /// Claude Code hooks.
     #[command(after_long_help = "Examples:
-  codecite hook claude session-start < hook-input.json")]
+  codecite hook claude session-start < hook-input.json
+  codecite hook claude post-tool-use < grep-call.json
+  codecite hook claude pre-tool-use < edit-call.json")]
     Claude {
         /// The hook event, as Claude Code names it in kebab case.
         #[arg(value_enum)]
@@ -421,6 +423,8 @@ Add it to an agent's MCP config as the command `codecite` with the argument `mcp
         subcommand,
         after_long_help = "Examples:
   echo '{\"cwd\": \".\"}' | codecite hook claude session-start
+  echo '{\"tool_name\": \"Grep\", \"tool_input\": {\"pattern\": \"hello\"}}' | codecite hook claude post-tool-use
+  echo '{\"session_id\": \"s1\", \"tool_name\": \"Write\", \"tool_input\": {\"file_path\": \"src/a.py\", \"content\": \"\"}}' | codecite hook claude pre-tool-use
 Set CODECITE_HOOK_DEBUG=1 to print the error that made a hook say nothing."
     )]
     Hook(HookAgent),
