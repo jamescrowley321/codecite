@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "codecite": { "command": "codecite", "args": ["mcp"] }
+  }
+}

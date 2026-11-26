@@ -1,0 +1,7 @@
+{
+  "name": "codecite",
+  "version": "0.0.1",
+  "description": "Cited code and spec search for agents: skill, MCP tools and a session note.",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/jamescrowley321/codecite"
+}
