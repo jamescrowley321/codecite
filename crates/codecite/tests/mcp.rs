@@ -188,6 +188,35 @@ fn corpora_prints_the_corpora_as_json() {
     assert_eq!(out.stdout, b"{\"corpora\":[]}\n");
 }
 
+#[test]
+fn corpora_for_prints_only_the_matching_corpus() {
+    // The fixture's `app` source is rooted at `/src/app`, which doesn't
+    // exist here; a root that has vanished is compared as stored.
+    let home = data_home();
+    let out = codecite()
+        .args(["corpora", "--for", "/src/app/src"])
+        .env("XDG_DATA_HOME", home.path())
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let listed: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(listed["corpora"].as_array().unwrap().len(), 1);
+    assert_eq!(listed["corpora"][0]["corpus"], "demo");
+    assert_eq!(listed["corpora"][0]["local_root"], "/src/app");
+    assert_eq!(
+        listed["corpora"][0]["source_names"],
+        json!(["app", "house-rules", "rfc9449"])
+    );
+
+    let out = codecite()
+        .args(["corpora", "--for", "/src/application"])
+        .env("XDG_DATA_HOME", home.path())
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(out.stdout, b"{\"corpora\":[]}\n");
+}
+
 /// A running `codecite mcp` over the data home `home`.
 struct Session {
     child: Child,

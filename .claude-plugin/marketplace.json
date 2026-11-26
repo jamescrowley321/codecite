@@ -1,0 +1,11 @@
+{
+  "name": "codecite",
+  "owner": { "name": "codecite" },
+  "plugins": [
+    {
+      "name": "codecite",
+      "source": "./plugins/codecite",
+      "description": "Cited code and spec search for agents: skill, MCP tools and a session note."
+    }
+  ]
+}

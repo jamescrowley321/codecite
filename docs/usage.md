@@ -1077,11 +1077,60 @@ export default function (pi: ExtensionAPI) {
 `pi.exec` passes no stdin, so the extension pipes the result text in
 through `sh`, with every value an argument rather than part of the script.
 
+## Install the Claude Code plugin
+
+The plugin is one option for wiring codecite into Claude Code; the recipes
+above and `claude mcp add` do the same by hand. Install the `codecite` binary
+first (the plugin runs `codecite` from `PATH`), then in Claude Code:
+
+```
+/plugin marketplace add jamescrowley321/codecite
+/plugin install codecite
+```
+
+A binary older than the plugin has no `codecite hook` command, so session
+start shows a hook error until you upgrade; it never blocks the session.
+
+It adds three things:
+
+- a skill that says when codecite beats grep and which commands to use;
+- the MCP server, `codecite mcp`, so the tools in "Connect an agent" are
+  native tools;
+- a session note: on session start, a `SessionStart` hook runs
+  `codecite hook claude session-start`, which adds the agent snippet (see
+  "Tell your agent") naming the corpus for the session's directory.
+
+The hook picks the corpus in this order:
+
+1. `CODECITE_CORPUS`, when set and not empty. It is used alone: if that
+   corpus is missing or unreadable, the hook prints nothing. Only when it is
+   unset or empty does the hook go on to step 2.
+2. The one corpus with a local source whose root contains the session's
+   directory (`codecite corpora --for <cwd>`).
+3. The only readable corpus, when there is exactly one and no corpus matched
+   the directory.
+
+When several corpora index the directory, the note says so and asks you to
+set `CODECITE_CORPUS`. When the chosen corpus is stale, the note says queries
+fail unless they pass `allow_stale` and gives the `codecite index` command to
+re-index. With no corpus to name, the hook prints nothing. It never fails the
+session; set `CODECITE_HOOK_DEBUG` to see its errors on stderr.
+
+The plugin runs the session note only. It does not push rules on every edit
+or add codecite to the agent's own searches; for those, use the recipes in
+"Push the rules on every edit" and "Add codecite to the agent's own
+searches".
+
 ## List corpora
 
 ```sh
 codecite corpora
 ```
+
+`codecite corpora --for <path>` lists only the corpora with a local source
+whose root contains the path (the path need not exist; symlinks are
+resolved). Each entry also has `local_root`, the matched root, and
+`source_names`, every source name the corpus holds.
 
 ```json
 {"corpora":[{"age_days":0.0,"corpus":"identity","indexed_at":"2026-10-20T22:56:30Z","max_age_days":30,"pins_stale":false,"size_bytes":41594880,"sources":40,"stale":false}]}
