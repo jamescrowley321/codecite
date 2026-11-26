@@ -268,11 +268,14 @@ impl Store {
         for site in sites.into_iter().take(limit) {
             if let std::collections::hash_map::Entry::Vacant(entry) = texts.entry(site.document_id)
             {
-                let text: Option<String> = self.conn.query_row(
-                    "SELECT text FROM document WHERE id = ?1",
-                    [site.document_id],
-                    |row| row.get(0),
-                )?;
+                let text: Option<String> = self
+                    .conn
+                    .query_row(
+                        "SELECT text FROM document_text WHERE document_id = ?1",
+                        [site.document_id],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
                 entry.insert(text.unwrap_or_default());
             }
             let lines = file_lines(&texts[&site.document_id]);

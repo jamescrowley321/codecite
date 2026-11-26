@@ -423,9 +423,10 @@ impl Store {
         let mut stmt = self.conn.prepare_cached(
             "SELECT s.id, s.name, s.revision, s.license_class, s.indexed_at,
                     c.number, c.title, c.strength,
-                    coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))
+                    coalesce(c.text, codecite_lines(t.text, c.start_line, c.end_line))
              FROM source s
              JOIN document d ON d.source_id = s.id
+             LEFT JOIN document_text t ON t.document_id = d.id
              JOIN chunk c ON c.document_id = d.id
              WHERE s.guidance AND s.is_current AND c.kind = 'section'
                AND c.number IS NOT NULL AND c.strength IS NOT NULL

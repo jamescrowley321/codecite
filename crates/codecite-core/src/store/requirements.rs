@@ -336,8 +336,9 @@ impl Store {
     fn version_chunks(&self, source_id: i64, kind: &str) -> Result<Vec<Chunk>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT c.id, c.number, c.title, c.parent_id, c.start_line, c.end_line,
-               coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))
+               coalesce(c.text, codecite_lines(t.text, c.start_line, c.end_line))
              FROM chunk c JOIN document d ON d.id = c.document_id
+             LEFT JOIN document_text t ON t.document_id = d.id
              WHERE d.source_id = ?1 AND c.kind = ?2 AND c.number IS NOT NULL
              ORDER BY c.id",
         )?;

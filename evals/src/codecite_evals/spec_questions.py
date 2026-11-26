@@ -182,16 +182,18 @@ def sections(db):
     """Every current spec section's text and its steps, by document and number.
 
     A section of a document that keeps its text stores none of its own
-    (#249), so its text is cut from the document's lines, as codecite reads it.
+    (#249), so its text is cut from the document's lines in `document_text`
+    (#308), as codecite reads it.
     """
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     rows = con.execute(
         """
         SELECT s.name, sec.number,
-               coalesce(sec.text, d.text), sec.text IS NULL, sec.start_line, sec.end_line,
+               coalesce(sec.text, t.text), sec.text IS NULL, sec.start_line, sec.end_line,
                step.number
         FROM chunk sec
         JOIN document d ON d.id = sec.document_id
+        LEFT JOIN document_text t ON t.document_id = d.id
         JOIN source s ON s.id = d.source_id
         LEFT JOIN chunk step ON step.parent_id = sec.id AND step.kind = 'step'
         WHERE s.kind = 'document' AND s.is_current = 1 AND sec.kind = 'section'

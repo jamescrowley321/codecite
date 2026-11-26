@@ -1,7 +1,7 @@
 //! A chunk's text as a line range of its document's stored text.
 //!
 //! A code file or generic document keeps its whole text in
-//! `document.text`, and each of its chunks is a run of whole lines of it,
+//! `document_text.text`, and each of its chunks is a run of whole lines of it,
 //! so `chunk.text` is NULL for them and is cut from the document's text
 //! when a reader needs it. Lines are counted as the index's chunker counts
 //! them: each `\n` ends a line, a final `\n` starts no empty one, and a

@@ -1189,9 +1189,10 @@ mod tests {
             };
             Contents {
                 documents: rows(
-                    "SELECT path, language, hex(content_hash), size_bytes, dirty, text,
-                            chunker_version, terms_version
-                     FROM document ORDER BY path",
+                    "SELECT d.path, d.language, hex(d.content_hash), d.size_bytes, d.dirty,
+                            t.text, d.chunker_version, d.terms_version
+                     FROM document d LEFT JOIN document_text t ON t.document_id = d.id
+                     ORDER BY d.path",
                 ),
                 chunks: rows(
                     "SELECT d.path, c.start_line, c.end_line, c.kind, c.symbol_id, c.number,
@@ -1811,7 +1812,8 @@ mod tests {
         let text: String = corpus
             .sql()
             .query_row(
-                "SELECT text FROM document WHERE path = 'src/lib.rs'",
+                "SELECT t.text FROM document d JOIN document_text t ON t.document_id = d.id
+                 WHERE d.path = 'src/lib.rs'",
                 [],
                 |row| row.get(0),
             )
@@ -2762,9 +2764,12 @@ mod tests {
     fn generic_rows(corpus: &Corpus) -> GenericRows {
         let conn = corpus.sql();
         let document = conn
-            .query_row("SELECT language, text FROM document", [], |row| {
-                Ok((row.get(0)?, row.get(1)?))
-            })
+            .query_row(
+                "SELECT d.language, t.text FROM document d
+                 LEFT JOIN document_text t ON t.document_id = d.id",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
             .unwrap();
         let mut stmt = conn
             .prepare("SELECT kind, number, anchor, title FROM chunk ORDER BY id")

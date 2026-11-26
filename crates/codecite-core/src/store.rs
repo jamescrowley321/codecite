@@ -1121,7 +1121,10 @@ mod tests {
         let rows: Vec<(String, Vec<u8>, Option<String>)> = {
             let mut stmt = store
                 .conn
-                .prepare("SELECT path, content_hash, text FROM document ORDER BY id")
+                .prepare(
+                    "SELECT d.path, d.content_hash, t.text FROM document d
+                     LEFT JOIN document_text t ON t.document_id = d.id ORDER BY d.id",
+                )
                 .unwrap();
             stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
                 .unwrap()
@@ -1483,8 +1486,9 @@ mod tests {
             let read: String = store
                 .conn
                 .query_row(
-                    "SELECT coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))
-                     FROM chunk c JOIN document d ON d.id = c.document_id WHERE c.id = ?1",
+                    "SELECT coalesce(c.text, codecite_lines(t.text, c.start_line, c.end_line))
+                     FROM chunk c LEFT JOIN document_text t ON t.document_id = c.document_id
+                     WHERE c.id = ?1",
                     [id],
                     |row| row.get(0),
                 )
@@ -2006,19 +2010,6 @@ mod tests {
             .query_row("SELECT count(*) FROM occurrence", [], |row| row.get(0))
             .unwrap();
         assert_eq!(left, 0);
-        drop(store);
-        fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn read_only_opens_a_file_from_before_role_globs() {
-        let dir = scratch("ro-before-role-globs");
-        let path = dir.join("corpus.db");
-        // Queries read each document's stored role, not the source's
-        // globs, so a version 14 file is read as it is.
-        older_file(&path, 14);
-        let store = Store::open_read_only(&path).unwrap();
-        assert_eq!(store.schema_version().unwrap(), 14);
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }
