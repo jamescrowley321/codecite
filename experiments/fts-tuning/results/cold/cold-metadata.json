@@ -1,7 +1,10 @@
 {
   "query_sha256": "d95fc5b9d8a9808dfca674607c2de252df32890c02c4a15dfce98f2fdcb5d2fc",
   "corpora": [
-    "fhir"
+    "fhir",
+    "linux",
+    "keycloak",
+    "kubernetes"
   ],
   "rounds": 5,
   "seed": 255,
