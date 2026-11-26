@@ -1,0 +1,2846 @@
+{
+ "citations": {
+  "checked": 1038,
+  "resolved": 1038
+ },
+ "quality": [
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "ambiguous",
+   "cases": 2,
+   "n": 0,
+   "outcomes": {
+    "unscored": 2
+   }
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "exact",
+   "cases": 12,
+   "n": 7,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "unscored": 5,
+    "hit": 7
+   }
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "no-result",
+   "cases": 2,
+   "n": 0,
+   "outcomes": {
+    "correct-empty": 2
+   }
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "qualified",
+   "cases": 3,
+   "n": 3,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 3
+   }
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "ambiguous",
+   "cases": 2,
+   "n": 0,
+   "outcomes": {
+    "unscored": 2
+   }
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "behaviour",
+   "cases": 2,
+   "n": 2,
+   "hit@1": 0.0,
+   "hit@10": 0.0,
+   "mrr@10": 0.0,
+   "outcomes": {
+    "rank:below-cut": 2
+   }
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "broad",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "unscored": 1
+   }
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "exact",
+   "cases": 12,
+   "n": 7,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "unscored": 5,
+    "hit": 7
+   }
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "no-result",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "correct-empty": 1
+   }
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "path",
+   "cases": 1,
+   "n": 1,
+   "hit@1": 0.0,
+   "hit@10": 1.0,
+   "mrr@10": 0.5,
+   "outcomes": {
+    "rank:in-output": 1
+   }
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "qualified",
+   "cases": 3,
+   "n": 3,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 3
+   }
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "term",
+   "cases": 1,
+   "n": 1,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 1
+   }
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "ambiguous",
+   "cases": 2,
+   "n": 0,
+   "outcomes": {
+    "unscored": 2
+   }
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "exact",
+   "cases": 12,
+   "n": 7,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "unscored": 5,
+    "hit": 7
+   }
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "no-result",
+   "cases": 2,
+   "n": 0,
+   "outcomes": {
+    "correct-empty": 2
+   }
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "qualified",
+   "cases": 3,
+   "n": 3,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 3
+   }
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "ambiguous",
+   "cases": 2,
+   "n": 0,
+   "outcomes": {
+    "unscored": 2
+   }
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "behaviour",
+   "cases": 2,
+   "n": 2,
+   "hit@1": 0.0,
+   "hit@10": 0.0,
+   "mrr@10": 0.0,
+   "outcomes": {
+    "unresolved": 2
+   }
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "broad",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "unscored": 1
+   }
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "exact",
+   "cases": 12,
+   "n": 7,
+   "hit@1": 0.8571428571428571,
+   "hit@10": 1.0,
+   "mrr@10": 0.9285714285714286,
+   "outcomes": {
+    "unscored": 5,
+    "hit": 6,
+    "rank:in-output": 1
+   }
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "no-result",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "correct-empty": 1
+   }
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "qualified",
+   "cases": 3,
+   "n": 3,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 3
+   }
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "term",
+   "cases": 1,
+   "n": 1,
+   "hit@1": 0.0,
+   "hit@10": 0.0,
+   "mrr@10": 0.0,
+   "outcomes": {
+    "unresolved": 1
+   }
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "ambiguous",
+   "cases": 2,
+   "n": 0,
+   "outcomes": {
+    "unscored": 2
+   }
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "exact",
+   "cases": 12,
+   "n": 11,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 11,
+    "unscored": 1
+   }
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "no-result",
+   "cases": 2,
+   "n": 0,
+   "outcomes": {
+    "correct-empty": 2
+   }
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "ambiguous",
+   "cases": 2,
+   "n": 0,
+   "outcomes": {
+    "unscored": 2
+   }
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "behaviour",
+   "cases": 4,
+   "n": 4,
+   "hit@1": 0.25,
+   "hit@10": 0.5,
+   "mrr@10": 0.3333333333333333,
+   "outcomes": {
+    "rank:below-cut": 2,
+    "rank:in-output": 1,
+    "hit": 1
+   }
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "broad",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "unscored": 1
+   }
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "exact",
+   "cases": 12,
+   "n": 11,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 11,
+    "unscored": 1
+   }
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "no-result",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "correct-empty": 1
+   }
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "path",
+   "cases": 2,
+   "n": 2,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 2
+   }
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "term",
+   "cases": 1,
+   "n": 1,
+   "hit@1": 0.0,
+   "hit@10": 0.0,
+   "mrr@10": 0.0,
+   "outcomes": {
+    "rank:below-cut": 1
+   }
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "ambiguous",
+   "cases": 2,
+   "n": 0,
+   "outcomes": {
+    "unscored": 2
+   }
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "exact",
+   "cases": 12,
+   "n": 11,
+   "hit@1": 0.9090909090909091,
+   "hit@10": 0.9090909090909091,
+   "mrr@10": 0.9090909090909091,
+   "outcomes": {
+    "hit": 10,
+    "unscored": 1,
+    "extraction:not-a-definition": 1
+   }
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "no-result",
+   "cases": 2,
+   "n": 0,
+   "outcomes": {
+    "correct-empty": 2
+   }
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "ambiguous",
+   "cases": 2,
+   "n": 0,
+   "outcomes": {
+    "unscored": 2
+   }
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "behaviour",
+   "cases": 4,
+   "n": 4,
+   "hit@1": 0.0,
+   "hit@10": 0.0,
+   "mrr@10": 0.0,
+   "outcomes": {
+    "unresolved": 4
+   }
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "broad",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "unscored": 1
+   }
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "exact",
+   "cases": 12,
+   "n": 11,
+   "hit@1": 0.9090909090909091,
+   "hit@10": 0.9090909090909091,
+   "mrr@10": 0.9090909090909091,
+   "outcomes": {
+    "hit": 10,
+    "unscored": 1,
+    "extraction:not-a-definition": 1
+   }
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "no-result",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "correct-empty": 1
+   }
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "term",
+   "cases": 1,
+   "n": 1,
+   "hit@1": 0.0,
+   "hit@10": 0.0,
+   "mrr@10": 0.0,
+   "outcomes": {
+    "extraction:not-a-definition": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "ambiguous",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "unscored": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "exact",
+   "cases": 6,
+   "n": 6,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 6
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "no-result",
+   "cases": 2,
+   "n": 0,
+   "outcomes": {
+    "correct-empty": 2
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "qualified",
+   "cases": 3,
+   "n": 3,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 3
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "ambiguous",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "unscored": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "behaviour",
+   "cases": 5,
+   "n": 5,
+   "hit@1": 0.0,
+   "hit@10": 1.0,
+   "mrr@10": 0.4166666666666667,
+   "outcomes": {
+    "rank:in-output": 5
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "exact",
+   "cases": 6,
+   "n": 6,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 6
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "no-result",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "correct-empty": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "path",
+   "cases": 2,
+   "n": 2,
+   "hit@1": 0.0,
+   "hit@10": 1.0,
+   "mrr@10": 0.5,
+   "outcomes": {
+    "rank:in-output": 2
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "qualified",
+   "cases": 3,
+   "n": 3,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 3
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "ambiguous",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "unscored": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "exact",
+   "cases": 6,
+   "n": 6,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 6
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "no-result",
+   "cases": 2,
+   "n": 0,
+   "outcomes": {
+    "correct-empty": 2
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "qualified",
+   "cases": 3,
+   "n": 3,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 3
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "ambiguous",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "unscored": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "behaviour",
+   "cases": 5,
+   "n": 5,
+   "hit@1": 0.0,
+   "hit@10": 0.4,
+   "mrr@10": 0.16666666666666666,
+   "outcomes": {
+    "unresolved": 3,
+    "rank:in-output": 2
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "exact",
+   "cases": 6,
+   "n": 6,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 6
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "no-result",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "correct-empty": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "qualified",
+   "cases": 3,
+   "n": 3,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 3
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "ambiguous",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "unscored": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "exact",
+   "cases": 6,
+   "n": 6,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 6
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "no-result",
+   "cases": 2,
+   "n": 0,
+   "outcomes": {
+    "correct-empty": 2
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "qualified",
+   "cases": 3,
+   "n": 3,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 3
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "ambiguous",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "unscored": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "behaviour",
+   "cases": 5,
+   "n": 5,
+   "hit@1": 0.4,
+   "hit@10": 0.8,
+   "mrr@10": 0.55,
+   "outcomes": {
+    "hit": 2,
+    "rank:in-output": 2,
+    "rank:below-cut": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "exact",
+   "cases": 6,
+   "n": 6,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 6
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "no-result",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "correct-empty": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "path",
+   "cases": 2,
+   "n": 2,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 2
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "qualified",
+   "cases": 3,
+   "n": 3,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 3
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "ambiguous",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "unscored": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "exact",
+   "cases": 6,
+   "n": 6,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 6
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "no-result",
+   "cases": 2,
+   "n": 0,
+   "outcomes": {
+    "correct-empty": 2
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "qualified",
+   "cases": 3,
+   "n": 3,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 3
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "ambiguous",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "unscored": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "behaviour",
+   "cases": 5,
+   "n": 5,
+   "hit@1": 0.0,
+   "hit@10": 0.2,
+   "mrr@10": 0.03333333333333333,
+   "outcomes": {
+    "unresolved": 4,
+    "rank:in-output": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "exact",
+   "cases": 6,
+   "n": 6,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 6
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "no-result",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "correct-empty": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "qualified",
+   "cases": 3,
+   "n": 3,
+   "hit@1": 0.6666666666666666,
+   "hit@10": 1.0,
+   "mrr@10": 0.8333333333333334,
+   "outcomes": {
+    "hit": 2,
+    "rank:in-output": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "ambiguous",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "unscored": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "exact",
+   "cases": 6,
+   "n": 6,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 6
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "no-result",
+   "cases": 2,
+   "n": 0,
+   "outcomes": {
+    "correct-empty": 2
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "qualified",
+   "cases": 3,
+   "n": 3,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 3
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "ambiguous",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "unscored": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "behaviour",
+   "cases": 5,
+   "n": 5,
+   "hit@1": 0.0,
+   "hit@10": 0.6,
+   "mrr@10": 0.23333333333333334,
+   "outcomes": {
+    "rank:below-cut": 2,
+    "rank:in-output": 3
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "exact",
+   "cases": 6,
+   "n": 6,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 6
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "no-result",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "correct-empty": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "path",
+   "cases": 2,
+   "n": 2,
+   "hit@1": 0.0,
+   "hit@10": 0.5,
+   "mrr@10": 0.25,
+   "outcomes": {
+    "rank:below-cut": 1,
+    "rank:in-output": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "qualified",
+   "cases": 3,
+   "n": 3,
+   "hit@1": 0.3333333333333333,
+   "hit@10": 1.0,
+   "mrr@10": 0.5555555555555555,
+   "outcomes": {
+    "rank:in-output": 2,
+    "hit": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "ambiguous",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "unscored": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "exact",
+   "cases": 6,
+   "n": 6,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 6
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "no-result",
+   "cases": 2,
+   "n": 0,
+   "outcomes": {
+    "correct-empty": 2
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "qualified",
+   "cases": 3,
+   "n": 3,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 3
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "ambiguous",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "unscored": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "behaviour",
+   "cases": 5,
+   "n": 5,
+   "hit@1": 0.0,
+   "hit@10": 0.2,
+   "mrr@10": 0.04,
+   "outcomes": {
+    "unresolved": 4,
+    "rank:in-output": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "exact",
+   "cases": 6,
+   "n": 6,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 6
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "no-result",
+   "cases": 1,
+   "n": 0,
+   "outcomes": {
+    "correct-empty": 1
+   }
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "qualified",
+   "cases": 3,
+   "n": 3,
+   "hit@1": 1.0,
+   "hit@10": 1.0,
+   "mrr@10": 1.0,
+   "outcomes": {
+    "hit": 3
+   }
+  }
+ ],
+ "timing": [
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "ambiguous",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 13.060051,
+   "p95_ms": 18.987927,
+   "errors": 0,
+   "median_stdout_bytes": 30341
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "exact",
+   "samples": 72,
+   "queries": 12,
+   "p50_ms": 4.828038,
+   "p95_ms": 6.265707,
+   "errors": 0,
+   "median_stdout_bytes": 2483
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "no-result",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 5.079523,
+   "p95_ms": 6.530316,
+   "errors": 0,
+   "median_stdout_bytes": 0
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "qualified",
+   "samples": 18,
+   "queries": 3,
+   "p50_ms": 5.536479,
+   "p95_ms": 13.837486,
+   "errors": 0,
+   "median_stdout_bytes": 1416
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "ambiguous",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 82.657927,
+   "p95_ms": 101.911006,
+   "errors": 0,
+   "median_stdout_bytes": 3583
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "behaviour",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 44.054462,
+   "p95_ms": 70.620637,
+   "errors": 0,
+   "median_stdout_bytes": 5527
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "broad",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 28.266934,
+   "p95_ms": 31.30658,
+   "errors": 0,
+   "median_stdout_bytes": 5664
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "exact",
+   "samples": 72,
+   "queries": 12,
+   "p50_ms": 39.885551,
+   "p95_ms": 99.764916,
+   "errors": 0,
+   "median_stdout_bytes": 7032
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "no-result",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 5.22052,
+   "p95_ms": 6.1942,
+   "errors": 0,
+   "median_stdout_bytes": 15
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "path",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 15.922073,
+   "p95_ms": 17.822084,
+   "errors": 0,
+   "median_stdout_bytes": 7647
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "qualified",
+   "samples": 18,
+   "queries": 3,
+   "p50_ms": 80.87187,
+   "p95_ms": 152.417594,
+   "errors": 0,
+   "median_stdout_bytes": 17111
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "term",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 9.404798,
+   "p95_ms": 12.619665,
+   "errors": 0,
+   "median_stdout_bytes": 17132
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "ambiguous",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 314.335815,
+   "p95_ms": 613.756804,
+   "errors": 0,
+   "median_stdout_bytes": 9180
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "exact",
+   "samples": 72,
+   "queries": 12,
+   "p50_ms": 307.169893,
+   "p95_ms": 512.128967,
+   "errors": 0,
+   "median_stdout_bytes": 3965
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "no-result",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 434.043867,
+   "p95_ms": 944.790246,
+   "errors": 0,
+   "median_stdout_bytes": 54
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "qualified",
+   "samples": 18,
+   "queries": 3,
+   "p50_ms": 306.068639,
+   "p95_ms": 417.87336,
+   "errors": 0,
+   "median_stdout_bytes": 1985
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "ambiguous",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 297.56725,
+   "p95_ms": 357.857174,
+   "errors": 0,
+   "median_stdout_bytes": 7344
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "behaviour",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 374.458936,
+   "p95_ms": 475.328218,
+   "errors": 0,
+   "median_stdout_bytes": 6437
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "broad",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 309.659783,
+   "p95_ms": 361.989156,
+   "errors": 0,
+   "median_stdout_bytes": 6477
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "exact",
+   "samples": 72,
+   "queries": 12,
+   "p50_ms": 291.900506,
+   "p95_ms": 369.232549,
+   "errors": 0,
+   "median_stdout_bytes": 7213
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "no-result",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 391.536016,
+   "p95_ms": 433.224957,
+   "errors": 0,
+   "median_stdout_bytes": 3
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "qualified",
+   "samples": 18,
+   "queries": 3,
+   "p50_ms": 289.024428,
+   "p95_ms": 395.908996,
+   "errors": 0,
+   "median_stdout_bytes": 741
+  },
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "term",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 428.97479,
+   "p95_ms": 443.639372,
+   "errors": 0,
+   "median_stdout_bytes": 3
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "ambiguous",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 5.123187,
+   "p95_ms": 7.42571,
+   "errors": 0,
+   "median_stdout_bytes": 1487
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "exact",
+   "samples": 72,
+   "queries": 12,
+   "p50_ms": 4.941838,
+   "p95_ms": 7.013048,
+   "errors": 0,
+   "median_stdout_bytes": 992
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "no-result",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 5.091135,
+   "p95_ms": 7.931953,
+   "errors": 0,
+   "median_stdout_bytes": 0
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "ambiguous",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 136.37074,
+   "p95_ms": 230.961671,
+   "errors": 0,
+   "median_stdout_bytes": 5489
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "behaviour",
+   "samples": 24,
+   "queries": 4,
+   "p50_ms": 561.409433,
+   "p95_ms": 956.728199,
+   "errors": 0,
+   "median_stdout_bytes": 9826
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "broad",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 171.028572,
+   "p95_ms": 380.720157,
+   "errors": 0,
+   "median_stdout_bytes": 5068
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "exact",
+   "samples": 72,
+   "queries": 12,
+   "p50_ms": 274.034462,
+   "p95_ms": 773.888887,
+   "errors": 0,
+   "median_stdout_bytes": 11776
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "no-result",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 5.575854,
+   "p95_ms": 6.491746,
+   "errors": 0,
+   "median_stdout_bytes": 15
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "path",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 89.537373,
+   "p95_ms": 231.60878,
+   "errors": 0,
+   "median_stdout_bytes": 7620
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "term",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 6.611049,
+   "p95_ms": 7.835465,
+   "errors": 0,
+   "median_stdout_bytes": 22667
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "ambiguous",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 706.008835,
+   "p95_ms": 933.821781,
+   "errors": 0,
+   "median_stdout_bytes": 871
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "exact",
+   "samples": 72,
+   "queries": 12,
+   "p50_ms": 732.997193,
+   "p95_ms": 2141.426212,
+   "errors": 0,
+   "median_stdout_bytes": 1033
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "no-result",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 2091.277599,
+   "p95_ms": 4235.411331,
+   "errors": 0,
+   "median_stdout_bytes": 54
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "ambiguous",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 787.73468,
+   "p95_ms": 890.709056,
+   "errors": 0,
+   "median_stdout_bytes": 1112
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "behaviour",
+   "samples": 24,
+   "queries": 4,
+   "p50_ms": 1278.18529,
+   "p95_ms": 1790.677591,
+   "errors": 0,
+   "median_stdout_bytes": 5794
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "broad",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 800.187429,
+   "p95_ms": 1886.625334,
+   "errors": 0,
+   "median_stdout_bytes": 6103
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "exact",
+   "samples": 72,
+   "queries": 12,
+   "p50_ms": 725.156323,
+   "p95_ms": 2155.874669,
+   "errors": 0,
+   "median_stdout_bytes": 1230
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "no-result",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 2005.536342,
+   "p95_ms": 2195.731711,
+   "errors": 0,
+   "median_stdout_bytes": 3
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "term",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 688.922463,
+   "p95_ms": 888.266782,
+   "errors": 0,
+   "median_stdout_bytes": 1818
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "ambiguous",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 6.532645,
+   "p95_ms": 7.375141,
+   "errors": 0,
+   "median_stdout_bytes": 70209
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "exact",
+   "samples": 36,
+   "queries": 6,
+   "p50_ms": 4.594718,
+   "p95_ms": 6.140061,
+   "errors": 0,
+   "median_stdout_bytes": 811
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "no-result",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 4.861215,
+   "p95_ms": 5.793322,
+   "errors": 0,
+   "median_stdout_bytes": 0
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "qualified",
+   "samples": 18,
+   "queries": 3,
+   "p50_ms": 4.913336,
+   "p95_ms": 7.458687,
+   "errors": 0,
+   "median_stdout_bytes": 642
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "ambiguous",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 10.804174,
+   "p95_ms": 14.736102,
+   "errors": 0,
+   "median_stdout_bytes": 7835
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "behaviour",
+   "samples": 30,
+   "queries": 5,
+   "p50_ms": 53.916761,
+   "p95_ms": 76.120014,
+   "errors": 0,
+   "median_stdout_bytes": 13414
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "exact",
+   "samples": 36,
+   "queries": 6,
+   "p50_ms": 15.54719,
+   "p95_ms": 33.980629,
+   "errors": 0,
+   "median_stdout_bytes": 12544
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "no-result",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 5.905608,
+   "p95_ms": 6.899291,
+   "errors": 0,
+   "median_stdout_bytes": 15
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "path",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 21.05353,
+   "p95_ms": 26.282986,
+   "errors": 0,
+   "median_stdout_bytes": 12792
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "qualified",
+   "samples": 18,
+   "queries": 3,
+   "p50_ms": 21.192434,
+   "p95_ms": 30.957866,
+   "errors": 0,
+   "median_stdout_bytes": 8410
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "ambiguous",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 192.618043,
+   "p95_ms": 278.02592,
+   "errors": 0,
+   "median_stdout_bytes": 9793
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "exact",
+   "samples": 36,
+   "queries": 6,
+   "p50_ms": 190.923975,
+   "p95_ms": 224.293117,
+   "errors": 0,
+   "median_stdout_bytes": 761
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "no-result",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 228.436456,
+   "p95_ms": 262.412916,
+   "errors": 0,
+   "median_stdout_bytes": 54
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "qualified",
+   "samples": 18,
+   "queries": 3,
+   "p50_ms": 201.147032,
+   "p95_ms": 539.400817,
+   "errors": 0,
+   "median_stdout_bytes": 418
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "ambiguous",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 196.256861,
+   "p95_ms": 332.220685,
+   "errors": 0,
+   "median_stdout_bytes": 5587
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "behaviour",
+   "samples": 30,
+   "queries": 5,
+   "p50_ms": 225.262515,
+   "p95_ms": 294.069074,
+   "errors": 0,
+   "median_stdout_bytes": 5698
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "exact",
+   "samples": 36,
+   "queries": 6,
+   "p50_ms": 178.570853,
+   "p95_ms": 224.372485,
+   "errors": 0,
+   "median_stdout_bytes": 1907
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "no-result",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 212.363418,
+   "p95_ms": 226.010273,
+   "errors": 0,
+   "median_stdout_bytes": 3
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "qualified",
+   "samples": 18,
+   "queries": 3,
+   "p50_ms": 170.674894,
+   "p95_ms": 222.847896,
+   "errors": 0,
+   "median_stdout_bytes": 614
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "ambiguous",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 4.949524,
+   "p95_ms": 6.392404,
+   "errors": 0,
+   "median_stdout_bytes": 4710
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "exact",
+   "samples": 36,
+   "queries": 6,
+   "p50_ms": 4.782088,
+   "p95_ms": 5.791779,
+   "errors": 0,
+   "median_stdout_bytes": 1291
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "no-result",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 4.686807,
+   "p95_ms": 5.49387,
+   "errors": 0,
+   "median_stdout_bytes": 0
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "qualified",
+   "samples": 18,
+   "queries": 3,
+   "p50_ms": 4.867477,
+   "p95_ms": 6.216499,
+   "errors": 0,
+   "median_stdout_bytes": 718
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "ambiguous",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 8.601149,
+   "p95_ms": 9.174971,
+   "errors": 0,
+   "median_stdout_bytes": 4041
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "behaviour",
+   "samples": 30,
+   "queries": 5,
+   "p50_ms": 13.022666,
+   "p95_ms": 16.31066,
+   "errors": 0,
+   "median_stdout_bytes": 11725
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "exact",
+   "samples": 36,
+   "queries": 6,
+   "p50_ms": 9.460896,
+   "p95_ms": 16.772021,
+   "errors": 0,
+   "median_stdout_bytes": 10785
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "no-result",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 5.274863,
+   "p95_ms": 7.312211,
+   "errors": 0,
+   "median_stdout_bytes": 15
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "path",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 12.559398,
+   "p95_ms": 19.575931,
+   "errors": 0,
+   "median_stdout_bytes": 9063
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "qualified",
+   "samples": 18,
+   "queries": 3,
+   "p50_ms": 10.301963,
+   "p95_ms": 15.798331,
+   "errors": 0,
+   "median_stdout_bytes": 9425
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "ambiguous",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 173.922753,
+   "p95_ms": 372.735471,
+   "errors": 0,
+   "median_stdout_bytes": 3609
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "exact",
+   "samples": 36,
+   "queries": 6,
+   "p50_ms": 178.070001,
+   "p95_ms": 212.233864,
+   "errors": 0,
+   "median_stdout_bytes": 1341
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "no-result",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 171.363304,
+   "p95_ms": 212.902093,
+   "errors": 0,
+   "median_stdout_bytes": 54
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "qualified",
+   "samples": 18,
+   "queries": 3,
+   "p50_ms": 179.489626,
+   "p95_ms": 416.296387,
+   "errors": 0,
+   "median_stdout_bytes": 844
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "ambiguous",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 154.33876,
+   "p95_ms": 190.907478,
+   "errors": 0,
+   "median_stdout_bytes": 5912
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "behaviour",
+   "samples": 30,
+   "queries": 5,
+   "p50_ms": 172.095451,
+   "p95_ms": 201.237495,
+   "errors": 0,
+   "median_stdout_bytes": 6521
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "exact",
+   "samples": 36,
+   "queries": 6,
+   "p50_ms": 163.363323,
+   "p95_ms": 247.276901,
+   "errors": 0,
+   "median_stdout_bytes": 2700
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "no-result",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 173.04053,
+   "p95_ms": 186.796324,
+   "errors": 0,
+   "median_stdout_bytes": 3
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "qualified",
+   "samples": 18,
+   "queries": 3,
+   "p50_ms": 159.523099,
+   "p95_ms": 271.512388,
+   "errors": 0,
+   "median_stdout_bytes": 640
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "ambiguous",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 4.679556,
+   "p95_ms": 5.510566,
+   "errors": 0,
+   "median_stdout_bytes": 4601
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "exact",
+   "samples": 36,
+   "queries": 6,
+   "p50_ms": 4.616217,
+   "p95_ms": 6.704523,
+   "errors": 0,
+   "median_stdout_bytes": 982
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "no-result",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 4.968954,
+   "p95_ms": 7.107331,
+   "errors": 0,
+   "median_stdout_bytes": 0
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codecite",
+   "op": "def",
+   "cls": "qualified",
+   "samples": 18,
+   "queries": 3,
+   "p50_ms": 5.532038,
+   "p95_ms": 18.881445,
+   "errors": 0,
+   "median_stdout_bytes": 719
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "ambiguous",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 6.067435,
+   "p95_ms": 8.25258,
+   "errors": 0,
+   "median_stdout_bytes": 6534
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "behaviour",
+   "samples": 30,
+   "queries": 5,
+   "p50_ms": 13.898546,
+   "p95_ms": 19.08421,
+   "errors": 0,
+   "median_stdout_bytes": 12980
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "exact",
+   "samples": 36,
+   "queries": 6,
+   "p50_ms": 7.989958,
+   "p95_ms": 10.799897,
+   "errors": 0,
+   "median_stdout_bytes": 9819
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "no-result",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 5.226353,
+   "p95_ms": 5.998039,
+   "errors": 0,
+   "median_stdout_bytes": 15
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "path",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 9.003022,
+   "p95_ms": 13.346872,
+   "errors": 0,
+   "median_stdout_bytes": 3349
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codecite",
+   "op": "search",
+   "cls": "qualified",
+   "samples": 18,
+   "queries": 3,
+   "p50_ms": 9.324434,
+   "p95_ms": 12.913821,
+   "errors": 0,
+   "median_stdout_bytes": 10707
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "ambiguous",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 164.180444,
+   "p95_ms": 373.292172,
+   "errors": 0,
+   "median_stdout_bytes": 3390
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "exact",
+   "samples": 36,
+   "queries": 6,
+   "p50_ms": 161.656307,
+   "p95_ms": 200.884178,
+   "errors": 0,
+   "median_stdout_bytes": 646
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "no-result",
+   "samples": 12,
+   "queries": 2,
+   "p50_ms": 166.360242,
+   "p95_ms": 273.913283,
+   "errors": 0,
+   "median_stdout_bytes": 54
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codegraph",
+   "op": "node",
+   "cls": "qualified",
+   "samples": 18,
+   "queries": 3,
+   "p50_ms": 164.472035,
+   "p95_ms": 214.764028,
+   "errors": 0,
+   "median_stdout_bytes": 1009
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "ambiguous",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 150.401172,
+   "p95_ms": 218.129614,
+   "errors": 0,
+   "median_stdout_bytes": 8161
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "behaviour",
+   "samples": 30,
+   "queries": 5,
+   "p50_ms": 166.470378,
+   "p95_ms": 352.289087,
+   "errors": 0,
+   "median_stdout_bytes": 6305
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "exact",
+   "samples": 36,
+   "queries": 6,
+   "p50_ms": 154.872863,
+   "p95_ms": 198.522938,
+   "errors": 0,
+   "median_stdout_bytes": 914
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "no-result",
+   "samples": 6,
+   "queries": 1,
+   "p50_ms": 153.7254,
+   "p95_ms": 171.073645,
+   "errors": 0,
+   "median_stdout_bytes": 3
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "tool": "codegraph",
+   "op": "query",
+   "cls": "qualified",
+   "samples": 18,
+   "queries": 3,
+   "p50_ms": 156.398799,
+   "p95_ms": 226.907656,
+   "errors": 0,
+   "median_stdout_bytes": 771
+  }
+ ],
+ "outcomes": [
+  {
+   "split": "development",
+   "tool": "codecite",
+   "op": "def",
+   "by_repo": {
+    "keycloak:correct-empty": 2,
+    "keycloak:hit": 10,
+    "linux:correct-empty": 2,
+    "linux:hit": 11
+   }
+  },
+  {
+   "split": "development",
+   "tool": "codecite",
+   "op": "search",
+   "by_repo": {
+    "keycloak:correct-empty": 1,
+    "keycloak:hit": 11,
+    "keycloak:rank:below-cut": 2,
+    "keycloak:rank:in-output": 1,
+    "linux:correct-empty": 1,
+    "linux:hit": 14,
+    "linux:rank:below-cut": 3,
+    "linux:rank:in-output": 1
+   }
+  },
+  {
+   "split": "development",
+   "tool": "codegraph",
+   "op": "node",
+   "by_repo": {
+    "keycloak:correct-empty": 2,
+    "keycloak:hit": 10,
+    "linux:correct-empty": 2,
+    "linux:extraction:not-a-definition": 1,
+    "linux:hit": 10
+   }
+  },
+  {
+   "split": "development",
+   "tool": "codegraph",
+   "op": "query",
+   "by_repo": {
+    "keycloak:correct-empty": 1,
+    "keycloak:hit": 9,
+    "keycloak:rank:in-output": 1,
+    "keycloak:unresolved": 3,
+    "linux:correct-empty": 1,
+    "linux:extraction:not-a-definition": 2,
+    "linux:hit": 10,
+    "linux:unresolved": 4
+   }
+  },
+  {
+   "split": "evaluation",
+   "tool": "codecite",
+   "op": "def",
+   "by_repo": {
+    "django:correct-empty": 2,
+    "django:hit": 9,
+    "excalidraw:correct-empty": 2,
+    "excalidraw:hit": 9,
+    "ripgrep:correct-empty": 2,
+    "ripgrep:hit": 9
+   }
+  },
+  {
+   "split": "evaluation",
+   "tool": "codecite",
+   "op": "search",
+   "by_repo": {
+    "django:correct-empty": 1,
+    "django:hit": 9,
+    "django:rank:in-output": 7,
+    "excalidraw:correct-empty": 1,
+    "excalidraw:hit": 13,
+    "excalidraw:rank:below-cut": 1,
+    "excalidraw:rank:in-output": 2,
+    "ripgrep:correct-empty": 1,
+    "ripgrep:hit": 7,
+    "ripgrep:rank:below-cut": 3,
+    "ripgrep:rank:in-output": 6
+   }
+  },
+  {
+   "split": "evaluation",
+   "tool": "codegraph",
+   "op": "node",
+   "by_repo": {
+    "django:correct-empty": 2,
+    "django:hit": 9,
+    "excalidraw:correct-empty": 2,
+    "excalidraw:hit": 9,
+    "ripgrep:correct-empty": 2,
+    "ripgrep:hit": 9
+   }
+  },
+  {
+   "split": "evaluation",
+   "tool": "codegraph",
+   "op": "query",
+   "by_repo": {
+    "django:correct-empty": 1,
+    "django:hit": 9,
+    "django:rank:in-output": 2,
+    "django:unresolved": 3,
+    "excalidraw:correct-empty": 1,
+    "excalidraw:hit": 8,
+    "excalidraw:rank:in-output": 2,
+    "excalidraw:unresolved": 4,
+    "ripgrep:correct-empty": 1,
+    "ripgrep:hit": 9,
+    "ripgrep:rank:in-output": 1,
+    "ripgrep:unresolved": 4
+   }
+  }
+ ],
+ "mechanisms": [
+  {
+   "split": "development",
+   "repo": "keycloak",
+   "mechanism": "length:long-answer-chunk",
+   "misses": 3
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "mechanism": "granularity:window-only",
+   "misses": 1
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "mechanism": "length:long-answer-chunk",
+   "misses": 1
+  },
+  {
+   "split": "development",
+   "repo": "linux",
+   "mechanism": "lexical:other-source-shares-more-terms",
+   "misses": 2
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "mechanism": "length:long-answer-chunk",
+   "misses": 3
+  },
+  {
+   "split": "evaluation",
+   "repo": "django",
+   "mechanism": "lexical:other-source-shares-more-terms",
+   "misses": 4
+  },
+  {
+   "split": "evaluation",
+   "repo": "excalidraw",
+   "mechanism": "lexical:other-source-shares-more-terms",
+   "misses": 3
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "mechanism": "length:long-answer-chunk",
+   "misses": 2
+  },
+  {
+   "split": "evaluation",
+   "repo": "ripgrep",
+   "mechanism": "lexical:other-source-shares-more-terms",
+   "misses": 7
+  }
+ ]
+}

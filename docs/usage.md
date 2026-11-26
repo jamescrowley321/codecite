@@ -676,7 +676,8 @@ The name is matched exactly, case and all, as the code writes it. Only when
 nothing has that name, a dotted name such as `Client.callback` finds the
 `callback` defined inside `Client`. A name with several definitions lists them
 all, never one guess, and says it is ambiguous: source files first, then docs,
-examples and tests, each in citation order, at most 50.
+examples and tests, each by source, path and line, so a file's definitions
+come top to bottom, at most 50.
 
 ```text
 3 definitions of callback · ambiguous · adapt · indexed 2026-10-20T22:56:30Z

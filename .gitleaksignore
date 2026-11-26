@@ -7,3 +7,5 @@ a304f6a8e52f48a2991e6640e644f927873c5bce:evals/lib/sandbox.test.mjs:generic-api-
 d6b6d5885f1a1fc7327766629a0b12399c855cd5:crates/codecite-index/src/walk.rs:private-key:520
 # The same fixture quoted in that feature's plan.
 d6b6d5885f1a1fc7327766629a0b12399c855cd5:docs/superpowers/plans/2026-10-19-local-source-walk.md:private-key:699
+# A pinned commit SHA beside a repository name that an intermediate commit of #287 wrote; the next commit reshaped it.
+08f864131b4f82d53bd21fb807840f054870ff61:experiments/retrieval-generalization/results/metadata.json:generic-api-key:20
