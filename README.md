@@ -112,6 +112,8 @@ claude mcp add codecite -- codecite mcp
 
 ## Documentation
 
+- [Documentation site](https://jamescrowley321.github.io/codecite/): these
+  docs with navigation and search.
 - [Using codecite](docs/usage.md): manifests, indexing, search, citation
   forms, and connecting an agent.
 - [Design](docs/design.md): goals, architecture and data model diagrams,
