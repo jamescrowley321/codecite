@@ -319,19 +319,15 @@ fn definitions(
                 "function" | "type" => node = Some(capture.node),
                 "c_function" => {
                     node = Some(capture.node);
-                    let mut declarator = capture.node.child_by_field_name("declarator");
-                    while let Some(d) = declarator {
-                        if d.kind() == "identifier" {
-                            name = Some(d);
-                            break;
-                        }
-                        declarator = d.child_by_field_name("declarator").or_else(|| {
-                            (d.kind() == "parenthesized_declarator")
-                                .then(|| d.named_child(0))
-                                .flatten()
-                        });
-                    }
+                    name = c_declarator_name(capture.node);
                 }
+                // The query can't say "a conditional at file scope", so a
+                // table inside a function's `#ifdef` is dropped here.
+                "c_variable" if at_file_scope(capture.node) => {
+                    node = Some(capture.node);
+                    captured_kind = Some(SymbolKind::Variable);
+                }
+                "c_declarator" => name = c_declarator_name(capture.node),
                 "variable" => {
                     node = Some(capture.node);
                     captured_kind = Some(SymbolKind::Variable);
@@ -614,6 +610,41 @@ const DEFINED_ELSEWHERE: [&str; 4] = [
     "struct_type",
     "interface_type",
 ];
+
+/// Whether a C node sits at file scope: its parents up to the
+/// `translation_unit` are only preprocessor conditionals.
+fn at_file_scope(node: Node<'_>) -> bool {
+    let mut parent = node.parent();
+    while let Some(p) = parent {
+        match p.kind() {
+            "translation_unit" => return true,
+            "preproc_if" | "preproc_ifdef" | "preproc_else" | "preproc_elif"
+            | "preproc_elifdef" => parent = p.parent(),
+            _ => return false,
+        }
+    }
+    false
+}
+
+/// The identifier a C declaration names, found by following `declarator`
+/// fields (and parentheses) down from `node`: `names` in
+/// `*const names[]`, `f` in `(*f)(void)`. The returned node borrows the
+/// same tree as `node` (`'tree`), so the caller keeps it without copying
+/// its text.
+fn c_declarator_name<'tree>(node: Node<'tree>) -> Option<Node<'tree>> {
+    let mut declarator = node.child_by_field_name("declarator");
+    while let Some(d) = declarator {
+        if d.kind() == "identifier" {
+            return Some(d);
+        }
+        declarator = d.child_by_field_name("declarator").or_else(|| {
+            (d.kind() == "parenthesized_declarator")
+                .then(|| d.named_child(0))
+                .flatten()
+        });
+    }
+    None
+}
 
 /// The kind of a captured definition node.
 fn symbol_kind(node: Node<'_>) -> SymbolKind {

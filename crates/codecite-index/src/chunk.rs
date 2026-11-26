@@ -1065,6 +1065,48 @@ mod tests {
     }
 
     #[test]
+    fn c_function_like_macros_and_file_scope_tables() {
+        // A function-like macro and a file-scope declaration with a brace
+        // initialiser (inside a preprocessor conditional too) are
+        // definitions; an object-like macro, a scalar, an `extern` and a
+        // table inside a function, conditional or not, are not.
+        let text = "#define REG 0x1c8\n\
+                    #define OFFSET(p, q) ((p) + (q))\n\
+                    static const struct id ids[] = {\n\
+                    \x20 { 1 },\n\
+                    };\n\
+                    static struct clk src = {\n\
+                    \x20 .rate = 1,\n\
+                    };\n\
+                    static const char *const names[] = { \"a\" };\n\
+                    static int count = 0;\n\
+                    extern int table[];\n\
+                    #ifdef CONFIG_X\n\
+                    static int guarded[] = { 1 };\n\
+                    #endif\n\
+                    void f(void) {\n\
+                    \x20 static int local[] = { 1 };\n\
+                    #ifdef CONFIG_Y\n\
+                    \x20 static int inner[] = { 1 };\n\
+                    #endif\n\
+                    }\n";
+        assert_eq!(
+            outline("drivers/clk.c", text),
+            expect(&[
+                ("window", 1, 1, ""),
+                ("function", 2, 2, "OFFSET()."),
+                ("variable", 3, 5, "ids."),
+                ("variable", 6, 8, "src."),
+                ("variable", 9, 9, "names."),
+                ("window", 10, 12, ""),
+                ("variable", 13, 13, "guarded."),
+                ("window", 14, 14, ""),
+                ("function", 15, 20, "f()."),
+            ])
+        );
+    }
+
+    #[test]
     fn markdown_inline_code_is_not_a_fence() {
         let text = "```inline```\n# Real\ntext\n";
         assert_eq!(
