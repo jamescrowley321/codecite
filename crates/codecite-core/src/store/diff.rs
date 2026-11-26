@@ -897,8 +897,9 @@ impl Store {
     fn diff_sections(&self, source_id: i64) -> Result<Vec<Section>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT c.id, c.number, c.anchor, c.start_line,
-               coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))
+               coalesce(c.text, codecite_lines(t.text, c.start_line, c.end_line))
              FROM chunk c JOIN document d ON d.id = c.document_id
+             LEFT JOIN document_text t ON t.document_id = d.id
              WHERE d.source_id = ?1 AND c.kind = 'section' ORDER BY c.id",
         )?;
         let rows = stmt.query_map(params![source_id], |row| {
@@ -916,8 +917,9 @@ impl Store {
         let mut sections: Vec<(i64, Section)> = rows.collect::<rusqlite::Result<_>>()?;
         let mut stmt = self.conn.prepare_cached(
             "SELECT c.parent_id, c.number, c.start_line, c.end_line,
-               coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))
+               coalesce(c.text, codecite_lines(t.text, c.start_line, c.end_line))
              FROM chunk c JOIN document d ON d.id = c.document_id
+             LEFT JOIN document_text t ON t.document_id = d.id
              WHERE d.source_id = ?1 AND c.kind = 'step' ORDER BY c.id",
         )?;
         let rows = stmt.query_map(params![source_id], |row| {

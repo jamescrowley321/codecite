@@ -1,0 +1,16 @@
+{
+  "query_sha256": "d95fc5b9d8a9808dfca674607c2de252df32890c02c4a15dfce98f2fdcb5d2fc",
+  "corpora": [
+    "linux",
+    "keycloak",
+    "kubernetes",
+    "fhir"
+  ],
+  "rounds": 5,
+  "seed": 255,
+  "limit": 10,
+  "cache": "cli and mcp: one untimed warmup sweep per mode, not recorded; warm OS page cache; no cache eviction",
+  "cli": "one new process per query, startup included",
+  "mcp": "one initialized persistent process per corpus; store reopened per call",
+  "cli-cold": "as cli, but before every call posix_fadvise(DONTNEED) evicts the corpus database, its -wal and -shm, and the binary from the page cache; shared libraries, directory entries and inodes stay cached; runs after the MCP server stops, so nothing maps the binary; round 0 is excluded from summaries like the other modes"
+}

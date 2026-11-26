@@ -427,9 +427,9 @@ pub(super) fn register_functions(conn: &Connection) -> rusqlite::Result<()> {
         FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
         |ctx| Ok(ctx.get::<Option<String>>(0)?.map(|name| name_key(&name))),
     )?;
-    // `codecite_lines(document.text, start, end)`: a chunk's text when the
+    // `codecite_lines(document_text.text, start, end)`: a chunk's text when the
     // chunk stores none, cut from its document's. Readers call it as
-    // `coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))`,
+    // `coalesce(c.text, codecite_lines(t.text, c.start_line, c.end_line))`,
     // which reads the document's text only for a chunk without its own.
     conn.create_scalar_function(
         "codecite_lines",
@@ -506,11 +506,12 @@ const RANK_LEGACY: &str = "SELECT c.id,
 /// included. A chunk of a document that stores its text stores none of its
 /// own, so its text is cut from the document's.
 const FETCH: &str = "SELECT c.kind, c.start_line, c.end_line, c.number, p.number,
-       coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line)), d.path,
+       coalesce(c.text, codecite_lines(t.text, c.start_line, c.end_line)), d.path,
        d.dirty, s.name, s.kind, s.revision, s.license_class, s.indexed_at, sym.display_name,
-       d.text IS NOT NULL, c.title, c.anchor, d.role
+       t.document_id IS NOT NULL, c.title, c.anchor, d.role
      FROM chunk c
      JOIN document d ON d.id = c.document_id
+     LEFT JOIN document_text t ON t.document_id = d.id
      JOIN source s ON s.id = d.source_id
      LEFT JOIN chunk p ON p.id = c.parent_id
      LEFT JOIN symbol sym ON sym.id = c.symbol_id
@@ -1594,6 +1595,88 @@ mod tests {
         drop(store);
         let store = Store::open_read_only(&dir.path().join("demo.db")).unwrap();
         (dir, store)
+    }
+
+    #[test]
+    fn snippets_come_from_the_text_each_document_kept() {
+        // A code file and a generic page keep their text in
+        // `document_text` and their chunks store none, so the snippet is
+        // cut from that table; a spec keeps none and its chunks' own text
+        // is the snippet.
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open_read_write(&dir.path().join("demo.db")).unwrap();
+        let app = store.upsert_source(&code_source("app")).unwrap();
+        let code_text = "use std::io;\nfn gadget_widget() {}\n";
+        let code = DocumentRecord {
+            text: Some(code_text),
+            ..file(
+                "src/gadget.rs",
+                "rust",
+                false,
+                vec![chunk(
+                    "function",
+                    (2, 2),
+                    "fn gadget_widget() {}",
+                    Some("gadget_widget"),
+                )],
+            )
+        };
+        store.write_document(app, &code).unwrap();
+        let notes = store
+            .upsert_source(&SourceRecord {
+                name: "notes",
+                ..spec_source(SHA256, true)
+            })
+            .unwrap();
+        let page = DocumentRecord {
+            text: Some("# Notes\n\n## Rollout\nShip the widget behind a flag.\n"),
+            ..file(
+                "notes",
+                "markdown",
+                false,
+                vec![chunk(
+                    "section",
+                    (3, 4),
+                    "## Rollout\nShip the widget behind a flag.",
+                    None,
+                )],
+            )
+        };
+        store.write_document(notes, &page).unwrap();
+        let rfc = store
+            .upsert_source(&spec_source(&"b".repeat(64), true))
+            .unwrap();
+        store
+            .write_document(rfc, &spec("The widget MUST be unique."))
+            .unwrap();
+        store.set_indexed_at(30).unwrap();
+        let stored: i64 = store
+            .conn
+            .query_row(
+                "SELECT count(*) FROM chunk WHERE text IS NOT NULL AND kind != 'step'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        // Only the spec's section stores its own text (its step matches).
+        assert_eq!(stored, 1);
+        drop(store);
+        let store = Store::open_read_only(&dir.path().join("demo.db")).unwrap();
+        let results = store.search(&query("widget")).unwrap();
+        let snippet = |prefix: &str| {
+            results
+                .iter()
+                .find(|r| r.citation.starts_with(prefix))
+                .unwrap_or_else(|| panic!("no {prefix} result in {results:?}"))
+                .snippet
+                .clone()
+        };
+        assert_eq!(snippet("app@"), "fn gadget_widget() {}");
+        assert_eq!(
+            snippet("notes@"),
+            "## Rollout\nShip the widget behind a flag."
+        );
+        assert_eq!(snippet("rfc9449@"), "The widget MUST be unique.");
     }
 
     #[test]

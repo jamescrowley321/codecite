@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use regex::{Regex, RegexBuilder};
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 use schemars::JsonSchema;
 use serde::Serialize;
 
@@ -159,12 +159,13 @@ impl Store {
         // file before the first one is scanned.
         let mut docs = self.conn.prepare_cached(
             "SELECT d.id, d.path, d.dirty, s.name, s.kind, s.revision,
-               s.license_class, s.indexed_at, d.text IS NOT NULL, d.role
+               s.license_class, s.indexed_at, t.document_id IS NOT NULL, d.role
              FROM document d JOIN source s ON s.id = d.source_id
+             LEFT JOIN document_text t ON t.document_id = d.id
              WHERE s.is_current
                AND (?1 IS NULL OR d.language = ?1)
                AND (?2 IS NULL OR d.path GLOB ?2)
-               AND (?3 IS NULL OR (s.kind = 'document' AND d.text IS NULL) = ?3)
+               AND (?3 IS NULL OR (s.kind = 'document' AND t.document_id IS NULL) = ?3)
              ORDER BY s.id, d.path",
         )?;
         let mut rows = docs.query(params![query.language, query.path, only_spec])?;
@@ -204,8 +205,8 @@ impl Store {
     ) -> Result<()> {
         let mut stmt = self
             .conn
-            .prepare_cached("SELECT text FROM document WHERE id = ?1")?;
-        let text: Option<String> = stmt.query_row([doc.id], |row| row.get(0))?;
+            .prepare_cached("SELECT text FROM document_text WHERE document_id = ?1")?;
+        let text: Option<String> = stmt.query_row([doc.id], |row| row.get(0)).optional()?;
         let text = text.ok_or_else(|| Error::InvalidCorpus {
             path: self.path.clone(),
             reason: format!("it holds no text for {}; re-run codecite index", doc.path),
@@ -243,8 +244,9 @@ impl Store {
     ) -> Result<()> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT c.id, c.kind, c.start_line, c.end_line, c.number, c.parent_id,
-               coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))
+               coalesce(c.text, codecite_lines(t.text, c.start_line, c.end_line))
              FROM chunk c JOIN document d ON d.id = c.document_id
+             LEFT JOIN document_text t ON t.document_id = d.id
              WHERE c.document_id = ?1 AND c.kind IN ('section', 'step')
              ORDER BY c.start_line, c.id",
         )?;

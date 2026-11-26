@@ -162,18 +162,20 @@ def test_a_new_question_must_match_its_retrieval_query():
 
 def test_sections_read_text_a_document_keeps_from_its_lines(tmp_path):
     """A generic document's section stores no text of its own (#249): its text
-    is its lines of the document's, cut as codecite cuts them. A spec section
-    keeps its own."""
+    is its lines of the document's, kept in `document_text` (#308) and cut as
+    codecite cuts them. A spec section keeps its own."""
     db = tmp_path / "corpus.db"
     con = sqlite3.connect(db)
     con.executescript(
         """
         CREATE TABLE source (id INTEGER PRIMARY KEY, name TEXT, kind TEXT, is_current INTEGER);
-        CREATE TABLE document (id INTEGER PRIMARY KEY, source_id INTEGER, text TEXT);
+        CREATE TABLE document (id INTEGER PRIMARY KEY, source_id INTEGER);
+        CREATE TABLE document_text (document_id INTEGER PRIMARY KEY, text TEXT NOT NULL);
         CREATE TABLE chunk (id INTEGER PRIMARY KEY, document_id INTEGER, start_line INTEGER,
           end_line INTEGER, kind TEXT, number TEXT, parent_id INTEGER, text TEXT);
         INSERT INTO source VALUES (1, 'rfc6749', 'document', 1), (2, 'notes', 'document', 1);
-        INSERT INTO document VALUES (1, 1, NULL), (2, 2, 'Intro\r\n## Install\r\nRun it.\r\n## Use\n');
+        INSERT INTO document VALUES (1, 1), (2, 2);
+        INSERT INTO document_text VALUES (2, 'Intro\r\n## Install\r\nRun it.\r\n## Use\n');
         INSERT INTO chunk VALUES
           (1, 1, 1, 3, 'section', '2.3.1', NULL, '2.3.1. Client Password'),
           (2, 1, 4, 4, 'step', '1', 1, 'One.'),

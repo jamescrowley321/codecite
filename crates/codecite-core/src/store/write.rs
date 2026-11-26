@@ -253,7 +253,8 @@ impl Store {
         Ok(self
             .conn
             .query_row(
-                "SELECT text IS NOT NULL FROM document WHERE source_id = ?1 AND path = ?2",
+                "SELECT EXISTS (SELECT 1 FROM document_text WHERE document_id = d.id)
+                 FROM document d WHERE d.source_id = ?1 AND d.path = ?2",
                 params![source_id, path],
                 |row| row.get(0),
             )
@@ -289,12 +290,12 @@ impl Store {
         let (source_kind, rules) = source_rules(&tx, source_id)?;
         let role = Role::classify(document.path, &source_kind, document.text.is_some(), &rules);
         let document_id: i64 = tx.query_row(
-            "INSERT INTO document (source_id, path, language, content_hash, size_bytes, dirty, text,
+            "INSERT INTO document (source_id, path, language, content_hash, size_bytes, dirty,
                                    role, role_weight, chunker_version, terms_version)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT (source_id, path) DO UPDATE SET
                language = excluded.language, content_hash = excluded.content_hash,
-               size_bytes = excluded.size_bytes, dirty = excluded.dirty, text = excluded.text,
+               size_bytes = excluded.size_bytes, dirty = excluded.dirty,
                role = excluded.role, role_weight = excluded.role_weight,
                chunker_version = excluded.chunker_version,
                terms_version = excluded.terms_version
@@ -307,7 +308,6 @@ impl Store {
                 // SQLite integers are i64; no file comes near i64::MAX bytes.
                 i64::try_from(document.size_bytes).unwrap_or(i64::MAX),
                 document.dirty,
-                document.text,
                 role.as_str(),
                 role.weight(),
                 chunker_version,
@@ -315,6 +315,20 @@ impl Store {
             ],
             |row| row.get(0),
         )?;
+        // The text sits in its own table so that search, which reads the
+        // role above for every candidate, never walks past it (#308).
+        // `None` means the document has no text row at all, not a NULL one.
+        match document.text {
+            Some(text) => tx.execute(
+                "INSERT INTO document_text (document_id, text) VALUES (?1, ?2)
+                 ON CONFLICT (document_id) DO UPDATE SET text = excluded.text",
+                params![document_id, text],
+            )?,
+            None => tx.execute(
+                "DELETE FROM document_text WHERE document_id = ?1",
+                [document_id],
+            )?,
+        };
         clear_document(&tx, document_id)?;
         insert_chunks(&tx, document_id, document)?;
         tx.commit()?;
@@ -520,8 +534,11 @@ fn rederive_roles(
     source_kind: &str,
     rules: &RoleRules,
 ) -> Result<()> {
-    let mut select =
-        conn.prepare("SELECT id, path, text IS NOT NULL FROM document WHERE source_id = ?1")?;
+    let mut select = conn.prepare(
+        "SELECT d.id, d.path, t.document_id IS NOT NULL
+         FROM document d LEFT JOIN document_text t ON t.document_id = d.id
+         WHERE d.source_id = ?1",
+    )?;
     let documents = select
         .query_map([source_id], |row| {
             Ok((
@@ -708,9 +725,55 @@ mod tests {
         assert!(!terms_behind.is_current(text.as_bytes(), 3));
         let stored: String = store
             .conn
-            .query_row("SELECT text FROM document", [], |row| row.get(0))
+            .query_row("SELECT text FROM document_text", [], |row| row.get(0))
             .unwrap();
         assert_eq!(stored, text);
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_documents_text_lives_in_its_own_table() {
+        let (mut store, dir) = store("document-text");
+        let id = store.upsert_source(&source("app")).unwrap();
+        let texts = |store: &Store| -> Vec<String> {
+            let mut select = store
+                .conn
+                .prepare("SELECT text FROM document_text ORDER BY document_id")
+                .unwrap();
+            select
+                .query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap()
+        };
+        store
+            .write_document(id, &document("src/lib.rs", "fn validateToken() {}"))
+            .unwrap();
+        assert_eq!(texts(&store), ["fn validateToken() {}"]);
+        assert!(store.document_has_text(id, "src/lib.rs").unwrap());
+        // Writing it again replaces its text rather than adding a row.
+        store
+            .write_document(id, &document("src/lib.rs", "fn checkToken() {}"))
+            .unwrap();
+        assert_eq!(texts(&store), ["fn checkToken() {}"]);
+        // A document written without text, as a spec is, keeps no row.
+        let mut page = document("src/lib.rs", "fn checkToken() {}");
+        page.text = None;
+        store.write_document(id, &page).unwrap();
+        assert!(texts(&store).is_empty());
+        assert!(!store.document_has_text(id, "src/lib.rs").unwrap());
+        // Deleting the document, or its source, takes its text with it.
+        store
+            .write_document(id, &document("src/lib.rs", "fn validateToken() {}"))
+            .unwrap();
+        store.delete_document(id, "src/lib.rs").unwrap();
+        assert!(texts(&store).is_empty());
+        store
+            .write_document(id, &document("src/lib.rs", "fn validateToken() {}"))
+            .unwrap();
+        store.delete_sources_except(&[]).unwrap();
+        assert!(texts(&store).is_empty());
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -757,8 +820,8 @@ mod tests {
         // Readers cut the text from the document's.
         let read = own(
             &store,
-            "SELECT coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))
-             FROM chunk c JOIN document d ON d.id = c.document_id ORDER BY c.id",
+            "SELECT coalesce(c.text, codecite_lines(t.text, c.start_line, c.end_line))
+             FROM chunk c LEFT JOIN document_text t ON t.document_id = c.document_id ORDER BY c.id",
         );
         let written: Vec<Option<String>> =
             doc.chunks.iter().map(|c| Some(c.text.to_owned())).collect();
