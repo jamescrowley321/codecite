@@ -23,6 +23,16 @@ def test_plugin_files_cover_the_plugin():
     assert files[f"{plugin.PLUGIN_DIR}/skills/codecite/SKILL.md"] == source.read_text()
 
 
+def test_plugin_arm_gets_the_tool_hooks():
+    hooks = json.loads(plugin.files()[f"{plugin.PLUGIN_DIR}/hooks/hooks.json"])["hooks"]
+    post, pre = hooks["PostToolUse"][0], hooks["PreToolUse"][0]
+    assert post["hooks"][0]["command"] == "codecite hook claude post-tool-use"
+    assert pre["hooks"][0]["command"] == "codecite hook claude pre-tool-use"
+    # The arm's tools include every call the hooks match.
+    for matcher in (post["matcher"], pre["matcher"]):
+        assert set(matcher.split("|")) - {"MultiEdit"} <= set(claude_code.TOOLS)
+
+
 def test_claude_command_loads_the_plugin_without_strict_mcp():
     cmd = claude_code.command("plugin", "p", "m", 60)
     assert cmd[cmd.index("--plugin-dir") + 1] == plugin.PLUGIN_DIR

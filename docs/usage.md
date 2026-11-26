@@ -692,6 +692,10 @@ An agent only searches for a rule it suspects exists. A hook hands it the
 rules for a file as it edits the file. codecite never changes an agent's
 config: these are recipes to install yourself.
 
+The Claude Code plugin runs this hook for you as `codecite hook claude
+pre-tool-use` (see "Install the Claude Code plugin"); the recipe below is
+the manual way.
+
 **Claude Code.** A PreToolUse hook on `Edit`, `Write` and `MultiEdit` runs
 `context` on the target and returns the rules as `additionalContext`, which
 Claude Code adds to Claude's context with the tool call. It needs `jq`,
@@ -1177,6 +1181,10 @@ nothing and exit 0. `CODECITE_ASSIST_DEBUG=1` prints the reason on stderr.
 Hooks run it with the agent; codecite never changes an agent's config.
 Each recipe adds a block to the result and never changes or blocks the call.
 
+The Claude Code plugin runs this hook for you as `codecite hook claude
+post-tool-use` (see "Install the Claude Code plugin"); the recipe below is
+the manual way.
+
 **Claude Code.** A PostToolUse hook on `Grep`, `Glob` and `Bash` passes
 `.tool_input` as `--input` and `.tool_response` as stdin, and returns the
 block as `additionalContext`, which Claude Code adds to Claude's context
@@ -1277,16 +1285,31 @@ first (the plugin runs `codecite` from `PATH`), then in Claude Code:
 A binary older than the plugin has no `codecite hook` command, so session
 start shows a hook error until you upgrade; it never blocks the session.
 
-It adds three things:
+It adds four things:
 
 - a skill that says when codecite beats grep and which commands to use;
 - the MCP server, `codecite mcp`, so the tools in "Connect an agent" are
   native tools;
 - a session note: on session start, a `SessionStart` hook runs
   `codecite hook claude session-start`, which adds the agent snippet (see
-  "Tell your agent") naming the corpus for the session's directory.
+  "Tell your agent") naming the corpus for the session's directory;
+- two tool hooks:
+  - after a `Grep`, `Glob` or `Bash` call, `codecite hook claude
+    post-tool-use` attaches what `assist` finds for the search it ran, as
+    "Add codecite to the agent's own searches" describes. A `Bash` command
+    that runs no `grep`, `rg`, `git grep`, `find` or `fd` returns before
+    any corpus is opened.
+  - before an `Edit`, `Write` or `MultiEdit`, `codecite hook claude
+    pre-tool-use` passes the file's guidance rules, as "Push the rules on
+    every edit" describes: once per file per session, cut on a line at
+    8 KiB with the `codecite context` command that prints them all. It
+    keeps the files it has passed in `$XDG_RUNTIME_DIR/codecite/hook`
+    (else the cache directory), readable by you alone.
 
-The hook picks the corpus in this order:
+  Both label their output as data, not instructions, and neither ever
+  blocks or rewrites a call.
+
+Each hook picks the corpus in this order, on every call:
 
 1. `CODECITE_CORPUS`, when set and not empty. It is used alone: if that
    corpus is missing or unreadable, the hook prints nothing. Only when it is
@@ -1297,15 +1320,14 @@ The hook picks the corpus in this order:
    the directory.
 
 When several corpora index the directory, the note says so and asks you to
-set `CODECITE_CORPUS`. When the chosen corpus is stale, the note says queries
+set `CODECITE_CORPUS`; the tool hooks stay quiet. When the chosen corpus is stale, the note says queries
 fail unless they pass `allow_stale` and gives the `codecite index` command to
-re-index. With no corpus to name, the hook prints nothing. It never fails the
-session; set `CODECITE_HOOK_DEBUG` to see its errors on stderr.
+re-index, and the tool hooks print nothing. With no corpus to name, the hooks
+print nothing. They never fail the session; set `CODECITE_HOOK_DEBUG` to see
+their errors on stderr.
 
-The plugin runs the session note only. It does not push rules on every edit
-or add codecite to the agent's own searches; for those, use the recipes in
-"Push the rules on every edit" and "Add codecite to the agent's own
-searches".
+Without the plugin, the recipes in "Push the rules on every edit" and "Add
+codecite to the agent's own searches" do what its tool hooks do, by hand.
 
 ## 📦 Releases
 
