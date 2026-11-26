@@ -1,0 +1,3 @@
+Source: crates/codecite-core/migrations/0001_initial.sql
+Before: symbol, path, terms, content='', contentless_delete=1, tokenize='unicode61'
+After:  symbol, path, terms, content='', contentless_delete=1, tokenize='unicode61', detail=column

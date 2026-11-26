@@ -81,7 +81,9 @@ class Sandbox:
 def test_prepare_arm_writes_the_plugin_and_keeps_codecite_on_path():
     sb = Sandbox()
     env = asyncio.run(task.prepare_arm(sb, "plugin", claude_code.MCP, claude_code.MCP_CONFIG))
-    assert sb.commands == [] and claude_code.MCP not in sb.files
+    # Only CodeGraph is stripped; codecite stays.
+    assert all("/opt/codegraph" in " ".join(c) and "/opt/codecite" not in " ".join(c) for c in sb.commands)
+    assert claude_code.MCP not in sb.files
     assert sb.files == plugin.files()
     assert env["PATH"].startswith("/opt/codecite/bin:") and env["HOME"] == "/root"
     assert env[plugin.CORPUS_ENV] == "eval"

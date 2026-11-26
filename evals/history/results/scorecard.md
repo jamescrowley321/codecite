@@ -48,18 +48,18 @@
 | terraform-provider-descope | all | grep | 32 | 0.19 | 0.62 | 0.34 |
 | terraform-provider-descope | all | popular | 32 | 0.12 | 0.78 | 0.35 |
 
-- blind-peer-review: chunks: 1389 written · elapsed: 0.25s
-- codecite: chunks: 2300 written · elapsed: 0.41s
-- identity-model: chunks: 10001 written · elapsed: 1.22s
-- identity-stack: chunks: 3920 written · elapsed: 0.66s
-- terraform-provider-descope: chunks: 3835 written · elapsed: 0.47s
+- blind-peer-review: chunks: 1389 written · elapsed: 0.26s
+- codecite: chunks: 2300 written · elapsed: 0.43s
+- identity-model: chunks: 10001 written · elapsed: 1.36s
+- identity-stack: chunks: 3920 written · elapsed: 0.67s
+- terraform-provider-descope: chunks: 3835 written · elapsed: 0.50s
 
 ## Cost per query
 
 | Repository | Queries | codecite bytes | codecite ms | rg -n bytes | rg -n ms | rg -l bytes | rg -l ms |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| blind-peer-review | 36 | 734 | 7.4 (10.4) | 224971 | 7.1 (12.9) | 4574 | 5.9 (6.7) |
-| codecite | 44 | 709 | 12.7 (27.4) | 519336 | 11.1 (19.9) | 4843 | 6.9 (9.1) |
-| identity-model | 48 | 731 | 39.2 (59.5) | 346853 | 10.0 (29.3) | 16160 | 9.0 (13.9) |
-| identity-stack | 46 | 673 | 18.4 (33.5) | 107254 | 9.8 (14.2) | 5746 | 7.6 (12.2) |
-| terraform-provider-descope | 32 | 691 | 10.8 (15.9) | 26093 | 7.0 (19.2) | 2019 | 6.7 (13.4) |
+| blind-peer-review | 36 | 734 | 6.7 (9.8) | 224971 | 7.1 (13.9) | 4574 | 6.4 (8.7) |
+| codecite | 44 | 709 | 9.6 (18.0) | 519336 | 14.1 (26.8) | 4843 | 7.8 (10.8) |
+| identity-model | 48 | 731 | 18.7 (23.0) | 346853 | 11.4 (38.4) | 16160 | 10.2 (19.5) |
+| identity-stack | 46 | 673 | 9.3 (14.1) | 107254 | 12.4 (17.4) | 5746 | 9.7 (14.4) |
+| terraform-provider-descope | 32 | 691 | 6.5 (8.3) | 26093 | 7.3 (22.4) | 2019 | 7.3 (16.5) |

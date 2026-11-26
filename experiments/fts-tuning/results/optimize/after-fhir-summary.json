@@ -1,0 +1,142 @@
+[
+  {
+    "corpus": "fhir",
+    "class": "behaviour",
+    "mode": "cli",
+    "samples": 5,
+    "queries": 1,
+    "scored_queries": 1,
+    "p50_ms": 73.871424,
+    "p95_ms": 86.79127,
+    "recall_at_1": 0.0,
+    "recall_at_10": 0.0,
+    "mrr": 0.0
+  },
+  {
+    "corpus": "fhir",
+    "class": "behaviour",
+    "mode": "mcp",
+    "samples": 5,
+    "queries": 1,
+    "scored_queries": 1,
+    "p50_ms": 71.693998,
+    "p95_ms": 81.242617,
+    "recall_at_1": 0.0,
+    "recall_at_10": 0.0,
+    "mrr": 0.0
+  },
+  {
+    "corpus": "fhir",
+    "class": "broad-term",
+    "mode": "cli",
+    "samples": 5,
+    "queries": 1,
+    "scored_queries": 0,
+    "p50_ms": 111.534793,
+    "p95_ms": 118.890262
+  },
+  {
+    "corpus": "fhir",
+    "class": "broad-term",
+    "mode": "mcp",
+    "samples": 5,
+    "queries": 1,
+    "scored_queries": 0,
+    "p50_ms": 104.452031,
+    "p95_ms": 110.763548
+  },
+  {
+    "corpus": "fhir",
+    "class": "exact-symbol",
+    "mode": "cli",
+    "samples": 10,
+    "queries": 2,
+    "scored_queries": 0,
+    "p50_ms": 93.7732595,
+    "p95_ms": 143.762968
+  },
+  {
+    "corpus": "fhir",
+    "class": "exact-symbol",
+    "mode": "mcp",
+    "samples": 10,
+    "queries": 2,
+    "scored_queries": 0,
+    "p50_ms": 87.695482,
+    "p95_ms": 138.62047
+  },
+  {
+    "corpus": "fhir",
+    "class": "miss",
+    "mode": "cli",
+    "samples": 5,
+    "queries": 1,
+    "scored_queries": 0,
+    "p50_ms": 3.599216,
+    "p95_ms": 4.166117,
+    "nonempty": 0
+  },
+  {
+    "corpus": "fhir",
+    "class": "miss",
+    "mode": "mcp",
+    "samples": 5,
+    "queries": 1,
+    "scored_queries": 0,
+    "p50_ms": 0.872987,
+    "p95_ms": 1.210102,
+    "nonempty": 0
+  },
+  {
+    "corpus": "fhir",
+    "class": "path-filter",
+    "mode": "cli",
+    "samples": 5,
+    "queries": 1,
+    "scored_queries": 1,
+    "p50_ms": 42.869973,
+    "p95_ms": 46.596681,
+    "recall_at_1": 0.0,
+    "recall_at_10": 0.0,
+    "mrr": 0.0
+  },
+  {
+    "corpus": "fhir",
+    "class": "path-filter",
+    "mode": "mcp",
+    "samples": 5,
+    "queries": 1,
+    "scored_queries": 1,
+    "p50_ms": 44.211581,
+    "p95_ms": 52.384517,
+    "recall_at_1": 0.0,
+    "recall_at_10": 0.0,
+    "mrr": 0.0
+  },
+  {
+    "corpus": "fhir",
+    "class": "rare-term",
+    "mode": "cli",
+    "samples": 5,
+    "queries": 1,
+    "scored_queries": 1,
+    "p50_ms": 4.652293,
+    "p95_ms": 4.926107,
+    "recall_at_1": 1.0,
+    "recall_at_10": 1.0,
+    "mrr": 1.0
+  },
+  {
+    "corpus": "fhir",
+    "class": "rare-term",
+    "mode": "mcp",
+    "samples": 5,
+    "queries": 1,
+    "scored_queries": 1,
+    "p50_ms": 1.205978,
+    "p95_ms": 1.596981,
+    "recall_at_1": 1.0,
+    "recall_at_10": 1.0,
+    "mrr": 1.0
+  }
+]

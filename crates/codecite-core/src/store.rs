@@ -51,7 +51,8 @@ pub use requirements::{Requirement, RequirementSection, Requirements, Requiremen
 
 mod scip;
 pub use scip::{
-    ROLE_DEFINITION, SCIP_CONFIDENCE, ScipDefinition, ScipDocument, ScipOccurrence, ScipSummary,
+    ColumnUnit, MAX_SCIP_NAME_BYTES, ROLE_DEFINITION, SCIP_CONFIDENCE, ScipDefinition,
+    ScipDocument, ScipOccurrence, ScipSummary,
 };
 
 mod search;

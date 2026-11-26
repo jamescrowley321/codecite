@@ -1,0 +1,856 @@
+[
+  {
+    "id": "spec-at-hash",
+    "class": "spec-keyword",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "spec-invalid-grant",
+    "class": "spec-keyword",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "spec-cnf-jkt",
+    "class": "spec-keyword",
+    "base_rank": 7,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-code-challenge-method",
+    "class": "spec-keyword",
+    "base_rank": 10,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "spec-id-token-hint",
+    "class": "spec-keyword",
+    "base_rank": 8,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "spec-dpop-nonce-header",
+    "class": "spec-keyword",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-jwks-uri",
+    "class": "spec-keyword",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "spec-token-type-hint",
+    "class": "spec-keyword",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "spec-token-type-access-token-urn",
+    "class": "spec-keyword",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "spec-azp",
+    "class": "spec-keyword",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-nbf",
+    "class": "spec-keyword",
+    "base_rank": 7,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-authorization-pending",
+    "class": "spec-keyword",
+    "base_rank": 3,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "spec-www-authenticate-insufficient-scope",
+    "class": "spec-keyword",
+    "base_rank": 3,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "spec-iss-authorization-response",
+    "class": "spec-keyword",
+    "base_rank": 2,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-x5t-s256-cnf",
+    "class": "spec-keyword",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-login-required",
+    "class": "spec-keyword",
+    "base_rank": 7,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "spec-client-assertion-type-jwt-bearer",
+    "class": "spec-keyword",
+    "base_rank": 2,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "spec-well-known-openid-configuration",
+    "class": "spec-keyword",
+    "base_rank": 7,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-tv-sign-in",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-copied-credential-worthless",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-verify-identity-blob",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-learn-urls-from-base-address",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-ask-if-credential-still-good",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-kill-credentials-on-sign-out",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-next-hop-credential",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-rogue-program-same-handset",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-throwaway-secret-length",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-credential-in-address-bar",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-notify-backend-signed-out",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-app-collects-sign-in-details",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-hidden-approval-screen",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-public-key-fingerprint",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-credential-for-one-backend",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-gadget-recheck-frequency",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-reply-to-missing-credential",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-apps-cannot-link-person",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-hand-over-login-behind-scenes",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-duplicate-labelled-keys",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-keep-working-after-browser-closed",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-reply-from-wrong-provider",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-app-sign-in-fails-error",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-login-code-lifetime",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-login-code-second-use",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-not-enough-permission-status",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-derive-what-is-sent-up-front",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-cancel-unknown-credential-status",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-liveness-reply-field",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-no-good-after-field",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-spot-resent-claims-set",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-never-show-screen",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-background-sign-in-needs-password",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-settings-document-path",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-gadget-still-waiting-error",
+    "class": "spec-plain",
+    "base_rank": 2,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-gadget-too-eager-error",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-key-bound-scheme",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-sign-out-message-one-off-value",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-sign-out-message-marker",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-unsigned-claims-set",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-high-security-code-lifetime",
+    "class": "spec-plain",
+    "base_rank": 8,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-high-security-browser-parameters",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-self-registration-bad-return-address",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-plain-self-registration-assigned-id",
+    "class": "spec-plain",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-req-dpop-proof-validation",
+    "class": "spec-requirement",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-req-pkce-verifier-mismatch",
+    "class": "spec-requirement",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-req-state-required",
+    "class": "spec-requirement",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-req-nonce-check-mandatory",
+    "class": "spec-requirement",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-req-discovery-issuer-match",
+    "class": "spec-requirement",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-req-redirect-uri-exact-match",
+    "class": "spec-requirement",
+    "base_rank": 4,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-req-logout-token-validation",
+    "class": "spec-requirement",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-req-introspection-caller-auth",
+    "class": "spec-requirement",
+    "base_rank": 6,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-req-revocation-client-auth",
+    "class": "spec-requirement",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-req-refresh-token-client-binding",
+    "class": "spec-requirement",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-req-aud-claim-validation",
+    "class": "spec-requirement",
+    "base_rank": 5,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-req-post-logout-redirect-registered",
+    "class": "spec-requirement",
+    "base_rank": 8,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "spec-req-pkce-confidential-clients",
+    "class": "spec-requirement",
+    "base_rank": 4,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-req-jwt-mandatory-algorithms",
+    "class": "spec-requirement",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "spec-req-jws-crit-header",
+    "class": "spec-requirement",
+    "base_rank": 2,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-middleware-fastapi",
+    "class": "code-symbol",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-middleware-currentuser",
+    "class": "code-symbol",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-currentuser-dependency",
+    "class": "code-symbol",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-principal-find-first-sub",
+    "class": "code-symbol",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "code-token-validation-middleware",
+    "class": "code-symbol",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-dpopkey",
+    "class": "code-symbol",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-rust-pkce-generator",
+    "class": "code-symbol",
+    "base_rank": 7,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-go-provider-configuration",
+    "class": "code-symbol",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-py-validate-id-token",
+    "class": "code-symbol",
+    "base_rank": 4,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "code-go-verifyproof",
+    "class": "code-symbol",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-rust-token-exchange-request",
+    "class": "code-symbol",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-rust-jwks-resolve-key",
+    "class": "code-symbol",
+    "base_rank": 2,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "code-jar-create-request-object",
+    "class": "code-symbol",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "code-push-authorization-request",
+    "class": "code-symbol",
+    "base_rank": 3,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "code-rust-introspection-builder",
+    "class": "code-symbol",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-go-aud-check",
+    "class": "code-behaviour",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-excluded-paths-skip",
+    "class": "code-behaviour",
+    "base_rank": 2,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-rust-jwks-cache",
+    "class": "code-behaviour",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-dpop-htu",
+    "class": "code-behaviour",
+    "base_rank": 4,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-py-at-hash-check",
+    "class": "code-behaviour",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "code-go-jwks-kid-miss",
+    "class": "code-behaviour",
+    "base_rank": 4,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-rust-discovery-issuer-mismatch",
+    "class": "code-behaviour",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-go-dpop-nonce-retry",
+    "class": "code-behaviour",
+    "base_rank": 2,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "code-go-revocation-200",
+    "class": "code-behaviour",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-rust-basic-auth-header",
+    "class": "code-behaviour",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "code-go-azp-multi-aud",
+    "class": "code-behaviour",
+    "base_rank": 3,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-par-form-params",
+    "class": "code-behaviour",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-logout-events-claim",
+    "class": "code-behaviour",
+    "base_rank": 5,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-rust-actor-token-type",
+    "class": "code-behaviour",
+    "base_rank": 7,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "code-client-credentials-auth-choice",
+    "class": "code-behaviour",
+    "base_rank": 2,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "code-exclude-health",
+    "class": "code-usage",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-add-middleware-state-user",
+    "class": "code-usage",
+    "base_rank": 2,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "code-find-first-claim-value",
+    "class": "code-usage",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "code-add-token-middleware",
+    "class": "code-usage",
+    "base_rank": 2,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-route-current-user-claims",
+    "class": "code-usage",
+    "base_rank": 3,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-go-discovery-example",
+    "class": "code-usage",
+    "base_rank": 3,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-rust-client-credentials",
+    "class": "code-usage",
+    "base_rank": 2,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-py-introspect",
+    "class": "code-usage",
+    "base_rank": 7,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-go-revoke-refresh",
+    "class": "code-usage",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-py-create-dpop-proof",
+    "class": "code-usage",
+    "base_rank": 5,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-py-pkce-pair",
+    "class": "code-usage",
+    "base_rank": 3,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-rust-token-exchange-usage",
+    "class": "code-usage",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-go-id-token-nonce",
+    "class": "code-usage",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-node-usage",
+    "class": "code-usage",
+    "base_rank": 3,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "code-rp-logout-url",
+    "class": "code-usage",
+    "base_rank": 4,
+    "variant_rank": null,
+    "variant_error": ""
+  }
+]

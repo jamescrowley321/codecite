@@ -26,6 +26,9 @@ ARMS = {
     "assist": (("baseline", "baseline"), ("assist", "assist")),
     # Claude Code with the codecite plugin installed (plugin.py).
     "plugin": (("baseline", "baseline"), ("plugin", "plugin")),
+    # A third arm for another tool: baseline, codecite and codegraph in one
+    # run, so the two tools meet the same host and the same noise.
+    "tools": (("baseline", "baseline"), ("codecite", "codecite"), ("codegraph", "codegraph")),
 }
 
 QUERIES = EVALS_DIR / "retrieval" / "queries.toml"

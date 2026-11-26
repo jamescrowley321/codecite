@@ -1,0 +1,52 @@
+{
+ "platform": "Linux-6.8.0-149-generic-x86_64-with-glibc2.39",
+ "cpus": 22,
+ "python": "3.15.2",
+ "codecite_version": "codecite 0.0.1",
+ "codegraph_version": "1.6.0",
+ "cases_sha256": "8c05619d1f1724fb081f9e33b1098024d651475019b506c3f392d974e4215a3e",
+ "corpora_sha256": "abdf7d4e109d17956bed72bee783fb7aa851570324f8998f3811b2d8e28bc5d0",
+ "normalize_sha256": "e65ae59696ad393ca382faf32d4c9fdae9ce94216ba223014c7a8b54a3369dfe",
+ "pins": [
+  {
+   "repo": "django",
+   "commit": "8f8ad09659d728423a00e0a3b5f16da5c3a38e24"
+  },
+  {
+   "repo": "ripgrep",
+   "commit": "669cb4c755db20b26c3af3d923c042ae224c7496"
+  },
+  {
+   "repo": "excalidraw",
+   "commit": "a2ec2889babf7d2295469c6d90ebe77fae57df84"
+  },
+  {
+   "repo": "keycloak",
+   "commit": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1"
+  },
+  {
+   "repo": "linux",
+   "commit": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449"
+  }
+ ],
+ "measure": {
+  "pin_hash_seconds": {
+   "django": 0.09,
+   "ripgrep": 0.01,
+   "excalidraw": 0.02,
+   "keycloak": 0.52,
+   "linux": 2.87
+  },
+  "rounds": 5,
+  "seed": 295,
+  "limit": 50,
+  "loadavg_end": [
+   3.16748046875,
+   2.88427734375,
+   2.46240234375
+  ],
+  "snapshots_unchanged": true,
+  "scip_ids_resolved": 40,
+  "scip_ids_wanted": 42
+ }
+}

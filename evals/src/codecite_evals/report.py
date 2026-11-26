@@ -30,8 +30,8 @@ The scorecard shows their medians per arm, the providers with counts, and a
 95% interval for every measure.
 
 A Claude Code run (a claude-code/ model) makes its calls outside Inspect, so
-its turns, tokens, model time and codecite calls come from the sample's
-store instead (claude_code.py), and it names no provider.
+its turns, tokens, model time and tool calls come from the sample's store
+instead (claude_code.py), and it names no provider.
 
 Timeouts and sandbox errors both count as failures. They get columns of
 their own, each sandbox error is listed under the task's tables, and a model
@@ -39,13 +39,13 @@ with any has them named in its verdict, so a loss or pass they helped make
 doesn't read as clean. An agent whose own output overflowed or didn't decode
 is a plain failure, in neither column.
 
-A pair whose codecite arm called codecite in fewer than half its usable runs
-is not measured: the arms then differ by a tool the agent never used, so the
-comparison says nothing about codecite. "used codecite" counts, per arm, the
-runs with at least one call, read from the model calls in the log: a call to
-one of codecite's native tools, or a `bash` call that runs `codecite`. An
-assist run (`arms=assist`, assist.py) used it when its hook added a block,
-and gets a table of the hook's calls, blocks, bytes and estimated tokens.
+A pair whose tool arm used its own tool in fewer than half its usable runs
+is not measured: the comparison says nothing about a tool the agent rarely
+used. The CodeGraph-vs-codecite comparison requires both tools to meet that
+floor. Use counts native calls or `bash` calls running the arm's binary in the
+model events, or the sample store for Claude Code. An assist run (`arms=assist`,
+assist.py) used codecite when its hook added a block, and gets a table of the
+hook's calls, blocks, bytes and estimated tokens.
 
 A run of the baseline arm alone (`-T arms=baseline`, recorded in the log's
 task arguments) is a calibration, not an A/B run: per task, it gets a
@@ -66,7 +66,6 @@ default, or what the task's task.json sets), before it blocks.
 import argparse
 import json
 import random
-import re
 import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -78,6 +77,7 @@ from inspect_ai.log import list_eval_logs, read_eval_log
 from inspect_ai.model import ChatMessageAssistant
 
 from codecite_evals import config
+from codecite_evals.tool_use import CLI, GRAPH_CLI, cli
 
 # The margin that stars the measures outside the gate in the intervals table.
 MARGIN = 0.05
@@ -86,24 +86,21 @@ MARGIN = 0.05
 # Tokens have none (None): reported, never a loss, whatever they cost. A
 # task.json's old "gate" key is ignored.
 GATE = {"pass": 0.0, "tokens": None, "time": 0.25}
-# A pair is measured when its codecite arm used codecite in at least this
+# A pair is measured when its tool arm used its own tool in at least this
 # share of its usable runs.
 ADOPTION = 0.5
 # The codecite MCP server's tools: `mcp__codecite__<tool>` when configured by
 # hand, `mcp__plugin_codecite_codecite__<tool>` when the plugin supplies it.
-NATIVE = ("mcp__codecite__", "mcp__plugin_codecite_codecite__")
+NATIVE = {
+    "codecite": ("mcp__codecite__", "mcp__plugin_codecite_codecite__"),
+    "codegraph": ("mcp__codegraph__",),
+}
 ATTACHMENT = "attachment://"
 
 
 def is_codecite_tool(name: str) -> bool:
     """Whether a tool call is to one of codecite's MCP tools."""
-    return name.startswith(NATIVE)
-
-
-# `codecite` at the start of a shell command: of the line, or after `;`, `&`,
-# `|`, `(`, `$(` or a backtick, behind any VAR=value prefixes, by bare name or
-# path. `grep codecite` or `ls /opt/codecite` don't run it.
-CLI = re.compile(r"(?:^|[;&|(`\n]|\$\()\s*(?:\w+=\S*\s+)*(?:\S*/)?codecite(?=\s|$)")
+    return name.startswith(NATIVE["codecite"])
 RESAMPLES = 10_000
 SEED = 0
 # A task is in band when baseline passes this share of runs, pooled over the
@@ -151,10 +148,15 @@ def logs(paths: list[Path], tier=None):
             yield read_eval_log(str(path))
             continue
         newest = {}  # (task, model) -> header
+        arm_sets = {}
         for info in list_eval_logs(str(path)):
             head = read_eval_log(info.name, header_only=True)
             key = (head.status == "success", head.eval.created)
-            run = (head.eval.task, head.eval.model)
+            run = (task_name(head), head.eval.model)
+            pair = log_arms(head)
+            if run in arm_sets and arm_sets[run] != pair:
+                raise ValueError(f"incompatible arm sets for {run}; report logs apart")
+            arm_sets[run] = pair
             if run not in newest or key > newest[run][0]:
                 newest[run] = (key, info.name)
         for _, name in newest.values():
@@ -184,7 +186,7 @@ class Run:
     providers: Counter = field(default_factory=Counter)
     # The model's decode rate over both arms' runs, set once they are read.
     pooled_rate: float | None = None
-    # Whether any tool call ran codecite (codecite_calls).
+    # Whether the sample used its arm's tool (or the assist hook added a block).
     used: bool = False
     # Assistant messages: the turns of a sample whose log kept no model events.
     replies: int = 0
@@ -280,24 +282,25 @@ def stopped(metadata):
     return metadata.get("stopped") or ("agent_timeout" if metadata.get("timed_out") else None)
 
 
-def codecite_calls(sample):
-    """How many tool calls in this sample's model calls ran codecite: its
-    native tools, or `bash` with a codecite command. Text that only names
-    codecite isn't a call."""
+def tool_calls(sample, tool="codecite"):
+    """Count calls to this tool's native tools or binary in the transcript."""
     calls = 0
     for event in sample.events or []:
         if not isinstance(event, ModelEvent) or not event.output.choices:
             continue
         for call in event.output.message.tool_calls or []:
-            if is_codecite_tool(call.function):
+            if call.function.startswith(NATIVE[tool]):
                 calls += 1
             elif call.function == "bash":
                 command = call.arguments.get("command") if isinstance(call.arguments, dict) else None
                 if isinstance(command, str) and command.startswith(ATTACHMENT):
                     # Inspect stores long strings apart, in the sample's attachments.
                     command = (sample.attachments or {}).get(command.removeprefix(ATTACHMENT))
-                calls += isinstance(command, str) and bool(CLI.search(command))
+                calls += isinstance(command, str) and bool(cli(tool).search(command))
     return calls
+
+
+codecite_calls = tool_calls
 
 
 def listed(error, limit=200):
@@ -400,6 +403,26 @@ def calibrating(log):
     return (log.eval.task_args or {}).get("arms") == "baseline"
 
 
+def log_arms(log):
+    name = (log.eval.task_args or {}).get("arms", "ab")
+    if name not in config.ARMS:
+        raise ValueError(f"unknown arm set: {name}")
+    return config.ARMS[name]
+
+
+def pairs(pair):
+    """Compare each arm to the reference, then the non-reference arms."""
+    return [(arm, pair[0]) for arm in pair[1:]] + [
+        (b, a) for i, a in enumerate(pair[1:]) for b in pair[i + 2 :]
+    ]
+
+
+def gated(comparison, pair):
+    """Only codecite against the reference carries the gate."""
+    code, base = comparison
+    return code[1] == "codecite" and base == pair[0]
+
+
 def scorecard(logs, tier=None):
     """The scorecard for these eval logs, as markdown, headed by its tier,
     with tables per task: the A/B (or A/A) tables, or the calibration table
@@ -414,7 +437,9 @@ def scorecard(logs, tier=None):
     arms = {}  # (task, model) -> ((label, condition), ...)
     for log in logs:
         name, model = task_name(log), log.eval.model
-        pair = config.ARMS.get((log.eval.task_args or {}).get("arms", "ab"), config.ARMS["ab"])
+        pair = log_arms(log)
+        if (name, model) in arms and arms[(name, model)] != pair:
+            raise ValueError(f"incompatible arm sets for {name}, {model}; report logs apart")
         arms[(name, model)] = pair
         for label, _ in pair:
             planned[(name, model, label)] = per_arm(log, label, len(pair)) * (log.eval.config.epochs or 1)
@@ -422,6 +447,8 @@ def scorecard(logs, tier=None):
             if s.error or not s.scores:
                 continue
             arm = s.metadata["arm"]
+            condition = dict(pair).get(arm, s.metadata.get("condition"))
+            tool = "codegraph" if condition == "codegraph" else "codecite"
             score = next(iter(s.scores.values()))
             usage = (s.model_usage or {}).values()
             metadata = score.metadata or {}
@@ -442,7 +469,7 @@ def scorecard(logs, tier=None):
                 model_seconds=model_seconds,
                 providers=providers,
                 # An assist run reaches codecite only through its hook's blocks.
-                used=agent["assist_blocks"] > 0 if "assist_blocks" in agent else agent.get("codecite_calls", codecite_calls(s)) > 0,
+                used=agent["assist_blocks"] > 0 if "assist_blocks" in agent else agent.get(f"{tool}_calls", tool_calls(s, tool)) > 0,
                 replies=sum(isinstance(m, ChatMessageAssistant) for m in s.messages or []),
                 assist_calls=agent.get("assist_calls"),
                 assist_blocks=agent.get("assist_blocks"),
@@ -457,7 +484,7 @@ def scorecard(logs, tier=None):
         out = [CALIBRATION.format(tier=tier or "this")]
     else:
         out = [TIERS[tier]] if tier else []
-        if any(a == b for pair in arms.values() if len(pair) == 2 for (_, a), (_, b) in [pair]):
+        if any(len(pair) > 1 and len({condition for _, condition in pair}) == 1 for pair in arms.values()):
             out.append(AA)
     for name in sorted({k[0] for k in planned}):
         if out:
@@ -521,12 +548,21 @@ def calibration(name, runs, planned):
     return out
 
 
+def adoption_shortfall(condition, runs):
+    """Why a tool arm did not meet the adoption floor, or None."""
+    used = sum(x.used for x in runs)
+    if used < ADOPTION * len(runs):
+        tool = "codegraph" if condition == "codegraph" else "codecite"
+        return f"{tool} used in {used} of {len(runs)} runs"
+
+
 def table(rng, name, runs, planned, arms):
-    """One task's tables: per model, both arms and the verdict; the
+    """One task's tables: per model, the arms and their verdicts; the
     transcript medians; and every measure's interval."""
     out = [f"**Task: `{name}`**", "", gate_line(), ""]
+    tool_header = "used tool" if any(len(pair) > 2 for (task, _), pair in arms.items() if task == name) else "used codecite"
     out += [
-        "| model | arm | runs | used codecite | pass | fails | timeouts | sandbox errors | median tokens | median time | verdict |",
+        f"| model | arm | runs | {tool_header} | pass | fails | timeouts | sandbox errors | median tokens | median time | verdict |",
         "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     detail = [
@@ -550,58 +586,68 @@ def table(rng, name, runs, planned, arms):
     for model in sorted({k[1] for k in planned if k[0] == name}):
         label = model.removeprefix("openrouter/")
         pair = arms[(name, model)]
-        (a_label, _), (b_label, b_condition) = pair
-        aa = pair[0][1] == b_condition
-        first, second = runs.get((name, model, a_label), []), runs.get((name, model, b_label), [])
-        want_a, want_b = planned[(name, model, a_label)], planned[(name, model, b_label)]
-        timed = [r for r in first + second if r.model_seconds]
+        aa = len({condition for _, condition in pair}) == 1
+        arm_runs = {arm: runs.get((name, model, arm), []) for arm, _ in pair}
+        all_runs = [r for arm, _ in pair for r in arm_runs[arm]]
+        timed = [r for r in all_runs if r.model_seconds]
         if timed:
             pooled = sum(r.output_tokens for r in timed) / sum(r.model_seconds for r in timed)
-            for r in first + second:
+            for r in all_runs:
                 r.pooled_rate = pooled
-        if len(first) < want_a or len(second) < want_b:
-            of = want_a if want_a == want_b else f"{want_a}/{want_b}"
-            verdict = f"incomplete ({len(first)}/{len(second)} of {of} runs)"
-            spans.append(f"| {label} | {b_label} vs {a_label} | " + " | ".join("-" for _ in MEASURES) + " |")
-        else:
-            found = {}
-            for measure, value, kind in MEASURES:
-                a = [v for v in map(value, first) if v is not None]
-                b = [v for v in map(value, second) if v is not None]
-                found[measure] = interval(rng, a, b, pass_diff if kind == "points" else median_ratio) if a and b else None
-            cells = [
-                "-" if found[m] is None else span(*found[m], kind) + (" *" if past(m, *found[m]) else "")
-                for m, _, kind in MEASURES
-            ]
-            spans.append(f"| {label} | {b_label} vs {a_label} | " + " | ".join(cells) + " |")
-            p, t, s = found["pass"], found["tokens"], found["time"]
-            ranges = f" (pass {p[0]:+.0%}..{p[1]:+.0%}, tokens {t[0]:+.0%}..{t[1]:+.0%}, time {s[0]:+.0%}..{s[1]:+.0%})"
-            if aa:
-                # Noise alone made these differences: no verdict, only which
-                # intervals it pushed past the margin.
-                wide = [m for m, _, _ in MEASURES if found[m] is not None and past(m, *found[m])]
-                verdict = ("noise past the margin on " + ", ".join(wide) if wide else "noise inside the margin") + ranges
-            elif (used := sum(x.used for x in second)) < ADOPTION * len(second):
-                verdict = f"not measured (codecite used in {used} of {len(second)} runs)"
+        verdicts = defaultdict(list)
+        for comparison in pairs(pair):
+            (b_label, b_condition), (a_label, a_condition) = comparison
+            first, second = arm_runs[a_label], arm_runs[b_label]
+            want_a, want_b = planned[(name, model, a_label)], planned[(name, model, b_label)]
+            # Assist retains the existing codecite hook gate.
+            is_gate = gated(comparison, pair) or (b_condition == "assist" and comparison[1] == pair[0])
+            if len(first) < want_a or len(second) < want_b:
+                of = want_a if want_a == want_b else f"{want_a}/{want_b}"
+                verdict = f"incomplete ({len(first)}/{len(second)} of {of} runs)"
+                spans.append(f"| {label} | {b_label} vs {a_label} | " + " | ".join("-" for _ in MEASURES) + " |")
             else:
-                lost = losses(found)
-                verdict = ("loses on " + ", ".join(lost) if lost else "no loss") + ranges
-        crashed = [sum(x.stopped == "sandbox_error" for x in r) for r in (first, second)]
-        if any(crashed):
-            verdict += f", with sandbox errors ({a_label} {crashed[0]}, {b_label} {crashed[1]})"
-        if model.startswith(UNGATED) and not aa:
-            # Every verdict of a model outside the gating panel, incomplete
-            # and not measured too.
-            verdict += ", reported, not gated"
-        for i, (arm, r) in enumerate(((a_label, first), (b_label, second))):
-            # An arm with no usable runs still gets a row, so the verdict
-            # (incomplete) always shows.
+                found = {}
+                for measure, value, kind in MEASURES:
+                    a = [v for v in map(value, first) if v is not None]
+                    b = [v for v in map(value, second) if v is not None]
+                    found[measure] = interval(rng, a, b, pass_diff if kind == "points" else median_ratio) if a and b else None
+                cells = [
+                    "-" if found[m] is None else span(*found[m], kind) + (" *" if past(m, *found[m]) else "")
+                    for m, _, kind in MEASURES
+                ]
+                spans.append(f"| {label} | {b_label} vs {a_label} | " + " | ".join(cells) + " |")
+                p, t, s = found["pass"], found["tokens"], found["time"]
+                ranges = f" (pass {p[0]:+.0%}..{p[1]:+.0%}, tokens {t[0]:+.0%}..{t[1]:+.0%}, time {s[0]:+.0%}..{s[1]:+.0%})"
+                adoption_arms = [(b_condition, second)]
+                if (b_condition, a_condition) == ("codegraph", "codecite"):
+                    adoption_arms.append((a_condition, first))
+                if aa:
+                    # Noise alone made these differences: no verdict, only which
+                    # intervals it pushed past the margin.
+                    wide = [m for m, _, _ in MEASURES if found[m] is not None and past(m, *found[m])]
+                    verdict = ("noise past the margin on " + ", ".join(wide) if wide else "noise inside the margin") + ranges
+                elif shortfalls := [why for condition, r in adoption_arms if (why := adoption_shortfall(condition, r))]:
+                    verdict = f"not measured ({', '.join(shortfalls)})"
+                elif is_gate:
+                    lost = losses(found)
+                    verdict = ("loses on " + ", ".join(lost) if lost else "no loss") + ranges
+                else:
+                    verdict = "reported, not gated" + ranges
+            crashed = [sum(x.stopped == "sandbox_error" for x in r) for r in (first, second)]
+            if any(crashed):
+                verdict += f", with sandbox errors ({a_label} {crashed[0]}, {b_label} {crashed[1]})"
+            if not aa and (model.startswith(UNGATED) or not is_gate) and "reported, not gated" not in verdict:
+                # Every verdict of a model outside the gating panel, incomplete
+                # and not measured too.
+                verdict += ", reported, not gated"
+            verdicts[b_label].append((f"vs {a_label}: " if len(pair) > 2 else "") + verdict)
+        for arm, _ in pair:
+            r = arm_runs[arm]
             cells = (
                 f"{counts(r)} | {median(x.tokens for x in r):,.0f} | {median(x.seconds for x in r):.0f}s"
-                if r
-                else "- | - | - | - | - | -"
+                if r else "- | - | - | - | - | -"
             )
-            out.append(f"| {label} | {arm} | {len(r)} | {sum(x.used for x in r)}/{len(r)} | {cells} | {verdict if i == 1 else ''} |")
+            out.append(f"| {label} | {arm} | {len(r)} | {sum(x.used for x in r)}/{len(r)} | {cells} | {'; '.join(verdicts[arm])} |")
             detail.append(f"| {label} | {arm} | {medians(r)} |")
             if hooked := [x for x in r if x.assist_calls is not None]:
                 assisted.append(f"| {label} | {arm} | {assist_medians(hooked)} |")

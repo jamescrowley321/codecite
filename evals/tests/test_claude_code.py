@@ -69,6 +69,19 @@ def test_measures_count_each_message_once():
     }
 
 
+def test_measures_count_the_selected_tool_in_mixed_native_and_shell_calls():
+    out = stream(assistant(
+        "m1", USAGE,
+        tool("mcp__codecite__search"), tool("mcp__codegraph__codegraph_explore"),
+        tool("Bash", command="codecite search eval x"),
+        tool("Bash", command="cd /work && /opt/codegraph/bin/codegraph explore token"),
+        tool("Bash", command="grep codegraph ."),
+    ))
+    assert claude_code.measures(out, "codegraph")["codegraph_calls"] == 2
+    assert claude_code.measures(out, "codecite")["codecite_calls"] == 2
+    assert "codecite_calls" not in claude_code.measures(out, "codegraph")
+
+
 def test_a_cut_off_stream_still_has_measures_but_no_model_time():
     out = stream(assistant("m1", USAGE)) + '{"type": "assist'
     m = claude_code.measures(out)
@@ -119,7 +132,7 @@ class Sandbox:
 
     async def exec(self, cmd, **kwargs):
         self.commands.append(cmd)
-        if cmd[0] == "sh":
+        if cmd[0] == "sh" and "env" in kwargs:
             self.envs.append(kwargs["env"])
             if self.output is not None:
                 self.files[claude_code.OUTPUT] = self.output
@@ -151,6 +164,18 @@ def test_a_finished_run_keeps_its_answer_and_measures(monkeypatch):
     assert json.loads(sb.files[claude_code.MCP]) == claude_code.MCP_CONFIG
 
 
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_codegraph_measures_are_persisted_by_the_agent(monkeypatch, interrupted):
+    out = stream(assistant(
+        "m1", USAGE, tool("mcp__codecite__search"),
+        tool("mcp__codegraph__codegraph_explore"), tool("Bash", command="codegraph explore token"),
+    ))
+    result = TimeoutError() if interrupted else finished(out + stream(DONE))
+    _, store, _ = run_claude(monkeypatch, result, arm="codegraph", output=out if interrupted else None)
+    assert store["codegraph_calls"] == 2
+    assert "codecite_calls" not in store
+
+
 def test_the_token_never_goes_in_an_execs_env(monkeypatch):
     # Inspect logs an exec's env; the token reaches the sandbox through compose.
     monkeypatch.setenv(claude_code.TOKEN, "secret")
@@ -160,7 +185,7 @@ def test_the_token_never_goes_in_an_execs_env(monkeypatch):
 
 def test_the_baseline_arm_loses_codecite(monkeypatch):
     _, _, sb = run_claude(monkeypatch, finished(stream(DONE)), arm="baseline")
-    assert ["rm", "-rf", "/opt/codecite"] in sb.commands and claude_code.MCP not in sb.files
+    assert task.STRIP_CODECITE in sb.commands and claude_code.MCP not in sb.files
     assert not sb.envs[0]["PATH"].startswith("/opt/codecite")
 
 
@@ -233,7 +258,7 @@ def test_the_assist_arm_keeps_its_hooks_measures(monkeypatch):
     monkeypatch.setattr(task, "store", lambda: store)
     asyncio.run(task.claude("claude-sonnet-5-5")(AgentState(messages=[ChatMessageUser(content="do the task")])))
     assert (store["assist_calls"], store["assist_blocks"], store["assist_bytes"]) == (2, 1, 300)
-    assert not any(c == ["rm", "-rf", "/opt/codecite"] for c in sb.commands) and claude_code.MCP not in sb.files
+    assert not any(c == task.STRIP_CODECITE for c in sb.commands) and claude_code.MCP not in sb.files
 
 
 def test_other_arms_keep_no_assist_measures(monkeypatch):
@@ -257,3 +282,20 @@ def test_tool_calls_lists_every_call_in_order_with_its_input_cut():
     assert json.loads(calls[0]["input"]) == {"command": "grep -rn sid app"}
     assert len(calls[1]["input"]) == claude_code.MAX_CALL_CHARS
     assert claude_code.tool_calls("") == []
+
+
+def test_the_codegraph_arm_gets_its_own_mcp_config():
+    cmd = claude_code.command("codegraph", "do the task", "claude-sonnet-5-5", 600)
+    assert cmd[cmd.index("--mcp-config") + 1] == claude_code.GRAPH_MCP
+
+
+def test_only_one_mcp_config_per_arm():
+    for condition in ("baseline", "codecite", "codegraph"):
+        assert claude_code.command(condition, "p", "m", 600).count("--mcp-config") == (0 if condition == "baseline" else 1)
+
+
+def test_the_codegraph_arm_writes_claude_graph_mcp_and_strips_codecite(monkeypatch):
+    _, _, sb = run_claude(monkeypatch, finished(stream(DONE)), arm="codegraph")
+    assert json.loads(sb.files[claude_code.GRAPH_MCP]) == claude_code.GRAPH_MCP_CONFIG
+    assert task.STRIP_CODECITE in sb.commands
+    assert sb.envs[0]["PATH"].startswith("/opt/codegraph/bin:")

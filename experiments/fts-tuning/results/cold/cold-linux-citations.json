@@ -1,0 +1,592 @@
+[
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm/include/asm/set_memory.h#L16",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm/include/asm/set_memory.h#L17",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm/include/asm/set_memory.h#L18",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm64/kernel/process.c#L341-L344",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm64/tools/syscall_32.tbl#L361-L420",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/powerpc/kernel/syscalls/syscall.tbl#L421-L480",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/powerpc/platforms/powernv/opal-dump.c#L288-L325",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/um/drivers/port_kern.c#L36-L43",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/um/os-Linux/skas/process.c#L553-L788",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/x86/boot/memory.c#L116-L123",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/x86/entry/syscalls/syscall_32.tbl#L361-L420",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/x86/kernel/apic/probe_32.c#L31-L35",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:drivers/dax/super.c#L171-L185",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:drivers/firmware/xilinx/zynqmp-debug.c#L354-L369",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:drivers/gpu/drm/drm_file.c#L516-L606",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:drivers/gpu/drm/drm_writeback.c#L61-L86",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:drivers/misc/kgdbts.c#L305-L340",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:drivers/misc/kgdbts.c#L604-L662",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:drivers/net/netdevsim/dev.c#L227-L238",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:drivers/net/netdevsim/dev.c#L240-L289",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:drivers/net/netdevsim/dev.c#L291-L296",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:drivers/target/iscsi/cxgbit/cxgbit_cm.c#L1622-L1660",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:drivers/usb/misc/usblcd.c#L124-L160",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/configfs/file.c#L213-L234",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/nfs/pnfs_nfs.c#L880-L998",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/nfsd/vfs.c#L1171-L1277",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/nfsd/vfs.c#L1344-L1379",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/open.c#L1420-L1447",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/open.c#L1449-L1453",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/open.c#L1456-L1514",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/read_write.c#L385-L390",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/read_write.c#L42-L69",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/read_write.c#L552-L581",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/read_write.c#L666-L696",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/read_write.c#L704-L720",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/read_write.c#L71-L86",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/read_write.c#L727-L744",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/read_write.c#L752-L766",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/read_write.c#L782-L796",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/read_write.c#L868-L893",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/read_write.c#L896-L921",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/read_write.c#L959-L987",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/read_write.c#L990-L1026",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/smb/server/smb2pdu.c#L6971-L6999",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/smb/server/vfs.c#L355-L406",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/smb/server/vfs.c#L474-L545",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/linux/memory_hotplug.h#L295-L298",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/linux/memory_hotplug.h#L300",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/linux/nvme.h#L1679-L1681",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/linux/sched/task.h#L114-L118",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/linux/sched/task.h#L120-L123",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/linux/set_memory.h#L76-L79",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/linux/set_memory.h#L81-L84",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/media/videobuf2-core.h#L1070-L1128",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/net/tcp.h#L511-L534",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/net/udp_tunnel.h#L54-L65",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/uapi/asm-generic/unistd.h#L662-L721",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:kernel/fork.c#L176-L178",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:kernel/fork.c#L187-L190",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:kernel/fork.c#L752-L757",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:kernel/fork.c#L851-L856",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:kernel/trace/trace_osnoise.c#L2270-L2300",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:kernel/trace/trace_probe.h#L279-L283",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:kernel/trace/trace_probe.h#L291-L295",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:kernel/trace/trace_probe.h#L302-L305",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:kernel/trace/trace_probe.h#L307-L310",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:kernel/trace/trace_probe.h#L332-L335",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:kernel/trace/trace_probe.h#L461-L465",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:kernel/trace/trace_probe.h#L574-L579",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:mm/memory_hotplug.c#L126-L129",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/bluetooth/iso.c#L925-L945",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/bluetooth/sco.c#L586-L606",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/inet_connection_sock.c#L1376-L1398",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/netfilter/ipt_SYNPROXY.c#L116-L121",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp.c#L1031-L1076",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_input.c#L3293-L3299",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L208-L221",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L223-L365",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L3483-L3534",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L366",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ulp.c#L103-L110",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv6/tcp_ipv6.c#L137-L350",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/llc/llc_if.c#L70-L118",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/socket.c#L1534-L1647",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/socket.c#L1661-L1664",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/socket.c#L1679-L1682",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:rust/helpers/task.c#L16-L19",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:rust/helpers/task.c#L21-L24",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:scripts/syscall.tbl#L301-L360",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/include/uapi/asm-generic/unistd.h#L662-L721",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/arch/arm64/entry/syscalls/syscall_32.tbl#L361-L420",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/arch/powerpc/entry/syscalls/syscall.tbl#L421-L480",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/arch/x86/entry/syscalls/syscall_32.tbl#L361-L420",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/util/perf_api_probe.c#L107-L110",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/util/probe-file.h#L24-L31",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/power/x86/amd_pstate_tracer/amd_pstate_trace.py#L257",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/scripts/syscall.tbl#L301-L360",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/bpf/prog_tests/sock_create.c#L14-L27",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/bpf/prog_tests/sock_create.c#L332-L348",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/bpf/prog_tests/sock_create.c#L9-L12",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/bpf/prog_tests/sockmap_basic.c#L25-L58",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/bpf/progs/connect4_prog.c#L149-L200",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/bpf/progs/strobemeta.h#L16",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/bpf/progs/verifier_sock.c#L1031-L1041",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/ftrace/test.d/dynevent/fprobe_args_vfs.tc#L1-L41",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/ftrace/test.d/dynevent/fprobe_syntax_errors.tc#L1-L58",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/ftrace/test.d/dynevent/fprobe_syntax_errors.tc#L61-L120",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/ftrace/test.d/kprobe/kprobe_args_user.tc#L1-L34",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/ftrace/test.d/kprobe/kprobe_args_vfs.tc#L1-L40",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/ftrace/test.d/kprobe/kprobe_syntax_errors.tc#L1-L60",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/ftrace/test.d/kprobe/kprobe_syntax_errors.tc#L61-L120",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/net/openvswitch/ovs-dpctl.py#L574-L613",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/net/packetdrill/tcp_blocking_blocking-connect.pkt#L1-L13",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/net/packetdrill/tcp_blocking_blocking-write.pkt#L1-L35",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/openat2/helpers.c#L28-L31",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/openat2/helpers.c#L33-L37",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/openat2/helpers.c#L39-L45",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/openat2/helpers.h#L1-L25",
+    "exit": 0,
+    "error": ""
+  }
+]

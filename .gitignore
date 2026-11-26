@@ -11,6 +11,7 @@
 /.codecite/
 
 # Local tooling
+__pycache__/
 .codegraph/
 .env
 .env.*
@@ -33,3 +34,4 @@
 evals/**/node_modules/
 evals/**/.venv/
 evals/**/__pycache__/
+experiments/**/__pycache__/

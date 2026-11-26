@@ -1,0 +1,310 @@
+[
+  {
+    "id": "q1",
+    "class": "history-title",
+    "base_rank": 9,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q2",
+    "class": "history-issue",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q3",
+    "class": "history-title",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q4",
+    "class": "history-title",
+    "base_rank": 3,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q5",
+    "class": "history-title",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q6",
+    "class": "history-issue",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "q7",
+    "class": "history-title",
+    "base_rank": 3,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q8",
+    "class": "history-issue",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q9",
+    "class": "history-title",
+    "base_rank": 3,
+    "variant_rank": 4,
+    "variant_error": ""
+  },
+  {
+    "id": "q10",
+    "class": "history-title",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q11",
+    "class": "history-issue",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q12",
+    "class": "history-title",
+    "base_rank": 3,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q13",
+    "class": "history-issue",
+    "base_rank": 7,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q14",
+    "class": "history-title",
+    "base_rank": 1,
+    "variant_rank": 3,
+    "variant_error": ""
+  },
+  {
+    "id": "q15",
+    "class": "history-issue",
+    "base_rank": 1,
+    "variant_rank": 3,
+    "variant_error": ""
+  },
+  {
+    "id": "q16",
+    "class": "history-title",
+    "base_rank": 1,
+    "variant_rank": 4,
+    "variant_error": ""
+  },
+  {
+    "id": "q17",
+    "class": "history-title",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q18",
+    "class": "history-title",
+    "base_rank": null,
+    "variant_rank": 3,
+    "variant_error": ""
+  },
+  {
+    "id": "q19",
+    "class": "history-issue",
+    "base_rank": null,
+    "variant_rank": 3,
+    "variant_error": ""
+  },
+  {
+    "id": "q20",
+    "class": "history-title",
+    "base_rank": 4,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q21",
+    "class": "history-issue",
+    "base_rank": 6,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q22",
+    "class": "history-title",
+    "base_rank": null,
+    "variant_rank": 3,
+    "variant_error": ""
+  },
+  {
+    "id": "q23",
+    "class": "history-issue",
+    "base_rank": null,
+    "variant_rank": 3,
+    "variant_error": ""
+  },
+  {
+    "id": "q24",
+    "class": "history-title",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q25",
+    "class": "history-issue",
+    "base_rank": 3,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q26",
+    "class": "history-title",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q27",
+    "class": "history-issue",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q28",
+    "class": "history-title",
+    "base_rank": 4,
+    "variant_rank": 3,
+    "variant_error": ""
+  },
+  {
+    "id": "q29",
+    "class": "history-issue",
+    "base_rank": 3,
+    "variant_rank": 3,
+    "variant_error": ""
+  },
+  {
+    "id": "q30",
+    "class": "history-title",
+    "base_rank": 6,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q31",
+    "class": "history-issue",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "q32",
+    "class": "history-title",
+    "base_rank": null,
+    "variant_rank": 3,
+    "variant_error": ""
+  },
+  {
+    "id": "q33",
+    "class": "history-title",
+    "base_rank": null,
+    "variant_rank": 3,
+    "variant_error": ""
+  },
+  {
+    "id": "q34",
+    "class": "history-issue",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "q35",
+    "class": "history-title",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q36",
+    "class": "history-issue",
+    "base_rank": 1,
+    "variant_rank": null,
+    "variant_error": "fts5: phrase queries are not supported (detail!=full)"
+  },
+  {
+    "id": "q37",
+    "class": "history-title",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q38",
+    "class": "history-issue",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q39",
+    "class": "history-title",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q40",
+    "class": "history-title",
+    "base_rank": null,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q41",
+    "class": "history-title",
+    "base_rank": 3,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q42",
+    "class": "history-title",
+    "base_rank": null,
+    "variant_rank": 8,
+    "variant_error": ""
+  },
+  {
+    "id": "q43",
+    "class": "history-title",
+    "base_rank": 4,
+    "variant_rank": null,
+    "variant_error": ""
+  },
+  {
+    "id": "q44",
+    "class": "history-title",
+    "base_rank": 1,
+    "variant_rank": 6,
+    "variant_error": ""
+  }
+]

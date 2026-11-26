@@ -1,0 +1,116 @@
+[
+  {
+    "corpus": "identity-bench",
+    "queries": 122,
+    "variant_errors": 24,
+    "base": {
+      "queries": 122,
+      "recall_at_1": 0.14754098360655737,
+      "recall_at_10": 0.47540983606557374,
+      "mrr": 0.2451502732240437
+    },
+    "variant_errors_as_misses": {
+      "queries": 122,
+      "recall_at_1": 0.0,
+      "recall_at_10": 0.0,
+      "mrr": 0.0
+    },
+    "answered_by_both": 98,
+    "answered_same_rank": 57
+  },
+  {
+    "corpus": "history-1",
+    "queries": 36,
+    "variant_errors": 4,
+    "base": {
+      "queries": 36,
+      "recall_at_1": 0.3611111111111111,
+      "recall_at_10": 0.8888888888888888,
+      "mrr": 0.5016865079365079
+    },
+    "variant_errors_as_misses": {
+      "queries": 36,
+      "recall_at_1": 0.0,
+      "recall_at_10": 0.05555555555555555,
+      "mrr": 0.006944444444444444
+    },
+    "answered_by_both": 32,
+    "answered_same_rank": 4
+  },
+  {
+    "corpus": "history-2",
+    "queries": 44,
+    "variant_errors": 4,
+    "base": {
+      "queries": 44,
+      "recall_at_1": 0.25,
+      "recall_at_10": 0.5681818181818182,
+      "mrr": 0.33342352092352096
+    },
+    "variant_errors_as_misses": {
+      "queries": 44,
+      "recall_at_1": 0.0,
+      "recall_at_10": 0.3181818181818182,
+      "mrr": 0.09375
+    },
+    "answered_by_both": 40,
+    "answered_same_rank": 11
+  },
+  {
+    "corpus": "history-3",
+    "queries": 48,
+    "variant_errors": 6,
+    "base": {
+      "queries": 48,
+      "recall_at_1": 0.2708333333333333,
+      "recall_at_10": 0.7708333333333334,
+      "mrr": 0.4113012566137566
+    },
+    "variant_errors_as_misses": {
+      "queries": 48,
+      "recall_at_1": 0.0,
+      "recall_at_10": 0.10416666666666667,
+      "mrr": 0.014583333333333332
+    },
+    "answered_by_both": 42,
+    "answered_same_rank": 11
+  },
+  {
+    "corpus": "history-4",
+    "queries": 46,
+    "variant_errors": 8,
+    "base": {
+      "queries": 46,
+      "recall_at_1": 0.2608695652173913,
+      "recall_at_10": 0.6304347826086957,
+      "mrr": 0.36614906832298133
+    },
+    "variant_errors_as_misses": {
+      "queries": 46,
+      "recall_at_1": 0.0,
+      "recall_at_10": 0.08695652173913043,
+      "mrr": 0.011257763975155278
+    },
+    "answered_by_both": 38,
+    "answered_same_rank": 16
+  },
+  {
+    "corpus": "history-5",
+    "queries": 32,
+    "variant_errors": 3,
+    "base": {
+      "queries": 32,
+      "recall_at_1": 0.40625,
+      "recall_at_10": 0.84375,
+      "mrr": 0.578422619047619
+    },
+    "variant_errors_as_misses": {
+      "queries": 32,
+      "recall_at_1": 0.0,
+      "recall_at_10": 0.4375,
+      "mrr": 0.06118551587301587
+    },
+    "answered_by_both": 29,
+    "answered_same_rank": 4
+  }
+]

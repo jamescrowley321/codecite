@@ -1,0 +1,558 @@
+[
+  {
+    "corpus": "linux",
+    "query": "tcp_v4_connect",
+    "variant": "full",
+    "round": 0,
+    "milliseconds": 57.22233,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L223-L365",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L366",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L208-L221",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/net/tcp.h#L511-L534",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L3483-L3534",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv6/tcp_ipv6.c#L137-L350",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/bpf/prog_tests/sockmap_basic.c#L25-L58",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/nfs/pnfs_nfs.c#L880-L998",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/bpf/progs/connect4_prog.c#L149-L200",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp.c#L1031-L1076"
+    ]
+  },
+  {
+    "corpus": "linux",
+    "query": "tcp_v4_connect",
+    "variant": "full",
+    "round": 1,
+    "milliseconds": 51.46887,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L223-L365",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L366",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L208-L221",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/net/tcp.h#L511-L534",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L3483-L3534",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv6/tcp_ipv6.c#L137-L350",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/bpf/prog_tests/sockmap_basic.c#L25-L58",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/nfs/pnfs_nfs.c#L880-L998",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/bpf/progs/connect4_prog.c#L149-L200",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp.c#L1031-L1076"
+    ]
+  },
+  {
+    "corpus": "linux",
+    "query": "tcp_v4_connect",
+    "variant": "full",
+    "round": 2,
+    "milliseconds": 48.462461,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L223-L365",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L366",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L208-L221",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/net/tcp.h#L511-L534",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L3483-L3534",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv6/tcp_ipv6.c#L137-L350",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/bpf/prog_tests/sockmap_basic.c#L25-L58",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/nfs/pnfs_nfs.c#L880-L998",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/bpf/progs/connect4_prog.c#L149-L200",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp.c#L1031-L1076"
+    ]
+  },
+  {
+    "corpus": "linux",
+    "query": "tcp_v4_connect",
+    "variant": "full",
+    "round": 3,
+    "milliseconds": 56.145607,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L223-L365",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L366",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L208-L221",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/net/tcp.h#L511-L534",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L3483-L3534",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv6/tcp_ipv6.c#L137-L350",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/bpf/prog_tests/sockmap_basic.c#L25-L58",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/nfs/pnfs_nfs.c#L880-L998",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/bpf/progs/connect4_prog.c#L149-L200",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp.c#L1031-L1076"
+    ]
+  },
+  {
+    "corpus": "linux",
+    "query": "tcp_v4_connect",
+    "variant": "full",
+    "round": 4,
+    "milliseconds": 50.220846,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L223-L365",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L366",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L208-L221",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/net/tcp.h#L511-L534",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L3483-L3534",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv6/tcp_ipv6.c#L137-L350",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/bpf/prog_tests/sockmap_basic.c#L25-L58",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/nfs/pnfs_nfs.c#L880-L998",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/bpf/progs/connect4_prog.c#L149-L200",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp.c#L1031-L1076"
+    ]
+  },
+  {
+    "corpus": "linux",
+    "query": "tcp_v4_connect",
+    "variant": "full",
+    "round": 5,
+    "milliseconds": 64.164665,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L223-L365",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L366",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L208-L221",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/net/tcp.h#L511-L534",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp_ipv4.c#L3483-L3534",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv6/tcp_ipv6.c#L137-L350",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/bpf/prog_tests/sockmap_basic.c#L25-L58",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:fs/nfs/pnfs_nfs.c#L880-L998",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/testing/selftests/bpf/progs/connect4_prog.c#L149-L200",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:net/ipv4/tcp.c#L1031-L1076"
+    ]
+  },
+  {
+    "corpus": "linux",
+    "query": "tcp_v4_connect",
+    "variant": "column",
+    "round": 0,
+    "milliseconds": 3.57528,
+    "exit": 1,
+    "error": "Error: SQLite error\n\nCaused by:\n    0: fts5: phrase queries are not supported (detail!=full)\n    1: Error code 1: SQL logic error",
+    "citations": []
+  },
+  {
+    "corpus": "linux",
+    "query": "preadv2",
+    "variant": "full",
+    "round": 0,
+    "milliseconds": 8.935165,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/uapi/asm-generic/unistd.h#L662-L721",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/include/uapi/asm-generic/unistd.h#L662-L721",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/x86/entry/syscalls/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/arch/x86/entry/syscalls/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/powerpc/kernel/syscalls/syscall.tbl#L421-L480",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/arch/powerpc/entry/syscalls/syscall.tbl#L421-L480",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:scripts/syscall.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/scripts/syscall.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm64/tools/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/arch/arm64/entry/syscalls/syscall_32.tbl#L361-L420"
+    ]
+  },
+  {
+    "corpus": "linux",
+    "query": "preadv2",
+    "variant": "full",
+    "round": 1,
+    "milliseconds": 7.044846,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/uapi/asm-generic/unistd.h#L662-L721",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/include/uapi/asm-generic/unistd.h#L662-L721",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/x86/entry/syscalls/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/arch/x86/entry/syscalls/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/powerpc/kernel/syscalls/syscall.tbl#L421-L480",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/arch/powerpc/entry/syscalls/syscall.tbl#L421-L480",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:scripts/syscall.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/scripts/syscall.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm64/tools/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/arch/arm64/entry/syscalls/syscall_32.tbl#L361-L420"
+    ]
+  },
+  {
+    "corpus": "linux",
+    "query": "preadv2",
+    "variant": "full",
+    "round": 2,
+    "milliseconds": 4.23122,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/uapi/asm-generic/unistd.h#L662-L721",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/include/uapi/asm-generic/unistd.h#L662-L721",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/x86/entry/syscalls/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/arch/x86/entry/syscalls/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/powerpc/kernel/syscalls/syscall.tbl#L421-L480",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/arch/powerpc/entry/syscalls/syscall.tbl#L421-L480",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:scripts/syscall.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/scripts/syscall.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm64/tools/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/arch/arm64/entry/syscalls/syscall_32.tbl#L361-L420"
+    ]
+  },
+  {
+    "corpus": "linux",
+    "query": "preadv2",
+    "variant": "full",
+    "round": 3,
+    "milliseconds": 4.193747,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/uapi/asm-generic/unistd.h#L662-L721",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/include/uapi/asm-generic/unistd.h#L662-L721",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/x86/entry/syscalls/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/arch/x86/entry/syscalls/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/powerpc/kernel/syscalls/syscall.tbl#L421-L480",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/arch/powerpc/entry/syscalls/syscall.tbl#L421-L480",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:scripts/syscall.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/scripts/syscall.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm64/tools/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/arch/arm64/entry/syscalls/syscall_32.tbl#L361-L420"
+    ]
+  },
+  {
+    "corpus": "linux",
+    "query": "preadv2",
+    "variant": "full",
+    "round": 4,
+    "milliseconds": 5.435758,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/uapi/asm-generic/unistd.h#L662-L721",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/include/uapi/asm-generic/unistd.h#L662-L721",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/x86/entry/syscalls/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/arch/x86/entry/syscalls/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/powerpc/kernel/syscalls/syscall.tbl#L421-L480",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/arch/powerpc/entry/syscalls/syscall.tbl#L421-L480",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:scripts/syscall.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/scripts/syscall.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm64/tools/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/arch/arm64/entry/syscalls/syscall_32.tbl#L361-L420"
+    ]
+  },
+  {
+    "corpus": "linux",
+    "query": "preadv2",
+    "variant": "full",
+    "round": 5,
+    "milliseconds": 4.978029,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:include/uapi/asm-generic/unistd.h#L662-L721",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/include/uapi/asm-generic/unistd.h#L662-L721",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/x86/entry/syscalls/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/arch/x86/entry/syscalls/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/powerpc/kernel/syscalls/syscall.tbl#L421-L480",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/arch/powerpc/entry/syscalls/syscall.tbl#L421-L480",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:scripts/syscall.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/scripts/syscall.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm64/tools/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:tools/perf/arch/arm64/entry/syscalls/syscall_32.tbl#L361-L420"
+    ]
+  },
+  {
+    "corpus": "linux",
+    "query": "preadv2",
+    "variant": "column",
+    "round": 0,
+    "milliseconds": 8.718807,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/alpha/kernel/syscalls/syscall.tbl#L421-L480",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm/tools/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm64/tools/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/m68k/kernel/syscalls/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/microblaze/kernel/syscalls/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/mips/kernel/syscalls/syscall_n32.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/mips/kernel/syscalls/syscall_n64.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/mips/kernel/syscalls/syscall_o32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/parisc/kernel/syscalls/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/powerpc/kernel/syscalls/syscall.tbl#L421-L480"
+    ]
+  },
+  {
+    "corpus": "linux",
+    "query": "preadv2",
+    "variant": "column",
+    "round": 1,
+    "milliseconds": 5.663869,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/alpha/kernel/syscalls/syscall.tbl#L421-L480",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm/tools/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm64/tools/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/m68k/kernel/syscalls/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/microblaze/kernel/syscalls/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/mips/kernel/syscalls/syscall_n32.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/mips/kernel/syscalls/syscall_n64.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/mips/kernel/syscalls/syscall_o32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/parisc/kernel/syscalls/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/powerpc/kernel/syscalls/syscall.tbl#L421-L480"
+    ]
+  },
+  {
+    "corpus": "linux",
+    "query": "preadv2",
+    "variant": "column",
+    "round": 2,
+    "milliseconds": 4.566394,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/alpha/kernel/syscalls/syscall.tbl#L421-L480",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm/tools/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm64/tools/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/m68k/kernel/syscalls/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/microblaze/kernel/syscalls/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/mips/kernel/syscalls/syscall_n32.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/mips/kernel/syscalls/syscall_n64.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/mips/kernel/syscalls/syscall_o32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/parisc/kernel/syscalls/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/powerpc/kernel/syscalls/syscall.tbl#L421-L480"
+    ]
+  },
+  {
+    "corpus": "linux",
+    "query": "preadv2",
+    "variant": "column",
+    "round": 3,
+    "milliseconds": 4.942373,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/alpha/kernel/syscalls/syscall.tbl#L421-L480",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm/tools/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm64/tools/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/m68k/kernel/syscalls/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/microblaze/kernel/syscalls/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/mips/kernel/syscalls/syscall_n32.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/mips/kernel/syscalls/syscall_n64.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/mips/kernel/syscalls/syscall_o32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/parisc/kernel/syscalls/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/powerpc/kernel/syscalls/syscall.tbl#L421-L480"
+    ]
+  },
+  {
+    "corpus": "linux",
+    "query": "preadv2",
+    "variant": "column",
+    "round": 4,
+    "milliseconds": 4.738178,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/alpha/kernel/syscalls/syscall.tbl#L421-L480",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm/tools/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm64/tools/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/m68k/kernel/syscalls/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/microblaze/kernel/syscalls/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/mips/kernel/syscalls/syscall_n32.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/mips/kernel/syscalls/syscall_n64.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/mips/kernel/syscalls/syscall_o32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/parisc/kernel/syscalls/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/powerpc/kernel/syscalls/syscall.tbl#L421-L480"
+    ]
+  },
+  {
+    "corpus": "linux",
+    "query": "preadv2",
+    "variant": "column",
+    "round": 5,
+    "milliseconds": 5.200345,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/alpha/kernel/syscalls/syscall.tbl#L421-L480",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm/tools/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/arm64/tools/syscall_32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/m68k/kernel/syscalls/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/microblaze/kernel/syscalls/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/mips/kernel/syscalls/syscall_n32.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/mips/kernel/syscalls/syscall_n64.tbl#L301-L360",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/mips/kernel/syscalls/syscall_o32.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/parisc/kernel/syscalls/syscall.tbl#L361-L420",
+      "linux@7d0a66e4bb9081d75c82ec4957c50034cb0ea449:arch/powerpc/kernel/syscalls/syscall.tbl#L421-L480"
+    ]
+  },
+  {
+    "corpus": "fhir",
+    "query": "nostructuresforspecifiedversion",
+    "variant": "full",
+    "round": 0,
+    "milliseconds": 4.643022,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L196-L259",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/resources/ca/uhn/fhir/i18n/hapi-messages.properties#L2-L61",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L84-L1397"
+    ]
+  },
+  {
+    "corpus": "fhir",
+    "query": "nostructuresforspecifiedversion",
+    "variant": "full",
+    "round": 1,
+    "milliseconds": 4.168857,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L196-L259",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/resources/ca/uhn/fhir/i18n/hapi-messages.properties#L2-L61",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L84-L1397"
+    ]
+  },
+  {
+    "corpus": "fhir",
+    "query": "nostructuresforspecifiedversion",
+    "variant": "full",
+    "round": 2,
+    "milliseconds": 3.664822,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L196-L259",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/resources/ca/uhn/fhir/i18n/hapi-messages.properties#L2-L61",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L84-L1397"
+    ]
+  },
+  {
+    "corpus": "fhir",
+    "query": "nostructuresforspecifiedversion",
+    "variant": "full",
+    "round": 3,
+    "milliseconds": 4.349976,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L196-L259",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/resources/ca/uhn/fhir/i18n/hapi-messages.properties#L2-L61",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L84-L1397"
+    ]
+  },
+  {
+    "corpus": "fhir",
+    "query": "nostructuresforspecifiedversion",
+    "variant": "full",
+    "round": 4,
+    "milliseconds": 4.615201,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L196-L259",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/resources/ca/uhn/fhir/i18n/hapi-messages.properties#L2-L61",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L84-L1397"
+    ]
+  },
+  {
+    "corpus": "fhir",
+    "query": "nostructuresforspecifiedversion",
+    "variant": "full",
+    "round": 5,
+    "milliseconds": 4.379617,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L196-L259",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/resources/ca/uhn/fhir/i18n/hapi-messages.properties#L2-L61",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L84-L1397"
+    ]
+  },
+  {
+    "corpus": "fhir",
+    "query": "nostructuresforspecifiedversion",
+    "variant": "column",
+    "round": 0,
+    "milliseconds": 5.553218,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L84-L1397",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L196-L259",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/resources/ca/uhn/fhir/i18n/hapi-messages.properties#L2-L61"
+    ]
+  },
+  {
+    "corpus": "fhir",
+    "query": "nostructuresforspecifiedversion",
+    "variant": "column",
+    "round": 1,
+    "milliseconds": 4.365941,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L84-L1397",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L196-L259",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/resources/ca/uhn/fhir/i18n/hapi-messages.properties#L2-L61"
+    ]
+  },
+  {
+    "corpus": "fhir",
+    "query": "nostructuresforspecifiedversion",
+    "variant": "column",
+    "round": 2,
+    "milliseconds": 4.188856,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L84-L1397",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L196-L259",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/resources/ca/uhn/fhir/i18n/hapi-messages.properties#L2-L61"
+    ]
+  },
+  {
+    "corpus": "fhir",
+    "query": "nostructuresforspecifiedversion",
+    "variant": "column",
+    "round": 3,
+    "milliseconds": 4.190772,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L84-L1397",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L196-L259",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/resources/ca/uhn/fhir/i18n/hapi-messages.properties#L2-L61"
+    ]
+  },
+  {
+    "corpus": "fhir",
+    "query": "nostructuresforspecifiedversion",
+    "variant": "column",
+    "round": 4,
+    "milliseconds": 3.642655,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L84-L1397",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L196-L259",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/resources/ca/uhn/fhir/i18n/hapi-messages.properties#L2-L61"
+    ]
+  },
+  {
+    "corpus": "fhir",
+    "query": "nostructuresforspecifiedversion",
+    "variant": "column",
+    "round": 5,
+    "milliseconds": 3.439042,
+    "exit": 0,
+    "error": "",
+    "citations": [
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L84-L1397",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L196-L259",
+      "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/resources/ca/uhn/fhir/i18n/hapi-messages.properties#L2-L61"
+    ]
+  }
+]

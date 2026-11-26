@@ -136,3 +136,10 @@ def test_an_agent_that_did_not_finish_fails_even_when_right(monkeypatch, tmp_pat
 def test_a_crashed_scorer_fails(monkeypatch, tmp_path):
     result, _ = score(monkeypatch, tmp_path, reference(QUESTIONS[0]), sandbox=Broken)
     assert result.value == 0 and "scorer crashed" in result.explanation
+
+
+def test_spec_questions_rejects_any_codegraph_condition(monkeypatch):
+    monkeypatch.setitem(config.ARMS, "graph-alias", (("other", "codegraph"),))
+    for arms in ("tools", "graph-alias"):
+        with pytest.raises(ValueError, match="codegraph.*not supported"):
+            spec_task.spec_questions(arms=arms)
