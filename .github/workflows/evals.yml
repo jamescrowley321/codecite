@@ -32,9 +32,9 @@ on:
         type: string
         default: fastapi-middleware
       arms:
-        description: ab (baseline against codecite), aa (two baseline arms), baseline (calibration), assist (codecite through the search hook), or tools (baseline, codecite and codegraph)
+        description: ab (baseline against codecite), aa (an A/A round, two baseline arms, to measure noise), baseline (calibrate the task on the quick tier, no verdict), assist (baseline against codecite only through the hook on the agent's searches, through grep, glob or the shell), plugin (baseline against Claude Code with the codecite plugin installed: skill, MCP and session note, no prompt note) or tools (baseline, codecite and codegraph)
         type: choice
-        options: [ab, aa, baseline, assist, tools]
+        options: [ab, aa, baseline, assist, plugin, tools]
         default: ab
       corpus:
         description: For a task with a size dial (house-rules), its corpus size, s, m or l; empty for the task's default
@@ -149,8 +149,8 @@ jobs:
       EPOCHS: ${{ inputs.epochs }}
       OPENROUTER: ${{ (github.event_name == 'workflow_dispatch' && inputs.openrouter) && '1' || '0' }}
       # Where panel.sh logs, under inspect/logs/: the tier, the tier's A/A
-      # round, the assist or tools arm's round, or calibration.
-      RUN_NAME: ${{ inputs.arms == 'baseline' && 'calibration' || format('{0}{1}', inputs.tier || 'quick', inputs.arms == 'aa' && '-aa' || inputs.arms == 'assist' && '-assist' || inputs.arms == 'tools' && '-tools' || '') }}
+      # round, the assist, plugin or tools arm's round, or calibration.
+      RUN_NAME: ${{ inputs.arms == 'baseline' && 'calibration' || format('{0}{1}', inputs.tier || 'quick', inputs.arms == 'aa' && '-aa' || inputs.arms == 'assist' && '-assist' || inputs.arms == 'plugin' && '-plugin' || inputs.arms == 'tools' && '-tools' || '') }}
       # Each sandbox is one Docker network; the daemon below gets 256 of
       # them. The runner's 4 vCPU set the limit: at 20 sandboxes, samples
       # spent three quarters of their wall time waiting, which skews the

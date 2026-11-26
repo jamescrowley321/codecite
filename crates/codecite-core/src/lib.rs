@@ -48,7 +48,8 @@ pub use store::{
     RequirementSection, Requirements, RequirementsOptions, Rule, RuleScope, RunCounts,
     SCHEMA_VERSION, SCIP_CONFIDENCE, ScipDefinition, ScipDocument, ScipOccurrence, ScipSummary,
     Scope, SearchQuery, SearchResult, SearchResults, SourceRecord, StalePin, Store, StoredDocument,
-    SymbolRecord, VersionChange, corpora, defuse_instruction, is_corpus_name, symbol_name,
+    SymbolRecord, VersionChange, corpora, corpora_for, corpus_info, defuse_instruction,
+    is_corpus_name, symbol_name,
 };
 pub use store::{CheckOptions, CitationChecker, CitationProblem, Problem, TextCheck};
 

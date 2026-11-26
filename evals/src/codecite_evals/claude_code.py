@@ -27,7 +27,8 @@ import os
 
 from inspect_ai.model import GenerateConfig, ModelAPI, ModelOutput, modelapi
 
-from codecite_evals import assist
+from codecite_evals import assist, plugin
+from codecite_evals.report import NATIVE
 from codecite_evals.tool_use import cli
 
 PROVIDER = "claude-code"
@@ -76,16 +77,22 @@ def runs(model) -> bool:
 def command(condition: str, prompt: str, model: str, timeout: int) -> list[str]:
     """Claude Code's command line for an arm, its stream-json written to
     OUTPUT. Only the codecite and codegraph arms get an MCP config, each its
-    own tool's; --strict-mcp-config keeps any other out of every arm. Only the assist arm gets the settings
-    holding its grep and glob hook. `timeout` stops it a little before
-    Inspect would."""
+    own tool's; --strict-mcp-config keeps any other out of every arm but the
+    plugin's, whose MCP server strict mode would skip. Only the plugin arm gets
+    --plugin-dir, and the Skill tool that loads its skill. Only the assist arm
+    gets the settings holding its grep and glob hook. `timeout` stops it a
+    little before Inspect would."""
     mcp = {"codecite": ["--mcp-config", MCP], "codegraph": ["--mcp-config", GRAPH_MCP]}.get(condition, [])
     settings = ["--settings", assist.SETTINGS_PATH] if condition == "assist" else []
+    # Strict mode skips a plugin's MCP servers, and the sandbox holds no other MCP config.
+    strict = [] if condition == "plugin" else ["--strict-mcp-config"]
+    tools = [*TOOLS, "Skill"] if condition == "plugin" else TOOLS
+    loaded = ["--plugin-dir", plugin.PLUGIN_DIR] if condition == "plugin" else []
     return [
         "sh", "-c", f'"$@" >{OUTPUT}', "sh",
         "timeout", "--kill-after=10", str(timeout),
         "claude", "-p", "--output-format", "stream-json", "--verbose", "--model", model,
-        "--tools", ",".join(TOOLS), "--strict-mcp-config", *mcp, *settings,
+        "--tools", ",".join(tools), *strict, *mcp, *settings, *loaded,
         "--dangerously-skip-permissions", "--no-session-persistence", "--", prompt,
     ]  # fmt: skip
 
@@ -140,7 +147,7 @@ def measures(stdout: str, tool: str = "codecite") -> dict:
             if not isinstance(block, dict) or block.get("type") != "tool_use":
                 continue
             name, args = str(block.get("name")), block.get("input") or {}
-            if name.startswith(f"mcp__{tool}__"):
+            if name.startswith(NATIVE[tool]):
                 calls += 1
             elif name == "Bash" and isinstance(args.get("command"), str):
                 calls += bool(cli(tool).search(args["command"]))
