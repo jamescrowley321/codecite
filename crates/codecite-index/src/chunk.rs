@@ -1107,6 +1107,42 @@ mod tests {
     }
 
     #[test]
+    fn object_literal_methods_need_a_named_object() {
+        // A method is a definition in an object that a variable, an
+        // assignment or `export default` names; in an argument, an array or
+        // a nested object it stays in the chunk around it.
+        let lines = [
+            "export const api = {",
+            "  get(id) {},",
+            "};",
+            "module.exports = { run() {} };",
+            "export default { mount() {} };",
+            "const c = { m() {} } as const;",
+            "register({",
+            "  perform() {},",
+            "});",
+            "Object.defineProperty(M, \"x\", { get() {} });",
+            "const list = [{ onClick() {} }];",
+            "const nested = { inner: { deep() {} } };",
+        ];
+        let want = expect(&[
+            ("variable", 1, 3, "api."),
+            ("function", 2, 2, "api.get()."),
+            ("function", 4, 4, "run()."),
+            ("function", 5, 5, "mount()."),
+            ("variable", 6, 6, "c."),
+            ("function", 6, 6, "c.m()."),
+            ("window", 7, 10, ""),
+            ("variable", 11, 11, "list."),
+            ("variable", 12, 12, "nested."),
+        ]);
+        let ts = lines.join("\n") + "\n";
+        assert_eq!(outline("src/api.ts", &ts), want);
+        let js = ts.replace(" as const", "");
+        assert_eq!(outline("lib/api.js", &js), want);
+    }
+
+    #[test]
     fn markdown_inline_code_is_not_a_fence() {
         let text = "```inline```\n# Real\ntext\n";
         assert_eq!(
