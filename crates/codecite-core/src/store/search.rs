@@ -205,8 +205,8 @@ impl Store {
     /// tests and examples rank below the source they use, and multiplied by
     /// [`NAME_BOOST`] when a word of the query, or the whole query, is the
     /// chunk's symbol's name (ignoring case, `_` and `-`) and at most
-    /// [`MAX_NAME_DEFINITIONS`] definitions have that name. Java methods
-    /// sharing their enclosing class's name count with that class. Only the
+    /// [`MAX_NAME_DEFINITIONS`] definitions have that name. A method sharing
+    /// its enclosing class's name counts with that class. Only the
     /// current version of each document is searched.
     ///
     /// Code, repository prose, fetched documents and specs are ranked
@@ -366,8 +366,8 @@ impl Store {
     }
 
     /// The [`query_names`] shared by at least one and at most
-    /// [`MAX_NAME_DEFINITIONS`] definitions, counting Java same-name
-    /// methods with their enclosing class.
+    /// [`MAX_NAME_DEFINITIONS`] definitions, counting a method that shares
+    /// its enclosing class's name with that class.
     fn boosted_names(&self, text: &str) -> Result<Vec<String>> {
         let mut count = self.conn.prepare_cached(BOOSTED_NAME_COUNT)?;
         let mut names = Vec::new();
@@ -514,17 +514,16 @@ const FETCH: &str = "SELECT c.kind, c.start_line, c.end_line, c.number, p.number
      LEFT JOIN symbol sym ON sym.id = c.symbol_id
      WHERE c.id = ?1";
 
-/// How many definitions share the name key `?1`. Java constructors and
-/// other methods with their enclosing class's name count with that class.
-/// Other methods, languages and classes in different files count separately.
+/// How many definitions share the name key `?1`. A method nested in a class
+/// of the same name in the same file (a Java or C# constructor, say) counts
+/// with that class, in every language. Other methods, and classes in
+/// different files, count separately.
 const BOOSTED_NAME_COUNT: &str = "SELECT count(*)
     FROM symbol s
     WHERE s.name_key = ?1
       AND NOT (coalesce(s.kind, '') = 'method' AND EXISTS (
         SELECT 1 FROM symbol parent
-        JOIN document d ON d.id = parent.document_id
         WHERE parent.document_id = s.document_id
-          AND d.language = 'java'
           AND parent.kind = 'class'
           AND parent.display_name = s.display_name
           AND parent.start_line <= s.start_line
@@ -1486,6 +1485,33 @@ mod tests {
         }
         store
             .write_document(app, &file("Widget.java", "java", false, chunks))
+            .unwrap();
+        assert_eq!(store.boosted_names("Widget").unwrap(), ["widget"]);
+    }
+
+    #[test]
+    fn same_name_methods_count_with_their_class_in_any_language() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open_read_write(&dir.path().join("demo.db")).unwrap();
+        let app = store.upsert_source(&code_source("app")).unwrap();
+        let mut class = chunk("class", (1, 20), "class Widget {}", None);
+        class.symbol = Some(SymbolRecord {
+            id: "codecite . app . Widget.cs/Widget#".into(),
+            display_name: "Widget",
+            kind: "class",
+        });
+        let mut chunks = vec![class];
+        for (i, line) in [2, 4, 6].into_iter().enumerate() {
+            let mut constructor = chunk("function", (line, line), "Widget() {}", None);
+            constructor.symbol = Some(SymbolRecord {
+                id: format!("codecite . app . Widget.cs/Widget#Widget(+{i})."),
+                display_name: "Widget",
+                kind: "method",
+            });
+            chunks.push(constructor);
+        }
+        store
+            .write_document(app, &file("Widget.cs", "csharp", false, chunks))
             .unwrap();
         assert_eq!(store.boosted_names("Widget").unwrap(), ["widget"]);
     }
