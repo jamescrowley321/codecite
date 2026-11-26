@@ -1,0 +1,110 @@
+{
+ "django": {
+  "javascript": {
+   "both": 112,
+   "definitions": 996,
+   "doc": 113,
+   "neither": 1,
+   "signature": 994
+  },
+  "python": {
+   "both": 7782,
+   "definitions": 41947,
+   "doc": 9273,
+   "neither": 9268,
+   "signature": 31188
+  }
+ },
+ "excalidraw": {
+  "javascript": {
+   "both": 3,
+   "definitions": 38,
+   "doc": 3,
+   "neither": 1,
+   "signature": 37
+  },
+  "tsx": {
+   "both": 26,
+   "definitions": 1005,
+   "doc": 54,
+   "neither": 274,
+   "signature": 703
+  },
+  "typescript": {
+   "both": 324,
+   "definitions": 2218,
+   "doc": 411,
+   "neither": 462,
+   "signature": 1669
+  }
+ },
+ "keycloak": {
+  "java": {
+   "both": 9907,
+   "definitions": 93815,
+   "doc": 15792,
+   "neither": 5770,
+   "signature": 82160
+  },
+  "javascript": {
+   "both": 13,
+   "definitions": 96,
+   "doc": 17,
+   "neither": 10,
+   "signature": 82
+  },
+  "python": {
+   "both": 5,
+   "definitions": 14,
+   "doc": 5,
+   "neither": 2,
+   "signature": 12
+  },
+  "tsx": {
+   "both": 25,
+   "definitions": 2740,
+   "doc": 31,
+   "neither": 754,
+   "signature": 1980
+  },
+  "typescript": {
+   "both": 49,
+   "definitions": 1365,
+   "doc": 106,
+   "neither": 265,
+   "signature": 1043
+  }
+ },
+ "linux": {
+  "c": {
+   "both": 0,
+   "definitions": 193923,
+   "doc": 46503,
+   "neither": 147420,
+   "signature": 0
+  },
+  "python": {
+   "both": 1208,
+   "definitions": 5947,
+   "doc": 1594,
+   "neither": 492,
+   "signature": 5069
+  },
+  "rust": {
+   "both": 1042,
+   "definitions": 3578,
+   "doc": 1372,
+   "neither": 611,
+   "signature": 2637
+  }
+ },
+ "ripgrep": {
+  "rust": {
+   "both": 919,
+   "definitions": 3469,
+   "doc": 946,
+   "neither": 408,
+   "signature": 3034
+  }
+ }
+}

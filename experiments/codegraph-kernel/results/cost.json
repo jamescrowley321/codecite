@@ -1,0 +1,112 @@
+{
+ "django": {
+  "codecite_chunk_seconds": 2.572901358,
+  "codecite_extract": {
+   "peak_rss_kib": 33264,
+   "wall_seconds": 3.29
+  },
+  "codecite_index": {
+   "peak_rss_kib": 37128,
+   "wall_seconds": 7.38
+  },
+  "kernel_1_thread": {
+   "peak_rss_kib": 19580,
+   "wall_seconds": 3.09
+  },
+  "kernel_extract_seconds_all": 2.91243462,
+  "kernel_extract_seconds_shared_langs": 2.91243462,
+  "kernel_n_threads": {
+   "peak_rss_kib": 122224,
+   "threads": 22,
+   "wall_seconds": 0.31
+  }
+ },
+ "excalidraw": {
+  "codecite_chunk_seconds": 0.596197026,
+  "codecite_extract": {
+   "peak_rss_kib": 23440,
+   "wall_seconds": 0.8
+  },
+  "codecite_index": {
+   "peak_rss_kib": 43260,
+   "wall_seconds": 3.48
+  },
+  "kernel_1_thread": {
+   "peak_rss_kib": 17544,
+   "wall_seconds": 0.78
+  },
+  "kernel_extract_seconds_all": 0.745422511,
+  "kernel_extract_seconds_shared_langs": 0.745422511,
+  "kernel_n_threads": {
+   "peak_rss_kib": 63048,
+   "threads": 22,
+   "wall_seconds": 0.21
+  }
+ },
+ "keycloak": {
+  "codecite_chunk_seconds": 6.34916813,
+  "codecite_extract": {
+   "peak_rss_kib": 27960,
+   "wall_seconds": 8.1
+  },
+  "codecite_index": {
+   "peak_rss_kib": 35080,
+   "wall_seconds": 19.4
+  },
+  "kernel_1_thread": {
+   "peak_rss_kib": 16876,
+   "wall_seconds": 8.84
+  },
+  "kernel_extract_seconds_all": 7.92820325,
+  "kernel_extract_seconds_shared_langs": 7.92820325,
+  "kernel_n_threads": {
+   "peak_rss_kib": 76504,
+   "threads": 22,
+   "wall_seconds": 1.08
+  }
+ },
+ "linux": {
+  "codecite_chunk_seconds": 113.311177416,
+  "codecite_extract": {
+   "peak_rss_kib": 62156,
+   "wall_seconds": 125.72
+  },
+  "codecite_index": {
+   "peak_rss_kib": 78236,
+   "wall_seconds": 225.17
+  },
+  "kernel_1_thread": {
+   "peak_rss_kib": 52640,
+   "wall_seconds": 97.46
+  },
+  "kernel_extract_seconds_all": 94.09815155999999,
+  "kernel_extract_seconds_shared_langs": 94.08929419399999,
+  "kernel_n_threads": {
+   "peak_rss_kib": 257132,
+   "threads": 22,
+   "wall_seconds": 15.33
+  }
+ },
+ "ripgrep": {
+  "codecite_chunk_seconds": 0.278607086,
+  "codecite_extract": {
+   "peak_rss_kib": 23688,
+   "wall_seconds": 0.35
+  },
+  "codecite_index": {
+   "peak_rss_kib": 32856,
+   "wall_seconds": 0.61
+  },
+  "kernel_1_thread": {
+   "peak_rss_kib": 16168,
+   "wall_seconds": 0.29
+  },
+  "kernel_extract_seconds_all": 0.281244477,
+  "kernel_extract_seconds_shared_langs": 0.279638244,
+  "kernel_n_threads": {
+   "peak_rss_kib": 55096,
+   "threads": 22,
+   "wall_seconds": 0.06
+  }
+ }
+}

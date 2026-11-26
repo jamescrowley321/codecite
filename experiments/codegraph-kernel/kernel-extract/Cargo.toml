@@ -1,0 +1,17 @@
+[package]
+name = "kernel-extract"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "Apache-2.0"
+description = "Spike: run CodeGraph's extraction kernel (local napi-free fork) over a file list"
+
+[dependencies]
+# `fork` is a symlink to a local checkout of the fork (setup.sh); the fork
+# keeps CodeGraph's MIT license. tree-sitter 0.25 comes in with it.
+codegraph-kernel = { path = "../fork/codegraph-kernel", default-features = false }
+serde_json = "1"
+
+[profile.release]
+lto = true
+codegen-units = 1

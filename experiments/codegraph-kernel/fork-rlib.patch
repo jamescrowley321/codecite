@@ -1,0 +1,727 @@
+From a3185ddb302bec86dc6ef8513ce2e8d428415fe2 Mon Sep 17 00:00:00 2001
+From: local <local@localhost>
+Date: Wed, 25 Nov 2026 21:44:43 -0600
+Subject: [PATCH] feat(kernel): plain-Rust rlib extraction API behind a default
+ napi feature (local fork, not for publishing)
+
+---
+ codegraph-kernel/Cargo.toml  |  15 ++-
+ codegraph-kernel/build.rs    |   1 +
+ codegraph-kernel/src/api.rs  | 204 ++++++++++++++++++++++++++++++++
+ codegraph-kernel/src/lib.rs  | 218 +---------------------------------
+ codegraph-kernel/src/node.rs | 220 +++++++++++++++++++++++++++++++++++
+ 5 files changed, 440 insertions(+), 218 deletions(-)
+ create mode 100644 codegraph-kernel/src/api.rs
+ create mode 100644 codegraph-kernel/src/node.rs
+
+diff --git a/codegraph-kernel/Cargo.toml b/codegraph-kernel/Cargo.toml
+index 540cebdd..62627dd7 100644
+--- a/codegraph-kernel/Cargo.toml
++++ b/codegraph-kernel/Cargo.toml
+@@ -7,11 +7,18 @@ publish = false
+ description = "Native extraction kernel for CodeGraph — tree-sitter parse+extract with one JS boundary crossing per file"
+ 
+ [lib]
+-crate-type = ["cdylib"]
++# rlib: lets a Rust crate use the extraction directly (local fork change).
++crate-type = ["cdylib", "rlib"]
++
++# `napi` (default) builds the Node addon exactly as before. A Rust consumer
++# turns default features off and uses `codegraph_kernel::api`.
++[features]
++default = ["napi"]
++napi = ["dep:napi", "dep:napi-derive", "dep:napi-build"]
+ 
+ [dependencies]
+-napi = { version = "3", default-features = false, features = ["napi8"] }
+-napi-derive = "3"
++napi = { version = "3", default-features = false, features = ["napi8"], optional = true }
++napi-derive = { version = "3", optional = true }
+ tree-sitter = "0.25"
+ sha2 = "0.10"
+ regex = "1"
+@@ -68,7 +75,7 @@ tree-sitter-language = "0.1"
+ libc = "0.2"
+ 
+ [build-dependencies]
+-napi-build = "2"
++napi-build = { version = "2", optional = true }
+ cc = "1"
+ 
+ [profile.release]
+diff --git a/codegraph-kernel/build.rs b/codegraph-kernel/build.rs
+index 88f4d756..5c4353cd 100644
+--- a/codegraph-kernel/build.rs
++++ b/codegraph-kernel/build.rs
+@@ -1,4 +1,5 @@
+ fn main() {
++    #[cfg(feature = "napi")]
+     napi_build::setup();
+ 
+     // Kotlin grammar — vendored C, compiled here instead of a crate dep: no
+diff --git a/codegraph-kernel/src/api.rs b/codegraph-kernel/src/api.rs
+new file mode 100644
+index 00000000..939851e2
+--- /dev/null
++++ b/codegraph-kernel/src/api.rs
+@@ -0,0 +1,204 @@
++//! Plain-Rust extraction API (local fork change): the same per-file walk
++//! `extract_file` runs for Node, decoded from the flat buffers into owned
++//! structs, with no napi in the way. Nothing here changes what the walkers
++//! emit; it only reads the wire layout documented in buffers.rs.
++
++use crate::buffers::{
++    EmitOut, EDGE_KINDS, EDGE_ROW_SIZE, FUNCTION_REF_CODE, NODE_KINDS, NODE_ROW_SIZE, NONE,
++    REF_ROW_SIZE,
++};
++
++/// Languages the kernel can extract, by CodeGraph's language names.
++pub const LANGUAGES: &[&str] = &crate::langs::LANGUAGES;
++
++/// One extracted node (symbol, file, import, parameter, ...).
++#[derive(Debug, Clone)]
++pub struct Node {
++    /// CodeGraph node kind, e.g. `function`, `method`, `class`, `import`.
++    pub kind: &'static str,
++    pub name: String,
++    pub qualified_name: String,
++    pub id: String,
++    /// 1-based, inclusive.
++    pub start_line: u32,
++    pub end_line: u32,
++    /// 0-based, UTF-16 code units (CodeGraph's JS convention).
++    pub start_column: u32,
++    pub end_column: u32,
++    pub docstring: Option<String>,
++    pub signature: Option<String>,
++    pub decorators: Vec<String>,
++    pub type_parameters: Vec<String>,
++    pub return_type: Option<String>,
++    /// 0 absent, 1 public, 2 private, 3 protected, 4 internal.
++    pub visibility: u8,
++    /// `(present, value)` pairs packed as in buffers.rs.
++    pub flags: u16,
++}
++
++/// One edge the walker emitted inside the file (`contains`, ...).
++#[derive(Debug, Clone)]
++pub struct Edge {
++    pub kind: &'static str,
++    /// Row index into `Extraction::nodes`, when the endpoint is in this file.
++    pub source: Option<u32>,
++    pub target: Option<u32>,
++    pub source_id: Option<String>,
++    pub target_id: Option<String>,
++    pub line: Option<u32>,
++}
++
++/// One unresolved reference (a call site, import, type use, ...).
++#[derive(Debug, Clone)]
++pub struct Ref {
++    /// An edge kind such as `calls`, or `function_ref`.
++    pub kind: &'static str,
++    pub from: Option<u32>,
++    pub name: String,
++    pub line: u32,
++    pub column: u32,
++}
++
++/// One file's extraction.
++#[derive(Debug, Clone, Default)]
++pub struct Extraction {
++    pub nodes: Vec<Node>,
++    pub edges: Vec<Edge>,
++    pub refs: Vec<Ref>,
++}
++
++/// Why a file produced no extraction. CodeGraph's TS side routes `Defer`
++/// and `Timeout` to its wasm extractor; a plain-Rust caller gets nothing.
++#[derive(Debug, Clone)]
++pub enum ExtractError {
++    /// `defer:` - a parse tree with errors, or the walker's stack guard.
++    Defer(String),
++    /// `timeout:` - the parse ran past its budget.
++    Timeout(String),
++    Other(String),
++}
++
++/// Extract one file. `language` is a CodeGraph language name (see
++/// [`LANGUAGES`]); anything unknown falls through to the TS/JS walker, as in
++/// `extract_file`. Run it on a thread with a generous stack: the walkers
++/// recurse per AST level (the stack guard defers instead of overflowing).
++pub fn extract(
++    file_path: &str,
++    content: &str,
++    language: &str,
++    parse_budget_ms: Option<u32>,
++) -> Result<Extraction, ExtractError> {
++    use crate::*;
++    let out = parse_budget::with_budget(parse_budget_ms, || {
++        stack::run_guarded(|| match language {
++            "java" => java::extract(file_path, content),
++            "python" => python::extract(file_path, content),
++            "go" => go::extract(file_path, content),
++            "c" | "cpp" => ccpp::extract(file_path, content, language),
++            "rust" => rustlang::extract(file_path, content),
++            "csharp" => csharp::extract(file_path, content),
++            "ruby" => ruby::extract(file_path, content),
++            "php" => php::extract(file_path, content),
++            "swift" => swift::extract(file_path, content),
++            "kotlin" => kotlin::extract(file_path, content),
++            "r" => rlang::extract(file_path, content),
++            "lua" | "luau" => lua::extract(file_path, content, language),
++            "scala" => scala::extract(file_path, content),
++            "dart" => dart::extract(file_path, content),
++            _ => tsjs::extract(file_path, content, language),
++        })
++    })
++    .map_err(|e| {
++        if e.starts_with("defer:") {
++            ExtractError::Defer(e)
++        } else if e.starts_with("timeout:") {
++            ExtractError::Timeout(e)
++        } else {
++            ExtractError::Other(e)
++        }
++    })?;
++    Ok(decode(&out))
++}
++
++fn u32_at(b: &[u8], o: usize) -> u32 {
++    u32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]])
++}
++
++fn opt_idx(v: u32) -> Option<u32> {
++    (v != NONE).then_some(v)
++}
++
++fn decode(out: &EmitOut) -> Extraction {
++    let arena = &out.arena;
++    let s = |b: &[u8], o: usize| -> Option<String> {
++        let off = u32_at(b, o);
++        let len = u32_at(b, o + 4) as usize;
++        (off != NONE).then(|| String::from_utf8_lossy(&arena[off as usize..off as usize + len]).into_owned())
++    };
++    let list = |b: &[u8], o: usize| -> Vec<String> {
++        s(b, o).map(|v| v.split('\0').map(str::to_string).collect()).unwrap_or_default()
++    };
++    let nodes = out
++        .nodes
++        .chunks_exact(NODE_ROW_SIZE)
++        .map(|r| Node {
++            kind: NODE_KINDS.get(r[0] as usize).copied().unwrap_or("?"),
++            visibility: r[1],
++            flags: u16::from_le_bytes([r[2], r[3]]),
++            start_line: u32_at(r, 4),
++            end_line: u32_at(r, 8),
++            start_column: u32_at(r, 12),
++            end_column: u32_at(r, 16),
++            name: s(r, 20).unwrap_or_default(),
++            qualified_name: s(r, 28).unwrap_or_default(),
++            id: s(r, 36).unwrap_or_default(),
++            docstring: s(r, 44),
++            signature: s(r, 52),
++            decorators: list(r, 60),
++            type_parameters: list(r, 68),
++            return_type: s(r, 76),
++        })
++        .collect();
++    let edges = out
++        .edges
++        .chunks_exact(EDGE_ROW_SIZE)
++        .map(|r| Edge {
++            source: opt_idx(u32_at(r, 0)),
++            target: opt_idx(u32_at(r, 4)),
++            kind: EDGE_KINDS.get(r[8] as usize).copied().unwrap_or("?"),
++            line: opt_idx(u32_at(r, 12)),
++            source_id: s(r, 28),
++            target_id: s(r, 36),
++        })
++        .collect();
++    let refs = out
++        .refs
++        .chunks_exact(REF_ROW_SIZE)
++        .map(|r| Ref {
++            from: opt_idx(u32_at(r, 0)),
++            kind: if r[4] == FUNCTION_REF_CODE {
++                "function_ref"
++            } else {
++                EDGE_KINDS.get(r[4] as usize).copied().unwrap_or("?")
++            },
++            line: u32_at(r, 8),
++            column: u32_at(r, 12),
++            name: s(r, 16).unwrap_or_default(),
++        })
++        .collect();
++    Extraction { nodes, edges, refs }
++}
++
++#[cfg(test)]
++mod tests {
++    #[test]
++    fn extracts_a_python_function_with_its_docstring() {
++        let src = "def greet(name: str) -> str:\n    \"\"\"Say hello.\"\"\"\n    return name\n";
++        let x = super::extract("a.py", src, "python", None).expect("extracts");
++        let f = x.nodes.iter().find(|n| n.kind == "function").expect("a function");
++        assert_eq!(f.name, "greet");
++        assert_eq!((f.start_line, f.end_line), (1, 3));
++        assert_eq!(f.docstring.as_deref(), Some("Say hello."));
++        assert!(f.signature.as_deref().unwrap_or("").contains("name: str"));
++    }
++}
+diff --git a/codegraph-kernel/src/lib.rs b/codegraph-kernel/src/lib.rs
+index ebda2d4b..a5c953e6 100644
+--- a/codegraph-kernel/src/lib.rs
++++ b/codegraph-kernel/src/lib.rs
+@@ -54,218 +54,8 @@ mod textutil;
+ mod python;
+ mod tsjs;
+ 
+-use napi::bindgen_prelude::*;
+-use napi_derive::napi;
++/// Plain-Rust extraction API, no napi (local fork change).
++pub mod api;
+ 
+-/// The five flat tables for one file. See buffers.rs for the byte layout;
+-/// `src/extraction/kernel/layout.ts` is the TS mirror.
+-#[napi(object)]
+-pub struct ExtractBuffers {
+-    pub meta: Buffer,
+-    pub nodes: Buffer,
+-    pub edges: Buffer,
+-    pub refs: Buffer,
+-    pub arena: Buffer,
+-}
+-
+-/// Wire-contract description — the TS loader verifies this against
+-/// src/types.ts before routing anything to the kernel, so an out-of-date
+-/// `.node` degrades to the wasm path instead of mis-decoding.
+-#[napi(object)]
+-pub struct ContractInfo {
+-    pub abi_version: u32,
+-    pub kernel_version: String,
+-    pub node_kinds: Vec<String>,
+-    pub edge_kinds: Vec<String>,
+-    /// Languages this binary can extract (routing is still TS-side policy).
+-    pub languages: Vec<String>,
+-}
+-
+-/// Grammar identity for the grammar-source-parity gate: the wasm grammar and
+-/// the native grammar must expose identical node-kind/field tables, or
+-/// kernel-vs-fallback routing would be non-deterministic.
+-#[napi(object)]
+-pub struct GrammarInfo {
+-    pub abi_version: u32,
+-    pub node_kind_count: u32,
+-    pub field_count: u32,
+-    pub node_kinds: Vec<String>,
+-    pub field_names: Vec<String>,
+-}
+-
+-#[napi]
+-pub fn contract_info() -> ContractInfo {
+-    ContractInfo {
+-        abi_version: buffers::KERNEL_ABI_VERSION as u32,
+-        kernel_version: env!("CARGO_PKG_VERSION").to_string(),
+-        node_kinds: buffers::NODE_KINDS.iter().map(|s| s.to_string()).collect(),
+-        edge_kinds: buffers::EDGE_KINDS.iter().map(|s| s.to_string()).collect(),
+-        languages: langs::LANGUAGES.iter().map(|s| s.to_string()).collect(),
+-    }
+-}
+-
+-#[napi]
+-pub fn grammar_info(language: String) -> Option<GrammarInfo> {
+-    let lang = langs::grammar_for(&language)?;
+-    let node_kind_count = lang.node_kind_count();
+-    let field_count = lang.field_count();
+-    let node_kinds = (0..node_kind_count)
+-        .map(|i| lang.node_kind_for_id(i as u16).unwrap_or("").to_string())
+-        .collect();
+-    // Field ids are 1-based in tree-sitter.
+-    let field_names = (1..=field_count)
+-        .map(|i| lang.field_name_for_id(i as u16).unwrap_or("").to_string())
+-        .collect();
+-    Some(GrammarInfo {
+-        abi_version: lang.abi_version() as u32,
+-        node_kind_count: node_kind_count as u32,
+-        field_count: field_count as u32,
+-        node_kinds,
+-        field_names,
+-    })
+-}
+-
+-/// One struct node's extent for the cFnPtr sweep (mirror of the TS caller's
+-/// `{ id, startLine, endLine }`, with `endLine ?? startLine` applied TS-side).
+-#[napi(object)]
+-pub struct CfnptrStructIn {
+-    pub id: String,
+-    pub start_line: u32,
+-    pub end_line: u32,
+-}
+-
+-#[napi(object)]
+-pub struct CfnptrFileIn {
+-    /// RAW file text, exactly as the resolver's readFile returned it.
+-    pub text: String,
+-    pub structs: Vec<CfnptrStructIn>,
+-}
+-
+-#[napi(object)]
+-pub struct CfnptrField {
+-    pub name: String,
+-    pub index: u32,
+-    pub ptr: bool,
+-    #[napi(js_name = "type")]
+-    pub ty: String,
+-}
+-
+-#[napi(object)]
+-pub struct CfnptrStructOut {
+-    pub id: String,
+-    pub parsed: bool,
+-    pub fields: Vec<CfnptrField>,
+-}
+-
+-/// The cFnPtr extraction-sweep facts for one file — see cfnptr.rs (and the
+-/// TS synthesizer's `FileFacts`) for field semantics.
+-#[napi(object)]
+-pub struct CfnptrFacts {
+-    pub fn_ptr_typedefs: Vec<String>,
+-    pub fn_type_typedefs: Vec<String>,
+-    pub structs: Vec<CfnptrStructOut>,
+-    pub inline_ptr: bool,
+-    pub inline_types: Vec<String>,
+-    pub inline_tags: Vec<String>,
+-    pub init_tokens: Vec<String>,
+-    pub array_elems: Vec<String>,
+-    pub alias_names: Vec<String>,
+-    pub d_pairs: Vec<String>,
+-    pub dispatch_fields: Vec<String>,
+-    pub array_dispatch_names: Vec<String>,
+-    pub includes: Vec<String>,
+-}
+-
+-/// Batched cFnPtr extraction sweep (task #5 step 2): one call scans a batch
+-/// of files and returns their collected facts, amortizing the NAPI boundary.
+-/// Feature-detected by the TS loader — absent on older binaries, where the
+-/// synthesizer keeps its JS sweep.
+-#[napi]
+-pub fn cfnptr_scan_files(files: Vec<CfnptrFileIn>) -> Vec<CfnptrFacts> {
+-    files
+-        .into_iter()
+-        .map(|f| {
+-            let structs: Vec<cfnptr::StructExtent> = f
+-                .structs
+-                .into_iter()
+-                .map(|s| cfnptr::StructExtent { id: s.id, start_line: s.start_line, end_line: s.end_line })
+-                .collect();
+-            let facts = cfnptr::scan_file(&f.text, &structs);
+-            CfnptrFacts {
+-                fn_ptr_typedefs: facts.fn_ptr_typedefs,
+-                fn_type_typedefs: facts.fn_type_typedefs,
+-                structs: facts
+-                    .structs
+-                    .into_iter()
+-                    .map(|s| CfnptrStructOut {
+-                        id: s.id,
+-                        parsed: s.parsed,
+-                        fields: s
+-                            .fields
+-                            .into_iter()
+-                            .map(|fl| CfnptrField { name: fl.name, index: fl.index, ptr: fl.ptr, ty: fl.ty })
+-                            .collect(),
+-                    })
+-                    .collect(),
+-                inline_ptr: facts.inline_ptr,
+-                inline_types: facts.inline_types,
+-                inline_tags: facts.inline_tags,
+-                init_tokens: facts.init_tokens,
+-                array_elems: facts.array_elems,
+-                alias_names: facts.alias_names,
+-                d_pairs: facts.d_pairs,
+-                dispatch_fields: facts.dispatch_fields,
+-                array_dispatch_names: facts.array_dispatch_names,
+-                includes: facts.includes,
+-            }
+-        })
+-        .collect()
+-}
+-
+-/// Debug/differential hook: the native `stripCommentsForRegex(text, 'c')`.
+-/// Exists so the strip differential oracle can pin the Rust stripper against
+-/// the TS reference directly.
+-#[napi]
+-pub fn cfnptr_strip_c(text: String) -> String {
+-    String::from_utf8_lossy(&cfnptr::strip_c(text.as_bytes())).into_owned()
+-}
+-
+-#[napi]
+-pub fn extract_file(
+-    file_path: String,
+-    content: String,
+-    language: String,
+-    parse_budget_ms: Option<u32>,
+-) -> Result<ExtractBuffers> {
+-    // The whole walk runs under the stack guard (stack.rs, #1581): a file
+-    // nested deeply enough to overflow this thread's stack comes back as a
+-    // `defer:` error — the TS side's routine "take the wasm path" signal —
+-    // instead of a SIGSEGV that kills the entire indexer process. And its
+-    // parse is cancelled past `parse_budget_ms` (parse_budget.rs, #3274), a
+-    // `timeout:` error, instead of a thread that spins until the process dies.
+-    let out = parse_budget::with_budget(parse_budget_ms, || stack::run_guarded(|| match language.as_str() {
+-        "java" => java::extract(&file_path, &content),
+-        "python" => python::extract(&file_path, &content),
+-        "go" => go::extract(&file_path, &content),
+-        "c" | "cpp" => ccpp::extract(&file_path, &content, &language),
+-        "rust" => rustlang::extract(&file_path, &content),
+-        "csharp" => csharp::extract(&file_path, &content),
+-        "ruby" => ruby::extract(&file_path, &content),
+-        "php" => php::extract(&file_path, &content),
+-        "swift" => swift::extract(&file_path, &content),
+-        "kotlin" => kotlin::extract(&file_path, &content),
+-        "r" => rlang::extract(&file_path, &content),
+-        "lua" | "luau" => lua::extract(&file_path, &content, &language),
+-        "scala" => scala::extract(&file_path, &content),
+-        "dart" => dart::extract(&file_path, &content),
+-        _ => tsjs::extract(&file_path, &content, &language),
+-    }))
+-    .map_err(Error::from_reason)?;
+-    Ok(ExtractBuffers {
+-        meta: out.meta.into(),
+-        nodes: out.nodes.into(),
+-        edges: out.edges.into(),
+-        refs: out.refs.into(),
+-        arena: out.arena.into(),
+-    })
+-}
++#[cfg(feature = "napi")]
++mod node;
+diff --git a/codegraph-kernel/src/node.rs b/codegraph-kernel/src/node.rs
+new file mode 100644
+index 00000000..0ca427a5
+--- /dev/null
++++ b/codegraph-kernel/src/node.rs
+@@ -0,0 +1,220 @@
++//! The napi bindings, unchanged, moved here so they build only with the
++//! `napi` feature (local fork change).
++
++use crate::{buffers, cfnptr, langs, parse_budget, stack};
++use crate::{ccpp, csharp, dart, go, java, kotlin, lua, php, python, rlang, ruby, rustlang, scala, swift, tsjs};
++use napi::bindgen_prelude::*;
++use napi_derive::napi;
++
++/// The five flat tables for one file. See buffers.rs for the byte layout;
++/// `src/extraction/kernel/layout.ts` is the TS mirror.
++#[napi(object)]
++pub struct ExtractBuffers {
++    pub meta: Buffer,
++    pub nodes: Buffer,
++    pub edges: Buffer,
++    pub refs: Buffer,
++    pub arena: Buffer,
++}
++
++/// Wire-contract description — the TS loader verifies this against
++/// src/types.ts before routing anything to the kernel, so an out-of-date
++/// `.node` degrades to the wasm path instead of mis-decoding.
++#[napi(object)]
++pub struct ContractInfo {
++    pub abi_version: u32,
++    pub kernel_version: String,
++    pub node_kinds: Vec<String>,
++    pub edge_kinds: Vec<String>,
++    /// Languages this binary can extract (routing is still TS-side policy).
++    pub languages: Vec<String>,
++}
++
++/// Grammar identity for the grammar-source-parity gate: the wasm grammar and
++/// the native grammar must expose identical node-kind/field tables, or
++/// kernel-vs-fallback routing would be non-deterministic.
++#[napi(object)]
++pub struct GrammarInfo {
++    pub abi_version: u32,
++    pub node_kind_count: u32,
++    pub field_count: u32,
++    pub node_kinds: Vec<String>,
++    pub field_names: Vec<String>,
++}
++
++#[napi]
++pub fn contract_info() -> ContractInfo {
++    ContractInfo {
++        abi_version: buffers::KERNEL_ABI_VERSION as u32,
++        kernel_version: env!("CARGO_PKG_VERSION").to_string(),
++        node_kinds: buffers::NODE_KINDS.iter().map(|s| s.to_string()).collect(),
++        edge_kinds: buffers::EDGE_KINDS.iter().map(|s| s.to_string()).collect(),
++        languages: langs::LANGUAGES.iter().map(|s| s.to_string()).collect(),
++    }
++}
++
++#[napi]
++pub fn grammar_info(language: String) -> Option<GrammarInfo> {
++    let lang = langs::grammar_for(&language)?;
++    let node_kind_count = lang.node_kind_count();
++    let field_count = lang.field_count();
++    let node_kinds = (0..node_kind_count)
++        .map(|i| lang.node_kind_for_id(i as u16).unwrap_or("").to_string())
++        .collect();
++    // Field ids are 1-based in tree-sitter.
++    let field_names = (1..=field_count)
++        .map(|i| lang.field_name_for_id(i as u16).unwrap_or("").to_string())
++        .collect();
++    Some(GrammarInfo {
++        abi_version: lang.abi_version() as u32,
++        node_kind_count: node_kind_count as u32,
++        field_count: field_count as u32,
++        node_kinds,
++        field_names,
++    })
++}
++
++/// One struct node's extent for the cFnPtr sweep (mirror of the TS caller's
++/// `{ id, startLine, endLine }`, with `endLine ?? startLine` applied TS-side).
++#[napi(object)]
++pub struct CfnptrStructIn {
++    pub id: String,
++    pub start_line: u32,
++    pub end_line: u32,
++}
++
++#[napi(object)]
++pub struct CfnptrFileIn {
++    /// RAW file text, exactly as the resolver's readFile returned it.
++    pub text: String,
++    pub structs: Vec<CfnptrStructIn>,
++}
++
++#[napi(object)]
++pub struct CfnptrField {
++    pub name: String,
++    pub index: u32,
++    pub ptr: bool,
++    #[napi(js_name = "type")]
++    pub ty: String,
++}
++
++#[napi(object)]
++pub struct CfnptrStructOut {
++    pub id: String,
++    pub parsed: bool,
++    pub fields: Vec<CfnptrField>,
++}
++
++/// The cFnPtr extraction-sweep facts for one file — see cfnptr.rs (and the
++/// TS synthesizer's `FileFacts`) for field semantics.
++#[napi(object)]
++pub struct CfnptrFacts {
++    pub fn_ptr_typedefs: Vec<String>,
++    pub fn_type_typedefs: Vec<String>,
++    pub structs: Vec<CfnptrStructOut>,
++    pub inline_ptr: bool,
++    pub inline_types: Vec<String>,
++    pub inline_tags: Vec<String>,
++    pub init_tokens: Vec<String>,
++    pub array_elems: Vec<String>,
++    pub alias_names: Vec<String>,
++    pub d_pairs: Vec<String>,
++    pub dispatch_fields: Vec<String>,
++    pub array_dispatch_names: Vec<String>,
++    pub includes: Vec<String>,
++}
++
++/// Batched cFnPtr extraction sweep (task #5 step 2): one call scans a batch
++/// of files and returns their collected facts, amortizing the NAPI boundary.
++/// Feature-detected by the TS loader — absent on older binaries, where the
++/// synthesizer keeps its JS sweep.
++#[napi]
++pub fn cfnptr_scan_files(files: Vec<CfnptrFileIn>) -> Vec<CfnptrFacts> {
++    files
++        .into_iter()
++        .map(|f| {
++            let structs: Vec<cfnptr::StructExtent> = f
++                .structs
++                .into_iter()
++                .map(|s| cfnptr::StructExtent { id: s.id, start_line: s.start_line, end_line: s.end_line })
++                .collect();
++            let facts = cfnptr::scan_file(&f.text, &structs);
++            CfnptrFacts {
++                fn_ptr_typedefs: facts.fn_ptr_typedefs,
++                fn_type_typedefs: facts.fn_type_typedefs,
++                structs: facts
++                    .structs
++                    .into_iter()
++                    .map(|s| CfnptrStructOut {
++                        id: s.id,
++                        parsed: s.parsed,
++                        fields: s
++                            .fields
++                            .into_iter()
++                            .map(|fl| CfnptrField { name: fl.name, index: fl.index, ptr: fl.ptr, ty: fl.ty })
++                            .collect(),
++                    })
++                    .collect(),
++                inline_ptr: facts.inline_ptr,
++                inline_types: facts.inline_types,
++                inline_tags: facts.inline_tags,
++                init_tokens: facts.init_tokens,
++                array_elems: facts.array_elems,
++                alias_names: facts.alias_names,
++                d_pairs: facts.d_pairs,
++                dispatch_fields: facts.dispatch_fields,
++                array_dispatch_names: facts.array_dispatch_names,
++                includes: facts.includes,
++            }
++        })
++        .collect()
++}
++
++/// Debug/differential hook: the native `stripCommentsForRegex(text, 'c')`.
++/// Exists so the strip differential oracle can pin the Rust stripper against
++/// the TS reference directly.
++#[napi]
++pub fn cfnptr_strip_c(text: String) -> String {
++    String::from_utf8_lossy(&cfnptr::strip_c(text.as_bytes())).into_owned()
++}
++
++#[napi]
++pub fn extract_file(
++    file_path: String,
++    content: String,
++    language: String,
++    parse_budget_ms: Option<u32>,
++) -> Result<ExtractBuffers> {
++    // The whole walk runs under the stack guard (stack.rs, #1581): a file
++    // nested deeply enough to overflow this thread's stack comes back as a
++    // `defer:` error — the TS side's routine "take the wasm path" signal —
++    // instead of a SIGSEGV that kills the entire indexer process. And its
++    // parse is cancelled past `parse_budget_ms` (parse_budget.rs, #3274), a
++    // `timeout:` error, instead of a thread that spins until the process dies.
++    let out = parse_budget::with_budget(parse_budget_ms, || stack::run_guarded(|| match language.as_str() {
++        "java" => java::extract(&file_path, &content),
++        "python" => python::extract(&file_path, &content),
++        "go" => go::extract(&file_path, &content),
++        "c" | "cpp" => ccpp::extract(&file_path, &content, &language),
++        "rust" => rustlang::extract(&file_path, &content),
++        "csharp" => csharp::extract(&file_path, &content),
++        "ruby" => ruby::extract(&file_path, &content),
++        "php" => php::extract(&file_path, &content),
++        "swift" => swift::extract(&file_path, &content),
++        "kotlin" => kotlin::extract(&file_path, &content),
++        "r" => rlang::extract(&file_path, &content),
++        "lua" | "luau" => lua::extract(&file_path, &content, &language),
++        "scala" => scala::extract(&file_path, &content),
++        "dart" => dart::extract(&file_path, &content),
++        _ => tsjs::extract(&file_path, &content, &language),
++    }))
++    .map_err(Error::from_reason)?;
++    Ok(ExtractBuffers {
++        meta: out.meta.into(),
++        nodes: out.nodes.into(),
++        edges: out.edges.into(),
++        refs: out.refs.into(),
++        arena: out.arena.into(),
++    })
++}
+-- 
+2.34.1
+
