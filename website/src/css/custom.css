@@ -1,7 +1,13 @@
 /*
- * Site-wide CSS. The classic theme's defaults (Infima) apply, with one
- * override: the primary color, Index Indigo, and the six shades Infima derives
- * from it (Docusaurus' recipe: darken 10/15/30%, lighten 10/15/30%).
+ * Site-wide CSS over the classic theme (Infima).
+ *
+ * Color: Index Indigo is the primary, with the six shades Infima derives from
+ * it (Docusaurus' recipe: darken 10/15/30%, lighten 10/15/30%). The neutrals
+ * are cool and lean toward the indigo, never warm.
+ *
+ * Type: Bricolage Grotesque for headings and the wordmark, the system UI face
+ * for body text, and Geist Mono for code and citations. Both web fonts load
+ * from Google Fonts (docusaurus.config.ts) and fall back to system faces.
  */
 
 :root {
@@ -12,6 +18,38 @@
   --ifm-color-primary-light: #5c61d6;
   --ifm-color-primary-lighter: #6569d8;
   --ifm-color-primary-lightest: #8084df;
+
+  --cc-ink: #1b1c33;
+  --cc-ink-soft: #4b4d6b;
+  --cc-paper: #ffffff;
+  --cc-paper-alt: #f4f5fb;
+  --cc-rule: #dfe0ee;
+  --cc-wash: #e8e9fb;
+  --cc-term-bg: #17182c;
+  --cc-term-fg: #d8daf2;
+  --cc-term-dim: #8b8dae;
+  --cc-term-cite: #b4b8ff;
+  --cc-term-kind: #8fd6c4;
+
+  --cc-font-display: 'Bricolage Grotesque', ui-sans-serif, system-ui, -apple-system,
+    'Segoe UI', Roboto, sans-serif;
+
+  --ifm-font-family-base: system-ui, -apple-system, 'Segoe UI', Roboto, Ubuntu, Cantarell,
+    'Noto Sans', sans-serif;
+  --ifm-heading-font-family: var(--cc-font-display);
+  --ifm-font-family-monospace: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas,
+    'Liberation Mono', monospace;
+  --ifm-heading-font-weight: 650;
+  --ifm-line-height-base: 1.65;
+  --ifm-code-font-size: 90%;
+
+  --ifm-font-color-base: var(--cc-ink);
+  --ifm-background-color: var(--cc-paper);
+  --ifm-toc-border-color: var(--cc-rule);
+  --ifm-hr-border-color: var(--cc-rule);
+  --ifm-table-border-color: var(--cc-rule);
+  --ifm-navbar-shadow: none;
+  --docusaurus-highlighted-code-line-bg: rgba(74, 79, 209, 0.12);
 }
 
 [data-theme='dark'] {
@@ -22,4 +60,98 @@
   --ifm-color-primary-light: #acb1ff;
   --ifm-color-primary-lighter: #b1b5ff;
   --ifm-color-primary-lightest: #bfc2ff;
+
+  --cc-ink: #e3e4f3;
+  --cc-ink-soft: #a6a8c6;
+  --cc-paper: #121322;
+  --cc-paper-alt: #191a2e;
+  --cc-rule: #2b2d48;
+  --cc-wash: #23254a;
+  --cc-term-bg: #0c0d1a;
+
+  --ifm-background-color: var(--cc-paper);
+  --ifm-background-surface-color: var(--cc-paper-alt);
+  --ifm-navbar-background-color: var(--cc-paper);
+  --docusaurus-highlighted-code-line-bg: rgba(163, 168, 255, 0.14);
+}
+
+/* Headings: tighter tracking at display sizes, a measured scale. */
+h1,
+h2,
+h3 {
+  letter-spacing: -0.015em;
+}
+
+.markdown h1:first-child {
+  --ifm-h1-font-size: 2.6rem;
+  letter-spacing: -0.025em;
+}
+
+.markdown {
+  --ifm-h2-font-size: 1.75rem;
+  --ifm-h3-font-size: 1.3rem;
+}
+
+.markdown h2 {
+  margin-top: 2.75rem;
+}
+
+/* Long-form docs read better at a bounded measure. */
+.markdown > p,
+.markdown > ul,
+.markdown > ol {
+  max-width: 46rem;
+}
+
+/* Navbar: a hairline under it instead of a shadow, the wordmark in the
+   display face. */
+.navbar {
+  border-bottom: 1px solid var(--cc-rule);
+}
+
+.navbar__title {
+  font-family: var(--cc-font-display);
+  font-weight: 650;
+  font-size: 1.2rem;
+  letter-spacing: -0.02em;
+}
+
+.navbar__logo {
+  height: 1.75rem;
+  margin-right: 0.45rem;
+}
+
+.navbar__link {
+  font-weight: 500;
+}
+
+/* Inline code: a quiet indigo wash, no border. */
+code {
+  border: none;
+}
+
+:not(pre) > code {
+  background: var(--cc-wash);
+  padding: 0.1em 0.35em;
+}
+
+/* Footer: the terminal's indigo-black, not Infima's slate. */
+.footer--dark {
+  --ifm-footer-background-color: #17182c;
+}
+
+[data-theme='dark'] .footer--dark {
+  --ifm-footer-background-color: #0c0d1a;
+  border-top: 1px solid var(--cc-rule);
+}
+
+/* Footer column titles in the display face. */
+.footer__title {
+  font-family: var(--cc-font-display);
+  font-weight: 600;
+}
+
+.footer__copyright {
+  font-size: 0.875rem;
+  opacity: 0.75;
 }
