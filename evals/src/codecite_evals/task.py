@@ -328,7 +328,10 @@ async def prepare_arm(sb, condition: str, mcp_path: str, mcp_config: dict) -> di
     else:
         await sb.write_file(mcp_path, json.dumps(mcp_config, indent=2))
     path = ("/opt/codecite/bin:" if condition in ("codecite", "plugin") else "") + "/usr/local/bin:/usr/bin:/bin"
-    return {"PATH": path, "HOME": "/root", **({plugin.CORPUS_ENV: plugin.CORPUS} if condition == "plugin" else {})}
+    # The plugin arm drops --strict-mcp-config, so the account's claude.ai
+    # connectors are switched off here instead.
+    extra = {plugin.CORPUS_ENV: plugin.CORPUS, "ENABLE_CLAUDEAI_MCP_SERVERS": "false"} if condition == "plugin" else {}
+    return {"PATH": path, "HOME": "/root", **extra}
 
 
 async def keep_assist_measures(sb, condition: str) -> None:

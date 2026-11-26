@@ -63,6 +63,10 @@ impl Env {
     }
 
     fn run(&self, args: &[&str], stdin: &str) -> Output {
+        self.run_with(args, stdin, &[])
+    }
+
+    fn run_with(&self, args: &[&str], stdin: &str, envs: &[(&str, &str)]) -> Output {
         let work = self.tmp.path().join("work");
         fs::create_dir_all(&work).unwrap();
         let mut child = Command::new(env!("CARGO_BIN_EXE_codecite"))
@@ -72,6 +76,7 @@ impl Env {
             .env("XDG_CACHE_HOME", self.tmp.path().join("cache"))
             .env_remove("CODECITE_CORPUS")
             .env_remove("CODECITE_HOOK_DEBUG")
+            .envs(envs.iter().copied())
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -104,14 +109,45 @@ fn hook_prints_the_note_for_the_checkout() {
     assert!(note.contains("this repository"), "{note}");
 }
 
+/// With a corpus present, input that isn't a hook's JSON falls back to the
+/// process's own directory, which Claude Code sets to the project's. Here
+/// that is no checkout, so the only corpus is named. Either way the hook
+/// exits 0, prints at most one valid JSON reply and nothing on stderr.
 #[test]
 fn hook_survives_bad_stdin() {
     let env = Env::new();
+    env.index_demo();
     for stdin in ["", "{", "[]", r#"{"cwd":"/nonexistent"}"#] {
         let out = env.hook(stdin);
         assert!(out.status.success(), "{stdin:?}: {out:?}");
-        assert!(out.stdout.is_empty(), "{stdin:?}: {out:?}");
+        assert!(out.stderr.is_empty(), "{stdin:?}: {out:?}");
+        if !out.stdout.is_empty() {
+            let reply: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+            assert_eq!(reply["hookSpecificOutput"]["hookEventName"], "SessionStart");
+        }
     }
+}
+
+#[test]
+fn hook_debug_shows_a_listing_error_on_stderr_and_still_succeeds() {
+    let env = Env::new();
+    // A file where the data directory should be makes listing fail.
+    let data = env.tmp.path().join("data");
+    fs::create_dir_all(&data).unwrap();
+    fs::write(data.join("codecite"), "not a directory").unwrap();
+    let quiet = env.hook(r#"{"cwd":"."}"#);
+    assert!(
+        quiet.status.success() && quiet.stdout.is_empty(),
+        "{quiet:?}"
+    );
+    assert!(quiet.stderr.is_empty(), "{quiet:?}");
+    let out = env.run_with(
+        &["hook", "claude", "session-start"],
+        r#"{"cwd":"."}"#,
+        &[("CODECITE_HOOK_DEBUG", "1")],
+    );
+    assert!(out.status.success() && out.stdout.is_empty(), "{out:?}");
+    assert!(!out.stderr.is_empty(), "{out:?}");
 }
 
 #[test]

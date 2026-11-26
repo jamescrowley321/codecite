@@ -1079,6 +1079,9 @@ first (the plugin runs `codecite` from `PATH`), then in Claude Code:
 /plugin install codecite
 ```
 
+A binary older than the plugin has no `codecite hook` command, so session
+start shows a hook error until you upgrade; it never blocks the session.
+
 It adds three things:
 
 - a skill that says when codecite beats grep and which commands to use;
@@ -1090,10 +1093,13 @@ It adds three things:
 
 The hook picks the corpus in this order:
 
-1. `CODECITE_CORPUS`, when set and the corpus exists and is readable.
+1. `CODECITE_CORPUS`, when set and not empty. It is used alone: if that
+   corpus is missing or unreadable, the hook prints nothing. Only when it is
+   unset or empty does the hook go on to step 2.
 2. The one corpus with a local source whose root contains the session's
    directory (`codecite corpora --for <cwd>`).
-3. The only readable corpus, when there is exactly one.
+3. The only readable corpus, when there is exactly one and no corpus matched
+   the directory.
 
 When several corpora index the directory, the note says so and asks you to
 set `CODECITE_CORPUS`. When the chosen corpus is stale, the note says queries

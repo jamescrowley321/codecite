@@ -7,8 +7,8 @@ use rusqlite::OptionalExtension;
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use super::{Store, known_corpora};
-use crate::Result;
+use super::{Store, is_corpus_name, known_corpora};
+use crate::{Error, Result};
 
 /// One revision a manifest pins: a git source's commit, a document
 /// version's or a pinned guidance file's sha256, under the name the
@@ -109,6 +109,18 @@ pub fn corpora(dir: &Path, pins: Option<PinReader>) -> Result<Corpora> {
     Ok(Corpora { corpora })
 }
 
+/// The info for the one corpus `corpus` in `dir`, as [`corpora`] lists it,
+/// opening only its file. A name that isn't a plain file name is
+/// [`Error::InvalidCorpusName`]; a corpus with no file is an I/O error.
+pub fn corpus_info(dir: &Path, corpus: &str, pins: Option<PinReader>) -> Result<CorpusInfo> {
+    if !is_corpus_name(corpus) {
+        return Err(Error::InvalidCorpusName {
+            name: corpus.into(),
+        });
+    }
+    describe(dir, corpus.to_owned(), pins)
+}
+
 /// The corpora in `dir` with a `local` source whose root contains `path`,
 /// sorted by name, in the shape [`corpora`] returns. Each carries the
 /// matched `local_root` and its `source_names`. `path` need not exist: its
@@ -134,7 +146,10 @@ pub fn corpora_for(dir: &Path, path: &Path, pins: Option<PinReader>) -> Result<C
             continue;
         };
         drop(store);
-        let mut info = describe(dir, corpus, pins)?;
+        // A file that vanished since the listing is skipped.
+        let Ok(mut info) = describe(dir, corpus, pins) else {
+            continue;
+        };
         info.local_root = Some(root);
         info.source_names = Some(source_names);
         found.push(info);
@@ -644,6 +659,17 @@ mod tests {
             indexed_at_root(&data, name, &root.join(name));
         }
         (tmp, root, data)
+    }
+
+    #[test]
+    fn corpus_info_describes_one_corpus_and_checks_the_name() {
+        let (_tmp, _root, data) = two_roots();
+        assert_eq!(corpus_info(&data, "app", None).unwrap().corpus, "app");
+        assert!(matches!(
+            corpus_info(&data, "../data/app", None),
+            Err(Error::InvalidCorpusName { .. })
+        ));
+        assert!(corpus_info(&data, "nope", None).is_err());
     }
 
     #[test]

@@ -17,4 +17,8 @@ def files() -> dict[str, str]:
     """What the arm's sandbox gets, by path: every file of the plugin in the
     checkout, under PLUGIN_DIR."""
     root = config.ROOT / SOURCE
-    return {f"{PLUGIN_DIR}/{path.relative_to(root).as_posix()}": path.read_text() for path in sorted(root.rglob("*")) if path.is_file()}
+    return {
+        f"{PLUGIN_DIR}/{path.relative_to(root).as_posix()}": path.read_text()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }

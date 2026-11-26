@@ -89,8 +89,17 @@ GATE = {"pass": 0.0, "tokens": None, "time": 0.25}
 # A pair is measured when its codecite arm used codecite in at least this
 # share of its usable runs.
 ADOPTION = 0.5
-NATIVE = "mcp__codecite__"
+# The codecite MCP server's tools: `mcp__codecite__<tool>` when configured by
+# hand, `mcp__plugin_codecite_codecite__<tool>` when the plugin supplies it.
+NATIVE = ("mcp__codecite__", "mcp__plugin_codecite_codecite__")
 ATTACHMENT = "attachment://"
+
+
+def is_codecite_tool(name: str) -> bool:
+    """Whether a tool call is to one of codecite's MCP tools."""
+    return name.startswith(NATIVE)
+
+
 # `codecite` at the start of a shell command: of the line, or after `;`, `&`,
 # `|`, `(`, `$(` or a backtick, behind any VAR=value prefixes, by bare name or
 # path. `grep codecite` or `ls /opt/codecite` don't run it.
@@ -280,7 +289,7 @@ def codecite_calls(sample):
         if not isinstance(event, ModelEvent) or not event.output.choices:
             continue
         for call in event.output.message.tool_calls or []:
-            if call.function.startswith(NATIVE):
+            if is_codecite_tool(call.function):
                 calls += 1
             elif call.function == "bash":
                 command = call.arguments.get("command") if isinstance(call.arguments, dict) else None

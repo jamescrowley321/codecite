@@ -2085,7 +2085,7 @@ app@0123456789ab:src/b.rs#L1-L5 · method callback · source · quote · indexed
     }
 
     #[test]
-    fn corpora_and_mcp_take_no_arguments() {
+    fn corpora_takes_only_for_and_mcp_takes_no_arguments() {
         let cli = Cli::try_parse_from(["codecite", "corpora"]).unwrap();
         assert!(matches!(cli.command, Command::Corpora { for_path: None }));
         let cli = Cli::try_parse_from(["codecite", "corpora", "--for", "."]).unwrap();

@@ -28,7 +28,7 @@ import os
 from inspect_ai.model import GenerateConfig, ModelAPI, ModelOutput, modelapi
 
 from codecite_evals import assist, plugin
-from codecite_evals.report import CLI, NATIVE
+from codecite_evals.report import CLI, is_codecite_tool
 
 PROVIDER = "claude-code"
 TOKEN = "CLAUDE_CODE_OAUTH_TOKEN"
@@ -75,19 +75,20 @@ def command(condition: str, prompt: str, model: str, timeout: int) -> list[str]:
     """Claude Code's command line for an arm, its stream-json written to
     OUTPUT. Only the codecite arm gets an MCP config; --strict-mcp-config
     keeps any other out of every arm but the plugin's, whose MCP server strict
-    mode would skip. Only the plugin arm gets --plugin-dir. Only the assist arm gets the settings
-    holding its grep and glob hook. `timeout` stops it a little before
-    Inspect would."""
+    mode would skip. Only the plugin arm gets --plugin-dir, and the Skill tool
+    that loads its skill. Only the assist arm gets the settings holding its
+    grep and glob hook. `timeout` stops it a little before Inspect would."""
     mcp = ["--mcp-config", MCP] if condition == "codecite" else []
     settings = ["--settings", assist.SETTINGS_PATH] if condition == "assist" else []
     # Strict mode skips a plugin's MCP servers, and the sandbox holds no other MCP config.
     strict = [] if condition == "plugin" else ["--strict-mcp-config"]
+    tools = [*TOOLS, "Skill"] if condition == "plugin" else TOOLS
     loaded = ["--plugin-dir", plugin.PLUGIN_DIR] if condition == "plugin" else []
     return [
         "sh", "-c", f'"$@" >{OUTPUT}', "sh",
         "timeout", "--kill-after=10", str(timeout),
         "claude", "-p", "--output-format", "stream-json", "--verbose", "--model", model,
-        "--tools", ",".join(TOOLS), *strict, *mcp, *settings, *loaded,
+        "--tools", ",".join(tools), *strict, *mcp, *settings, *loaded,
         "--dangerously-skip-permissions", "--no-session-persistence", "--", prompt,
     ]  # fmt: skip
 
@@ -142,7 +143,7 @@ def measures(stdout: str) -> dict:
             if not isinstance(block, dict) or block.get("type") != "tool_use":
                 continue
             name, args = str(block.get("name")), block.get("input") or {}
-            if name.startswith(NATIVE):
+            if is_codecite_tool(name):
                 calls += 1
             elif name == "Bash" and isinstance(args.get("command"), str):
                 calls += bool(CLI.search(args["command"]))

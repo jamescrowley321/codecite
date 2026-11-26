@@ -39,23 +39,33 @@ pub enum Resolved {
     None,
 }
 
+/// Prints `what` on stderr when `CODECITE_HOOK_DEBUG` is set.
+fn debug(what: &dyn std::fmt::Display) {
+    if std::env::var_os("CODECITE_HOOK_DEBUG").is_some() {
+        eprintln!("codecite hook: {what}");
+    }
+}
+
 /// Picks the corpus for `cwd`: the one `env` (`CODECITE_CORPUS`) names, else
 /// the one indexing `cwd`, else the only readable corpus.
 pub fn resolve(env: Option<&str>, cwd: &Path, data_dir: &Path) -> Resolved {
     if let Some(name) = env.filter(|n| !n.is_empty()) {
-        if !data_dir.join(format!("{name}.db")).exists() {
-            return Resolved::None;
-        }
         return find(data_dir, name).map_or(Resolved::None, |info| corpus_of(info, data_dir));
     }
-    if let Some(resolved) = codecite_core::corpora_for(data_dir, cwd, None)
-        .ok()
-        .and_then(|found| pick(found.corpora))
-    {
-        return resolved;
+    match codecite_core::corpora_for(data_dir, cwd, None) {
+        Ok(found) => {
+            if let Some(resolved) = pick(found.corpora) {
+                return resolved;
+            }
+        }
+        Err(e) => debug(&format!("corpora --for {}: {e:#}", cwd.display())),
     }
-    let Ok(all) = codecite_core::corpora(data_dir, None) else {
-        return Resolved::None;
+    let all = match codecite_core::corpora(data_dir, None) {
+        Ok(all) => all,
+        Err(e) => {
+            debug(&format!("corpora: {e:#}"));
+            return Resolved::None;
+        }
     };
     let mut usable = all.corpora.into_iter().filter(|c| c.error.is_none());
     match (usable.next(), usable.next()) {
@@ -64,21 +74,27 @@ pub fn resolve(env: Option<&str>, cwd: &Path, data_dir: &Path) -> Resolved {
     }
 }
 
-/// The readable corpus `name`, if there is one.
+/// The readable corpus `name`, if there is one. Only its own file is opened.
 fn find(data_dir: &Path, name: &str) -> Option<CorpusInfo> {
-    let all = codecite_core::corpora(data_dir, None).ok()?;
-    all.corpora
-        .into_iter()
-        .find(|c| c.corpus == name && c.error.is_none())
+    match codecite_core::corpus_info(data_dir, name, None) {
+        Ok(info) if info.error.is_none() => Some(info),
+        Ok(_) => None,
+        Err(e) => {
+            debug(&format!("corpus {name}: {e:#}"));
+            None
+        }
+    }
 }
 
 /// The resolution of the corpora matching a path. A match with an `error`
-/// is unusable: it is no match and doesn't make the rest ambiguous.
+/// is unusable: it is no match and doesn't make the rest ambiguous. A lone
+/// match is "this repository" when it has one source: that source is the
+/// checkout the path is in.
 fn pick(found: Vec<CorpusInfo>) -> Option<Resolved> {
     let mut usable: Vec<CorpusInfo> = found.into_iter().filter(|c| c.error.is_none()).collect();
     match usable.len() {
         0 => None,
-        1 => Some(resolved_corpus(usable.remove(0), None)),
+        1 => Some(resolved_corpus(usable.remove(0), None, true)),
         _ => Some(Resolved::Ambiguous(
             usable.into_iter().map(|c| c.corpus).collect(),
         )),
@@ -91,14 +107,15 @@ fn corpus_of(info: CorpusInfo, data_dir: &Path) -> Resolved {
     let names = Store::open_read_only(&data_dir.join(format!("{}.db", info.corpus)))
         .and_then(|store| store.all_source_names())
         .ok();
-    resolved_corpus(info, names)
+    resolved_corpus(info, names, false)
 }
 
-/// `info` as a `Resolved::Corpus`. `names` stands in for its `source_names`;
-/// `what` is "this repository" for one source, else the names.
-fn resolved_corpus(info: CorpusInfo, names: Option<Vec<String>>) -> Resolved {
+/// `info` as a `Resolved::Corpus`. `names` stands in for its `source_names`.
+/// `what` is "this repository" only when `matched` the path and it has one
+/// source, else the names.
+fn resolved_corpus(info: CorpusInfo, names: Option<Vec<String>>, matched: bool) -> Resolved {
     let names = names.or(info.source_names.clone()).unwrap_or_default();
-    let what = if names.len() <= 1 {
+    let what = if matched && names.len() == 1 {
         "this repository".to_owned()
     } else {
         describe_sources(&names)
@@ -337,6 +354,27 @@ mod tests {
         let note = session_note(&r).unwrap();
         assert!(note.contains("Set CODECITE_CORPUS"), "{note}");
         assert!(note.contains("app, app2"), "{note}");
+    }
+
+    #[test]
+    fn env_naming_a_one_source_corpus_names_the_source() {
+        let f = Fixture::new();
+        f.add("app", "app", "app");
+        // The session's directory is not the corpus's checkout.
+        let Resolved::Corpus { what, .. } = resolve(Some("app"), &f.dir("other"), &f.data()) else {
+            panic!()
+        };
+        assert_eq!(what, "app");
+    }
+
+    #[test]
+    fn the_only_corpus_fallback_names_the_source() {
+        let f = Fixture::new();
+        f.add("app", "app", "app");
+        let Resolved::Corpus { what, .. } = resolve(None, &f.dir("other"), &f.data()) else {
+            panic!()
+        };
+        assert_eq!(what, "app");
     }
 
     #[test]
