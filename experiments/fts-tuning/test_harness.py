@@ -15,6 +15,7 @@ sys.path.insert(0, str(HERE))
 import hashlib  # noqa: E402
 import json  # noqa: E402
 
+import detail_column_bench  # noqa: E402
 import incremental_optimize  # noqa: E402
 import index_baseline  # noqa: E402
 import optimize  # noqa: E402
@@ -453,6 +454,27 @@ class ColdCache(unittest.TestCase):
             self.assertEqual(sorted(run.iterdir()), before)
 
 
+    def test_missing_source_database_leaves_no_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            baseline = root / "baseline"
+            db = baseline / "data/present-1/codecite/present.db"
+            db.parent.mkdir(parents=True)
+            db.touch()
+            (baseline / "index-metadata.json").write_text("{}")
+            output = root / "output"
+            argv = ["optimize.py", str(baseline), str(output), "present", "missing"]
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(optimize, "check_sqlite_version"),
+                mock.patch.object(optimize.shutil, "copyfile") as copyfile,
+            ):
+                with self.assertRaises(FileNotFoundError):
+                    optimize.main()
+            copyfile.assert_not_called()
+            self.assertFalse(output.exists())
+
+
 class IncrementalOptimizePreflight(unittest.TestCase):
     def test_missing_helper_leaves_no_output(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -492,6 +514,91 @@ class IncrementalOptimizePreflight(unittest.TestCase):
             ):
                 with self.assertRaises(FileNotFoundError):
                     incremental_optimize.main()
+            self.assertFalse(output.exists())
+
+
+    def test_missing_source_database_leaves_no_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            baseline = root / "baseline"
+            baseline.mkdir()
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            hashes = {}
+            for name in ("codecite", "codecite-bench"):
+                (bin_dir / name).write_bytes(name.encode())
+                hashes[name] = hashlib.sha256(name.encode()).hexdigest()
+            helper = root / "helper"
+            helper.touch()
+            manifest = incremental_optimize.ROOT / "evals/retrieval/identity-bench.toml"
+            (baseline / "index-metadata.json").write_text(json.dumps({
+                "binary_sha256": hashes,
+                "manifest_sha256": {"identity-bench": incremental_optimize.sha(manifest)},
+            }))
+            output = root / "output"
+            argv = [
+                "incremental_optimize.py",
+                str(baseline),
+                str(output),
+                "--helper",
+                str(helper),
+                "--bin-dir",
+                str(bin_dir),
+            ]
+            with mock.patch.object(sys, "argv", argv):
+                with self.assertRaises(FileNotFoundError):
+                    incremental_optimize.main()
+            self.assertFalse(output.exists())
+
+
+class DetailColumnBench(unittest.TestCase):
+    def test_silent_failure_reports_exit_status(self):
+        failed = subprocess.CompletedProcess([], -9, stdout="", stderr="")
+        with mock.patch.object(detail_column_bench.subprocess, "run", return_value=failed):
+            report, error = detail_column_bench.bench("scorer", "codecite", "queries.toml", {})
+        self.assertIsNone(report)
+        self.assertEqual(error, "exit -9")
+        self.assertEqual(detail_column_bench.reason(error), "exit -9")
+
+    def test_stderr_is_kept_when_present(self):
+        failed = subprocess.CompletedProcess([], 1, stdout="", stderr="Error: boom\n")
+        with mock.patch.object(detail_column_bench.subprocess, "run", return_value=failed):
+            _, error = detail_column_bench.bench("scorer", "codecite", "queries.toml", {})
+        self.assertEqual(error, "Error: boom")
+
+    def test_source_that_is_not_a_checkout_leaves_no_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            for _, _, manifest, queries in detail_column_bench.label_sets(source):
+                for path in (manifest, queries):
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.touch()
+            base = root / "base"
+            base.mkdir()
+            for name in ("codecite", "codecite-bench"):
+                (base / name).touch()
+            variant = root / "variant"
+            variant.touch()
+            cache = root / "cache"
+            cache.mkdir()
+            output = root / "output"
+            argv = [
+                "detail_column_bench.py",
+                str(output),
+                "--base",
+                str(base),
+                "--variant",
+                str(variant),
+                "--source",
+                str(source),
+                "--cache",
+                str(cache),
+            ]
+            env = dict(os.environ, GIT_CEILING_DIRECTORIES=str(root))
+            with mock.patch.object(sys, "argv", argv), mock.patch.dict(os.environ, env):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    detail_column_bench.main()
             self.assertFalse(output.exists())
 
 

@@ -51,6 +51,7 @@ def main():
     sources = [(corpus, baseline / 'data' / (corpus + '-1') / 'codecite' / (corpus + '.db'))
                for corpus in args.corpora]
     for _, src in sources:
+        src.resolve(strict=True)
         reject_uncheckpointed_wal(src)
     root.mkdir()
     (root / 'index-metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')

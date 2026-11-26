@@ -44,7 +44,7 @@ def main():
     manifest = ROOT / 'evals/retrieval/identity-bench.toml'
     if sha(manifest) != meta['manifest_sha256']['identity-bench']:
         raise ValueError('manifest differs from baseline')
-    source = baseline / 'data/identity-bench-1/codecite/identity-bench.db'
+    source = (baseline / 'data/identity-bench-1/codecite/identity-bench.db').resolve(strict=True)
     wal = Path(str(source) + '-wal')
     if wal.exists() and wal.stat().st_size:
         raise ValueError('source has uncheckpointed WAL')

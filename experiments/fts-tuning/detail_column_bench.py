@@ -56,7 +56,7 @@ def bench(scorer, codecite, queries, env):
     out = subprocess.run([scorer, '--queries', queries, '--codecite', codecite, '--json'],
                          env=env, capture_output=True, text=True)
     if out.returncode:
-        return None, out.stderr.strip()
+        return None, out.stderr.strip() or f'exit {out.returncode}'
     return json.loads(out.stdout), ''
 
 
@@ -77,9 +77,9 @@ def main():
         manifest.resolve(strict=True)
         queries.resolve(strict=True)
     cache = args.cache.resolve(strict=True)
+    revision = subprocess.check_output(['git', '-C', source, 'rev-parse', 'HEAD'], text=True).strip()
     out = args.output.resolve()
     out.mkdir()
-    revision = subprocess.check_output(['git', '-C', source, 'rev-parse', 'HEAD'], text=True).strip()
     (out / 'metadata.json').write_text(json.dumps({
         'source_revision': revision,
         'binary_sha256': {'base': sha(builds['base']), 'variant': sha(builds['variant']), 'codecite-bench': sha(scorer)},
