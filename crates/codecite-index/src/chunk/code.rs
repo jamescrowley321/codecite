@@ -268,7 +268,8 @@ struct Definition {
     /// but defines no symbol.
     kind: Option<SymbolKind>,
     name: String,
-    /// A Go method's receiver type.
+    /// A Go method's receiver type, or the `X` of a JavaScript or
+    /// TypeScript `X.prototype.m = function`.
     receiver: Option<String>,
     start_line: u32,
     end_line: u32,
