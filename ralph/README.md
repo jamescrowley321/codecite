@@ -1,6 +1,6 @@
 # ralph loop
 
-[Ralph Orchestrator](https://github.com/mikeyobrien/ralph-orchestrator) works through the open issues of the `General purpose` milestone in the order `ORDER` in `PROMPT.md` lists, skipping any whose `Depends on #N` isn't closed or in the stack, one phase per iteration, and opens a stack of PRs for review. A change to indexing, search, ranking or the CLI's output runs the history benchmark before its PR, and a loss on any repository parks it; its PR gets the `eval` label.
+[Ralph Orchestrator](https://github.com/mikeyobrien/ralph-orchestrator) works through the open issues `ORDER` in `PROMPT.md` lists, in any milestone and in that order, skipping any whose `Depends on #N` isn't closed or in the stack, one phase per iteration, and opens a stack of PRs for review. A change to indexing, search, ranking or the CLI's output runs the history benchmark before its PR, and a loss on any repository parks it. The loop never adds the `eval` label: James runs one eval on the combined changes once the queue lands, which keeps eval spend down (`evals/README.md`, Spend limits).
 
 - `PROMPT.md`: the router. It reads the queue from GitHub issues and routes each iteration to one phase file.
 - `phases/`: `restack → setup → plan → implement → pr → ci → review → review-fix → complete`. Planning and TDD use the superpowers skills.

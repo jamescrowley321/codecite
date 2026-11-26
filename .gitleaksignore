@@ -13,3 +13,5 @@ cff20c0aaffaebc66b85dab75a63a4c2bbb0fa10:experiments/graph-reuse/corpora.toml:so
 cff20c0aaffaebc66b85dab75a63a4c2bbb0fa10:experiments/graph-reuse/corpora.toml:sourcegraph-access-token:59
 cff20c0aaffaebc66b85dab75a63a4c2bbb0fa10:experiments/graph-reuse/corpora.toml:sourcegraph-access-token:72
 cff20c0aaffaebc66b85dab75a63a4c2bbb0fa10:experiments/graph-reuse/corpora.toml:sourcegraph-access-token:84
+# A pinned commit SHA beside a repository name that an intermediate commit of #287 wrote; the next commit reshaped it.
+08f864131b4f82d53bd21fb807840f054870ff61:experiments/retrieval-generalization/results/metadata.json:generic-api-key:20

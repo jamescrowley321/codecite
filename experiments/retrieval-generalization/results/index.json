@@ -1,0 +1,141 @@
+{
+ "linux": {
+  "codecite": {
+   "wall_seconds": 233.34,
+   "peak_rss_kib": 78064,
+   "documents": 90971,
+   "chunks": 1369065,
+   "symbols": 895773,
+   "chunk_kinds": {
+    "class": 141579,
+    "function": 746137,
+    "section": 35,
+    "type_alias": 8003,
+    "variable": 1767,
+    "window": 471544
+   },
+   "db_bytes": 2352680960,
+   "skipped": [
+    "2 deny-listed, 85 symlink, 102 oversized, 4 binary, 2 non-UTF-8 content"
+   ]
+  },
+  "codegraph": {
+   "wall_seconds": 584.03,
+   "peak_rss_kib": 9720504,
+   "files": 67769,
+   "nodes": 1984440,
+   "db_bytes": 4738772992
+  }
+ },
+ "keycloak": {
+  "codecite": {
+   "wall_seconds": 19.97,
+   "peak_rss_kib": 35064,
+   "documents": 12785,
+   "chunks": 116785,
+   "symbols": 96854,
+   "chunk_kinds": {
+    "class": 11066,
+    "function": 84199,
+    "section": 578,
+    "type_alias": 843,
+    "variable": 746,
+    "window": 19353
+   },
+   "db_bytes": 255008768,
+   "skipped": [
+    "109 deny-listed, 20 symlink, 712 binary, 2 non-UTF-8 content"
+   ]
+  },
+  "codegraph": {
+   "wall_seconds": 47.44,
+   "peak_rss_kib": 4824428,
+   "files": 10821,
+   "nodes": 263901,
+   "db_bytes": 915906560
+  }
+ },
+ "django": {
+  "codecite": {
+   "wall_seconds": 11.1,
+   "peak_rss_kib": 37160,
+   "documents": 5612,
+   "chunks": 59729,
+   "symbols": 45238,
+   "chunk_kinds": {
+    "class": 10762,
+    "function": 31761,
+    "section": 113,
+    "variable": 2763,
+    "window": 14330
+   },
+   "db_bytes": 103333888,
+   "skipped": [
+    "4 symlink, 1379 binary, 2 non-UTF-8 content"
+   ]
+  },
+  "codegraph": {
+   "wall_seconds": 13.86,
+   "peak_rss_kib": 1962388,
+   "files": 2952,
+   "nodes": 59785,
+   "db_bytes": 157499392
+  }
+ },
+ "ripgrep": {
+  "codecite": {
+   "wall_seconds": 0.61,
+   "peak_rss_kib": 32244,
+   "documents": 222,
+   "chunks": 4839,
+   "symbols": 3643,
+   "chunk_kinds": {
+    "class": 837,
+    "function": 3101,
+    "section": 70,
+    "type_alias": 45,
+    "variable": 104,
+    "window": 682
+   },
+   "db_bytes": 7897088,
+   "skipped": [
+    "1 symlink, 7 binary, 1 non-UTF-8 content"
+   ]
+  },
+  "codegraph": {
+   "wall_seconds": 1.95,
+   "peak_rss_kib": 498924,
+   "files": 114,
+   "nodes": 4061,
+   "db_bytes": 14823424
+  }
+ },
+ "excalidraw": {
+  "codecite": {
+   "wall_seconds": 3.18,
+   "peak_rss_kib": 43340,
+   "documents": 830,
+   "chunks": 7680,
+   "symbols": 3805,
+   "chunk_kinds": {
+    "class": 186,
+    "function": 2316,
+    "section": 256,
+    "type_alias": 395,
+    "variable": 908,
+    "window": 3619
+   },
+   "db_bytes": 26398720,
+   "skipped": [
+    "2 deny-listed, 1 oversized, 283 binary"
+   ]
+  },
+  "codegraph": {
+   "wall_seconds": 4.86,
+   "peak_rss_kib": 906448,
+   "files": 559,
+   "nodes": 9077,
+   "db_bytes": 36454400
+  }
+ }
+}
