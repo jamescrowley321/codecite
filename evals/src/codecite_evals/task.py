@@ -47,7 +47,7 @@ from inspect_ai.scorer import Score, Target, accuracy, scorer, stderr
 from inspect_ai.solver import Generate, TaskState, solver
 from inspect_ai.util import OutputLimitExceededError, sandbox, store
 
-from codecite_evals import assist, claude_code, config, scrub
+from codecite_evals import assist, claude_code, config, plugin, scrub
 
 ARMS = {"both": ("baseline", "codecite"), "baseline": ("baseline",)}
 PROJECT = "/work/project"
@@ -308,6 +308,8 @@ def pi_command(condition: str, prompt: str) -> list[str]:
     extensions too, so the codecite and codegraph arms load only the MCP
     one back, and only each lists its own tools; the assist arm loads only
     its hook's."""
+    if condition == "plugin":
+        raise ValueError("the plugin arm has no pi version until the pi package lands (spec step 3)")
     if condition == "codecite":
         flags, tools = [*PI_FLAGS, "-e", "builtin:mcp"], [*PI_TOOLS, *CODECITE_TOOLS]
     elif condition == "codegraph":
@@ -389,7 +391,8 @@ def coding_agent() -> Agent:
 
 async def prepare_arm(sb, condition: str, mcp_path: str, mcp_config: dict) -> dict[str, str]:
     """Strip the other tools and indexes from the sandbox, give the assist arm
-    its hook (codecite kept, but off PATH), or give the codecite/codegraph arm
+    its hook (codecite kept, but off PATH), give the plugin arm the plugin
+    (codecite on PATH, with its corpus), or give the codecite/codegraph arm
     the agent's MCP config, and return the arm's base env."""
     if condition in ("codecite", "codegraph"):
         await sb.write_file(mcp_path, json.dumps(mcp_config, indent=2))
@@ -403,17 +406,24 @@ async def prepare_arm(sb, condition: str, mcp_path: str, mcp_config: dict) -> di
         ])
         if res is not None and not res.success:
             raise RuntimeError(f"failed to remove codegraph: {res.stderr}")
-    # Preserve assist's off-PATH codecite binary; every other non-codecite arm loses it.
-    if condition not in ("codecite", "assist"):
+    # Preserve assist's off-PATH codecite binary and the plugin arm's codecite
+    # on PATH; every other non-codecite arm loses it.
+    if condition not in ("codecite", "assist", "plugin"):
         res = await sb.exec(STRIP_CODECITE)
         if res is not None and not res.success:
             raise RuntimeError(f"failed to remove codecite: {res.stderr}")
     if condition == "assist":
         for path, text in assist.files().items():
             await sb.write_file(path, text)
-    first = {"codecite": "/opt/codecite/bin:", "codegraph": "/opt/codegraph/bin:"}.get(condition, "")
+    elif condition == "plugin":
+        for path, text in plugin.files().items():
+            await sb.write_file(path, text)
+    first = {"codecite": "/opt/codecite/bin:", "codegraph": "/opt/codegraph/bin:", "plugin": "/opt/codecite/bin:"}.get(condition, "")
     path = first + "/usr/local/bin:/usr/bin:/bin"
-    return {"PATH": path, "HOME": "/root"}
+    # The plugin arm drops --strict-mcp-config, so the account's claude.ai
+    # connectors are switched off here instead.
+    extra = {plugin.CORPUS_ENV: plugin.CORPUS, "ENABLE_CLAUDEAI_MCP_SERVERS": "false"} if condition == "plugin" else {}
+    return {"PATH": path, "HOME": "/root", **extra}
 
 
 async def keep_assist_measures(sb, condition: str) -> None:

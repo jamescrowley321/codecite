@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "codecite hook claude session-start", "timeout": 5 }
+        ]
+      }
+    ]
+  }
+}

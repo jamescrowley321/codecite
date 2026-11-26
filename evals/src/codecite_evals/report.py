@@ -89,8 +89,18 @@ GATE = {"pass": 0.0, "tokens": None, "time": 0.25}
 # A pair is measured when its tool arm used its own tool in at least this
 # share of its usable runs.
 ADOPTION = 0.5
-NATIVE = {"codecite": "mcp__codecite__", "codegraph": "mcp__codegraph__"}
+# The codecite MCP server's tools: `mcp__codecite__<tool>` when configured by
+# hand, `mcp__plugin_codecite_codecite__<tool>` when the plugin supplies it.
+NATIVE = {
+    "codecite": ("mcp__codecite__", "mcp__plugin_codecite_codecite__"),
+    "codegraph": ("mcp__codegraph__",),
+}
 ATTACHMENT = "attachment://"
+
+
+def is_codecite_tool(name: str) -> bool:
+    """Whether a tool call is to one of codecite's MCP tools."""
+    return name.startswith(NATIVE["codecite"])
 RESAMPLES = 10_000
 SEED = 0
 # A task is in band when baseline passes this share of runs, pooled over the

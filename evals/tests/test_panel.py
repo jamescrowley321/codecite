@@ -39,6 +39,6 @@ def test_panel_logs_and_retries_only_its_arm_set(tmp_path, arms, run_name):
 
 def test_dispatch_tools_choice_uses_panel_log_and_artifact_name():
     workflow = (config.ROOT / ".github/workflows/evals.yml").read_text()
-    assert "options: [ab, aa, baseline, assist, tools]" in workflow
+    assert "options: [ab, aa, baseline, assist, plugin, tools]" in workflow
     assert "inputs.arms == 'tools' && '-tools'" in workflow
     assert "eval-logs-${{ env.RUN_NAME }}-${{ env.LOG_TASK }}" in workflow
