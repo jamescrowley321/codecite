@@ -36,6 +36,7 @@ fn exact_class_search_returns_declaration_among_short_same_file_matches() {
             is_current: true,
             obsoleted_by: None,
             updated_by: None,
+            role_globs: None,
         })
         .unwrap();
     let text = java_class_with_constructors();

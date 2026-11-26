@@ -166,6 +166,12 @@ const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../migrations/0014_scip.sql"),
         read_compatible: false,
     },
+    // Adds `source.role_globs`, which only index runs read: queries read
+    // the roles stored on each document, which an older file has too.
+    Migration {
+        sql: include_str!("../migrations/0015_role_globs.sql"),
+        read_compatible: true,
+    },
 ];
 
 /// The version whose migration clears the chunk text a document's text
@@ -1967,6 +1973,54 @@ mod tests {
             .query_row("SELECT count(*) FROM occurrence", [], |row| row.get(0))
             .unwrap();
         assert_eq!(left, 0);
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn read_only_opens_a_file_from_before_role_globs() {
+        let dir = scratch("ro-before-role-globs");
+        let path = dir.join("corpus.db");
+        // Queries read each document's stored role, not the source's
+        // globs, so a version 14 file is read as it is.
+        older_file(&path, 14);
+        let store = Store::open_read_only(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), 14);
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn version_15_keeps_every_source_on_the_conventions() {
+        let dir = scratch("v14");
+        let path = dir.join("corpus.db");
+        raw(&path)
+            .execute_batch(&format!(
+                "{}
+                 INSERT INTO meta (key, value) VALUES ('schema_version', '14');
+                 INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
+                   VALUES (1, 'app', 'local', '/app', 'abc', 'adapt', 'then');
+                 INSERT INTO document (id, source_id, path, language, content_hash, text,
+                                       role, role_weight)
+                   VALUES (1, 1, 'tests/a.rs', 'rust', x'01', 'fn a() {{}}', 'test', 0.4);",
+                up_to(14)
+            ))
+            .unwrap();
+
+        let store = Store::open_read_write(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+        let globs: Option<String> = store
+            .conn
+            .query_row("SELECT role_globs FROM source", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(globs, None);
+        let role: (String, f64) = store
+            .conn
+            .query_row("SELECT role, role_weight FROM document", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(role, ("test".into(), 0.4));
         drop(store);
         fs::remove_dir_all(&dir).unwrap();
     }

@@ -26,6 +26,7 @@ fn version(store: &mut Store, revision: &str, current: bool, text: &str) {
             is_current: current,
             obsoleted_by: None,
             updated_by: None,
+            role_globs: None,
         })
         .unwrap();
     let section = ChunkRecord {

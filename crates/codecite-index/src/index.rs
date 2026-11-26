@@ -523,6 +523,7 @@ fn index_tree(
         is_current: true,
         obsoleted_by: None,
         updated_by: None,
+        role_globs: None,
     })?;
     for (reason, count) in tree.skip_counts() {
         *summary.skipped.entry(reason).or_default() += count;
@@ -623,6 +624,7 @@ fn index_document(
         is_current: doc.current,
         obsoleted_by: doc.obsoleted_by.as_deref(),
         updated_by: doc.updated_by.as_deref(),
+        role_globs: None,
     })?;
     // A spec gives no rules, even when the same version was guidance.
     store.clear_guidance(source_id)?;
@@ -749,6 +751,7 @@ fn index_guidance(
         is_current: true,
         obsoleted_by: None,
         updated_by: None,
+        role_globs: None,
     })?;
     let hash = Sha256::digest(bytes);
     let sections: Vec<SpecSection> = split.iter().map(|r| r.section.clone()).collect();

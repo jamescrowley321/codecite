@@ -769,6 +769,7 @@ mod tests {
             is_current: true,
             obsoleted_by: None,
             updated_by: None,
+            role_globs: None,
         }
     }
 

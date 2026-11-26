@@ -992,6 +992,7 @@ mod tests {
             is_current: current,
             obsoleted_by: None,
             updated_by: None,
+            role_globs: None,
         }
     }
 

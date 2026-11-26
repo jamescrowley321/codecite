@@ -517,6 +517,7 @@ mod tests {
                 is_current: true,
                 obsoleted_by: None,
                 updated_by: None,
+                role_globs: None,
             })
             .unwrap();
         let docs = [
@@ -692,6 +693,7 @@ mod tests {
                 is_current: true,
                 obsoleted_by: None,
                 updated_by: None,
+                role_globs: None,
             })
             .unwrap();
         let paths: Vec<String> = (0..60).map(|i| format!("src/m{i:02}.rs")).collect();
@@ -726,6 +728,7 @@ mod tests {
                 is_current: true,
                 obsoleted_by: None,
                 updated_by: None,
+                role_globs: None,
             })
             .unwrap();
         for doc in docs {

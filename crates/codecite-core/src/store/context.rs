@@ -578,6 +578,7 @@ mod tests {
                     is_current: true,
                     obsoleted_by: None,
                     updated_by: None,
+                    role_globs: None,
                 })
                 .unwrap();
             let chunks = vec![
@@ -765,6 +766,7 @@ mod tests {
                 is_current: true,
                 obsoleted_by: None,
                 updated_by: None,
+                role_globs: None,
             })
             .unwrap();
         // 20 MUSTs of about 4 KiB each, of which 16 fit in 64 KiB, then a
@@ -818,6 +820,7 @@ mod tests {
             is_current: true,
             obsoleted_by: None,
             updated_by: None,
+            role_globs: None,
         };
         let id = store.upsert_source(&record).unwrap();
         let chunks = vec![rule("1", "You MUST.", &[Keyword::Must])];
