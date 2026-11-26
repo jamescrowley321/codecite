@@ -1050,6 +1050,21 @@ mod tests {
     }
 
     #[test]
+    fn javascript_prototype_methods_are_methods() {
+        // `X.prototype.m = function` defines a method of `X`; a function
+        // assigned to `X.other` is not on the prototype.
+        let text = "function Defaults() {}\nDefaults.prototype.set = function (k, v) {\n};\nDefaults.prototype.apply = (o) => o;\nDefaults.other = function () {};\n";
+        let want = expect(&[
+            ("function", 1, 1, "Defaults()."),
+            ("function", 2, 3, "Defaults#set()."),
+            ("function", 4, 4, "Defaults#apply()."),
+            ("window", 5, 5, ""),
+        ]);
+        assert_eq!(outline("lib/defaults.js", text), want);
+        assert_eq!(outline("src/defaults.ts", text), want);
+    }
+
+    #[test]
     fn markdown_inline_code_is_not_a_fence() {
         let text = "```inline```\n# Real\ntext\n";
         assert_eq!(

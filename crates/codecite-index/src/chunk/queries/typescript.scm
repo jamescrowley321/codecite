@@ -14,6 +14,16 @@
 (public_field_definition
   name: (_) @name
   value: [(arrow_function) (function_expression)]) @function
+; `X.prototype.m = function` is a method of `X`.
+(expression_statement
+  (assignment_expression
+    left: (member_expression
+      object: (member_expression
+        object: (identifier) @receiver
+        property: (property_identifier) @_proto)
+      property: (property_identifier) @name)
+    right: [(arrow_function) (function_expression)])
+  (#eq? @_proto "prototype")) @function
 (class_declaration name: (_) @name) @type
 (class name: (_) @name) @type
 (abstract_class_declaration name: (_) @name) @type
