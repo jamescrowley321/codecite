@@ -1074,6 +1074,11 @@ through `sh`, with every value an argument rather than part of the script.
 codecite corpora
 ```
 
+`codecite corpora --for <path>` lists only the corpora with a local source
+whose root contains the path (the path need not exist; symlinks are
+resolved). Each entry also has `local_root`, the matched root, and
+`source_names`, every source name the corpus holds.
+
 ```json
 {"corpora":[{"age_days":0.0,"corpus":"identity","indexed_at":"2026-10-20T22:56:30Z","max_age_days":30,"pins_stale":false,"size_bytes":41594880,"sources":40,"stale":false}]}
 ```

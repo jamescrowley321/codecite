@@ -373,9 +373,16 @@ Set CODECITE_ASSIST_DEBUG=1 to see on stderr why nothing was printed.")]
 Output: JSON, one entry per corpus with its age, size, source count and staleness.",
         after_long_help = "Examples:
   codecite corpora
+  codecite corpora --for .
 Output: JSON, one entry per corpus with its age, size, source count and staleness."
     )]
-    Corpora,
+    Corpora {
+        /// Only the corpora indexing this path: those with a local source
+        /// whose root contains it. Each entry also names that root and
+        /// the corpus's source names.
+        #[arg(long = "for", value_name = "PATH")]
+        for_path: Option<PathBuf>,
+    },
     /// Print every line that references a symbol, from a SCIP index, cited.
     #[command(
         after_help = graph::REFS_OUTPUT,
@@ -625,7 +632,7 @@ fn main() -> anyhow::Result<()> {
         }
         Command::Refs(args) => graph::refs(&args),
         Command::Graph(walk) => graph::walk(&walk),
-        Command::Corpora => corpora(),
+        Command::Corpora { for_path } => corpora(for_path.as_deref()),
         Command::Mcp => mcp(),
     }
 }
@@ -924,13 +931,15 @@ fn open_corpus(dir: &Path, corpus: &str) -> anyhow::Result<Store> {
 }
 
 /// `codecite corpora`: prints the corpora as the MCP `corpora` tool returns
-/// them, byte for byte.
-fn corpora() -> anyhow::Result<()> {
+/// them, byte for byte. With `--for`, only those indexing that path.
+fn corpora(for_path: Option<&Path>) -> anyhow::Result<()> {
     let dirs = project_dirs()?;
-    let corpora = serde_json::to_value(codecite_core::corpora(
-        dirs.data_dir(),
-        Some(codecite_index::manifest_pins),
-    )?)?;
+    let pins = Some(codecite_index::manifest_pins as codecite_core::PinReader);
+    let corpora = match for_path {
+        Some(path) => codecite_core::corpora_for(dirs.data_dir(), path, pins)?,
+        None => codecite_core::corpora(dirs.data_dir(), pins)?,
+    };
+    let corpora = serde_json::to_value(corpora)?;
     to_stdout(|out| write_json(out, corpora))
 }
 
@@ -2051,7 +2060,12 @@ app@0123456789ab:src/b.rs#L1-L5 · method callback · source · quote · indexed
     #[test]
     fn corpora_and_mcp_take_no_arguments() {
         let cli = Cli::try_parse_from(["codecite", "corpora"]).unwrap();
-        assert!(matches!(cli.command, Command::Corpora));
+        assert!(matches!(cli.command, Command::Corpora { for_path: None }));
+        let cli = Cli::try_parse_from(["codecite", "corpora", "--for", "."]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Corpora { for_path: Some(_) }
+        ));
         let cli = Cli::try_parse_from(["codecite", "mcp"]).unwrap();
         assert!(matches!(cli.command, Command::Mcp));
         assert!(Cli::try_parse_from(["codecite", "corpora", "identity"]).is_err());

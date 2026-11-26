@@ -88,6 +88,14 @@ pub struct CorpusInfo {
     /// Why the corpus file can't be read.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// The local source root that contains the path asked for. Set only by
+    /// [`corpora_for`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub local_root: Option<String>,
+    /// Every distinct source name the corpus holds, sorted. Set only by
+    /// [`corpora_for`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_names: Option<Vec<String>>,
 }
 
 /// Lists every corpus in `dir`, sorted by name. A missing directory holds
@@ -96,49 +104,111 @@ pub struct CorpusInfo {
 pub fn corpora(dir: &Path, pins: Option<PinReader>) -> Result<Corpora> {
     let mut corpora = Vec::new();
     for corpus in known_corpora(dir)? {
-        let path = dir.join(format!("{corpus}.db"));
-        let size_bytes = std::fs::metadata(&path)?.len();
-        let mut info = CorpusInfo {
-            corpus,
-            size_bytes,
-            indexed_at: None,
-            age_days: None,
-            max_age_days: None,
-            stale: None,
-            pins_stale: None,
-            stale_pins: None,
-            warning: None,
-            sources: None,
-            error: None,
-        };
-        let described = Store::open_read_only(&path).and_then(|store| {
-            let stale_pins = match pins {
-                Some(read) => store.stale_pins_of_manifest(read)?,
-                None => None,
-            };
-            Ok((
-                store.freshness()?,
-                store.source_count()?,
-                stale_pins,
-                store.schema_warning().map(str::to_owned),
-            ))
-        });
-        match described {
-            Ok((freshness, sources, stale_pins, warning)) => {
-                info.stale = Some(freshness.is_stale());
-                info.age_days = Some((freshness.age_days * 100.0).round() / 100.0);
-                info.max_age_days = Some(freshness.max_age_days);
-                info.indexed_at = Some(freshness.indexed_at);
-                info.sources = Some(sources);
-                info.pins_stale = stale_pins.as_ref().map(|s| !s.is_empty());
-                info.stale_pins = stale_pins.filter(|s| !s.is_empty());
-                info.warning = warning;
-            }
-            Err(err) => info.error = Some(with_causes(&err)),
-        }
-        corpora.push(info);
+        corpora.push(describe(dir, corpus, pins)?);
     }
     Ok(Corpora { corpora })
+}
+
+/// The corpora in `dir` with a `local` source whose root contains `path`,
+/// sorted by name, in the shape [`corpora`] returns. Each carries the
+/// matched `local_root` and its `source_names`. `path` need not exist: its
+/// longest existing ancestor is resolved through symlinks. A corpus that
+/// can't be opened is left out.
+pub fn corpora_for(dir: &Path, path: &Path, pins: Option<PinReader>) -> Result<Corpora> {
+    let path = resolve(path);
+    let mut found = Vec::new();
+    for corpus in known_corpora(dir)? {
+        let Ok(store) = Store::open_read_only(&dir.join(format!("{corpus}.db"))) else {
+            continue;
+        };
+        let Ok(roots) = store.local_roots() else {
+            continue;
+        };
+        let Some(root) = roots
+            .into_iter()
+            .find(|root| path.starts_with(resolve(Path::new(root))))
+        else {
+            continue;
+        };
+        let Ok(source_names) = store.all_source_names() else {
+            continue;
+        };
+        drop(store);
+        let mut info = describe(dir, corpus, pins)?;
+        info.local_root = Some(root);
+        info.source_names = Some(source_names);
+        found.push(info);
+    }
+    Ok(Corpora { corpora: found })
+}
+
+/// `path` made absolute and resolved through symlinks as far as it exists:
+/// its longest existing ancestor is canonicalized and the rest re-appended.
+/// A path that can't be resolved at all is returned as given.
+fn resolve(path: &Path) -> PathBuf {
+    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let mut rest = Vec::new();
+    let mut ancestor = absolute.as_path();
+    loop {
+        if let Ok(mut resolved) = ancestor.canonicalize() {
+            resolved.extend(rest.iter().rev());
+            return resolved;
+        }
+        match (ancestor.parent(), ancestor.file_name()) {
+            (Some(parent), Some(name)) => {
+                rest.push(name);
+                ancestor = parent;
+            }
+            _ => return absolute,
+        }
+    }
+}
+
+/// The info for the corpus `corpus` in `dir`, as [`corpora`] lists it.
+fn describe(dir: &Path, corpus: String, pins: Option<PinReader>) -> Result<CorpusInfo> {
+    let path = dir.join(format!("{corpus}.db"));
+    let size_bytes = std::fs::metadata(&path)?.len();
+    let mut info = CorpusInfo {
+        corpus,
+        size_bytes,
+        indexed_at: None,
+        age_days: None,
+        max_age_days: None,
+        stale: None,
+        pins_stale: None,
+        stale_pins: None,
+        warning: None,
+        sources: None,
+        error: None,
+        local_root: None,
+        source_names: None,
+    };
+    let described = Store::open_read_only(&path).and_then(|store| {
+        let stale_pins = match pins {
+            Some(read) => store.stale_pins_of_manifest(read)?,
+            None => None,
+        };
+        Ok((
+            store.freshness()?,
+            store.source_count()?,
+            stale_pins,
+            store.schema_warning().map(str::to_owned),
+        ))
+    });
+    match described {
+        Ok((freshness, sources, stale_pins, warning)) => {
+            info.stale = Some(freshness.is_stale());
+            info.age_days = Some((freshness.age_days * 100.0).round() / 100.0);
+            info.max_age_days = Some(freshness.max_age_days);
+            info.indexed_at = Some(freshness.indexed_at);
+            info.sources = Some(sources);
+            info.pins_stale = stale_pins.as_ref().map(|s| !s.is_empty());
+            info.stale_pins = stale_pins.filter(|s| !s.is_empty());
+            info.warning = warning;
+        }
+        Err(err) => info.error = Some(with_causes(&err)),
+    }
+    Ok(info)
 }
 
 /// `err`'s message followed by each of its causes', so that a SQLite or
@@ -216,6 +286,29 @@ impl Store {
             return Ok(None);
         };
         self.stale_pins(&pins).map(Some)
+    }
+
+    /// The roots of the corpus's `local` sources, as stored: the index
+    /// records a local source's canonical root as its `url`.
+    pub fn local_roots(&self) -> Result<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT url FROM source WHERE kind = 'local'")?;
+        let roots = stmt
+            .query_map([], |row| row.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok(roots)
+    }
+
+    /// Every distinct source name the corpus holds, sorted.
+    pub fn all_source_names(&self) -> Result<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT DISTINCT name FROM source ORDER BY name")?;
+        let names = stmt
+            .query_map([], |row| row.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok(names)
     }
 
     /// How many sources the corpus holds; each pinned version of a
@@ -357,6 +450,8 @@ mod tests {
             warning: None,
             sources: None,
             error: Some("invalid corpus".into()),
+            local_root: None,
+            source_names: None,
         };
         assert_eq!(
             serde_json::to_string(&info).unwrap(),
@@ -374,6 +469,8 @@ mod tests {
             warning: None,
             sources: Some(2),
             error: None,
+            local_root: None,
+            source_names: None,
         };
         assert_eq!(
             serde_json::to_string(&info).unwrap(),
@@ -514,5 +611,105 @@ mod tests {
                 .is_some_and(|e| e.contains("re-run codecite index")),
             "{app:?}"
         );
+    }
+
+    fn names(found: &Corpora) -> Vec<&str> {
+        found.corpora.iter().map(|c| c.corpus.as_str()).collect()
+    }
+
+    fn canon(path: PathBuf) -> String {
+        path.canonicalize().unwrap().to_str().unwrap().to_owned()
+    }
+
+    /// A corpus `name` in `data` with one local source rooted at `root`.
+    fn indexed_at_root(data: &Path, name: &str, root: &Path) {
+        let mut store = Store::open_read_write(&data.join(format!("{name}.db"))).unwrap();
+        store
+            .upsert_source(&SourceRecord {
+                url: &canon(root.to_path_buf()),
+                ..source(name)
+            })
+            .unwrap();
+        store.set_indexed_at(30).unwrap();
+    }
+
+    /// `tmp/data` plus corpora `app` and `application` rooted at
+    /// `tmp/app` and `tmp/application`.
+    fn two_roots() -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let tmp = tempfile::tempdir().unwrap();
+        let (data, root) = (tmp.path().join("data"), tmp.path().to_path_buf());
+        fs::create_dir_all(&data).unwrap();
+        for name in ["app", "application"] {
+            fs::create_dir_all(root.join(name).join("src")).unwrap();
+            indexed_at_root(&data, name, &root.join(name));
+        }
+        (tmp, root, data)
+    }
+
+    #[test]
+    fn corpora_for_matches_a_subdirectory_through_a_symlink() {
+        let (_tmp, tmp, data) = two_roots();
+        std::os::unix::fs::symlink(tmp.join("app"), tmp.join("link")).unwrap();
+        // The file need not exist.
+        let found = corpora_for(&data, &tmp.join("link/src/x.rs"), None).unwrap();
+        assert_eq!(names(&found), ["app"]);
+        assert_eq!(
+            found.corpora[0].local_root.as_deref(),
+            Some(canon(tmp.join("app")).as_str())
+        );
+        assert_eq!(
+            found.corpora[0].source_names.as_deref(),
+            Some(&["app".to_owned()][..])
+        );
+        assert_eq!(found.corpora[0].sources, Some(1));
+        // The root itself matches too.
+        let found = corpora_for(&data, &tmp.join("app"), None).unwrap();
+        assert_eq!(names(&found), ["app"]);
+    }
+
+    #[test]
+    fn corpora_for_needs_a_whole_path_component() {
+        let (_tmp, tmp, data) = two_roots();
+        let found = corpora_for(&data, &tmp.join("application/lib.rs"), None).unwrap();
+        assert_eq!(names(&found), ["application"]);
+        assert!(
+            corpora_for(&data, &tmp.join("ap"), None)
+                .unwrap()
+                .corpora
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn corpora_for_compares_a_vanished_root_as_stored() {
+        let (_tmp, tmp, data) = two_roots();
+        let root = tmp.join("app");
+        let stored = canon(root.clone());
+        fs::remove_dir_all(&root).unwrap();
+        let found = corpora_for(&data, &Path::new(&stored).join("src/x.rs"), None).unwrap();
+        assert_eq!(names(&found), ["app"]);
+    }
+
+    #[test]
+    fn corpora_for_skips_unreadable_corpora() {
+        let (_tmp, tmp, data) = two_roots();
+        fs::write(data.join("broken.db"), "not a database at all").unwrap();
+        let found = corpora_for(&data, &tmp.join("app/src"), None).unwrap();
+        assert_eq!(names(&found), ["app"]);
+        // A missing data directory holds none.
+        assert!(
+            corpora_for(&tmp.join("nowhere"), &tmp, None)
+                .unwrap()
+                .corpora
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn corpora_leaves_the_for_fields_out() {
+        let (_tmp, _root, data) = two_roots();
+        let all = serde_json::to_value(corpora(&data, None).unwrap()).unwrap();
+        assert!(all["corpora"][0].get("local_root").is_none());
+        assert!(all["corpora"][0].get("source_names").is_none());
     }
 }
