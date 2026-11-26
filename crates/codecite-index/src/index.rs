@@ -9,8 +9,8 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use codecite_core::{
-    ChunkRecord, DocumentRecord, IndexRun, ManifestPin, RuleScope, RunCounts, ScipDocument,
-    ScipSummary, SourceRecord, SpecAliases, Store, SymbolRecord,
+    ChunkRecord, DocumentRecord, IndexRun, ManifestPin, RoleGlobs, RuleScope, RunCounts,
+    ScipDocument, ScipSummary, SourceRecord, SpecAliases, Store, SymbolRecord,
 };
 use sha2::{Digest, Sha256};
 
@@ -251,6 +251,7 @@ fn index_sources(
                     url: tree.root.to_string_lossy().into_owned(),
                     license: local.license.as_deref(),
                     license_class: local.license_class,
+                    roles: &local.roles,
                     tree,
                     checkout: None,
                 }
@@ -263,6 +264,7 @@ fn index_sources(
                     url: git.url.clone(),
                     license: git.license.as_deref(),
                     license_class: git.license_class,
+                    roles: &git.roles,
                     tree,
                     checkout: Some(checkout),
                 }
@@ -477,6 +479,7 @@ fn walk_git(
         exclude: git.exclude.clone(),
         scip: None,
         scip_sha256: None,
+        roles: git.roles.clone(),
     };
     let mut tree = walk_local(&checkout, options)?;
     for file in &mut tree.files {
@@ -496,6 +499,8 @@ struct Walked<'a> {
     url: String,
     license: Option<&'a str>,
     license_class: LicenseClass,
+    /// The source's role globs, which replace the path conventions.
+    roles: &'a RoleGlobs,
     /// The walk. Its HEAD is the commit results cite: a local checkout's
     /// HEAD, or a git source's pinned commit.
     tree: LocalTree,
@@ -523,7 +528,8 @@ fn index_tree(
         is_current: true,
         obsoleted_by: None,
         updated_by: None,
-        role_globs: None,
+        // An unconfigured source stores no globs, so it keeps the conventions.
+        role_globs: (!walked.roles.is_default()).then_some(walked.roles),
     })?;
     for (reason, count) in tree.skip_counts() {
         *summary.skipped.entry(reason).or_default() += count;
@@ -1025,6 +1031,7 @@ mod tests {
             exclude: Vec::new(),
             scip: None,
             scip_sha256: None,
+            roles: Default::default(),
         })
     }
 
@@ -1073,6 +1080,7 @@ mod tests {
             exclude: Vec::new(),
             scip: None,
             scip_sha256: None,
+            roles: Default::default(),
         })
     }
 
@@ -1905,6 +1913,62 @@ mod tests {
         assert_eq!(
             corpus.chunk_ids().keys().collect::<Vec<_>>(),
             ["README.md", "src/lib.rs"]
+        );
+    }
+
+    #[test]
+    fn a_sources_role_globs_set_its_roles_until_they_are_removed() {
+        let repo = fixture();
+        repo.write("spec/token_spec.rb", "it validates the token\n");
+        repo.write("tests/token.rb", "it checks the token\n");
+        repo.commit_all(&["spec/token_spec.rb", "tests/token.rb"]);
+        let corpus = Corpus::new();
+        let roles = |corpus: &Corpus| -> Vec<(String, &'static str)> {
+            let store = Store::open_read_only(&corpus.path()).unwrap();
+            let query = codecite_core::SearchQuery {
+                text: "token",
+                language: None,
+                path: Some("*.rb"),
+                only: None,
+                limit: 20,
+                allow_stale: true,
+            };
+            let mut roles: Vec<_> = store
+                .search(&query)
+                .unwrap()
+                .into_iter()
+                .map(|r| {
+                    let path = r.citation.split_once(':').unwrap().1;
+                    (path.split('#').next().unwrap().to_owned(), r.role)
+                })
+                .collect();
+            roles.sort();
+            roles
+        };
+
+        let mut with_globs = local(&repo, Some("app"));
+        if let Source::Local(l) = &mut with_globs {
+            l.roles.test = Some(vec!["spec/**".into()]);
+        }
+        corpus.index(&manifest(vec![with_globs]));
+        assert_eq!(
+            roles(&corpus),
+            [
+                ("spec/token_spec.rb".to_owned(), "test"),
+                ("tests/token.rb".to_owned(), "source"),
+            ]
+        );
+
+        // No file changed, so nothing is rewritten; the roles still follow
+        // the manifest, back on the conventions.
+        let summary = corpus.index(&manifest(vec![local(&repo, Some("app"))]));
+        assert_eq!(summary.written, 0);
+        assert_eq!(
+            roles(&corpus),
+            [
+                ("spec/token_spec.rb".to_owned(), "source"),
+                ("tests/token.rb".to_owned(), "test"),
+            ]
         );
     }
 

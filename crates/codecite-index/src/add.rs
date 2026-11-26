@@ -91,6 +91,7 @@ pub fn add_sources(
                 exclude: Vec::new(),
                 scip: None,
                 scip_sha256: None,
+                roles: Default::default(),
             })?;
             detect_license(checkout.path())?
         };
