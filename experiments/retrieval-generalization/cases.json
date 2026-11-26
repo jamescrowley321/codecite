@@ -1,0 +1,1645 @@
+{
+ "description": "Frozen cases for #287. Labels come from reading the pinned source (sample.py draws or #255 frozen questions), never from tool output. A case with score false is measured for latency and ambiguity only. no-result cases expect an empty answer.",
+ "cases": [
+  {
+   "id": "ripgrep-exact-2",
+   "repo": "ripgrep",
+   "revision": "669cb4c755db20b26c3af3d923c042ae224c7496",
+   "class": "exact",
+   "query": "set_windows_exe_options",
+   "path": null,
+   "answers": [
+    {
+     "path": "build.rs",
+     "line": 12
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 2: definition line read at the pin"
+  },
+  {
+   "id": "ripgrep-exact-6",
+   "repo": "ripgrep",
+   "revision": "669cb4c755db20b26c3af3d923c042ae224c7496",
+   "class": "exact",
+   "query": "patterns_from_stdin",
+   "path": null,
+   "answers": [
+    {
+     "path": "crates/cli/src/pattern.rs",
+     "line": 104
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 6: definition line read at the pin"
+  },
+  {
+   "id": "ripgrep-exact-10",
+   "repo": "ripgrep",
+   "revision": "669cb4c755db20b26c3af3d923c042ae224c7496",
+   "class": "exact",
+   "query": "printer_standard",
+   "path": null,
+   "answers": [
+    {
+     "path": "crates/core/flags/hiargs.rs",
+     "line": 627
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 10: definition line read at the pin"
+  },
+  {
+   "id": "ripgrep-exact-11",
+   "repo": "ripgrep",
+   "revision": "669cb4c755db20b26c3af3d923c042ae224c7496",
+   "class": "exact",
+   "query": "SinkFinish",
+   "path": null,
+   "answers": [
+    {
+     "path": "crates/searcher/src/sink.rs",
+     "line": 340
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 11: definition line read at the pin"
+  },
+  {
+   "id": "ripgrep-exact-13",
+   "repo": "ripgrep",
+   "revision": "669cb4c755db20b26c3af3d923c042ae224c7496",
+   "class": "exact",
+   "query": "inactive",
+   "path": null,
+   "answers": [
+    {
+     "path": "crates/printer/src/hyperlink/mod.rs",
+     "line": 700
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 13: definition line read at the pin"
+  },
+  {
+   "id": "ripgrep-exact-16",
+   "repo": "ripgrep",
+   "revision": "669cb4c755db20b26c3af3d923c042ae224c7496",
+   "class": "exact",
+   "query": "line_anchor_start",
+   "path": null,
+   "answers": [
+    {
+     "path": "crates/regex/src/config.rs",
+     "line": 344
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 16: definition line read at the pin"
+  },
+  {
+   "id": "ripgrep-qualified-0",
+   "repo": "ripgrep",
+   "revision": "669cb4c755db20b26c3af3d923c042ae224c7496",
+   "class": "qualified",
+   "query": "Haystack.path",
+   "path": null,
+   "answers": [
+    {
+     "path": "crates/core/haystack.rs",
+     "line": 108
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 0: name defined more than once; qualified by its enclosing type, read at the pin"
+  },
+  {
+   "id": "ripgrep-qualified-3",
+   "repo": "ripgrep",
+   "revision": "669cb4c755db20b26c3af3d923c042ae224c7496",
+   "class": "qualified",
+   "query": "Flag.name_long",
+   "path": null,
+   "answers": [
+    {
+     "path": "crates/core/flags/mod.rs",
+     "line": 90
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 3: name defined more than once; qualified by its enclosing type, read at the pin"
+  },
+  {
+   "id": "ripgrep-qualified-4",
+   "repo": "ripgrep",
+   "revision": "669cb4c755db20b26c3af3d923c042ae224c7496",
+   "class": "qualified",
+   "query": "LineIter.next",
+   "path": null,
+   "answers": [
+    {
+     "path": "crates/searcher/src/lines.rs",
+     "line": 34
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 4: name defined more than once; qualified by its enclosing type, read at the pin"
+  },
+  {
+   "id": "ripgrep-ambiguous-1",
+   "repo": "ripgrep",
+   "revision": "669cb4c755db20b26c3af3d923c042ae224c7496",
+   "class": "ambiguous",
+   "query": "description",
+   "path": null,
+   "answers": [
+    {
+     "path": "crates/pcre2/src/error.rs",
+     "line": 35
+    }
+   ],
+   "score": false,
+   "label_source": "sample.py draw 1: name defined more than once; acceptable answers not enumerated, so unscored"
+  },
+  {
+   "id": "ripgrep-behaviour-0",
+   "repo": "ripgrep",
+   "revision": "669cb4c755db20b26c3af3d923c042ae224c7496",
+   "class": "behaviour",
+   "query": "file path of a search target, with a special name when reading standard input",
+   "path": null,
+   "answers": [
+    {
+     "path": "crates/core/haystack.rs",
+     "line": 108
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 0: paraphrase of its doc comment, written before any CLI ran on this repository"
+  },
+  {
+   "id": "ripgrep-behaviour-2",
+   "repo": "ripgrep",
+   "revision": "669cb4c755db20b26c3af3d923c042ae224c7496",
+   "class": "behaviour",
+   "query": "embed a manifest so the executable supports long paths on windows",
+   "path": null,
+   "answers": [
+    {
+     "path": "build.rs",
+     "line": 12
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 2: paraphrase of its doc comment, written before any CLI ran on this repository"
+  },
+  {
+   "id": "ripgrep-behaviour-6",
+   "repo": "ripgrep",
+   "revision": "669cb4c755db20b26c3af3d923c042ae224c7496",
+   "class": "behaviour",
+   "query": "read search patterns one per line from standard input",
+   "path": null,
+   "answers": [
+    {
+     "path": "crates/cli/src/pattern.rs",
+     "line": 104
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 6: paraphrase of its doc comment, written before any CLI ran on this repository"
+  },
+  {
+   "id": "ripgrep-behaviour-10",
+   "repo": "ripgrep",
+   "revision": "669cb4c755db20b26c3af3d923c042ae224c7496",
+   "class": "behaviour",
+   "query": "printer that prints each match as a plain text line",
+   "path": null,
+   "answers": [
+    {
+     "path": "crates/core/flags/hiargs.rs",
+     "line": 627
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 10: paraphrase of its doc comment, written before any CLI ran on this repository"
+  },
+  {
+   "id": "ripgrep-behaviour-11",
+   "repo": "ripgrep",
+   "revision": "669cb4c755db20b26c3af3d923c042ae224c7496",
+   "class": "behaviour",
+   "query": "number of bytes searched and offset of binary data reported when a search ends",
+   "path": null,
+   "answers": [
+    {
+     "path": "crates/searcher/src/sink.rs",
+     "line": 340
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 11: paraphrase of its doc comment, written before any CLI ran on this repository"
+  },
+  {
+   "id": "ripgrep-path-0",
+   "repo": "ripgrep",
+   "revision": "669cb4c755db20b26c3af3d923c042ae224c7496",
+   "class": "path",
+   "query": "file path of a search target, with a special name when reading standard input",
+   "path": "crates/core/*",
+   "answers": [
+    {
+     "path": "crates/core/haystack.rs",
+     "line": 108
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 0: behaviour case ripgrep-behaviour-0 with the target's parent directory as the path filter"
+  },
+  {
+   "id": "ripgrep-path-2",
+   "repo": "ripgrep",
+   "revision": "669cb4c755db20b26c3af3d923c042ae224c7496",
+   "class": "path",
+   "query": "embed a manifest so the executable supports long paths on windows",
+   "path": "build.rs",
+   "answers": [
+    {
+     "path": "build.rs",
+     "line": 12
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 2: behaviour case ripgrep-behaviour-2 with the target's parent directory as the path filter (a root file, so the file itself)"
+  },
+  {
+   "id": "ripgrep-none-token",
+   "repo": "ripgrep",
+   "revision": "669cb4c755db20b26c3af3d923c042ae224c7496",
+   "class": "no-result",
+   "query": "zzcodecite287absentqx",
+   "path": null,
+   "answers": [],
+   "score": true,
+   "label_source": "token verified absent with git grep -i at the pin"
+  },
+  {
+   "id": "ripgrep-none-ident",
+   "repo": "ripgrep",
+   "revision": "669cb4c755db20b26c3af3d923c042ae224c7496",
+   "class": "no-result",
+   "query": "QuasarFluxRegistry",
+   "path": null,
+   "answers": [],
+   "score": true,
+   "label_source": "token verified absent with git grep -i at the pin; checked only as an exact definition lookup",
+   "ops": [
+    "codecite:def",
+    "codegraph:node"
+   ]
+  },
+  {
+   "id": "excalidraw-exact-2",
+   "repo": "excalidraw",
+   "revision": "a2ec2889babf7d2295469c6d90ebe77fae57df84",
+   "class": "exact",
+   "query": "polyfill",
+   "path": null,
+   "answers": [
+    {
+     "path": "packages/excalidraw/polyfill.ts",
+     "line": 1
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 2: definition line read at the pin"
+  },
+  {
+   "id": "excalidraw-exact-3",
+   "repo": "excalidraw",
+   "revision": "a2ec2889babf7d2295469c6d90ebe77fae57df84",
+   "class": "exact",
+   "query": "LogoText",
+   "path": null,
+   "answers": [
+    {
+     "path": "packages/excalidraw/components/ExcalidrawLogo.tsx",
+     "line": 17
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 3: definition line read at the pin"
+  },
+  {
+   "id": "excalidraw-exact-4",
+   "repo": "excalidraw",
+   "revision": "a2ec2889babf7d2295469c6d90ebe77fae57df84",
+   "class": "exact",
+   "query": "Emitter",
+   "path": null,
+   "answers": [
+    {
+     "path": "packages/excalidraw/emitter.ts",
+     "line": 5
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 4: definition line read at the pin"
+  },
+  {
+   "id": "excalidraw-exact-5",
+   "repo": "excalidraw",
+   "revision": "a2ec2889babf7d2295469c6d90ebe77fae57df84",
+   "class": "exact",
+   "query": "Queue",
+   "path": null,
+   "answers": [
+    {
+     "path": "packages/excalidraw/queue.ts",
+     "line": 13
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 5: definition line read at the pin"
+  },
+  {
+   "id": "excalidraw-exact-6",
+   "repo": "excalidraw",
+   "revision": "a2ec2889babf7d2295469c6d90ebe77fae57df84",
+   "class": "exact",
+   "query": "isRenderThrottlingEnabled",
+   "path": null,
+   "answers": [
+    {
+     "path": "packages/excalidraw/reactUtils.ts",
+     "line": 33
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 6: definition line read at the pin"
+  },
+  {
+   "id": "excalidraw-exact-7",
+   "repo": "excalidraw",
+   "revision": "a2ec2889babf7d2295469c6d90ebe77fae57df84",
+   "class": "exact",
+   "query": "getLinkDirectionFromKey",
+   "path": null,
+   "answers": [
+    {
+     "path": "packages/excalidraw/element/flowchart.ts",
+     "line": 42
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 7: definition line read at the pin"
+  },
+  {
+   "id": "excalidraw-qualified-emitter-clear",
+   "repo": "excalidraw",
+   "revision": "a2ec2889babf7d2295469c6d90ebe77fae57df84",
+   "class": "qualified",
+   "query": "Emitter.clear",
+   "path": null,
+   "answers": [
+    {
+     "path": "packages/excalidraw/emitter.ts",
+     "line": 48
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py drew no name defined twice in this repository (its patterns miss class methods); qualified cases are methods of drawn classes 4 whose names other classes also define, read at the pin"
+  },
+  {
+   "id": "excalidraw-qualified-queue-push",
+   "repo": "excalidraw",
+   "revision": "a2ec2889babf7d2295469c6d90ebe77fae57df84",
+   "class": "qualified",
+   "query": "Queue.push",
+   "path": null,
+   "answers": [
+    {
+     "path": "packages/excalidraw/queue.ts",
+     "line": 35
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py drew no name defined twice in this repository (its patterns miss class methods); qualified cases are methods of drawn classes 5 whose names other classes also define, read at the pin"
+  },
+  {
+   "id": "excalidraw-qualified-emitter-on",
+   "repo": "excalidraw",
+   "revision": "a2ec2889babf7d2295469c6d90ebe77fae57df84",
+   "class": "qualified",
+   "query": "Emitter.on",
+   "path": null,
+   "answers": [
+    {
+     "path": "packages/excalidraw/emitter.ts",
+     "line": 13
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py drew no name defined twice in this repository (its patterns miss class methods); qualified cases are methods of drawn classes 4 whose names other classes also define, read at the pin"
+  },
+  {
+   "id": "excalidraw-ambiguous-clear",
+   "repo": "excalidraw",
+   "revision": "a2ec2889babf7d2295469c6d90ebe77fae57df84",
+   "class": "ambiguous",
+   "query": "clear",
+   "path": null,
+   "answers": [
+    {
+     "path": "packages/excalidraw/emitter.ts",
+     "line": 48
+    }
+   ],
+   "score": false,
+   "label_source": "method name defined by several classes; unscored"
+  },
+  {
+   "id": "excalidraw-behaviour-2",
+   "repo": "excalidraw",
+   "revision": "a2ec2889babf7d2295469c6d90ebe77fae57df84",
+   "class": "behaviour",
+   "query": "add Array.prototype.at for older browsers",
+   "path": null,
+   "answers": [
+    {
+     "path": "packages/excalidraw/polyfill.ts",
+     "line": 1
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 2: paraphrase of its doc comment, written before any CLI ran on this repository"
+  },
+  {
+   "id": "excalidraw-behaviour-4",
+   "repo": "excalidraw",
+   "revision": "a2ec2889babf7d2295469c6d90ebe77fae57df84",
+   "class": "behaviour",
+   "query": "subscribe handlers to events and get back an unsubscribe callback",
+   "path": null,
+   "answers": [
+    {
+     "path": "packages/excalidraw/emitter.ts",
+     "line": 5
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 4: paraphrase of its doc comment, written before any CLI ran on this repository"
+  },
+  {
+   "id": "excalidraw-behaviour-6",
+   "repo": "excalidraw",
+   "revision": "a2ec2889babf7d2295469c6d90ebe77fae57df84",
+   "class": "behaviour",
+   "query": "only throttle rendering on react 18 and newer",
+   "path": null,
+   "answers": [
+    {
+     "path": "packages/excalidraw/reactUtils.ts",
+     "line": 33
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 6: paraphrase of its explanatory comment, written before any CLI ran on this repository"
+  },
+  {
+   "id": "excalidraw-behaviour-8",
+   "repo": "excalidraw",
+   "revision": "a2ec2889babf7d2295469c6d90ebe77fae57df84",
+   "class": "behaviour",
+   "query": "subtract one 2d vector from another",
+   "path": null,
+   "answers": [
+    {
+     "path": "packages/math/vector.ts",
+     "line": 92
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 8: paraphrase of its doc comment, written before any CLI ran on this repository"
+  },
+  {
+   "id": "excalidraw-behaviour-9",
+   "repo": "excalidraw",
+   "revision": "a2ec2889babf7d2295469c6d90ebe77fae57df84",
+   "class": "behaviour",
+   "query": "translation hook for components rendered inside the editor that need the current language code",
+   "path": null,
+   "answers": [
+    {
+     "path": "packages/excalidraw/i18n.ts",
+     "line": 166
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 9: paraphrase of its explanatory comment, written before any CLI ran on this repository"
+  },
+  {
+   "id": "excalidraw-path-2",
+   "repo": "excalidraw",
+   "revision": "a2ec2889babf7d2295469c6d90ebe77fae57df84",
+   "class": "path",
+   "query": "add Array.prototype.at for older browsers",
+   "path": "packages/excalidraw/*",
+   "answers": [
+    {
+     "path": "packages/excalidraw/polyfill.ts",
+     "line": 1
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 2: behaviour case excalidraw-behaviour-2 with the target's parent directory as the path filter"
+  },
+  {
+   "id": "excalidraw-path-4",
+   "repo": "excalidraw",
+   "revision": "a2ec2889babf7d2295469c6d90ebe77fae57df84",
+   "class": "path",
+   "query": "subscribe handlers to events and get back an unsubscribe callback",
+   "path": "packages/excalidraw/*",
+   "answers": [
+    {
+     "path": "packages/excalidraw/emitter.ts",
+     "line": 5
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 4: behaviour case excalidraw-behaviour-4 with the target's parent directory as the path filter"
+  },
+  {
+   "id": "excalidraw-none-token",
+   "repo": "excalidraw",
+   "revision": "a2ec2889babf7d2295469c6d90ebe77fae57df84",
+   "class": "no-result",
+   "query": "zzcodecite287absentqx",
+   "path": null,
+   "answers": [],
+   "score": true,
+   "label_source": "token verified absent with git grep -i at the pin"
+  },
+  {
+   "id": "excalidraw-none-ident",
+   "repo": "excalidraw",
+   "revision": "a2ec2889babf7d2295469c6d90ebe77fae57df84",
+   "class": "no-result",
+   "query": "QuasarFluxRegistry",
+   "path": null,
+   "answers": [],
+   "score": true,
+   "label_source": "token verified absent with git grep -i at the pin; checked only as an exact definition lookup",
+   "ops": [
+    "codecite:def",
+    "codegraph:node"
+   ]
+  },
+  {
+   "id": "django-exact-0",
+   "repo": "django",
+   "revision": "8f8ad09659d728423a00e0a3b5f16da5c3a38e24",
+   "class": "exact",
+   "query": "resolve_context",
+   "path": null,
+   "answers": [
+    {
+     "path": "django/template/response.py",
+     "line": 78
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 0: definition line read at the pin"
+  },
+  {
+   "id": "django-exact-2",
+   "repo": "django",
+   "revision": "8f8ad09659d728423a00e0a3b5f16da5c3a38e24",
+   "class": "exact",
+   "query": "HttpResponseBase",
+   "path": null,
+   "answers": [
+    {
+     "path": "django/http/response.py",
+     "line": 107
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 2: definition line read at the pin"
+  },
+  {
+   "id": "django-exact-3",
+   "repo": "django",
+   "revision": "8f8ad09659d728423a00e0a3b5f16da5c3a38e24",
+   "class": "exact",
+   "query": "SecondsToInterval",
+   "path": null,
+   "answers": [
+    {
+     "path": "django/db/backends/oracle/functions.py",
+     "line": 19
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 3: definition line read at the pin"
+  },
+  {
+   "id": "django-exact-6",
+   "repo": "django",
+   "revision": "8f8ad09659d728423a00e0a3b5f16da5c3a38e24",
+   "class": "exact",
+   "query": "applied_migrations",
+   "path": null,
+   "answers": [
+    {
+     "path": "django/db/migrations/recorder.py",
+     "line": 84
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 6: definition line read at the pin"
+  },
+  {
+   "id": "django-exact-15",
+   "repo": "django",
+   "revision": "8f8ad09659d728423a00e0a3b5f16da5c3a38e24",
+   "class": "exact",
+   "query": "RawSQL",
+   "path": null,
+   "answers": [
+    {
+     "path": "django/db/models/expressions.py",
+     "line": 1224
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 15: definition line read at the pin"
+  },
+  {
+   "id": "django-exact-19",
+   "repo": "django",
+   "revision": "8f8ad09659d728423a00e0a3b5f16da5c3a38e24",
+   "class": "exact",
+   "query": "urlsafe_base64_decode",
+   "path": null,
+   "answers": [
+    {
+     "path": "django/utils/http.py",
+     "line": 188
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 19: definition line read at the pin"
+  },
+  {
+   "id": "django-qualified-4",
+   "repo": "django",
+   "revision": "8f8ad09659d728423a00e0a3b5f16da5c3a38e24",
+   "class": "qualified",
+   "query": "PostGISAdapter._fix_polygon",
+   "path": null,
+   "answers": [
+    {
+     "path": "django/contrib/gis/db/backends/postgis/adapter.py",
+     "line": 48
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 4: name defined more than once; qualified by its enclosing type, read at the pin"
+  },
+  {
+   "id": "django-qualified-7",
+   "repo": "django",
+   "revision": "8f8ad09659d728423a00e0a3b5f16da5c3a38e24",
+   "class": "qualified",
+   "query": "MySQLGISSchemaEditor.quote_value",
+   "path": null,
+   "answers": [
+    {
+     "path": "django/contrib/gis/db/backends/mysql/schema.py",
+     "line": 23
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 7: name defined more than once; qualified by its enclosing type, read at the pin"
+  },
+  {
+   "id": "django-qualified-11",
+   "repo": "django",
+   "revision": "8f8ad09659d728423a00e0a3b5f16da5c3a38e24",
+   "class": "qualified",
+   "query": "Feature.geom_type",
+   "path": null,
+   "answers": [
+    {
+     "path": "django/contrib/gis/gdal/feature.py",
+     "line": 101
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 11: name defined more than once; qualified by its enclosing type, read at the pin"
+  },
+  {
+   "id": "django-ambiguous-1",
+   "repo": "django",
+   "revision": "8f8ad09659d728423a00e0a3b5f16da5c3a38e24",
+   "class": "ambiguous",
+   "query": "Command",
+   "path": null,
+   "answers": [
+    {
+     "path": "django/core/management/commands/startapp.py",
+     "line": 4
+    }
+   ],
+   "score": false,
+   "label_source": "sample.py draw 1: name defined more than once; acceptable answers not enumerated, so unscored"
+  },
+  {
+   "id": "django-behaviour-2",
+   "repo": "django",
+   "revision": "8f8ad09659d728423a00e0a3b5f16da5c3a38e24",
+   "class": "behaviour",
+   "query": "base class for http responses whose headers are accessed like a dictionary",
+   "path": null,
+   "answers": [
+    {
+     "path": "django/http/response.py",
+     "line": 107
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 2: paraphrase of its doc comment, written before any CLI ran on this repository"
+  },
+  {
+   "id": "django-behaviour-6",
+   "repo": "django",
+   "revision": "8f8ad09659d728423a00e0a3b5f16da5c3a38e24",
+   "class": "behaviour",
+   "query": "which migrations have been applied, keyed by app and migration name",
+   "path": null,
+   "answers": [
+    {
+     "path": "django/db/migrations/recorder.py",
+     "line": 84
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 6: paraphrase of its doc comment, written before any CLI ran on this repository"
+  },
+  {
+   "id": "django-behaviour-9",
+   "repo": "django",
+   "revision": "8f8ad09659d728423a00e0a3b5f16da5c3a38e24",
+   "class": "behaviour",
+   "query": "create a new database session with a unique key",
+   "path": null,
+   "answers": [
+    {
+     "path": "django/contrib/sessions/backends/db.py",
+     "line": 68
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 9: paraphrase of its doc comment, written before any CLI ran on this repository"
+  },
+  {
+   "id": "django-behaviour-11",
+   "repo": "django",
+   "revision": "8f8ad09659d728423a00e0a3b5f16da5c3a38e24",
+   "class": "behaviour",
+   "query": "OGR geometry type of a GDAL feature",
+   "path": null,
+   "answers": [
+    {
+     "path": "django/contrib/gis/gdal/feature.py",
+     "line": 101
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 11: paraphrase of its doc comment, written before any CLI ran on this repository"
+  },
+  {
+   "id": "django-behaviour-14",
+   "repo": "django",
+   "revision": "8f8ad09659d728423a00e0a3b5f16da5c3a38e24",
+   "class": "behaviour",
+   "query": "load the first template that exists from a list of names",
+   "path": null,
+   "answers": [
+    {
+     "path": "django/template/loader.py",
+     "line": 22
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 14: paraphrase of its doc comment, written before any CLI ran on this repository"
+  },
+  {
+   "id": "django-path-2",
+   "repo": "django",
+   "revision": "8f8ad09659d728423a00e0a3b5f16da5c3a38e24",
+   "class": "path",
+   "query": "base class for http responses whose headers are accessed like a dictionary",
+   "path": "django/http/*",
+   "answers": [
+    {
+     "path": "django/http/response.py",
+     "line": 107
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 2: behaviour case django-behaviour-2 with the target's parent directory as the path filter"
+  },
+  {
+   "id": "django-path-6",
+   "repo": "django",
+   "revision": "8f8ad09659d728423a00e0a3b5f16da5c3a38e24",
+   "class": "path",
+   "query": "which migrations have been applied, keyed by app and migration name",
+   "path": "django/db/migrations/*",
+   "answers": [
+    {
+     "path": "django/db/migrations/recorder.py",
+     "line": 84
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 6: behaviour case django-behaviour-6 with the target's parent directory as the path filter"
+  },
+  {
+   "id": "django-none-token",
+   "repo": "django",
+   "revision": "8f8ad09659d728423a00e0a3b5f16da5c3a38e24",
+   "class": "no-result",
+   "query": "zzcodecite287absentqx",
+   "path": null,
+   "answers": [],
+   "score": true,
+   "label_source": "token verified absent with git grep -i at the pin"
+  },
+  {
+   "id": "django-none-ident",
+   "repo": "django",
+   "revision": "8f8ad09659d728423a00e0a3b5f16da5c3a38e24",
+   "class": "no-result",
+   "query": "QuasarFluxRegistry",
+   "path": null,
+   "answers": [],
+   "score": true,
+   "label_source": "token verified absent with git grep -i at the pin; checked only as an exact definition lookup",
+   "ops": [
+    "codecite:def",
+    "codegraph:node"
+   ]
+  },
+  {
+   "id": "keycloak-f255-kc-token-endpoint",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "exact",
+   "query": "TokenEndpoint",
+   "path": null,
+   "answers": [
+    {
+     "path": "services/src/main/java/org/keycloak/protocol/oidc/endpoints/TokenEndpoint.java",
+     "line": 85
+    }
+   ],
+   "score": false,
+   "label_source": "#255 frozen question kc-token-endpoint: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "keycloak-f255-kc-authz-endpoint",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "exact",
+   "query": "AuthorizationEndpoint",
+   "path": null,
+   "answers": [
+    {
+     "path": "services/src/main/java/org/keycloak/protocol/oidc/endpoints/AuthorizationEndpoint.java",
+     "line": 82
+    }
+   ],
+   "score": false,
+   "label_source": "#255 frozen question kc-authz-endpoint: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "keycloak-f255-kc-user-resource",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "exact",
+   "query": "UserResource",
+   "path": null,
+   "answers": [
+    {
+     "path": "services/src/main/java/org/keycloak/services/resources/admin/UserResource.java",
+     "line": 153
+    }
+   ],
+   "score": false,
+   "label_source": "#255 frozen question kc-user-resource: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "keycloak-f255-kc-authentication-manager",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "exact",
+   "query": "AuthenticationManager",
+   "path": null,
+   "answers": [
+    {
+     "path": "services/src/main/java/org/keycloak/services/managers/AuthenticationManager.java",
+     "line": 143
+    }
+   ],
+   "score": true,
+   "label_source": "#255 frozen question kc-authentication-manager: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "keycloak-f255-kc-session",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "exact",
+   "query": "DefaultKeycloakSession",
+   "path": null,
+   "answers": [
+    {
+     "path": "services/src/main/java/org/keycloak/services/DefaultKeycloakSession.java",
+     "line": 77
+    }
+   ],
+   "score": false,
+   "label_source": "#255 frozen question kc-session: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "keycloak-f255-kc-oidc",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "exact",
+   "query": "OIDCLoginProtocol",
+   "path": null,
+   "answers": [
+    {
+     "path": "services/src/main/java/org/keycloak/protocol/oidc/OIDCLoginProtocol.java",
+     "line": 86
+    }
+   ],
+   "score": false,
+   "label_source": "#255 frozen question kc-oidc: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "keycloak-f255-kc-token-behaviour",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "behaviour",
+   "query": "openid token endpoint",
+   "path": null,
+   "answers": [
+    {
+     "path": "services/src/main/java/org/keycloak/protocol/oidc/endpoints/TokenEndpoint.java",
+     "line": 85
+    }
+   ],
+   "score": true,
+   "label_source": "#255 frozen question kc-token-behaviour: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "keycloak-f255-kc-user-behaviour",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "behaviour",
+   "query": "admin user resource",
+   "path": null,
+   "answers": [
+    {
+     "path": "services/src/main/java/org/keycloak/services/resources/admin/UserResource.java",
+     "line": 153
+    }
+   ],
+   "score": true,
+   "label_source": "#255 frozen question kc-user-behaviour: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "keycloak-f255-keycloak-ambiguous-symbol-0",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "ambiguous",
+   "query": "getName",
+   "path": null,
+   "answers": [
+    {
+     "path": "services/src/main/java/org/keycloak/authentication/actiontoken/ActionTokenHandlerSpi.java",
+     "line": 35
+    }
+   ],
+   "score": false,
+   "label_source": "#255 frozen question keycloak-ambiguous-symbol-0: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "keycloak-f255-keycloak-path-filter-3",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "path",
+   "query": "TokenEndpoint",
+   "path": "services/src/main/java/org/keycloak/protocol/oidc/endpoints/TokenEndpoint.java",
+   "answers": [
+    {
+     "path": "services/src/main/java/org/keycloak/protocol/oidc/endpoints/TokenEndpoint.java",
+     "line": 85
+    }
+   ],
+   "score": true,
+   "label_source": "#255 frozen question keycloak-path-filter-3: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "keycloak-f255-keycloak-rare-frozen",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "term",
+   "query": "totpappfreeotpname",
+   "path": null,
+   "answers": [
+    {
+     "path": "services/src/main/java/org/keycloak/authentication/otp/FreeOTPProvider.java",
+     "line": 20
+    }
+   ],
+   "score": true,
+   "label_source": "#255 frozen question keycloak-rare-frozen: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "keycloak-f255-keycloak-broad-frozen",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "broad",
+   "query": "token",
+   "path": null,
+   "answers": [],
+   "score": false,
+   "label_source": "#255 frozen question keycloak-broad-frozen: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "keycloak-exact-1",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "exact",
+   "query": "fail",
+   "path": null,
+   "answers": [
+    {
+     "path": "model/infinispan/src/main/java/org/keycloak/models/sessions/infinispan/changes/PersistentUpdate.java",
+     "line": 51
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 1: definition line read at the pin"
+  },
+  {
+   "id": "keycloak-exact-3",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "exact",
+   "query": "computeMaxResults",
+   "path": null,
+   "answers": [
+    {
+     "path": "services/src/main/java/org/keycloak/services/resources/admin/ClientResource.java",
+     "line": 979
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 3: definition line read at the pin"
+  },
+  {
+   "id": "keycloak-exact-4",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "exact",
+   "query": "DirectAlgorithmProvider",
+   "path": null,
+   "answers": [
+    {
+     "path": "core/src/main/java/org/keycloak/jose/jwe/alg/DirectAlgorithmProvider.java",
+     "line": 30
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 4: definition line read at the pin"
+  },
+  {
+   "id": "keycloak-exact-7",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "exact",
+   "query": "ECPublicJWK",
+   "path": null,
+   "answers": [
+    {
+     "path": "core/src/main/java/org/keycloak/jose/jwk/ECPublicJWK.java",
+     "line": 26
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 7: definition line read at the pin"
+  },
+  {
+   "id": "keycloak-exact-14",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "exact",
+   "query": "RolePermissionEvaluator",
+   "path": null,
+   "answers": [
+    {
+     "path": "services/src/main/java/org/keycloak/services/resources/admin/fgap/RolePermissionEvaluator.java",
+     "line": 29
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 14: definition line read at the pin"
+  },
+  {
+   "id": "keycloak-exact-17",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "exact",
+   "query": "convertClientPoliciesJsonToRepresentation",
+   "path": null,
+   "answers": [
+    {
+     "path": "services/src/main/java/org/keycloak/services/clientpolicy/ClientPoliciesUtil.java",
+     "line": 478
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 17: definition line read at the pin"
+  },
+  {
+   "id": "keycloak-qualified-0",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "qualified",
+   "query": "OpenApiPropertyMappers.getPropertyMappers",
+   "path": null,
+   "answers": [
+    {
+     "path": "quarkus/runtime/src/main/java/org/keycloak/quarkus/runtime/configuration/mappers/OpenApiPropertyMappers.java",
+     "line": 14
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 0: name defined more than once; qualified by its enclosing type, read at the pin"
+  },
+  {
+   "id": "keycloak-qualified-2",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "qualified",
+   "query": "NameIdMapperHelper.setConfigProperties",
+   "path": null,
+   "answers": [
+    {
+     "path": "services/src/main/java/org/keycloak/protocol/saml/mappers/NameIdMapperHelper.java",
+     "line": 18
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 2: name defined more than once; qualified by its enclosing type, read at the pin"
+  },
+  {
+   "id": "keycloak-qualified-5",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "qualified",
+   "query": "Vuln.equals",
+   "path": null,
+   "answers": [
+    {
+     "path": "misc/vuln-to-issues/src/main/java/org/keycloak/misc/vulns/Vuln.java",
+     "line": 87
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 5: name defined more than once; qualified by its enclosing type, read at the pin"
+  },
+  {
+   "id": "keycloak-ambiguous-13",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "ambiguous",
+   "query": "getId",
+   "path": null,
+   "answers": [
+    {
+     "path": "services/src/main/java/org/keycloak/crypto/HS384SignatureProviderFactory.java",
+     "line": 28
+    }
+   ],
+   "score": false,
+   "label_source": "sample.py draw 13: name defined more than once; acceptable answers not enumerated, so unscored"
+  },
+  {
+   "id": "keycloak-none-token",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "no-result",
+   "query": "zzcodecite287absentqx",
+   "path": null,
+   "answers": [],
+   "score": true,
+   "label_source": "token verified absent with git grep -i at the pin"
+  },
+  {
+   "id": "keycloak-none-ident",
+   "repo": "keycloak",
+   "revision": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+   "class": "no-result",
+   "query": "QuasarFluxRegistry",
+   "path": null,
+   "answers": [],
+   "score": true,
+   "label_source": "token verified absent with git grep -i at the pin; checked only as an exact definition lookup",
+   "ops": [
+    "codecite:def",
+    "codegraph:node"
+   ]
+  },
+  {
+   "id": "linux-f255-linux-vfs-read",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "exact",
+   "query": "vfs_read",
+   "path": null,
+   "answers": [
+    {
+     "path": "fs/read_write.c",
+     "line": 552
+    }
+   ],
+   "score": true,
+   "label_source": "#255 frozen question linux-vfs-read: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "linux-f255-linux-vfs-write",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "exact",
+   "query": "vfs_write",
+   "path": null,
+   "answers": [
+    {
+     "path": "fs/read_write.c",
+     "line": 666
+    }
+   ],
+   "score": true,
+   "label_source": "#255 frozen question linux-vfs-write: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "linux-f255-linux-openat",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "exact",
+   "query": "do_sys_openat2",
+   "path": null,
+   "answers": [
+    {
+     "path": "fs/open.c",
+     "line": 1420
+    }
+   ],
+   "score": true,
+   "label_source": "#255 frozen question linux-openat: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "linux-f255-linux-tcp-connect",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "exact",
+   "query": "tcp_v4_connect",
+   "path": null,
+   "answers": [
+    {
+     "path": "net/ipv4/tcp_ipv4.c",
+     "line": 224
+    }
+   ],
+   "score": true,
+   "label_source": "#255 frozen question linux-tcp-connect: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "linux-f255-linux-task",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "exact",
+   "query": "task_struct",
+   "path": null,
+   "answers": [
+    {
+     "path": "include/linux/sched.h",
+     "line": 819
+    }
+   ],
+   "score": false,
+   "label_source": "#255 frozen question linux-task: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "linux-f255-linux-socket",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "exact",
+   "query": "sock_create",
+   "path": null,
+   "answers": [
+    {
+     "path": "net/socket.c",
+     "line": 1661
+    }
+   ],
+   "score": true,
+   "label_source": "#255 frozen question linux-socket: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "linux-f255-linux-read-behaviour",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "behaviour",
+   "query": "read file userspace buffer",
+   "path": null,
+   "answers": [
+    {
+     "path": "fs/read_write.c",
+     "line": 552
+    }
+   ],
+   "score": true,
+   "label_source": "#255 frozen question linux-read-behaviour: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "linux-f255-linux-tcp-behaviour",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "behaviour",
+   "query": "establish tcp ipv4 connection",
+   "path": null,
+   "answers": [
+    {
+     "path": "net/ipv4/tcp_ipv4.c",
+     "line": 224
+    }
+   ],
+   "score": true,
+   "label_source": "#255 frozen question linux-tcp-behaviour: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "linux-f255-linux-ambiguous-symbol-0",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "ambiguous",
+   "query": "probe",
+   "path": null,
+   "answers": [
+    {
+     "path": "drivers/hid/bpf/progs/FR-TEC__Raptor-Mach-2.bpf.c",
+     "line": 177
+    }
+   ],
+   "score": false,
+   "label_source": "#255 frozen question linux-ambiguous-symbol-0: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "linux-f255-linux-path-filter-3",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "path",
+   "query": "vfs_read",
+   "path": "fs/read_write.c",
+   "answers": [
+    {
+     "path": "fs/read_write.c",
+     "line": 552
+    }
+   ],
+   "score": true,
+   "label_source": "#255 frozen question linux-path-filter-3: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "linux-f255-linux-rare-frozen",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "term",
+   "query": "preadv2",
+   "path": null,
+   "answers": [
+    {
+     "path": "fs/read_write.c",
+     "line": 1182
+    }
+   ],
+   "score": true,
+   "label_source": "#255 frozen question linux-rare-frozen: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "linux-f255-linux-broad-frozen",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "broad",
+   "query": "memory",
+   "path": null,
+   "answers": [],
+   "score": false,
+   "label_source": "#255 frozen question linux-broad-frozen: source-verified label reused as development/regression data"
+  },
+  {
+   "id": "linux-exact-0",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "exact",
+   "query": "drm_asahi_get_time",
+   "path": null,
+   "answers": [
+    {
+     "path": "include/uapi/drm/asahi_drm.h",
+     "line": 1152
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 0: definition line read at the pin"
+  },
+  {
+   "id": "linux-exact-3",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "exact",
+   "query": "dm_crypt_key",
+   "path": null,
+   "answers": [
+    {
+     "path": "kernel/crash_dump_dm_crypt.c",
+     "line": 16
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 3: definition line read at the pin"
+  },
+  {
+   "id": "linux-exact-4",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "exact",
+   "query": "amdgpu_read_disabled_bios",
+   "path": null,
+   "answers": [
+    {
+     "path": "drivers/gpu/drm/amd/amdgpu/amdgpu_bios.c",
+     "line": 351
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 4: definition line read at the pin"
+  },
+  {
+   "id": "linux-exact-5",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "exact",
+   "query": "rtw89_debug_priv_txpwr_table_get",
+   "path": null,
+   "answers": [
+    {
+     "path": "drivers/net/wireless/realtek/rtw89/debug.c",
+     "line": 925
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 5: definition line read at the pin"
+  },
+  {
+   "id": "linux-exact-7",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "exact",
+   "query": "PVSCSIRingReqDesc",
+   "path": null,
+   "answers": [
+    {
+     "path": "drivers/scsi/vmw_pvscsi.h",
+     "line": 321
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 7: definition line read at the pin"
+  },
+  {
+   "id": "linux-exact-8",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "exact",
+   "query": "sdhci_msm_pwr_irq",
+   "path": null,
+   "answers": [
+    {
+     "path": "drivers/mmc/host/sdhci-msm.c",
+     "line": 1808
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 8: definition line read at the pin"
+  },
+  {
+   "id": "linux-ambiguous-1",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "ambiguous",
+   "query": "zpci_iov_map_resources",
+   "path": null,
+   "answers": [
+    {
+     "path": "arch/s390/pci/pci_iov.c",
+     "line": 25
+    }
+   ],
+   "score": false,
+   "label_source": "sample.py draw 1: name defined more than once; acceptable answers not enumerated, so unscored"
+  },
+  {
+   "id": "linux-behaviour-0",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "behaviour",
+   "query": "arguments of the ioctl that reads the gpu timestamp",
+   "path": null,
+   "answers": [
+    {
+     "path": "include/uapi/drm/asahi_drm.h",
+     "line": 1152
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 0: paraphrase of its doc comment, written before any CLI ran on this repository"
+  },
+  {
+   "id": "linux-behaviour-3",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "behaviour",
+   "query": "dm crypt key kept for the crash dump kernel",
+   "path": null,
+   "answers": [
+    {
+     "path": "kernel/crash_dump_dm_crypt.c",
+     "line": 16
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 3: paraphrase of the file's comments and name, written before any CLI ran on this repository"
+  },
+  {
+   "id": "linux-path-3",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "path",
+   "query": "dm crypt key kept for the crash dump kernel",
+   "path": "kernel/*",
+   "answers": [
+    {
+     "path": "kernel/crash_dump_dm_crypt.c",
+     "line": 16
+    }
+   ],
+   "score": true,
+   "label_source": "sample.py draw 3: behaviour case linux-behaviour-3 with the target's parent directory as the path filter"
+  },
+  {
+   "id": "linux-none-token",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "no-result",
+   "query": "zzcodecite287absentqx",
+   "path": null,
+   "answers": [],
+   "score": true,
+   "label_source": "token verified absent with git grep -i at the pin"
+  },
+  {
+   "id": "linux-none-ident",
+   "repo": "linux",
+   "revision": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+   "class": "no-result",
+   "query": "QuasarFluxRegistry",
+   "path": null,
+   "answers": [],
+   "score": true,
+   "label_source": "token verified absent with git grep -i at the pin; checked only as an exact definition lookup",
+   "ops": [
+    "codecite:def",
+    "codegraph:node"
+   ]
+  }
+ ]
+}
