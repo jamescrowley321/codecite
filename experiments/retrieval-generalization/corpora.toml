@@ -1,0 +1,61 @@
+# Repositories for the generic retrieval benchmark (#287).
+#
+# `split` keeps development and evaluation repositories apart. A
+# development repository may be looked at, tuned on and rerun; an evaluation
+# repository is measured once per accepted design and then moves to
+# `development` (see README, "Rotating holdouts"). Pins were fixed before any
+# CLI ran on the evaluation repositories. `language` and `domain` describe
+# the repository for choosing a diverse split; nothing in the harness or in
+# codecite's ranking reads them.
+
+[[repo]]
+name = "linux"
+split = "development"
+url = "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git"
+commit = "7d0a66e4bb9081d75c82ec4957c50034cb0ea449"  # #255's pin
+license = "GPL-2.0-only"
+use = "approach_only"
+language = "c"
+domain = "operating system kernel"
+note = "#255 measured it; its questions are regression data here"
+
+[[repo]]
+name = "keycloak"
+split = "development"
+url = "https://github.com/keycloak/keycloak"
+commit = "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1"  # #255's pin
+license = "Apache-2.0"
+use = "adapt"
+language = "java"
+domain = "identity and access management server"
+note = "#255 measured it; its questions are regression data here"
+
+[[repo]]
+name = "django"
+split = "evaluation"
+url = "https://github.com/django/django"
+commit = "8f8ad09659d728423a00e0a3b5f16da5c3a38e24"  # tag 6.0.5
+license = "BSD-3-Clause"
+use = "adapt"
+language = "python"
+domain = "web framework and ORM"
+
+[[repo]]
+name = "ripgrep"
+split = "evaluation"
+url = "https://github.com/BurntSushi/ripgrep"
+commit = "669cb4c755db20b26c3af3d923c042ae224c7496"  # tag 16.0.0
+license = "MIT OR Unlicense"
+use = "adapt"
+language = "rust"
+domain = "command-line text search"
+
+[[repo]]
+name = "excalidraw"
+split = "evaluation"
+url = "https://github.com/excalidraw/excalidraw"
+commit = "a2ec2889babf7d2295469c6d90ebe77fae57df84"  # tag v0.18.1
+license = "MIT"
+use = "adapt"
+language = "typescript"
+domain = "browser drawing application"

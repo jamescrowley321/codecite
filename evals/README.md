@@ -353,8 +353,7 @@ The **gating panel** always runs: Claude Code
 and claude-opus-5-5, billed to the Claude subscription behind
 `CLAUDE_CODE_OAUTH_TOKEN`. The **OpenRouter panel** is pi on the models below,
 billed per token to `OPENROUTER_API_KEY`, and runs beside it only when
-`OPENROUTER=1` (in CI, the `openrouter` dispatch input or the `EVALS_OPENROUTER`
-repository variable); its verdicts are reported, never part of the gate. The
+`OPENROUTER=1` (in CI, only a dispatch with the `openrouter` input); its verdicts are reported, never part of the gate. The
 two agents' results are reported apart, a row per model each:
 `claude-code/<model>` and `openrouter/<model>`.
 
@@ -395,9 +394,26 @@ and never a required check.
 - **A/A:** dispatch with `arms: aa` to run an A/A round at either tier, and
   `epochs` to run more epochs than the tier's own (a quick tier at more than
   its 5 epochs gets the full tier's time limits).
-- **OpenRouter:** off unless switched on. Dispatch with `openrouter: true`
-  for one run, or set the repository variable `EVALS_OPENROUTER` to `true`
-  (in oss-admin, with the other settings) for every run, labelled PRs too.
+- **OpenRouter:** off unless a dispatch asks for it with `openrouter: true`.
+  A labelled PR's run never bills OpenRouter.
+
+### Spend limits
+
+The OpenRouter budget once ran out because evals ran on nearly every commit.
+These limits keep that from happening again (#297):
+
+| Limit | Default | Where it's set | To go past it once |
+| --- | --- | --- | --- |
+| Eval runs started in any 24 hours | 6 | repository variable `EVALS_DAILY_MAX` | dispatch with `ignore_daily_cap: true` |
+| OpenRouter | off | only the `openrouter` dispatch input | dispatch with `openrouter: true` |
+| A PR's runs | one per `eval` label | the workflow's trigger | take the label off and put it back |
+
+The `budget` job counts the runs whose eval job started, so runs skipped by
+another label, and runs it refused, don't count. Over the cap it fails with
+the reason in its summary, and the eval job is skipped.
+
+The only hard dollar limit is outside the repository: the OpenRouter key's
+credit limit, which James sets in the OpenRouter dashboard.
 
 The job builds codecite, fetches identity-model at the task's pinned commit
 and caches the three sandbox images (the sandbox, the IdP and the proxy),
