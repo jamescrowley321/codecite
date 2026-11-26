@@ -11,7 +11,10 @@ use std::collections::HashMap;
 use std::io::Read as _;
 use std::path::Path;
 
-use codecite_core::{ROLE_DEFINITION, ScipDefinition, ScipDocument, ScipOccurrence, symbol_name};
+use codecite_core::{
+    ColumnUnit, MAX_SCIP_NAME_BYTES, ROLE_DEFINITION, ScipDefinition, ScipDocument, ScipOccurrence,
+    symbol_name,
+};
 use prost::Message as _;
 
 /// The largest SCIP index codecite reads: 256 MiB.
@@ -19,12 +22,13 @@ pub const MAX_SCIP_SIZE: u64 = 256 * 1024 * 1024;
 
 /// The longest display name kept; a longer one gives way to the name the
 /// symbol's descriptors give, so an index can't hand agents a long text as a
-/// name.
-const MAX_DISPLAY_NAME_BYTES: usize = 256;
+/// name. Core holds descriptor-derived names of nodes outside the corpus to
+/// the same cap.
+const MAX_DISPLAY_NAME_BYTES: usize = MAX_SCIP_NAME_BYTES;
 
 /// The longest symbol string kept. Real symbols are far shorter; a longer
-/// one is skipped rather than stored.
-const MAX_SYMBOL_BYTES: usize = 1024;
+/// one is skipped rather than stored, since symbols reach agents as IDs.
+const MAX_SYMBOL_BYTES: usize = 512;
 
 /// Why a SCIP index couldn't be read.
 #[derive(Debug, thiserror::Error)]
@@ -62,6 +66,9 @@ struct Document {
     occurrences: Vec<Occurrence>,
     #[prost(message, repeated, tag = "3")]
     symbols: Vec<SymbolInformation>,
+    /// `scip.PositionEncoding`, read as its number.
+    #[prost(int32, tag = "6")]
+    position_encoding: i32,
 }
 
 /// `scip.Occurrence`. The typed ranges are a `oneof` in `scip.proto`; on
@@ -92,6 +99,8 @@ struct Occurrence {
 struct SingleLineRange {
     #[prost(int32, tag = "1")]
     line: i32,
+    #[prost(int32, tag = "3")]
+    end_character: i32,
 }
 
 /// `scip.MultiLineRange`: a half-open range over lines, from 0.
@@ -169,6 +178,7 @@ pub fn decode_scip(bytes: &[u8]) -> Result<Vec<ScipDocument>, ScipError> {
             .unwrap_or(&doc.relative_path);
         let mut out = ScipDocument {
             path: path.to_owned(),
+            encoding: column_unit(doc.position_encoding),
             ..ScipDocument::default()
         };
         for occ in &doc.occurrences {
@@ -206,6 +216,7 @@ pub fn decode_scip(bytes: &[u8]) -> Result<Vec<ScipDocument>, ScipError> {
                 symbol: symbol.to_owned(),
                 start_line,
                 end_line,
+                end_column: end_column(occ),
                 roles,
             });
         }
@@ -245,6 +256,34 @@ fn occurrence_lines(occ: &Occurrence) -> Option<(u32, u32)> {
         return lines(r.start_line, r.end_line, r.end_character);
     }
     packed_lines(&occ.range)
+}
+
+/// Where an occurrence's range ends on its last line: the half-open end
+/// character, in the document's column unit. `None` when the range doesn't
+/// give a usable one.
+fn end_column(occ: &Occurrence) -> Option<u32> {
+    let end = if let Some(r) = &occ.single_line_range {
+        r.end_character
+    } else if let Some(r) = &occ.multi_line_range {
+        r.end_character
+    } else {
+        match *occ.range {
+            [_, _, end] | [_, _, _, end] => end,
+            _ => return None,
+        }
+    };
+    u32::try_from(end).ok()
+}
+
+/// The column unit a `scip.PositionEncoding` number names; an unknown
+/// number reads as unspecified.
+fn column_unit(encoding: i32) -> ColumnUnit {
+    match encoding {
+        1 => ColumnUnit::Utf8,
+        2 => ColumnUnit::Utf16,
+        3 => ColumnUnit::Utf32,
+        _ => ColumnUnit::Unspecified,
+    }
 }
 
 /// A definition's enclosing range as lines from 1, when the indexer gives
@@ -413,7 +452,10 @@ mod tests {
             symbol: format!("{PKG}f()."),
             symbol_roles: 1,
             enclosing_range: vec![0, 0, 9, 1],
-            single_line_range: Some(SingleLineRange { line: 4 }),
+            single_line_range: Some(SingleLineRange {
+                line: 4,
+                end_character: 3,
+            }),
             multi_line_range: None,
             single_line_enclosing_range: None,
             multi_line_enclosing_range: Some(MultiLineRange {
@@ -427,6 +469,7 @@ mod tests {
                 relative_path: "./src/f.rs".into(),
                 occurrences: vec![occurrence],
                 symbols: vec![],
+                position_encoding: 0,
             }],
             external_symbols: vec![],
         };
@@ -438,6 +481,71 @@ mod tests {
         assert_eq!((def.line, def.start_line, def.end_line), (5, 4, 7));
         assert_eq!(def.display_name, "f");
         assert_eq!(def.kind, "method");
+    }
+
+    #[test]
+    fn each_occurrence_keeps_its_end_column_and_the_document_its_encoding() {
+        let occ =
+            |range: Vec<i32>, single: Option<SingleLineRange>, multi: Option<MultiLineRange>| {
+                Occurrence {
+                    range,
+                    symbol: format!("{PKG}f()."),
+                    symbol_roles: 0,
+                    single_line_range: single,
+                    multi_line_range: multi,
+                    ..Occurrence::default()
+                }
+            };
+        let doc = |path: &str, position_encoding: i32| Document {
+            relative_path: path.into(),
+            occurrences: vec![
+                occ(vec![0, 2, 9], None, None),
+                occ(vec![1, 0, 2, 5], None, None),
+                occ(
+                    vec![],
+                    Some(SingleLineRange {
+                        line: 3,
+                        end_character: 7,
+                    }),
+                    None,
+                ),
+                occ(
+                    vec![],
+                    None,
+                    Some(MultiLineRange {
+                        start_line: 4,
+                        end_line: 5,
+                        end_character: 6,
+                    }),
+                ),
+            ],
+            symbols: vec![],
+            position_encoding,
+        };
+        let index = Index {
+            documents: vec![
+                doc("u8.rs", 1),
+                doc("u16.ts", 2),
+                doc("u32.py", 3),
+                doc("none.go", 0),
+                doc("odd.go", 9),
+            ],
+            external_symbols: vec![],
+        };
+        let docs = decode_scip(&index.encode_to_vec()).unwrap();
+        let ends: Vec<Option<u32>> = docs[0].occurrences.iter().map(|o| o.end_column).collect();
+        assert_eq!(ends, [Some(9), Some(5), Some(7), Some(6)]);
+        let units: Vec<ColumnUnit> = docs.iter().map(|d| d.encoding).collect();
+        assert_eq!(
+            units,
+            [
+                ColumnUnit::Utf8,
+                ColumnUnit::Utf16,
+                ColumnUnit::Utf32,
+                ColumnUnit::Unspecified,
+                ColumnUnit::Unspecified,
+            ]
+        );
     }
 
     #[test]
@@ -458,10 +566,11 @@ mod tests {
             display_name: name,
         };
         let (long, short) = (format!("{PKG}f()."), format!("{PKG}g()."));
-        let backticked = format!("{PKG}`{}`().", "é ".repeat(300));
+        let backticked = format!("{PKG}`{}`().", "é ".repeat(140));
         let index = Index {
             documents: vec![Document {
                 relative_path: "a.rs".into(),
+                position_encoding: 0,
                 occurrences: vec![def(&long), def(&short), def(&backticked)],
                 symbols: vec![info(&long, "x".repeat(300)), info(&short, "gee".into())],
             }],
@@ -498,6 +607,7 @@ mod tests {
         let index = Index {
             documents: vec![Document {
                 relative_path: "a.rs".into(),
+                position_encoding: 0,
                 occurrences: vec![
                     occ(format!("{PKG}`a\nb`().")),
                     occ(format!("{PKG}`a\u{202e}b`().")),
@@ -539,11 +649,12 @@ mod tests {
         let index = Index {
             documents: vec![Document {
                 relative_path: "a.rs".into(),
+                position_encoding: 0,
                 occurrences: vec![
                     occ(vec![1, 2], format!("{PKG}a().")),
                     occ(vec![-1, 0, 3], format!("{PKG}a().")),
                     occ(vec![5, 0, 2, 3], format!("{PKG}a().")),
-                    occ(vec![1, 0, 3], format!("{PKG}{}.", "x".repeat(2000))),
+                    occ(vec![1, 0, 3], format!("{PKG}{}.", "x".repeat(600))),
                     occ(vec![1, 0, 3], String::new()),
                     occ(vec![2, 0, 3], format!("{PKG}a().")),
                 ],

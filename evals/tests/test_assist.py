@@ -139,7 +139,7 @@ class Sandbox:
 def test_prepare_arm_keeps_codecite_off_path_and_writes_the_hook():
     sb = Sandbox()
     env = asyncio.run(task.prepare_arm(sb, "assist", claude_code.MCP, claude_code.MCP_CONFIG))
-    assert sb.commands == [] and "/opt/codecite" not in env["PATH"]
+    assert task.STRIP_CODECITE not in sb.commands and "/opt/codecite" not in env["PATH"]
     assert claude_code.MCP not in sb.files
     assert sb.files[assist.HOOK_PATH] == assist.HOOK
     assert json.loads(sb.files[assist.SETTINGS_PATH]) == assist.SETTINGS

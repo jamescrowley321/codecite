@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import re
+import subprocess
 from contextlib import asynccontextmanager
 
 import pytest
@@ -31,7 +33,9 @@ class Sandbox:
         self.commands.append(cmd)
         if cmd[0] == "pi":
             raise self.error
-        if cmd == ["rm", "-rf", "/opt/codecite"]:
+        if cmd == task.STRIP_CODECITE or (
+            cmd[:2] == ["sh", "-c"] and "/opt/codegraph" in cmd[2]
+        ):
             return ExecResult(success=True, returncode=0, stdout="", stderr="")
         raise AssertionError(f"unexpected exec: {cmd}")
 
@@ -58,7 +62,7 @@ def test_only_the_codecite_arm_has_codecite_tools(monkeypatch):
     run_pi(monkeypatch, TimeoutError(), "baseline", base)
     config = json.loads(code.files[task.PI_MCP])["mcpServers"]["codecite"]
     assert (config["command"], config["args"], config["exposure"]) == (task.CODECITE, ["mcp"], "direct")
-    assert base.files == {} and ["rm", "-rf", "/opt/codecite"] in base.commands
+    assert base.files == {} and task.STRIP_CODECITE in base.commands
     (code_pi,), (base_pi,) = ([c for c in sb.commands if c[0] == "pi"] for sb in (code, base))
     tools = lambda cmd: cmd[cmd.index("--tools") + 1].split(",")
     assert tools(code_pi) == task.PI_TOOLS + [
@@ -402,3 +406,179 @@ def test_ab_runs_a_replay_task_by_its_id(replay_task):
     t = task.ab(REPLAY["id"])
     assert [s.id for s in t.dataset] == ["baseline", "codecite"]
     assert "owner/demo source" in t.dataset[1].input
+
+
+def test_the_codegraph_arm_gets_codegraphs_tools_and_not_codecites():
+    cmd = task.pi_command("codegraph", "do the task")
+    tools = cmd[cmd.index("--tools") + 1].split(",")
+    assert "mcp__codegraph__codegraph_explore" in tools
+    assert not any(t.startswith("mcp__codecite__") for t in tools)
+    assert "read" in tools
+    assert cmd[cmd.index("-e") + 1] == "builtin:mcp"
+
+
+def test_every_arm_but_the_codegraph_one_loses_codegraph():
+    for condition in ("baseline", "assist", "codecite"):
+        sb = Sandbox(TimeoutError())
+        env = asyncio.run(task.prepare_arm(sb, condition, task.PI_MCP, task.MCP_CONFIG))
+        assert "/opt/codegraph/bin" not in env["PATH"]
+        assert any(
+            c[:2] == ["sh", "-c"] and "/opt/codegraph" in c[2] and ".codegraph" in c[2]
+            for c in sb.commands
+        )
+        if condition == "assist":
+            assert task.STRIP_CODECITE not in sb.commands
+
+
+def test_codegraph_arm_writes_pi_mcp_json_and_strips_codecite():
+    sb = Sandbox(TimeoutError())
+    env = asyncio.run(task.prepare_arm(sb, "codegraph", task.PI_MCP, task.GRAPH_MCP_CONFIG))
+    assert env["PATH"].startswith("/opt/codegraph/bin:")
+    assert json.loads(sb.files[task.PI_MCP]) == task.GRAPH_MCP_CONFIG
+    assert task.STRIP_CODECITE in sb.commands
+    assert not any(c[:2] == ["sh", "-c"] and "/opt/codegraph" in c[2] for c in sb.commands)
+
+
+def test_arms_that_lose_codecite_lose_its_index_too():
+    """codecite's index outlives its binary unless removed with it: an arm
+    without codecite holds neither, as an arm without codegraph holds no
+    `.codegraph/`."""
+    assert task.STRIP_CODECITE == ["rm", "-rf", "/opt/codecite", "/root/.local/share/codecite"]
+    for condition, strips in (("baseline", True), ("codegraph", True), ("codecite", False), ("assist", False)):
+        sb = Sandbox(TimeoutError())
+        asyncio.run(task.prepare_arm(sb, condition, task.PI_MCP, task.MCP_CONFIG))
+        assert (task.STRIP_CODECITE in sb.commands) == strips, condition
+
+
+def test_prepare_arm_fails_on_cleanup_error():
+    class FailingSandbox(Sandbox):
+        async def exec(self, cmd, **kwargs):
+            return ExecResult(success=False, returncode=1, stdout="", stderr="permission denied")
+
+    with pytest.raises(RuntimeError, match="permission denied"):
+        asyncio.run(task.prepare_arm(FailingSandbox(TimeoutError()), "baseline", task.PI_MCP, task.MCP_CONFIG))
+
+
+def _run_dockerfile_codegraph_loop(tmp_path, fail_at=""):
+    dockerfile = (config.EVALS_DIR / "inspect" / "Dockerfile").read_text()
+    joined = re.sub(r"\\\n\s*", " ", dockerfile)
+    m = re.search(r"(if \[ -n \"\$\(ls -A /opt/identity-model\)\" \]; then .*?;\s*done)", joined)
+    assert m, "Dockerfile has no codegraph init loop"
+    loop = (
+        m.group(1)
+        .replace("/work/project", "work/project")
+        .replace("/opt/identity-model", "opt/identity-model")
+        .replace("/opt/corpus/*", "opt/corpus/*")
+        .replace("/opt/codegraph/bin/codegraph", "./codegraph")
+    )
+    stub = tmp_path / "codegraph"
+    stub.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> init.log\n[ "$3" != "$FAIL_INIT_PATH" ]\n')
+    stub.chmod(0o755)
+    res = subprocess.run(["/bin/sh", "-c", loop], cwd=tmp_path, env={"FAIL_INIT_PATH": fail_at}, timeout=10)
+    return res.returncode, (tmp_path / "init.log").read_text().splitlines()
+
+
+def test_dockerfile_codegraph_loop_fails_fast_on_earlier_init_error(tmp_path):
+    proj = tmp_path / "work/project"
+    ext = tmp_path / "opt/corpus/other"
+    proj.mkdir(parents=True)
+    (tmp_path / "opt/identity-model").mkdir(parents=True)
+    ext.mkdir(parents=True)
+    (proj / "app.py").write_text("x = 1\n")
+    (ext / "lib.py").write_text("y = 2\n")
+
+    status, calls = _run_dockerfile_codegraph_loop(tmp_path, fail_at="work/project")
+
+    assert status != 0
+    assert calls == ["init -y work/project"]
+
+
+def test_dockerfile_codegraph_loop_skips_empty_project_and_succeeds(tmp_path):
+    ident = tmp_path / "opt/identity-model"
+    corpus = tmp_path / "opt/corpus"
+    (tmp_path / "work/project").mkdir(parents=True)
+    ident.mkdir(parents=True)
+    corpus.mkdir(parents=True)
+    (ident / "model.py").write_text("x = 1\n")
+    (corpus / ".size").write_text("s\n")
+
+    status, calls = _run_dockerfile_codegraph_loop(tmp_path)
+
+    assert status == 0
+    assert calls == ["init -y opt/identity-model"]
+
+def test_dockerfile_codegraph_indexes_what_codecite_indexes_for_an_identity_model_task(tmp_path):
+    """codecite's corpus for an identity-model task is identity-model alone,
+    not the agent's project, so codegraph indexes only identity-model too."""
+    (tmp_path / "work/project").mkdir(parents=True)
+    (tmp_path / "work/project/app.py").write_text("x = 1\n")
+    (tmp_path / "opt/identity-model").mkdir(parents=True)
+    (tmp_path / "opt/identity-model/model.py").write_text("y = 2\n")
+    (tmp_path / "opt/corpus").mkdir(parents=True)
+
+    status, calls = _run_dockerfile_codegraph_loop(tmp_path)
+
+    assert status == 0
+    assert calls == ["init -y opt/identity-model"]
+
+
+def test_dockerfile_codegraph_indexes_the_project_and_corpus_when_codecite_does(tmp_path):
+    """A replay or size-dial task stages an empty identity-model; codecite's
+    corpus is the project and /opt/corpus, and so is codegraph's."""
+    for d, f in (("work/project", "app.py"), ("opt/corpus/lib", "lib.py")):
+        (tmp_path / d).mkdir(parents=True)
+        (tmp_path / d / f).write_text("x = 1\n")
+    (tmp_path / "opt/identity-model").mkdir(parents=True)
+
+    status, calls = _run_dockerfile_codegraph_loop(tmp_path)
+
+    assert status == 0
+    assert calls == ["init -y work/project", "init -y opt/corpus/lib"]
+
+
+@pytest.mark.parametrize("task_id", TASKS)
+def test_codegraph_scoring_removes_generated_index_before_real_frozen_scope_check(monkeypatch, tmp_path, task_id):
+    """An actual frozen check sees CodeGraph's generated files as out of scope."""
+    import os
+    import shutil
+
+    start = config.task_dir(task_id) / "project"
+    project = tmp_path / "project"
+    shutil.copytree(start, project)
+    executable = os.environ.get("CODEGRAPH_TEST_BINARY")
+    if executable:
+        subprocess.run([executable, "init", "-y", str(project)], check=True, capture_output=True,
+                       env={**os.environ, "HOME": str(tmp_path), "CODEGRAPH_TELEMETRY": "0"})
+    else:
+        (project / ".codegraph").mkdir()
+        (project / ".codegraph" / "codegraph.db").write_bytes(b"index")
+        (project / ".codegraph" / ".gitignore").write_text("*\n")
+    assert (project / ".codegraph" / "codegraph.db").is_file()
+    check = task.task_checks(config.task_dir(task_id), json.loads((config.task_dir(task_id) / "task.json").read_text()))
+    passed, reason = check.check_scope(start, project)
+    assert not passed and "added .codegraph/" in reason
+
+    class RealScopeSandbox(ScoringSandbox):
+        async def exec(self, cmd, **kwargs):
+            if cmd == ["rm", "-rf", f"{task.PROJECT}/.codegraph"]:
+                shutil.rmtree(project / ".codegraph")
+                return ExecResult(success=True, returncode=0, stdout="", stderr="")
+            if cmd[:3] == ["python3", "-I", "/score/checks.py"]:
+                passed, reason = check.check_scope(start, project)
+                return ExecResult(success=True, returncode=0,
+                                  stdout=json.dumps({"checks": [{"name": "scope", "passed": passed, "reason": reason}]}), stderr="")
+            return await super().exec(cmd, **kwargs)
+
+    result = score_with(monkeypatch, Store(condition="codegraph"), task_id, RealScopeSandbox())
+    assert result.value == 1, result.explanation
+    assert not (project / ".codegraph").exists()
+
+
+def test_codegraph_scoring_cleanup_failure_aborts(monkeypatch):
+    class Broken(ScoringSandbox):
+        async def exec(self, cmd, **kwargs):
+            if cmd[0] == "rm":
+                return ExecResult(success=False, returncode=1, stdout="", stderr="denied")
+            return await super().exec(cmd, **kwargs)
+    with pytest.raises(RuntimeError, match="failed to remove codegraph index"):
+        score_with(monkeypatch, Store(condition="codegraph"), sb=Broken())
