@@ -33,7 +33,7 @@ pub use normative::{
 };
 
 mod role;
-pub use role::Role;
+pub use role::{Role, RoleGlobs, RoleRules};
 
 mod store;
 pub use store::{
