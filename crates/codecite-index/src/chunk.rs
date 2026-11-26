@@ -11,8 +11,11 @@ pub(crate) use text::{Heading, Lines, Slugs, markdown_headings, sections, sectio
 
 /// The version of the chunker's output. Raise it whenever the same file
 /// splits into different chunks, so each index run records which chunker
-/// wrote the corpus. Prerelease builds used 4–6 for earlier C typedef behavior.
-pub const CHUNKER_VERSION: u32 = 7;
+/// wrote the corpus. Prerelease builds used 4–6 for earlier C typedef behavior;
+/// 8 adds class properties holding a function, prototype methods, C
+/// function-like macros and file-scope tables, and drops methods of unnamed
+/// object literals.
+pub const CHUNKER_VERSION: u32 = 8;
 
 /// The longest window, in lines.
 pub const WINDOW_LINES: u32 = 60;
@@ -1029,6 +1032,117 @@ mod tests {
         ]);
         assert_eq!(outline("c.js", text), want);
         assert_eq!(outline("c.ts", text), want);
+    }
+
+    #[test]
+    fn typescript_class_arrow_properties_are_methods() {
+        // A class property holding a function is a method, like a method
+        // definition; a property holding a value is not a definition.
+        let text = "class API {\n  static updateScene = (a: number) => {\n  };\n  private helper = function () {};\n  count = 0;\n}\n";
+        let want = expect(&[
+            ("class", 1, 6, "API#"),
+            ("function", 2, 3, "API#updateScene()."),
+            ("function", 4, 4, "API#helper()."),
+        ]);
+        assert_eq!(outline("src/api.ts", text), want);
+        assert_eq!(outline("src/api.tsx", text), want);
+        assert_eq!(
+            outline("lib/c.js", "class C {\n  handle = () => {};\n}\n"),
+            expect(&[("class", 1, 3, "C#"), ("function", 2, 2, "C#handle().")])
+        );
+    }
+
+    #[test]
+    fn javascript_prototype_methods_are_methods() {
+        // `X.prototype.m = function` defines a method of `X`; a function
+        // assigned to `X.other` is not on the prototype.
+        let text = "function Defaults() {}\nDefaults.prototype.set = function (k, v) {\n};\nDefaults.prototype.apply = (o) => o;\nDefaults.other = function () {};\n";
+        let want = expect(&[
+            ("function", 1, 1, "Defaults()."),
+            ("function", 2, 3, "Defaults#set()."),
+            ("function", 4, 4, "Defaults#apply()."),
+            ("window", 5, 5, ""),
+        ]);
+        assert_eq!(outline("lib/defaults.js", text), want);
+        assert_eq!(outline("src/defaults.ts", text), want);
+    }
+
+    #[test]
+    fn c_function_like_macros_and_file_scope_tables() {
+        // A function-like macro and a file-scope declaration with a brace
+        // initialiser (inside a preprocessor conditional too) are
+        // definitions; an object-like macro, a scalar, an `extern` and a
+        // table inside a function, conditional or not, are not.
+        let text = "#define REG 0x1c8\n\
+                    #define OFFSET(p, q) ((p) + (q))\n\
+                    static const struct id ids[] = {\n\
+                    \x20 { 1 },\n\
+                    };\n\
+                    static struct clk src = {\n\
+                    \x20 .rate = 1,\n\
+                    };\n\
+                    static const char *const names[] = { \"a\" };\n\
+                    static int count = 0;\n\
+                    extern int table[];\n\
+                    #ifdef CONFIG_X\n\
+                    static int guarded[] = { 1 };\n\
+                    #endif\n\
+                    void f(void) {\n\
+                    \x20 static int local[] = { 1 };\n\
+                    #ifdef CONFIG_Y\n\
+                    \x20 static int inner[] = { 1 };\n\
+                    #endif\n\
+                    }\n";
+        assert_eq!(
+            outline("drivers/clk.c", text),
+            expect(&[
+                ("window", 1, 1, ""),
+                ("function", 2, 2, "OFFSET()."),
+                ("variable", 3, 5, "ids."),
+                ("variable", 6, 8, "src."),
+                ("variable", 9, 9, "names."),
+                ("window", 10, 12, ""),
+                ("variable", 13, 13, "guarded."),
+                ("window", 14, 14, ""),
+                ("function", 15, 20, "f()."),
+            ])
+        );
+    }
+
+    #[test]
+    fn object_literal_methods_need_a_named_object() {
+        // A method is a definition in an object that a variable, an
+        // assignment or `export default` names; in an argument, an array or
+        // a nested object it stays in the chunk around it.
+        let lines = [
+            "export const api = {",
+            "  get(id) {},",
+            "};",
+            "module.exports = { run() {} };",
+            "export default { mount() {} };",
+            "const c = { m() {} } as const;",
+            "register({",
+            "  perform() {},",
+            "});",
+            "Object.defineProperty(M, \"x\", { get() {} });",
+            "const list = [{ onClick() {} }];",
+            "const nested = { inner: { deep() {} } };",
+        ];
+        let want = expect(&[
+            ("variable", 1, 3, "api."),
+            ("function", 2, 2, "api.get()."),
+            ("function", 4, 4, "run()."),
+            ("function", 5, 5, "mount()."),
+            ("variable", 6, 6, "c."),
+            ("function", 6, 6, "c.m()."),
+            ("window", 7, 10, ""),
+            ("variable", 11, 11, "list."),
+            ("variable", 12, 12, "nested."),
+        ]);
+        let ts = lines.join("\n") + "\n";
+        assert_eq!(outline("src/api.ts", &ts), want);
+        let js = ts.replace(" as const", "");
+        assert_eq!(outline("lib/api.js", &js), want);
     }
 
     #[test]

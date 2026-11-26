@@ -1,0 +1,18 @@
+main ripgrep 0 ['chunks: 4839 written']
+main excalidraw 0 ['chunks: 7680 written']
+main django 0 ['chunks: 59729 written']
+main keycloak 0 ['chunks: 116785 written']
+branch ripgrep 0 ['chunks: 4839 written']
+branch excalidraw 0 ['chunks: 7881 written']
+branch django 0 ['chunks: 59874 written']
+branch keycloak 0 ['chunks: 116796 written']
+DIFF ('excalidraw-ambiguous-clear', 'search') None None
+DIFF ('excalidraw-behaviour-2', 'search') 1 1
+DIFF ('excalidraw-behaviour-6', 'search') 1 1
+DIFF ('excalidraw-exact-2', 'search') 1 1
+DIFF ('excalidraw-exact-5', 'search') 1 1
+DIFF ('excalidraw-path-2', 'search') 1 1
+DIFF ('excalidraw-path-4', 'search') 1 1
+DIFF ('excalidraw-qualified-emitter-clear', 'search') 1 1
+DIFF ('excalidraw-qualified-queue-push', 'search') 1 1
+{"calls": 123, "identical": 114, "differing": 9, "losses": 0}
