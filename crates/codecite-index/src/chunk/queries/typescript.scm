@@ -10,6 +10,10 @@
 (variable_declarator
   name: (identifier) @name
   value: [(arrow_function) (function_expression)]) @function
+; A class property holding a function is a method.
+(public_field_definition
+  name: (_) @name
+  value: [(arrow_function) (function_expression)]) @function
 (class_declaration name: (_) @name) @type
 (class name: (_) @name) @type
 (abstract_class_declaration name: (_) @name) @type

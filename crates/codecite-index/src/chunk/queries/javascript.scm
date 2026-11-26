@@ -7,6 +7,10 @@
 (variable_declarator
   name: (identifier) @name
   value: [(arrow_function) (function_expression)]) @function
+; A class property holding a function is a method.
+(field_definition
+  property: (_) @name
+  value: [(arrow_function) (function_expression)]) @function
 (class_declaration name: (_) @name) @type
 (class name: (_) @name) @type
 ; Top-level `const`, `let` and `var`, exported or not.

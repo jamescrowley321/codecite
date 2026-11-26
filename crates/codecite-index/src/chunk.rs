@@ -1032,6 +1032,24 @@ mod tests {
     }
 
     #[test]
+    fn typescript_class_arrow_properties_are_methods() {
+        // A class property holding a function is a method, like a method
+        // definition; a property holding a value is not a definition.
+        let text = "class API {\n  static updateScene = (a: number) => {\n  };\n  private helper = function () {};\n  count = 0;\n}\n";
+        let want = expect(&[
+            ("class", 1, 6, "API#"),
+            ("function", 2, 3, "API#updateScene()."),
+            ("function", 4, 4, "API#helper()."),
+        ]);
+        assert_eq!(outline("src/api.ts", text), want);
+        assert_eq!(outline("src/api.tsx", text), want);
+        assert_eq!(
+            outline("lib/c.js", "class C {\n  handle = () => {};\n}\n"),
+            expect(&[("class", 1, 3, "C#"), ("function", 2, 2, "C#handle().")])
+        );
+    }
+
+    #[test]
     fn markdown_inline_code_is_not_a_fence() {
         let text = "```inline```\n# Real\ntext\n";
         assert_eq!(
