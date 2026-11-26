@@ -162,9 +162,10 @@ pub struct GraphNode {
     /// When its definition's source was last indexed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub indexed_at: Option<String>,
-    /// The source its definition is in, when that isn't the call site's:
-    /// SCIP IDs are global, so another source indexing the same package
-    /// can hold the definition a call resolves to.
+    /// The source its definition is in, when that isn't the asked symbol's
+    /// (its definition's, else its first call site's): SCIP IDs are global,
+    /// so another source indexing the same package can hold the definitions
+    /// a walk reaches.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub defined_in: Option<String>,
 }
@@ -197,7 +198,7 @@ impl Store {
         min_confidence: u8,
         allow_stale: bool,
     ) -> Result<References> {
-        let id = self.graph_symbol(symbol, allow_stale)?;
+        let id = self.graph_symbol(symbol, Walk::References, allow_stale)?;
         let mut stmt = self.conn.prepare_cached(
             "SELECT o.start_line, o.roles, o.enclosing, o.provider, o.confidence, d.id, d.path,
                     d.dirty, s.name, s.kind, s.revision, s.license_class, s.indexed_at
@@ -305,7 +306,11 @@ impl Store {
     /// [`Store::references`] resolves it, with the same errors. At most
     /// [`MAX_SEARCH_LIMIT`] are returned, nearest first.
     pub fn graph(&self, query: &GraphQuery<'_>) -> Result<Graph> {
-        let id = self.graph_symbol(query.symbol, query.allow_stale)?;
+        let walk = match query.direction {
+            Direction::Callers => Walk::Callers,
+            Direction::Callees => Walk::Callees,
+        };
+        let id = self.graph_symbol(query.symbol, walk, query.allow_stale)?;
         let depth = query.depth.clamp(1, MAX_GRAPH_DEPTH);
         // `near` is the column the walk comes from, `far` the one it goes to.
         let (near, far) = match query.direction {
@@ -370,6 +375,7 @@ impl Store {
         // Nearest first; at one distance, the corpus's definitions in file
         // and line order, then symbols defined outside it, by ID.
         ranked.sort_by(|a, b| (a.0, a.1.is_none(), a.1, a.2).cmp(&(b.0, b.1.is_none(), b.1, b.2)));
+        let home = self.home_source(&id)?;
         let mut nodes = Vec::new();
         for (distance, _, node) in ranked.into_iter().take(limit) {
             nodes.push(self.graph_node(
@@ -378,6 +384,7 @@ impl Store {
                 &distances,
                 (near, far),
                 query.min_confidence,
+                home.as_deref(),
             )?);
         }
         Ok(Graph {
@@ -390,8 +397,35 @@ impl Store {
         })
     }
 
+    /// The source the asked symbol `id` belongs to: its definition's, or,
+    /// for a symbol defined outside the corpus, the source of its first
+    /// call site (by source, path and line). `None` when no current source
+    /// has either.
+    fn home_source(&self, id: &str) -> Result<Option<String>> {
+        Ok(self
+            .conn
+            .prepare_cached(
+                "SELECT s.name FROM symbol sym
+                   JOIN document d ON d.id = sym.document_id
+                   JOIN source s ON s.id = d.source_id
+                   WHERE sym.id = ?1 AND s.is_current
+                 UNION ALL
+                 SELECT name FROM (
+                   SELECT s.name FROM edge e
+                   JOIN document d ON d.id = e.evidence_doc
+                   JOIN source s ON s.id = d.source_id
+                   WHERE e.dst = ?1 AND e.kind = 'calls' AND s.is_current
+                   ORDER BY s.name, d.path, e.evidence_line
+                 )
+                 LIMIT 1",
+            )?
+            .query_row([id], |row| row.get(0))
+            .optional()?)
+    }
+
     /// One reached symbol, with its definition when the corpus has one and
-    /// the call that links it to a symbol one edge nearer.
+    /// the call that links it to a symbol one edge nearer. `home` is the
+    /// asked symbol's source (see [`Store::home_source`]).
     fn graph_node(
         &self,
         node: &str,
@@ -399,6 +433,7 @@ impl Store {
         distances: &HashMap<String, u32>,
         (near, far): (&str, &str),
         min_confidence: u8,
+        home: Option<&str>,
     ) -> Result<GraphNode> {
         // The edges between `node` and the symbols one step nearer, the
         // nearest by ID first, its providers' rows together.
@@ -426,9 +461,9 @@ impl Store {
         let link: Vec<_> = edges.iter().filter(|e| e.0 == via).collect();
         let providers: BTreeSet<String> = link.iter().map(|e| e.1.clone()).collect();
         let confidence = link.iter().map(|e| e.2).max().unwrap_or_default();
-        let (call_site, call_source) = match link.first() {
-            Some((_, _, _, Some(doc), Some(line))) => self.line_citation(*doc, *line)?.unzip(),
-            _ => (None, None),
+        let call_site = match link.first() {
+            Some((_, _, _, Some(doc), Some(line))) => self.line_citation(*doc, *line)?,
+            _ => None,
         };
         let defined = self
             .conn
@@ -465,9 +500,9 @@ impl Store {
             ),
             None => (descriptor_name(node), None, None, None, None, None),
         };
-        // SCIP IDs are global, so a call in one source can resolve to a
+        // SCIP IDs are global, so a walk from one source can reach a
         // definition in another; say so rather than cite it silently.
-        let defined_in = source.filter(|s| call_source.as_ref().is_some_and(|c| c != s));
+        let defined_in = source.filter(|s| home.is_some_and(|h| h != s));
         Ok(GraphNode {
             id: node.into(),
             name,
@@ -484,9 +519,9 @@ impl Store {
         })
     }
 
-    /// One line of a stored document, cited, with its source's name, or
-    /// `None` when the document isn't a current code file.
-    fn line_citation(&self, document_id: i64, line: u32) -> Result<Option<(String, String)>> {
+    /// One line of a stored document, cited, or `None` when the document
+    /// isn't a current code file.
+    fn line_citation(&self, document_id: i64, line: u32) -> Result<Option<String>> {
         Ok(self
             .conn
             .prepare_cached(
@@ -497,15 +532,16 @@ impl Store {
                 let path: String = row.get(0)?;
                 let source: String = row.get(1)?;
                 let revision: String = row.get(2)?;
-                Ok((code_citation(&source, &revision, &path, line, line), source))
+                Ok(code_citation(&source, &revision, &path, line, line))
             })
             .optional()?)
     }
 
     /// The one SCIP symbol `symbol` names: a stored ID as written, then a
     /// name or dotted name as [`Store::definition`] resolves it, over every
-    /// symbol in a current source.
-    fn graph_symbol(&self, symbol: &str, allow_stale: bool) -> Result<String> {
+    /// symbol in a current source. A tree-sitter symbol counts only where
+    /// `walk` can start from it (see [`Store::walkable`]).
+    fn graph_symbol(&self, symbol: &str, walk: Walk, allow_stale: bool) -> Result<String> {
         let name = symbol.trim();
         if name.is_empty() {
             return Err(Error::EmptyQuery);
@@ -522,7 +558,7 @@ impl Store {
             .query_row([name], |row| row.get(0))
             .optional()?;
         match exact.as_deref() {
-            Some("treesitter") if !self.in_graph(name)? => {
+            Some("treesitter") if !self.walkable(name, walk)? => {
                 return Err(Error::NoGraph {
                     symbol: name.into(),
                 });
@@ -566,11 +602,11 @@ impl Store {
                 candidates: self.similar_graph_names(last)?,
             });
         }
-        // Only symbols the graph tools can walk from count: a tree-sitter
-        // symbol no SCIP edge touches would only answer `no_graph`.
+        // Only symbols this walk can start from count: any other
+        // tree-sitter symbol would only answer `no_graph`.
         let mut walkable = Vec::new();
         for (id, provider) in found {
-            if provider != "treesitter" || self.in_graph(&id)? {
+            if provider != "treesitter" || self.walkable(&id, walk)? {
                 walkable.push(id);
             }
         }
@@ -591,39 +627,62 @@ impl Store {
         }
     }
 
-    /// Whether a SCIP edge starts or ends at the symbol: a tree-sitter
-    /// definition no SCIP definition replaced can still hold references a
-    /// SCIP index found, and the graph tools give its ID as a result.
-    fn in_graph(&self, id: &str) -> Result<bool> {
-        Ok(self
-            .conn
-            .prepare_cached(
-                "SELECT EXISTS (SELECT 1 FROM edge WHERE src = ?1)
-                     OR EXISTS (SELECT 1 FROM edge WHERE dst = ?1)",
-            )?
-            .query_row([id], |row| row.get(0))?)
+    /// Whether `walk` can start from the tree-sitter symbol `id`. A
+    /// tree-sitter definition no SCIP definition replaced can still hold
+    /// references a SCIP index found, so a SCIP edge can start at it and
+    /// `callers` gives its ID as a result. Nothing ends at one: occurrences
+    /// and edge targets only ever name SCIP IDs. So only `callees` walks from
+    /// it, and only when an edge starts there.
+    fn walkable(&self, id: &str, walk: Walk) -> Result<bool> {
+        match walk {
+            Walk::References | Walk::Callers => Ok(false),
+            Walk::Callees => Ok(self
+                .conn
+                .prepare_cached("SELECT EXISTS (SELECT 1 FROM edge WHERE src = ?1)")?
+                .query_row([id], |row| row.get(0))?),
+        }
     }
 
     /// The IDs and providers of the symbols in current sources whose name
-    /// as written is `name`.
+    /// as written is `name`. Parameters (an ID ending `(x)`) and type
+    /// parameters (`[T]`) are left out: scip-python names every parameter,
+    /// and a function's name would be ambiguous with each parameter that
+    /// shares it. An ID still finds one, as written.
     fn symbols_named(&self, name: &str) -> Result<Vec<(String, String)>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT sym.id, sym.provider FROM symbol sym
              JOIN document d ON d.id = sym.document_id
              JOIN source s ON s.id = d.source_id
-             WHERE sym.display_name = ?1 AND s.is_current",
+             WHERE sym.display_name = ?1 AND s.is_current
+               AND substr(sym.id, -1) NOT IN (')', ']')",
         )?;
         let rows = stmt.query_map([name], |row| Ok((row.get(0)?, row.get(1)?)))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 }
 
+/// What a graph tool walks from the symbol it resolves.
+#[derive(Clone, Copy)]
+enum Walk {
+    /// The occurrences that name it.
+    References,
+    /// The edges that end at it.
+    Callers,
+    /// The edges that start at it.
+    Callees,
+}
+
 /// The last name a symbol ID's descriptors give, for a symbol the corpus
 /// doesn't define: `is_empty` for
 /// ``rust-analyzer cargo core 1.0 str/impl#[str]is_empty().``. The ID
-/// itself when it has none.
+/// itself when it has none. Either is cut to [`MAX_SCIP_NAME_BYTES`] on a
+/// character boundary, as display names are, since it reaches agents.
+///
+/// [`MAX_SCIP_NAME_BYTES`]: super::scip::MAX_SCIP_NAME_BYTES
 fn descriptor_name(id: &str) -> String {
-    super::definition::symbol_name(id).unwrap_or_else(|| id.to_owned())
+    let mut name = super::definition::symbol_name(id).unwrap_or_else(|| id.to_owned());
+    name.truncate(name.floor_char_boundary(super::scip::MAX_SCIP_NAME_BYTES));
+    name
 }
 
 #[cfg(test)]
@@ -631,6 +690,19 @@ mod tests {
     use super::super::scip::fixture::{HEAD, IS_EMPTY, STRING_NEW, app, index, scip};
     use super::*;
     use crate::{ScipDocument, ScipOccurrence};
+
+    #[test]
+    fn a_long_descriptor_name_is_cut_at_a_char_boundary() {
+        let id = format!("rust-analyzer cargo dep 1.0 `{}`().", "é".repeat(300));
+        let name = descriptor_name(&id);
+        assert!(name.len() <= crate::MAX_SCIP_NAME_BYTES, "{}", name.len());
+        assert!(
+            name.starts_with('é') && name.chars().all(|c| c == 'é'),
+            "{name}"
+        );
+        let bare = "x".repeat(600);
+        assert_eq!(descriptor_name(&bare).len(), crate::MAX_SCIP_NAME_BYTES);
+    }
 
     fn walk(store: &Store, symbol: &str, direction: Direction, depth: u32) -> Graph {
         store
@@ -642,6 +714,18 @@ mod tests {
                 allow_stale: false,
             })
             .unwrap()
+    }
+
+    fn refused(store: &Store, symbol: &str, direction: Direction) -> Error {
+        store
+            .graph(&GraphQuery {
+                symbol,
+                direction,
+                depth: 1,
+                min_confidence: 0,
+                allow_stale: false,
+            })
+            .unwrap_err()
     }
 
     /// `(name, distance, via's name)` of each result.
@@ -808,6 +892,7 @@ mod tests {
             symbol: scip("client/impl#[Client]validate()."),
             start_line: 21,
             end_line: 21,
+            end_column: None,
             roles: 0,
         });
         store.write_scip(id, &docs).unwrap();
@@ -845,6 +930,7 @@ mod tests {
             symbol: scip("client/check()."),
             start_line: 18,
             end_line: 18,
+            end_column: None,
             roles: 0,
         });
         store.write_scip(id, &docs).unwrap();
@@ -858,15 +944,22 @@ mod tests {
         let callees = walk(&store, helper, Direction::Callees, 1);
         assert_eq!(callees.results[0].id, scip("client/check()."));
         assert_eq!(walk(&store, "helper", Direction::Callees, 1).total, 1);
-        assert_eq!(walk(&store, helper, Direction::Callers, 1).total, 0);
+        // Occurrences and edge targets only ever name SCIP IDs, so nothing
+        // refers to or calls a tree-sitter symbol: those walks have no graph.
+        for symbol in [helper, "helper"] {
+            let err = refused(&store, symbol, Direction::Callers);
+            assert!(matches!(err, Error::NoGraph { .. }), "{err:?}");
+            let err = store.references(symbol, 0, false).unwrap_err();
+            assert!(matches!(err, Error::NoGraph { .. }), "{err:?}");
+        }
     }
 
     #[test]
-    fn a_definition_in_another_source_than_the_call_is_marked() {
+    fn a_definition_in_another_source_than_the_asked_symbol_is_marked() {
         use crate::{DocumentRecord, ScipDefinition, SourceRecord};
         let (_dir, mut store, id) = app();
         store.write_scip(id, &index()).unwrap();
-        // `other` has a function that calls app's `check`.
+        // `other` has a function that calls app's `check` and `login`.
         let other = store
             .upsert_source(&SourceRecord {
                 name: "other",
@@ -880,7 +973,7 @@ mod tests {
                 updated_by: None,
             })
             .unwrap();
-        let text = "fn run() {\n    check(\"x\");\n}\n";
+        let text = "fn run() {\n    check(\"x\");\n    login(\"x\");\n}\n";
         store
             .write_document(
                 other,
@@ -896,10 +989,18 @@ mod tests {
             )
             .unwrap();
         let run = "rust-analyzer cargo other 0.1.0 run().";
+        let call = |symbol: String, line| ScipOccurrence {
+            symbol,
+            start_line: line,
+            end_line: line,
+            end_column: None,
+            roles: 0,
+        };
         store
             .write_scip(
                 other,
                 &[ScipDocument {
+                    encoding: Default::default(),
                     path: "src/run.rs".into(),
                     definitions: vec![ScipDefinition {
                         symbol: run.into(),
@@ -907,24 +1008,44 @@ mod tests {
                         kind: "function".into(),
                         line: 1,
                         start_line: 1,
-                        end_line: 3,
+                        end_line: 4,
                     }],
-                    occurrences: vec![ScipOccurrence {
-                        symbol: scip("client/check()."),
-                        start_line: 2,
-                        end_line: 2,
-                        roles: 0,
-                    }],
+                    occurrences: vec![call(scip("client/check()."), 2), call(scip("login()."), 3)],
                 }],
             )
             .unwrap();
-        let callees = walk(&store, run, Direction::Callees, 1);
-        assert_eq!(callees.results[0].id, scip("client/check()."));
-        assert_eq!(callees.results[0].defined_in.as_deref(), Some("app"));
-        // A caller in the call's own source isn't marked.
-        let callers = walk(&store, &scip("client/check()."), Direction::Callers, 1);
-        assert!(
-            callers.results.iter().all(|n| n.defined_in.is_none()),
+        let marks = |graph: &Graph| -> Vec<(String, Option<String>)> {
+            graph
+                .results
+                .iter()
+                .map(|n| (n.name.clone(), n.defined_in.clone()))
+                .collect()
+        };
+        let app = || Some("app".to_owned());
+        // Every node app defines is marked, two hops out as well as one:
+        // `new` and `validate` are called from app's `login`, but `run`,
+        // the asked symbol, is in `other`.
+        let callees = walk(&store, run, Direction::Callees, 2);
+        assert_eq!(
+            marks(&callees),
+            [
+                ("check".to_owned(), app()),
+                ("login".to_owned(), app()),
+                ("new".to_owned(), app()),
+                ("validate".to_owned(), app()),
+                ("is_empty".to_owned(), None),
+            ],
+            "{callees:?}"
+        );
+        // A caller in the asked symbol's own source isn't marked; one in
+        // another source is.
+        let callers = walk(&store, &scip("login()."), Direction::Callers, 1);
+        assert_eq!(
+            marks(&callers),
+            [
+                ("relogin".to_owned(), None),
+                ("run".to_owned(), Some("other".to_owned())),
+            ],
             "{callers:?}"
         );
     }
@@ -945,16 +1066,26 @@ mod tests {
             scip("client/check().")
         );
         // Once lib.rs's `check` holds a reference SCIP found, both can be
-        // walked from, and the name is ambiguous.
+        // walked from for callees, and the name is ambiguous there; only
+        // client.rs's can be referred to or called.
         let mut docs = index();
         docs[0].occurrences.push(ScipOccurrence {
             symbol: scip("login()."),
             start_line: 20,
             end_line: 20,
+            end_column: None,
             roles: 0,
         });
         store.write_scip(id, &docs).unwrap();
-        let err = store.references("check", 0, false).unwrap_err();
+        assert_eq!(
+            store.references("check", 0, false).unwrap().id,
+            scip("client/check().")
+        );
+        assert_eq!(
+            walk(&store, "check", Direction::Callers, 1).id,
+            scip("client/check().")
+        );
+        let err = refused(&store, "check", Direction::Callees);
         let Error::AmbiguousSymbol { candidates, .. } = &err else {
             panic!("{err:?}")
         };
