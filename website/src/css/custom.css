@@ -1,4 +1,25 @@
 /*
- * Site-wide CSS. The classic theme's defaults (Infima) apply; add overrides
- * here.
+ * Site-wide CSS. The classic theme's defaults (Infima) apply, with one
+ * override: the primary color, Index Indigo, and the six shades Infima derives
+ * from it (Docusaurus' recipe: darken 10/15/30%, lighten 10/15/30%).
  */
+
+:root {
+  --ifm-color-primary-darkest: #282d9e;
+  --ifm-color-primary-darker: #3136c0;
+  --ifm-color-primary-dark: #3439cb;
+  --ifm-color-primary: #4a4fd1;
+  --ifm-color-primary-light: #5c61d6;
+  --ifm-color-primary-lighter: #6569d8;
+  --ifm-color-primary-lightest: #8084df;
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary-darkest: #2631ff;
+  --ifm-color-primary-darker: #646dff;
+  --ifm-color-primary-dark: #7980ff;
+  --ifm-color-primary: #a3a8ff;
+  --ifm-color-primary-light: #acb1ff;
+  --ifm-color-primary-lighter: #b1b5ff;
+  --ifm-color-primary-lightest: #bfc2ff;
+}
