@@ -7,21 +7,21 @@ codecite works the way it does.
 New here? The [README's quick start](../README.md) indexes a repository in
 three commands. This guide goes from there, in the order you'll meet things:
 
-1. 🧭 **Concepts**: the four words the rest of the guide leans on.
-2. 🏗️ **Build a corpus**: manifests, guidance, `add`, `index` and `corpora`.
-3. 🔎 **Find and read**: `search`, `grep`, `read`, `def`, `refs`, `graph`
+1. **Concepts**: the four words the rest of the guide leans on.
+2. **Build a corpus**: manifests, guidance, `add`, `index` and `corpora`.
+3. **Find and read**: `search`, `grep`, `read`, `def`, `refs`, `graph`
    and `context`.
-4. ✅ **Check citations**: `cite`, and `cite check` in CI.
-5. 📜 **Work with specs**: `requirements` and `diff`.
-6. 🤖 **Hand it to an agent**: the MCP server, the agent snippet, hooks and
+4. **Check citations**: `cite`, and `cite check` in CI.
+5. **Work with specs**: `requirements` and `diff`.
+6. **Hand it to an agent**: the MCP server, the agent snippet, hooks and
    the Claude Code plugin.
-7. 📦 **Releases**: checking a release binary's provenance.
-8. 📚 **Example corpora**: the identity and fhir manifests in `corpora/`.
+7. **Releases**: checking a release binary's provenance.
+8. **Example corpora**: the identity and fhir manifests in `corpora/`.
 
 Every command also explains itself: `codecite <command> --help` lists its
 flags, with examples.
 
-## 🧭 Concepts
+## Concepts
 
 - **Corpus:** a named set of sources indexed together into one SQLite file,
   `~/.local/share/codecite/<corpus>.db` on Linux (`$XDG_DATA_HOME` moves it).
@@ -43,7 +43,7 @@ flowchart LR
   DB -->|codecite mcp| A["agent over MCP"]
 ```
 
-## 🏗️ Build a corpus
+## Build a corpus
 
 Describe the sources, pin them, index them, and see what is indexed.
 
@@ -304,6 +304,30 @@ and a run that fails or is interrupted leaves the corpus as it was. Only one
 run at a time may write a corpus; a second one fails within seconds, naming the
 lock file `<corpus>.db.lock` beside the corpus.
 
+Every pin is checked before the run writes anything; then one transaction
+walks, chunks and writes each source:
+
+```mermaid
+flowchart TD
+  m["corpora/#lt;corpus#gt;.toml"] --> pins
+  subgraph pins["read only: every pin checked first"]
+    d["documents: from the cache or fetched,<br/>sha256 must match"]
+    g["git sources: pinned commit<br/>fetched into a partial clone"]
+    s["SCIP index: scip_sha256, when set"]
+  end
+  pins --> tx
+  subgraph tx["one transaction, published at the end"]
+    w["walk git and local trees: skip ignored,<br/>deny-listed, symlink, binary, over 1 MiB"]
+    ch["chunk: tree-sitter definitions,<br/>headings, 60-line windows"]
+    sp["fetched documents: spec sections and steps,<br/>or heading sections, guidance rules"]
+    wr["write document, document_text,<br/>chunk, chunk_fts, symbol<br/>(unchanged files skipped)"]
+    sc["SCIP: symbol, occurrence, edge"]
+    w --> ch --> wr --> sc
+    sp --> wr
+  end
+  tx --> db[("~/.local/share/codecite/#lt;corpus#gt;.db")]
+```
+
 The run ends with a summary:
 
 ```text
@@ -347,7 +371,7 @@ manifest can't be read where it was. A corpus written by an older codecite
 whose schema this build can still read carries a `warning` saying so, and
 queries print the same warning on stderr; `codecite index` upgrades it.
 
-## 🔎 Find and read
+## Find and read
 
 Ask the corpus questions and turn any citation back into exact text.
 
@@ -369,6 +393,21 @@ constructors, count with their enclosing class). Spec results come from each doc
 version; one whose document also has an older version pinned carries
 `· older version pinned` on its line, and its JSON lists them in `older_versions` (see
 [Diff a spec's versions](#diff-a-specs-versions)).
+
+How a query becomes ranked results:
+
+```mermaid
+flowchart TD
+  q["query text"] --> terms["terms, split as the index splits them<br/>validateToken → validate, token, validatetoken"]
+  terms --> fts["FTS5 match on any term, current sources,<br/>--language, --path and --only filters"]
+  fts --> bm25["bm25 with column weights<br/>symbol 10 · path 5 · text 1"]
+  bm25 --> role["× the document's role weight<br/>source and spec 1 · docs 0.8<br/>examples 0.6 · tests 0.4"]
+  q --> names["names: each word, and<br/>all the words run together"]
+  names --> few{"shared by 1 to 3<br/>definitions?"}
+  few -- yes --> boost["× 3 for chunks of that symbol"]
+  role --> boost
+  boost --> top["best --limit first, ties ordered by citation<br/>→ one cited line per result"]
+```
 
 Code, prose and specs are ranked together, in one score order, so a spec
 section comes above a code chunk only when it scores higher. `--only spec` or
@@ -501,6 +540,23 @@ candidates, never a guess:
 ```text
 $ codecite read identity "§4.3"
 Error: §4.3 names no document and is not in exactly one current document; name one: rfc6749@sha256:535362fa3b4c#section-4.3, rfc9449@sha256:2d8657f07291#section-4.3, …
+```
+
+The order `read` tries the forms in, and where each ends:
+
+```mermaid
+flowchart TD
+  c["citation text"] --> canon{"canonical form?"}
+  canon -- "repo@sha:path#L…" --> code["the file at that commit<br/>(abbreviated commit allowed)"]
+  canon -- "doc@sha256:…#L… or #section-…" --> ver["that pinned document version"]
+  canon -- no --> anchor{"heading anchor?<br/>…:README.md#install"}
+  anchor -- yes --> heading["the heading's lines"]
+  anchor -- no --> written{"written spec form?<br/>RFC 9449 §4.3, manifest aliases"}
+  written -- yes --> cur["the document's current version, or<br/>the one current document with that §"]
+  written -- no --> nac["error: not a citation"]
+  code & ver & heading & cur --> one{"exactly one span?"}
+  one -- yes --> text["the text, under its<br/>canonical pinned citation"]
+  one -- no --> cands["error with candidates: nearest<br/>sections, anchors or documents"]
 ```
 
 ### Find a definition
@@ -779,7 +835,7 @@ export default function (pi: ExtensionAPI) {
 Load it with `pi -e ~/.pi/agent/extensions/codecite-context.ts`, or leave it
 in the extensions directory, where pi loads it on start.
 
-## ✅ Check citations
+## Check citations
 
 Make sure a citation, or every citation in a set of files, still points at exactly one span.
 
@@ -906,7 +962,7 @@ check unless `--allow-stale`; in CI, index the corpus in the same job first.
 A corpus named `check` is checked one citation at a time with
 `codecite cite -- check <citation>`.
 
-## 📜 Work with specs
+## Work with specs
 
 Pull the normative rules out of a spec section, and see how a spec changed between versions.
 
@@ -1042,7 +1098,7 @@ or a version or section it doesn't have, is an error with candidates.
 "instruction"}`, the
 `diff` tool's JSON.
 
-## 🤖 Hand it to an agent
+## Hand it to an agent
 
 Give an agent codecite as MCP tools, as a note in its instructions, as a Claude Code plugin, or next to its own grep.
 
@@ -1309,6 +1365,25 @@ It adds four things:
   Both label their output as data, not instructions, and neither ever
   blocks or rewrites a call.
 
+```mermaid
+sequenceDiagram
+  participant CC as Claude Code
+  participant H as codecite hook claude
+  participant DB as corpus.db
+  CC->>H: SessionStart: session-start
+  Note right of H: picks the corpus (order below)
+  H-->>CC: additionalContext: the agent snippet naming the corpus
+  Note over CC: the agent runs Grep, Glob or Bash
+  CC->>H: PostToolUse: post-tool-use, with the call and its output
+  H->>DB: assist: search for what the call looked for
+  H-->>CC: cited lines its output lacks, within 2 KB
+  Note over CC: the agent is about to Edit, Write or MultiEdit
+  CC->>H: PreToolUse: pre-tool-use, with file_path
+  H->>DB: context for the file, first time this session only
+  H-->>CC: the file's guidance rules, cut at 8 KiB
+  Note over CC,H: no corpus, no search or nothing found: no output, never a failure
+```
+
 Each hook picks the corpus in this order, on every call:
 
 1. `CODECITE_CORPUS`, when set and not empty. It is used alone: if that
@@ -1329,7 +1404,7 @@ their errors on stderr.
 Without the plugin, the recipes in "Push the rules on every edit" and "Add
 codecite to the agent's own searches" do what its tool hooks do, by hand.
 
-## 📦 Releases
+## Releases
 
 ### Verify a release binary
 
@@ -1353,7 +1428,7 @@ A release also publishes the crates, so `cargo install codecite --locked`
 builds the same version from crates.io. No version is published yet; until
 one is, install from git as the README says.
 
-## 📚 Example corpora
+## Example corpora
 
 Two manifests in `corpora/` index public code and specs, and make good test beds.
 

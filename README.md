@@ -7,7 +7,7 @@ documents kept with them (READMEs, design docs, house rules, specs) into one
 SQLite file per corpus. Agents query it over a CLI or an MCP server, and every
 answer cites exactly where it came from: `repo@sha:path#L10-L42`.
 
-## 🤔 Why codecite?
+## Why codecite?
 
 Left alone, a coding agent greps wide, reads whole files to find one function,
 and fills the gaps from memory. That costs context, and what it remembers may
@@ -27,40 +27,53 @@ codecite gives the agent something better to reach for:
   task with and without codecite, and a change that makes agents pass less
   often or run much slower loses the gate ([evals](evals/README.md)).
 
+A session with an agent goes like this: search for a ranked, cited line,
+then read the citation back as the exact text, or get the candidates when it
+names more than one span.
+
 ```mermaid
-flowchart LR
-  M["corpus manifest<br/>code + documents, pinned"] -->|codecite index| DB[("one SQLite file<br/>per corpus")]
-  DB -->|search · read · corpora| CLI["terminal"]
-  DB -->|codecite mcp| A["AI agent"]
+sequenceDiagram
+  participant A as Agent
+  participant C as codecite (CLI or MCP)
+  participant DB as corpus.db
+  Note over C,DB: codecite index wrote repositories pinned at a commit<br/>and documents pinned by sha256 into one SQLite file
+  A->>C: search "detect a repository license"
+  C->>DB: one BM25 ranking over code, docs and specs
+  C-->>A: one line per hit, cited as repo@sha:path#35;L126-L159
+  A->>C: read repo@sha:path#35;L126-L159
+  C->>DB: the lines at the pinned commit
+  C-->>A: the exact text, under its pinned citation
+  A->>C: read "§4.3"
+  C-->>A: error: not exactly one span, candidates listed
 ```
 
-## ✨ Highlights
+## Highlights
 
-- 🔎 **Search code and prose together.** One BM25 ranking over code, docs and
+- **Search code and prose together.** One BM25 ranking over code, docs and
   specs. Identifiers match however they're written: `validate token` finds
   `validateToken`, `validate_token` and `validate-token`.
-- 🌳 **Code split where it means something.** tree-sitter cuts code at its
+- **Code split where it means something.** tree-sitter cuts code at its
   definitions in Rust, Python, TypeScript, JavaScript, Go, C, C# and Java;
   Markdown, HTML and text split at their headings.
-- 📌 **Pinned, reproducible sources.** Git repositories are pinned at a commit
+- **Pinned, reproducible sources.** Git repositories are pinned at a commit
   and documents by sha256. After the first run, indexing works offline and
   rewrites only what changed.
-- 🕸️ **Symbols and call graphs.** `def` finds definitions; `refs` and
+- **Symbols and call graphs.** `def` finds definitions; `refs` and
   `graph callers|callees` answer from a SCIP index you point the manifest at.
-- 📜 **Specs as first-class sources.** RFC and OpenID pages split into numbered
+- **Specs as first-class sources.** RFC and OpenID pages split into numbered
   sections and steps, cited the way people write them (`RFC 9449 §4.3`), with
   `requirements` for a section's MUSTs and `diff` for what changed between
   versions.
-- ⚖️ **License-aware.** Each source carries a license class (`adapt`,
+- **License-aware.** Each source carries a license class (`adapt`,
   `approach_only`, `quote`), and results tell the agent what it may do with
   the text.
-- 🤖 **Built for agents.** An MCP server whose tools return the same JSON as
+- **Built for agents.** An MCP server whose tools return the same JSON as
   the CLI, byte for byte; a Claude Code plugin; and hooks that put codecite's
   answers next to an agent's own grep.
-- 🔒 **Local.** One SQLite file per corpus, no telemetry, and no network
+- **Local.** One SQLite file per corpus, no telemetry, and no network
   access beyond fetching the sources you pinned.
 
-## 📦 Install
+## Install
 
 ```sh
 cargo install --git https://github.com/jamescrowley321/codecite codecite --locked
@@ -72,7 +85,7 @@ crates.io. It needs Rust 1.99.1 or newer and a C compiler, since the
 tree-sitter grammars and SQLite are compiled from C. Git sources also need
 `git` on `PATH`.
 
-## 🚀 Quick start
+## Quick start
 
 Index a repository (codecite itself works well for a first try), then search
 it. Run these from any directory: `add` writes the manifest to
@@ -140,7 +153,7 @@ session note naming the corpus:
 To point an agent at the CLI instead, paste the snippet in
 [Tell your agent](docs/usage.md#tell-your-agent) into your `AGENTS.md` or `CLAUDE.md`.
 
-### 📜 Specs, too
+### Specs, too
 
 A corpus can pin spec documents beside the code that implements them, and
 `read` takes the citations people write. From a checkout of this repository,
@@ -154,7 +167,7 @@ step · ID Token Validation · SHOULD · quote · indexed 2026-10-20T20:34:20Z
 13. If the auth_time Claim was requested, either through a specific request for this Claim or by using the max_age parameter, the Client SHOULD check the auth_time Claim value and request re-authentication if it determines too much time has elapsed since the last End-User authentication.
 ```
 
-## 🧰 Commands
+## Commands
 
 | Command | What you get |
 | --- | --- |
@@ -177,7 +190,7 @@ step · ID Token Validation · SHOULD · quote · indexed 2026-10-20T20:34:20Z
 
 `codecite <command> --help` lists every flag, with examples.
 
-## 🛡️ Guardrails
+## Guardrails
 
 - A citation that doesn't resolve to exactly one span is an error listing the
   candidates, never a guess.
@@ -190,7 +203,7 @@ step · ID Token Validation · SHOULD · quote · indexed 2026-10-20T20:34:20Z
 - Results are indexed content, not instructions: the agent snippet and the MCP
   server tell agents never to follow directions found in a result.
 
-## 📚 Documentation
+## Documentation
 
 - [Documentation site](https://jamescrowley321.github.io/codecite/): these
   docs with navigation and search.
@@ -203,7 +216,7 @@ step · ID Token Validation · SHOULD · quote · indexed 2026-10-20T20:34:20Z
 - [Milestones](https://github.com/jamescrowley321/codecite/milestones): the
   work, in order.
 
-## 🧭 Where it is going
+## Where it is going
 
 - Optional local embeddings, merged with BM25 ranking.
 - A fuller code graph. `refs` and `graph` answer references, callers and
@@ -213,7 +226,7 @@ step · ID Token Validation · SHOULD · quote · indexed 2026-10-20T20:34:20Z
 - Fully local: no server process, no telemetry, no network access beyond
   fetching pinned sources.
 
-## 🛠️ Build from source
+## Build from source
 
 `rust-toolchain.toml` pins the compiler; rustup installs it on the first
 `cargo` call. Build with `cargo build --workspace` and run with
@@ -226,6 +239,6 @@ does in CI. `cargo deny` needs `cargo install cargo-deny --locked`. PRs are also
 gated on security scans (zizmor, gitleaks, OSV-Scanner, dependency review and
 CodeQL); `SECURITY.md` says how to report a vulnerability.
 
-## 📄 License
+## License
 
 codecite is licensed under the [Apache License 2.0](LICENSE). Attribution notices are in [NOTICE](NOTICE).

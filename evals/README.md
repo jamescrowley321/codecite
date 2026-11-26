@@ -15,7 +15,7 @@ it, so it is measured, not assumed. Three benchmarks keep it honest (see
 - **Retrieval benchmark** (`retrieval/`): labelled queries run through
   `codecite-bench`; CI runs it on every PR.
 
-## 📈 History benchmark
+## History benchmark
 
 The question an agent asks most is "where does this change go?". Every merged
 PR answers it: the PR's title, and the issue it closes as it was asked, are
@@ -77,7 +77,7 @@ a symbol, three runs each, the fastest counting. It reports the median and
 `experiments/assist-latency/` runs it on the retrieval corpus against a
 p95 guardrail of 150 ms.
 
-## 🗂️ Layout
+## Layout
 
 | Path | What |
 | --- | --- |
@@ -97,7 +97,7 @@ p95 guardrail of 150 ms.
 | `history/` | The history benchmark: queries mined from merged PRs, one directory per repository, `run.sh`, and `results/` |
 | `tasks/_replay/` | `check.sh`, which proves a replay task sound |
 
-## 🧪 Tasks
+## Tasks
 
 - **`fastapi-middleware`**: protect a FastAPI app with identity-model's
   `TokenValidationMiddleware` and `CurrentUser`. The hidden tests take real
@@ -341,13 +341,30 @@ reported, never gated, and the direct CodeGraph-vs-codecite comparison is
 `not measured` if either tool was used in fewer than half its usable runs.
 The codecite-vs-baseline gate is unchanged.
 
-## 🚦 The gate run and the rerun
+## The gate run and the rerun
 
 The A/B eval runs at one of two tiers. They share the task, the scorer, the
 report and the gating panel; only the number of epochs differs, and the
 OpenRouter panel when it is on. `quick` is the gate run; `full` is the rerun of
 a pair that lost on `quick`, and a loss there blocks (`docs/design.md`,
 Success criteria).
+
+One A/B run, from a task to the gate's verdict:
+
+```mermaid
+flowchart TD
+  t["task: tasks/#lt;id#gt;/<br/>prompt.md and project/"] --> img["sandbox image: the project,<br/>codecite and the prebuilt eval corpus"]
+  img --> base["baseline arm<br/>codecite deleted, --no-mcp"]
+  img --> arm["codecite arm: MCP tools, CLI on PATH,<br/>the agent snippet in the prompt<br/>(or the assist, plugin or tools arm)"]
+  base & arm --> run["the agent works, at most 600 s,<br/>once per epoch"]
+  run --> score["hidden tests and checks run after it exits<br/>pass only when all pass"]
+  score --> card["scorecard: pass rate, tokens, wall time,<br/>95% bootstrap intervals, arm against baseline"]
+  card --> gate{"gate"}
+  gate -- "codecite used in under half the runs" --> nm["not measured"]
+  gate -- "pass-rate upper bound below 0, or<br/>wall-time lower bound above +25%" --> loss["loss"]
+  gate -- otherwise --> held["no loss, tokens reported, never gated"]
+  loss -- "on quick" --> full["rerun at the full tier's epochs<br/>before it blocks"]
+```
 
 The **gating panel** always runs: Claude Code
 (`src/codecite_evals/claude_code.py`) on claude-haiku-5-5, claude-sonnet-5-5
@@ -439,7 +456,7 @@ round, `eval-logs-<tier>-assist-<task>` for the assist arm,
 `eval-logs-calibration-<task>` for a calibration; a size-dial task's `<task>`
 is `<task>-<size>`, as `house-rules-m`).
 
-## 🔁 A/A rounds
+## A/A rounds
 
 An A/A round runs the task with two baseline arms, `baseline-a` and
 `baseline-b`, with the same prompt and the same sandbox. Whatever separates
@@ -450,7 +467,7 @@ runs a tier that way into `inspect/logs/<tier>-aa/<task>/`. The scorecard heads 
 round as A/A and gives it no verdict: it names each measure whose interval
 noise alone pushed past the 5% margin.
 
-## 🪝 The assist arm
+## The assist arm
 
 `-T arms=assist` runs baseline against an `assist` arm, where codecite reaches
 the agent only through `codecite assist` on its own searches (#162,
@@ -470,17 +487,17 @@ and bytes per run, with bytes / 4 as an estimate of the tokens added.
 `ARMS=assist inspect/panel.sh quick` logs to `inspect/logs/<tier>-assist/<task>/`;
 on CI, dispatch with `arms: assist`.
 
-## 🔌 The plugin arm
+## The plugin arm
 
 `-T arms=plugin` runs baseline against a `plugin` arm: Claude Code with the codecite plugin (`plugins/codecite`: the skill, the MCP server and the session-start hook) loaded with `--plugin-dir /opt/codecite-plugin`. `src/codecite_evals/plugin.py` copies the plugin's files into the sandbox. `codecite` stays on `PATH`, since the plugin's MCP server and hook run it, and `CODECITE_CORPUS=eval` names the corpus. The prompt is baseline's: the skill and the session note are the plugin's own. On CI, dispatch with `arms: plugin`.
 
-## 🧰 The tools arms
+## The tools arms
 
 `ARMS=tools inspect/panel.sh quick` logs to `inspect/logs/<tier>-tools/<task>/`;
 on CI, dispatch with `arms: tools`. These paths and artifacts are distinct
 from the default A/B logs, including on retry or resume.
 
-## 📊 The scorecard
+## The scorecard
 
 `codecite-eval-report` prints three tables per task (a calibration prints one):
 
@@ -510,7 +527,7 @@ model's verdict ends `reported, not gated`. The `"gate"`
 key that older replay tasks' `task.json` carry is ignored. Logs whose samples kept no model events leave the
 transcript measures blank.
 
-## 💻 Running the A/B eval locally
+## Running the A/B eval locally
 
 Needs Docker, [uv](https://docs.astral.sh/uv/), a release build of codecite
 and an identity-model checkout (`IDENTITY_MODEL_REPO`, default
@@ -571,7 +588,7 @@ against ~70 s of working time. To do the same locally, add
 `"default-address-pools": [{"base": "10.200.0.0/16", "size": 24}]` to
 `/etc/docker/daemon.json` and restart Docker.
 
-## 🎯 Calibrating a new task
+## Calibrating a new task
 
 A task has to be hard enough that the arms can differ on correctness: one
 every model passes in both arms can't show codecite helping. Getting it there
@@ -605,7 +622,7 @@ benchmark).
    needs changing after that is a new task: copy it to a new id and
    calibrate that.
 
-## ⚙️ How a sample runs
+## How a sample runs
 
 - The sandbox image holds pi, the task's project with its dependencies
   installed, identity-model's source at the task's pinned commit, and codecite
