@@ -1068,6 +1068,44 @@ export default function (pi: ExtensionAPI) {
 `pi.exec` passes no stdin, so the extension pipes the result text in
 through `sh`, with every value an argument rather than part of the script.
 
+## Install the Claude Code plugin
+
+The plugin is one option for wiring codecite into Claude Code; the recipes
+above and `claude mcp add` do the same by hand. Install the `codecite` binary
+first (the plugin runs `codecite` from `PATH`), then in Claude Code:
+
+```
+/plugin marketplace add jamescrowley321/codecite
+/plugin install codecite
+```
+
+It adds three things:
+
+- a skill that says when codecite beats grep and which commands to use;
+- the MCP server, `codecite mcp`, so the tools in "Connect an agent" are
+  native tools;
+- a session note: on session start, a `SessionStart` hook runs
+  `codecite hook claude session-start`, which adds the agent snippet (see
+  "Tell your agent") naming the corpus for the session's directory.
+
+The hook picks the corpus in this order:
+
+1. `CODECITE_CORPUS`, when set and the corpus exists and is readable.
+2. The one corpus with a local source whose root contains the session's
+   directory (`codecite corpora --for <cwd>`).
+3. The only readable corpus, when there is exactly one.
+
+When several corpora index the directory, the note says so and asks you to
+set `CODECITE_CORPUS`. When the chosen corpus is stale, the note says queries
+fail unless they pass `allow_stale` and gives the `codecite index` command to
+re-index. With no corpus to name, the hook prints nothing. It never fails the
+session; set `CODECITE_HOOK_DEBUG` to see its errors on stderr.
+
+The plugin runs the session note only. It does not push rules on every edit
+or add codecite to the agent's own searches; for those, use the recipes in
+"Push the rules on every edit" and "Add codecite to the agent's own
+searches".
+
 ## List corpora
 
 ```sh

@@ -441,6 +441,10 @@ and bytes per run, with bytes / 4 as an estimate of the tokens added.
 `ARMS=assist inspect/panel.sh quick` logs to `inspect/logs/<tier>-assist/<task>/`;
 on CI, dispatch with `arms: assist`.
 
+## The plugin arm
+
+`-T arms=plugin` runs baseline against a `plugin` arm: Claude Code with the codecite plugin (`plugins/codecite`: the skill, the MCP server and the session-start hook) loaded with `--plugin-dir /opt/codecite-plugin`. `src/codecite_evals/plugin.py` copies the plugin's files into the sandbox. `codecite` stays on `PATH`, since the plugin's MCP server and hook run it, and `CODECITE_CORPUS=eval` names the corpus. The prompt is baseline's: the skill and the session note are the plugin's own. On CI, dispatch with `arms: plugin`.
+
 ## The scorecard
 
 `codecite-eval-report` prints three tables per task (a calibration prints one):
