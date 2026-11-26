@@ -4,7 +4,7 @@ last_verified: 2026-11-16
 
 # codecite — design
 
-The single living design for codecite: what it is, why, and how it is built. Edit it in place when the design changes; do not append addenda. Work and its status live in GitHub milestones and issues, never here. Where this document and the code disagree, the code wins and this document gets fixed in the same PR.
+codecite gives AI coding agents ranked, cited answers about the code and documents they work from, so they build on real text instead of memory. This is its single living design: what it is, why, and how it is built. Edit it in place when the design changes; do not append addenda. Work and its status live in GitHub milestones and issues, never here. Where this document and the code disagree, the code wins and this document gets fixed in the same PR.
 
 Ported on 2026-10-17 from the original Claude Doc design (written 2026-10-11), which this file supersedes.
 
