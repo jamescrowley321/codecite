@@ -1,0 +1,23 @@
+{
+  "binary_sha256": {
+    "codecite": "ed39022becaa3eece17ed750a92ce6e01b4a54dde87a33e8c62fe4c79f5af55e",
+    "codecite-bench": "a73cf0197568d854e10a1b7ae0883d7bf6c53b4773dff0b2f74106bced9c8241"
+  },
+  "codecite_version": "codecite 0.0.1",
+  "inspection_sqlite": "3.54.1 2026-10-16 14:45:20 555e07ef33f69a0957d24d8e555b702464a131d6f1607f4c3c1e4551e8e6ca76 (64-bit)",
+  "local_pins": {
+    "keycloak": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+    "kubernetes": "2b40648ce66b6061d48e8b468e65ee69cc18c424",
+    "linux": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449"
+  },
+  "manifest_sha256": {
+    "fhir": "b8764afb376aa36afc07996c6b7fd092fde66857105a801b7d9da91a7b20cb28",
+    "identity": "5ae6a246bf31b4eb718343e51bb3a0b6e46d43cf0ac652e4cd6d8f01b0093dca",
+    "identity-bench": "cc1e3cca2ec6d371e312facaeef0b8b7d96105d0c58e7bd9eff6b24256ca8408",
+    "keycloak": "ab2c41d750e0ba376743c4796c0ae1dececae7d21f45c5fec07d3ea59a7a5163",
+    "kubernetes": "f74087521fd2a0460cf8df3702e0990a9ba56e917d84be35f244ffd3e249c537",
+    "linux": "bab350325d3ad63e3c4c50c49c7e924f6710a78dea50170d3b6ec379920dfdba"
+  },
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1",
+  "source_revision": "9b779886c0e3aabd084e2226d3481b235bbc0df0"
+}

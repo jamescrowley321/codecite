@@ -1,0 +1,51 @@
+[
+  {
+    "corpus": "fhir",
+    "source_revision": "9b779886c0e3aabd084e2226d3481b235bbc0df0",
+    "codecite_sha256": "ed39022becaa3eece17ed750a92ce6e01b4a54dde87a33e8c62fe4c79f5af55e",
+    "manifest_sha256": "b8764afb376aa36afc07996c6b7fd092fde66857105a801b7d9da91a7b20cb28",
+    "chunks": 231843,
+    "database_bytes": 806481920,
+    "note": "fresh index rebuilt with the byte-identical baseline binary into a new private run directory; ranked citations matched frozen-search.jsonl for every FHIR query; the host was shared and busy during the search run (load average 7.9 at the start and 14.2 at the end, 22 cores)",
+    "eviction_check": "fincore: fhir.db 769.1M resident after reading it, 0B after one evict(); the binary kept 4.8M resident while an MCP server mapped it and 0B after it stopped, so cli-cold runs after the server stops"
+  },
+  {
+    "corpus": "keycloak",
+    "source_revision": "9b779886c0e3aabd084e2226d3481b235bbc0df0",
+    "codecite_sha256": "ed39022becaa3eece17ed750a92ce6e01b4a54dde87a33e8c62fe4c79f5af55e",
+    "local_pin": "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1",
+    "manifest_sha256": "ab2c41d750e0ba376743c4796c0ae1dececae7d21f45c5fec07d3ea59a7a5163",
+    "chunks": 116785,
+    "database_bytes": 255008768,
+    "fresh_wall_seconds": 33.55,
+    "fresh_peak_rss_kib": 34552,
+    "note": "fresh index rebuilt in a later session with the byte-identical baseline binary into a new private run directory, from the clean local checkout at the recorded pin with a manifest byte-identical to the recorded one; chunk count and database bytes equal the frozen index.jsonl fresh runs; ranked citations matched frozen-search.jsonl for every query; the host was shared and busy (load average 6.9 to 22.5 during indexing, 6.7 at the start and 6.4 at the end of the search run, 22 cores)",
+    "eviction_check": "fincore after the run: keycloak.db 243.2M resident after reading it, 0B after one evict()"
+  },
+  {
+    "corpus": "kubernetes",
+    "source_revision": "9b779886c0e3aabd084e2226d3481b235bbc0df0",
+    "codecite_sha256": "ed39022becaa3eece17ed750a92ce6e01b4a54dde87a33e8c62fe4c79f5af55e",
+    "local_pin": "2b40648ce66b6061d48e8b468e65ee69cc18c424",
+    "manifest_sha256": "f74087521fd2a0460cf8df3702e0990a9ba56e917d84be35f244ffd3e249c537",
+    "chunks": 436812,
+    "database_bytes": 686567424,
+    "fresh_wall_seconds": 80.04,
+    "fresh_peak_rss_kib": 69032,
+    "note": "fresh index rebuilt in a later session with the byte-identical baseline binary into a new private run directory, from the clean local checkout at the recorded pin with a manifest byte-identical to the recorded one; chunk count and database bytes equal the frozen index.jsonl fresh runs; ranked citations matched frozen-search.jsonl for every query; the host was shared and busy (load average 6.9 to 22.5 during indexing, 6.7 at the start and 6.4 at the end of the search run, 22 cores)",
+    "eviction_check": "fincore after the run: kubernetes.db 654.8M resident after reading it, 0B after one evict()"
+  },
+  {
+    "corpus": "linux",
+    "source_revision": "9b779886c0e3aabd084e2226d3481b235bbc0df0",
+    "codecite_sha256": "ed39022becaa3eece17ed750a92ce6e01b4a54dde87a33e8c62fe4c79f5af55e",
+    "local_pin": "7d0a66e4bb9081d75c82ec4957c50034cb0ea449",
+    "manifest_sha256": "bab350325d3ad63e3c4c50c49c7e924f6710a78dea50170d3b6ec379920dfdba",
+    "chunks": 1369055,
+    "database_bytes": 2352668672,
+    "fresh_wall_seconds": 293.37,
+    "fresh_peak_rss_kib": 76692,
+    "note": "fresh index rebuilt in a later session with the byte-identical baseline binary into a new private run directory, from the clean local checkout at the recorded pin with a manifest byte-identical to the recorded one; chunk count and database bytes equal the frozen index.jsonl fresh runs; ranked citations matched frozen-search.jsonl for every query; the host was shared and busy (load average 6.9 to 22.5 during indexing, 6.7 at the start and 6.4 at the end of the search run, 22 cores)",
+    "eviction_check": "fincore after the run: linux.db 2.2G resident after reading it, 0B after one evict()"
+  }
+]

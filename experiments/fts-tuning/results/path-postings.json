@@ -1,0 +1,101 @@
+{
+  "fhir": {
+    "counts": "documents=23208 chunks=231843",
+    "time": "wall_seconds=0.89 peak_rss_kib=12496",
+    "tables": {
+      "chunk": {
+        "database_bytes": 11841536,
+        "pages": [
+          {
+            "name": "paths_config",
+            "bytes": 4096
+          },
+          {
+            "name": "paths_data",
+            "bytes": 7450624
+          },
+          {
+            "name": "paths_docsize",
+            "bytes": 2772992
+          },
+          {
+            "name": "paths_idx",
+            "bytes": 24576
+          }
+        ]
+      },
+      "document": {
+        "database_bytes": 1257472,
+        "pages": [
+          {
+            "name": "paths_config",
+            "bytes": 4096
+          },
+          {
+            "name": "paths_data",
+            "bytes": 983040
+          },
+          {
+            "name": "paths_docsize",
+            "bytes": 262144
+          },
+          {
+            "name": "paths_idx",
+            "bytes": 4096
+          }
+        ]
+      }
+    }
+  },
+  "identity": {
+    "counts": "documents=868 chunks=13468",
+    "time": "wall_seconds=0.07 peak_rss_kib=6864",
+    "tables": {
+      "chunk": {
+        "database_bytes": 417792,
+        "pages": [
+          {
+            "name": "paths_config",
+            "bytes": 4096
+          },
+          {
+            "name": "paths_data",
+            "bytes": 266240
+          },
+          {
+            "name": "paths_docsize",
+            "bytes": 139264
+          },
+          {
+            "name": "paths_idx",
+            "bytes": 4096
+          }
+        ]
+      },
+      "document": {
+        "database_bytes": 61440,
+        "pages": [
+          {
+            "name": "paths_config",
+            "bytes": 4096
+          },
+          {
+            "name": "paths_data",
+            "bytes": 32768
+          },
+          {
+            "name": "paths_docsize",
+            "bytes": 16384
+          },
+          {
+            "name": "paths_idx",
+            "bytes": 4096
+          }
+        ]
+      }
+    }
+  },
+  "method": "Path-only tables built serially in one transaction each, same production text_terms and unicode61 tokenizer, documents with chunks only; times cover building both tables.",
+  "base_binary_sha256": "ed39022becaa3eece17ed750a92ce6e01b4a54dde87a33e8c62fe4c79f5af55e",
+  "source_revision": "9b779886c0e3aabd084e2226d3481b235bbc0df0"
+}

@@ -1,0 +1,272 @@
+[
+  {
+    "citation": "HasteHealth@e335d0750d4216023be49dd0bdafeac4fd46f576:backend/crates/server/src/fhir_client/middleware/operation_definitions.rs#L122-L150",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "HasteHealth@e335d0750d4216023be49dd0bdafeac4fd46f576:frontend/packages/client/src/interface.ts#L29-L203",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "blaze@e286819d4244c980f873abae37b0c8ef0f4d0de8:modules/fhir-structure/resources/data_readers.clj#L1-L60",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L1301-L1306",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L1323-L1330",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L1332-L1339",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L1350-L1357",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L151-L158",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L160-L167",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L169-L176",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L178-L185",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L187-L194",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java#L196-L259",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirVersionEnum.java#L26-L317",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirVersionEnum.java#L276-L316",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirVersionEnum.java#L60-L69",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-base/src/main/java/ca/uhn/fhir/repository/IRepository.java#L771-L783",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-client/src/main/java/ca/uhn/fhir/rest/client/impl/RestfulClientFactory.java#L301-L403",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-converter/src/main/java/ca/uhn/hapi/converters/server/VersionedApiConverterInterceptor.java#L51-L154",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-converter/src/main/java/ca/uhn/hapi/converters/server/VersionedApiConverterInterceptor.java#L75-L136",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-jpaserver-base/src/main/java/ca/uhn/fhir/jpa/packages/PackageInstallerSvcImpl.java#L602-L622",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-jpaserver-searchparam/src/main/java/ca/uhn/fhir/jpa/searchparam/util/LastNParameterHelper.java#L27-L147",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-repositories/src/main/java/ca/uhn/fhir/repository/impl/GenericClientRepository.java#L228-L232",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-repositories/src/main/java/ca/uhn/fhir/repository/impl/memory/InMemoryFhirRepository.java#L108-L111",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-server/src/main/java/ca/uhn/fhir/rest/server/RestfulServer.java#L1065-L1073",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-server/src/main/java/ca/uhn/fhir/rest/server/RestfulServer.java#L113-L2244",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-server/src/main/java/ca/uhn/fhir/rest/server/RestfulServer.java#L1590-L1610",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-server/src/main/java/ca/uhn/fhir/rest/server/RestfulServer.java#L198-L206",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-server/src/main/java/ca/uhn/fhir/rest/server/RestfulServer.java#L208-L213",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-server/src/main/java/ca/uhn/fhir/rest/server/RestfulServer.java#L215-L218",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-server/src/main/java/ca/uhn/fhir/rest/server/RestfulServer.java#L220-L225",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-server/src/main/java/ca/uhn/fhir/rest/server/RestfulServer.java#L718-L721",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-server/src/main/java/ca/uhn/fhir/rest/server/RestfulServer.java#L752-L754",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-server/src/main/java/ca/uhn/fhir/rest/server/RestfulServer.java#L833-L836",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-spring-boot/hapi-fhir-spring-boot-autoconfigure/src/main/java/ca/uhn/fhir/spring/boot/autoconfigure/FhirAutoConfiguration.java#L98-L103",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-fhir-storage/src/main/java/ca/uhn/fhir/jpa/repository/HapiFhirRepository.java#L440-L443",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:hapi-tinder-plugin/src/main/java/ca/uhn/fhir/tinder/parser/BaseStructureParser.java#L770-L786",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:sync_ri3.fish#L1-L60",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hapi-fhir@4b491718d6504a84978a6a6418ae35ce369a595f:sync_ri4.sh#L1-L60",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hfs@2808e8d359869fdd8a2241ab769a586c62502511:crates/fhirpath/src/fhir_type_hierarchy.rs#L7-L30",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hfs@2808e8d359869fdd8a2241ab769a586c62502511:crates/rest/src/middleware/conditional.rs#L1-L14",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "hfs@2808e8d359869fdd8a2241ab769a586c62502511:crates/rest/src/middleware/content_type.rs#L1-L6",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "medplum@8d13bbf8cb629b93b35eb36ef1d021ed1d459b49:packages/server/src/fhir/operations/agentfetchlogs.ts#L23-L41",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "medplum@8d13bbf8cb629b93b35eb36ef1d021ed1d459b49:packages/server/src/fhir/operations/agentreloadconfig.ts#L18-L30",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "medplum@8d13bbf8cb629b93b35eb36ef1d021ed1d459b49:packages/server/src/fhir/operations/agentstats.ts#L18-L30",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "medplum@8d13bbf8cb629b93b35eb36ef1d021ed1d459b49:packages/server/src/fhir/operations/agentupgrade.ts#L27-L43",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "medplum@8d13bbf8cb629b93b35eb36ef1d021ed1d459b49:packages/server/src/fhir/operations/claimsubmit.ts#L48-L69",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "medplum@8d13bbf8cb629b93b35eb36ef1d021ed1d459b49:packages/server/src/fhir/operations/claimsubmit.ts#L71-L86",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "medplum@8d13bbf8cb629b93b35eb36ef1d021ed1d459b49:packages/server/src/fhir/operations/coverageeligibilityrequestsubmit.ts#L74-L90",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "server-rs@650ff15cc4601bcecfb0b61768bea777b8c83b3b:crates/octofhir-server/src/automations/fhir_api.rs#L20-L32",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "server-rs@650ff15cc4601bcecfb0b61768bea777b8c83b3b:crates/octofhir-server/src/middleware.rs#L1980-L1987",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "server-rs@650ff15cc4601bcecfb0b61768bea777b8c83b3b:crates/octofhir-server/src/operation_registry/providers/fhir.rs#L14-L256",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "server-rs@650ff15cc4601bcecfb0b61768bea777b8c83b3b:crates/octofhir-server/src/operation_registry/providers/fhir.rs#L15-L251",
+    "exit": 0,
+    "error": ""
+  },
+  {
+    "citation": "server-rs@650ff15cc4601bcecfb0b61768bea777b8c83b3b:crates/octofhir-server/src/operations/sof/output.rs#L533-L539",
+    "exit": 0,
+    "error": ""
+  }
+]

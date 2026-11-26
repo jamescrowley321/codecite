@@ -1,0 +1,142 @@
+[
+  {
+    "corpus": "fhir",
+    "class": "behaviour",
+    "mode": "cli",
+    "samples": 5,
+    "queries": 1,
+    "scored_queries": 1,
+    "p50_ms": 78.785137,
+    "p95_ms": 84.197529,
+    "recall_at_1": 0.0,
+    "recall_at_10": 0.0,
+    "mrr": 0.0
+  },
+  {
+    "corpus": "fhir",
+    "class": "behaviour",
+    "mode": "mcp",
+    "samples": 5,
+    "queries": 1,
+    "scored_queries": 1,
+    "p50_ms": 75.191442,
+    "p95_ms": 78.990167,
+    "recall_at_1": 0.0,
+    "recall_at_10": 0.0,
+    "mrr": 0.0
+  },
+  {
+    "corpus": "fhir",
+    "class": "broad-term",
+    "mode": "cli",
+    "samples": 5,
+    "queries": 1,
+    "scored_queries": 0,
+    "p50_ms": 120.140978,
+    "p95_ms": 168.932299
+  },
+  {
+    "corpus": "fhir",
+    "class": "broad-term",
+    "mode": "mcp",
+    "samples": 5,
+    "queries": 1,
+    "scored_queries": 0,
+    "p50_ms": 101.3774,
+    "p95_ms": 113.575473
+  },
+  {
+    "corpus": "fhir",
+    "class": "exact-symbol",
+    "mode": "cli",
+    "samples": 10,
+    "queries": 2,
+    "scored_queries": 0,
+    "p50_ms": 99.78351950000001,
+    "p95_ms": 142.595417
+  },
+  {
+    "corpus": "fhir",
+    "class": "exact-symbol",
+    "mode": "mcp",
+    "samples": 10,
+    "queries": 2,
+    "scored_queries": 0,
+    "p50_ms": 98.6945485,
+    "p95_ms": 145.465103
+  },
+  {
+    "corpus": "fhir",
+    "class": "miss",
+    "mode": "cli",
+    "samples": 5,
+    "queries": 1,
+    "scored_queries": 0,
+    "p50_ms": 3.594529,
+    "p95_ms": 3.975669,
+    "nonempty": 0
+  },
+  {
+    "corpus": "fhir",
+    "class": "miss",
+    "mode": "mcp",
+    "samples": 5,
+    "queries": 1,
+    "scored_queries": 0,
+    "p50_ms": 1.142295,
+    "p95_ms": 1.341657,
+    "nonempty": 0
+  },
+  {
+    "corpus": "fhir",
+    "class": "path-filter",
+    "mode": "cli",
+    "samples": 5,
+    "queries": 1,
+    "scored_queries": 1,
+    "p50_ms": 47.674051,
+    "p95_ms": 55.96131,
+    "recall_at_1": 0.0,
+    "recall_at_10": 0.0,
+    "mrr": 0.0
+  },
+  {
+    "corpus": "fhir",
+    "class": "path-filter",
+    "mode": "mcp",
+    "samples": 5,
+    "queries": 1,
+    "scored_queries": 1,
+    "p50_ms": 44.447652,
+    "p95_ms": 56.230529,
+    "recall_at_1": 0.0,
+    "recall_at_10": 0.0,
+    "mrr": 0.0
+  },
+  {
+    "corpus": "fhir",
+    "class": "rare-term",
+    "mode": "cli",
+    "samples": 5,
+    "queries": 1,
+    "scored_queries": 1,
+    "p50_ms": 3.922805,
+    "p95_ms": 4.701918,
+    "recall_at_1": 1.0,
+    "recall_at_10": 1.0,
+    "mrr": 1.0
+  },
+  {
+    "corpus": "fhir",
+    "class": "rare-term",
+    "mode": "mcp",
+    "samples": 5,
+    "queries": 1,
+    "scored_queries": 1,
+    "p50_ms": 1.902694,
+    "p95_ms": 2.48121,
+    "recall_at_1": 1.0,
+    "recall_at_10": 1.0,
+    "mrr": 1.0
+  }
+]

@@ -1,0 +1,15 @@
+{
+  "before": {
+    "mrr": 0.578422619047619,
+    "queries": 32,
+    "recall_at_1": 0.40625,
+    "recall_at_10": 0.84375
+  },
+  "after": {
+    "mrr": 0.578422619047619,
+    "queries": 32,
+    "recall_at_1": 0.40625,
+    "recall_at_10": 0.84375
+  },
+  "same_outcomes": true
+}
