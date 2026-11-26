@@ -24,6 +24,9 @@ ARMS = {
     "baseline": (("baseline", "baseline"),),
     # codecite only through the hook on the agent's own searches (assist.py).
     "assist": (("baseline", "baseline"), ("assist", "assist")),
+    # A third arm for another tool: baseline, codecite and codegraph in one
+    # run, so the two tools meet the same host and the same noise.
+    "tools": (("baseline", "baseline"), ("codecite", "codecite"), ("codegraph", "codegraph")),
 }
 
 QUERIES = EVALS_DIR / "retrieval" / "queries.toml"
