@@ -95,7 +95,8 @@
 
 .line {
   display: block;
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   animation: reveal 0.3s ease-out both;
 }
 
@@ -110,6 +111,12 @@
 }
 .line:nth-child(5) {
   animation-delay: 0.8s;
+}
+
+.detail {
+  display: block;
+  padding-left: 2ch;
+  margin-bottom: 0.35rem;
 }
 
 @keyframes reveal {

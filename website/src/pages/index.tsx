@@ -8,7 +8,9 @@ import styles from './index.module.css';
 const GITHUB = 'https://github.com/jamescrowley321/codecite';
 
 // The search from the README's quick start, verbatim: the command, its
-// summary line and its three hits. Each hit is split only to color it.
+// summary line and its three hits. Each hit is split to color it, and its
+// kind and first line go on a second, indented line so nothing runs off the
+// panel; the CLI prints them on one line.
 const QUERY = 'codecite search demo "detect a repository license" --limit 3';
 const SUMMARY = '3 results · adapt · indexed 2026-11-26T16:03:24Z';
 const HITS: [cite: string, kind: string, first: string][] = [
@@ -119,10 +121,11 @@ function Terminal(): ReactNode {
           {HITS.map(([cite, kind, first]) => (
             <span key={cite} className={styles.line}>
               <span className={styles.cite}>{cite}</span>
-              <span className={styles.dim}> · </span>
-              <span className={styles.kind}>{kind}</span>
-              <span className={styles.dim}> · </span>
-              {first}
+              <span className={styles.detail}>
+                <span className={styles.kind}>{kind}</span>
+                <span className={styles.dim}> · </span>
+                {first}
+              </span>
             </span>
           ))}
         </code>
