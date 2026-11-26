@@ -17,6 +17,18 @@ const config: Config = {
   onBrokenLinks: 'throw',
   onBrokenAnchors: 'throw',
 
+  // CommonMark, not MDX, for .md files: the docs use `<corpus>` and
+  // `{"results": [...]}` in prose, which MDX would parse as JSX.
+  markdown: {
+    format: 'detect',
+    mermaid: true,
+    hooks: {
+      onBrokenMarkdownLinks: 'throw',
+    },
+  },
+
+  themes: ['@docusaurus/theme-mermaid'],
+
   i18n: {
     defaultLocale: 'en',
     locales: ['en'],
@@ -26,7 +38,23 @@ const config: Config = {
     [
       'classic',
       {
-        docs: false,
+        // The site reads the living docs in place: the docs plugin is rooted
+        // at the repository, so the relative links the files use on GitHub
+        // keep working, and `include` names the only files published. Specs,
+        // plans, docs/cloud-sessions.md and AGENTS.md are not published.
+        docs: {
+          path: '..',
+          include: [
+            'README.md',
+            'docs/usage.md',
+            'docs/design.md',
+            'evals/README.md',
+          ],
+          exclude: ['**/node_modules/**', 'website/**', 'docs/superpowers/**'],
+          routeBasePath: '/',
+          sidebarPath: './sidebars.ts',
+          editUrl: 'https://github.com/jamescrowley321/codecite/edit/main/',
+        },
         blog: false,
         theme: {
           customCss: './src/css/custom.css',
@@ -41,6 +69,18 @@ const config: Config = {
     },
     navbar: {
       title: 'codecite',
+      items: [
+        {
+          href: 'https://github.com/jamescrowley321/codecite',
+          label: 'GitHub',
+          position: 'right',
+        },
+      ],
+    },
+    footer: {
+      style: 'dark',
+      copyright:
+        'codecite is licensed under the <a href="https://github.com/jamescrowley321/codecite/blob/main/LICENSE">Apache License 2.0</a>.',
     },
     prism: {
       theme: prismThemes.github,
