@@ -172,16 +172,40 @@ const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../migrations/0015_role_globs.sql"),
         read_compatible: true,
     },
+    // Moves each document's text to `document_text`, which every reader of
+    // a document's text joins, so an older file can't be read.
+    Migration {
+        sql: include_str!("../migrations/0016_document_text.sql"),
+        read_compatible: false,
+    },
 ];
 
 /// The version whose migration clears the chunk text a document's text
 /// holds. A file brought up past it is vacuumed, so the space comes back.
 const DERIVE_CHUNK_TEXT: u32 = 12;
 
+/// The version whose migration moves each document's text to its own
+/// table, which frees the pages the text held in `document`. A file
+/// brought up past it is vacuumed too.
+const DOCUMENT_TEXT: u32 = 16;
+
 /// The `meta` key that marks a file a migration freed space in: set in the
 /// migration's transaction and deleted only once a vacuum succeeds, so a
 /// vacuum that fails is tried again on the next read-write open.
 const VACUUM_PENDING: &str = "vacuum_pending";
+
+/// Marks the file for [`vacuum_if_pending`] after a migration that freed
+/// pages. A file that was empty when the open found it (version `found`
+/// 0) had nothing to free.
+fn flag_vacuum(tx: &rusqlite::Transaction<'_>, found: u32) -> rusqlite::Result<()> {
+    if found > 0 {
+        tx.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, '1')",
+            [VACUUM_PENDING],
+        )?;
+    }
+    Ok(())
+}
 
 #[cfg(test)]
 thread_local! {
@@ -393,14 +417,9 @@ impl Store {
                 RANK_INPUTS => fill_rank_inputs(&tx)?,
                 DERIVE_CHUNK_TEXT => {
                     clear_derivable_text(&tx)?;
-                    // A file that was empty had nothing to free.
-                    if found > 0 {
-                        tx.execute(
-                            "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, '1')",
-                            [VACUUM_PENDING],
-                        )?;
-                    }
+                    flag_vacuum(&tx, found)?;
                 }
+                DOCUMENT_TEXT => flag_vacuum(&tx, found)?,
                 _ => {}
             }
             tx.execute(
@@ -2036,6 +2055,71 @@ mod tests {
             .unwrap();
         assert_eq!(role, ("test".into(), 0.4));
         drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn version_16_moves_document_text_to_its_own_table() {
+        let dir = scratch("v15");
+        let path = dir.join("corpus.db");
+        raw(&path)
+            .execute_batch(&format!(
+                "{}
+                 INSERT INTO meta (key, value) VALUES ('schema_version', '15');
+                 INSERT INTO source (id, name, kind, url, revision, license_class, indexed_at)
+                   VALUES (1, 'app', 'local', '/app', 'abc', 'adapt', 'then'),
+                          (2, 'rfc', 'spec', 'https://x', 'abc', 'quote', 'then');
+                 INSERT INTO document (id, source_id, path, language, content_hash, text,
+                                       role, role_weight)
+                   VALUES (1, 1, 'src/lib.rs', 'rust', x'01', 'fn a() {{}}', 'source', 1.0),
+                          (2, 2, 'rfc.txt', NULL, x'02', NULL, 'spec', 1.0);",
+                up_to(15)
+            ))
+            .unwrap();
+
+        let store = Store::open_read_write(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+        let mut rows = store
+            .conn
+            .prepare("SELECT document_id, text FROM document_text ORDER BY document_id")
+            .unwrap();
+        let texts: Vec<(i64, String)> = rows
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        drop(rows);
+        assert_eq!(texts, vec![(1, "fn a() {}".to_string())]);
+        let columns = table_columns(&store.conn, "document");
+        assert!(!columns.iter().any(|c| c == "text"), "{columns:?}");
+        // The text's pages were freed and given back.
+        let count = |sql: &str| -> i64 { store.conn.query_row(sql, [], |row| row.get(0)).unwrap() };
+        assert_eq!(
+            count("SELECT count(*) FROM meta WHERE key = 'vacuum_pending'"),
+            0
+        );
+        assert_eq!(count("PRAGMA freelist_count"), 0);
+        // A document's text goes with it.
+        store.conn.execute("DELETE FROM document", []).unwrap();
+        assert_eq!(count("SELECT count(*) FROM document_text"), 0);
+        drop(store);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn read_only_refuses_a_file_from_before_document_text() {
+        let dir = scratch("ro-before-document-text");
+        let path = dir.join("corpus.db");
+        // Every reader of a document's text joins `document_text`, which a
+        // version 15 file lacks.
+        older_file(&path, 15);
+
+        let err = Store::open_read_only(&path).err().unwrap();
+        assert!(
+            matches!(&err, Error::InvalidCorpus { reason, .. }
+                if reason.contains("schema version 15") && reason.contains("codecite index")),
+            "{err:?}"
+        );
         fs::remove_dir_all(&dir).unwrap();
     }
 
