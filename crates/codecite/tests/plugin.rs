@@ -67,6 +67,38 @@ fn session_start_hook_is_the_subcommand_and_parses() {
 }
 
 #[test]
+fn tool_hooks_are_the_subcommands_and_parse() {
+    let hooks = &json("plugins/codecite/hooks/hooks.json")["hooks"];
+    for (event, matcher, command) in [
+        (
+            "PostToolUse",
+            "Grep|Glob|Bash",
+            "codecite hook claude post-tool-use",
+        ),
+        (
+            "PreToolUse",
+            "Edit|Write|MultiEdit",
+            "codecite hook claude pre-tool-use",
+        ),
+    ] {
+        let entry = &hooks[event][0];
+        assert_eq!(entry["matcher"], matcher, "{event}");
+        assert_eq!(entry["hooks"][0]["command"], command, "{event}");
+        let args: Vec<&str> = command.split(' ').skip(1).collect();
+        let data = tempfile::tempdir().unwrap();
+        let status = Command::new(env!("CARGO_BIN_EXE_codecite"))
+            .args(&args)
+            .env("XDG_DATA_HOME", data.path())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .unwrap();
+        assert!(status.success(), "{event}: {status}");
+    }
+}
+
+#[test]
 fn skill_is_short_and_named() {
     let s = text("plugins/codecite/skills/codecite/SKILL.md");
     assert!(s.starts_with("---\nname: codecite\ndescription: "));

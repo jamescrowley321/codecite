@@ -1,8 +1,9 @@
 """The plugin arm: Claude Code with the codecite plugin (plugins/codecite:
-skill, MCP server and session-start hook) loaded from PLUGIN_DIR with
---plugin-dir. codecite stays on PATH, since the plugin's MCP server and hook
-run `codecite`, and CODECITE_CORPUS names the corpus they use. No note goes
-in the prompt: the skill and the session note are the plugin's own.
+skill, MCP server and its session-start, post-tool-use and pre-tool-use
+hooks) loaded from PLUGIN_DIR with --plugin-dir. codecite stays on PATH,
+since the plugin's MCP server and hooks run `codecite`, and CODECITE_CORPUS
+names the corpus they use. No note goes in the prompt: the skill and the
+session note are the plugin's own.
 """
 
 from codecite_evals import config

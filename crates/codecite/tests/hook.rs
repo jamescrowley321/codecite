@@ -314,3 +314,29 @@ fn no_rules_records_the_file_and_says_nothing() {
     let state = env.tmp.path().join("run/codecite/hook/context-s1");
     assert!(fs::read_to_string(state).unwrap().contains("notes.txt"));
 }
+
+/// Input that isn't a tool call the hook reads, for either tool event,
+/// exits 0 with nothing on stderr and at most a valid reply.
+#[test]
+fn tool_hooks_survive_bad_stdin() {
+    let env = Env::new();
+    env.index_demo();
+    env.index_rules();
+    let bash_ls = r#"{"session_id":"s","tool_name":"Bash","tool_input":{"command":"ls"}}"#;
+    let edit_no_file = r#"{"session_id":"s","tool_name":"Edit","tool_input":{"new_string":"x"}}"#;
+    let grep_no_pattern = r#"{"tool_name":"Grep","tool_input":{"pattern":7}}"#;
+    for (event, name) in [
+        ("post-tool-use", "PostToolUse"),
+        ("pre-tool-use", "PreToolUse"),
+    ] {
+        for stdin in ["", "{", "[]", bash_ls, edit_no_file, grep_no_pattern] {
+            let out = env.run(&["hook", "claude", event], stdin);
+            assert!(out.status.success(), "{event} {stdin:?}: {out:?}");
+            assert!(out.stderr.is_empty(), "{event} {stdin:?}: {out:?}");
+            if !out.stdout.is_empty() {
+                let reply: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+                assert_eq!(reply["hookSpecificOutput"]["hookEventName"], name);
+            }
+        }
+    }
+}
