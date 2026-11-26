@@ -11,8 +11,11 @@ pub(crate) use text::{Heading, Lines, Slugs, markdown_headings, sections, sectio
 
 /// The version of the chunker's output. Raise it whenever the same file
 /// splits into different chunks, so each index run records which chunker
-/// wrote the corpus. Prerelease builds used 4–6 for earlier C typedef behavior.
-pub const CHUNKER_VERSION: u32 = 7;
+/// wrote the corpus. Prerelease builds used 4–6 for earlier C typedef behavior;
+/// 8 adds class properties holding a function, prototype methods, C
+/// function-like macros and file-scope tables, and drops methods of unnamed
+/// object literals.
+pub const CHUNKER_VERSION: u32 = 8;
 
 /// The longest window, in lines.
 pub const WINDOW_LINES: u32 = 60;
