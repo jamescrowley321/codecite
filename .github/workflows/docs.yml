@@ -1,0 +1,78 @@
+name: Docs
+
+# Builds the documentation site (website/) on every PR and deploys it to
+# GitHub Pages from main. The build is the broken-link check: a broken
+# internal link, anchor or Markdown link fails it.
+#
+# Builds on every PR and every push to main, with no paths filter and no
+# change detection: the build reads files outside the docs (a doc's link to
+# LICENSE or a source file is checked against the tree), so any change can
+# break it, and the build takes about a minute. It also keeps `docs-build`
+# reporting on every PR, so it can be a required check. No `branches:` filter
+# on pull_request: stacked PRs target other feature branches.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  docs-build:
+    name: docs-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No setup-node cache: this job's output is deployed, and a restored
+      # cache could poison it.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: website/.nvmrc
+          package-manager-cache: false
+
+      # --ignore-scripts: no dependency's install script runs in CI.
+      - name: Install
+        working-directory: website
+        run: npm ci --ignore-scripts
+
+      - name: Test the remark plugin
+        working-directory: website
+        run: npm test
+
+      - name: Build (fails on a broken link or anchor)
+        working-directory: website
+        run: npm run build
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        if: github.event_name == 'push'
+        with:
+          path: website/build
+
+  # Deploys every push to main. Pages deploys through OIDC; there is no
+  # secret.
+  docs-deploy:
+    name: docs-deploy
+    needs: docs-build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write # deploy to Pages
+      id-token: write # OIDC token for the deployment
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

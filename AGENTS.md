@@ -21,6 +21,7 @@ server. Read `docs/design.md` before any non-trivial change.
 | Experiments and spikes, with their scripts and results | `experiments/<topic>/` — kept for re-running or scaling up |
 | Autonomous loop over the open issues | `ralph/` (see `ralph/README.md`) |
 | Working issues in Claude Code cloud sessions | `docs/cloud-sessions.md` |
+| Documentation site, published to <https://jamescrowley321.github.io/codecite/> | `website/` — renders `README.md`, `docs/usage.md`, `docs/design.md` and `evals/README.md` in place, so edit those files, never a copy |
 
 Specs and plans are committed with the PR that implements them and frozen once
 it merges. Do not go back and update them; update `docs/design.md` instead.

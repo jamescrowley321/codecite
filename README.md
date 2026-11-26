@@ -192,6 +192,8 @@ step · ID Token Validation · SHOULD · quote · indexed 2026-10-20T20:34:20Z
 
 ## 📚 Documentation
 
+- [Documentation site](https://jamescrowley321.github.io/codecite/): these
+  docs with navigation and search.
 - [Using codecite](docs/usage.md): manifests, indexing, search, citation
   forms, hooks, the plugin and connecting an agent.
 - [Evaluation](evals/README.md): the A/B agent eval and the retrieval and
