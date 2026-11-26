@@ -1,0 +1,22 @@
+{
+  "all": {
+    "mrr": 0.33342352092352096,
+    "queries": 44,
+    "recall_at_1": 0.25,
+    "recall_at_10": 0.5681818181818182
+  },
+  "classes": {
+    "history-issue": {
+      "mrr": 0.31101190476190477,
+      "queries": 16,
+      "recall_at_1": 0.25,
+      "recall_at_10": 0.5
+    },
+    "history-title": {
+      "mrr": 0.3462301587301587,
+      "queries": 28,
+      "recall_at_1": 0.25,
+      "recall_at_10": 0.6071428571428571
+    }
+  }
+}

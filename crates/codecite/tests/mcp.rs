@@ -556,3 +556,112 @@ fn mcp_cuts_a_mebibyte_line_as_the_cli_does() {
     let (out, _) = session.close();
     assert!(out.status.success(), "{out:?}");
 }
+
+/// The SCIP fixture crate and its index, from `codecite-index`'s tests.
+const SCIP_FIXTURE: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../codecite-index/tests/fixtures/scip/app"
+);
+
+/// A scratch directory whose data home, `data`, holds one corpus, `demo`,
+/// indexed from a git checkout of the SCIP fixture crate with its
+/// rust-analyzer index, as `tests/graph.rs` builds it.
+fn scip_data_home() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("app");
+    std::fs::create_dir_all(repo.join("src")).unwrap();
+    let git = |args: &[&str]| {
+        let status = Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args([
+                "-c",
+                "user.name=codecite",
+                "-c",
+                "user.email=codecite@example.com",
+            ])
+            .args(["-c", "commit.gpgsign=false"])
+            .args(args)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_INDEX_FILE")
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?}");
+    };
+    git(&["init", "-q"]);
+    for file in ["src/lib.rs", "src/client.rs"] {
+        std::fs::copy(Path::new(SCIP_FIXTURE).join(file), repo.join(file)).unwrap();
+    }
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "init"]);
+    let work = tmp.path().join("work");
+    std::fs::create_dir_all(work.join("corpora")).unwrap();
+    std::fs::copy(
+        Path::new(SCIP_FIXTURE).join("index.scip"),
+        work.join("app.scip"),
+    )
+    .unwrap();
+    std::fs::write(
+        work.join("corpora/demo.toml"),
+        format!(
+            "name = \"demo\"\n\n[[source]]\nkind = \"local\"\nname = \"app\"\npath = {:?}\n\
+             use = \"adapt\"\nscip = \"../app.scip\"\n",
+            repo.to_str().unwrap()
+        ),
+    )
+    .unwrap();
+    let indexed = codecite()
+        .args(["index", "demo"])
+        .current_dir(&work)
+        .env("HOME", tmp.path())
+        .env("XDG_DATA_HOME", tmp.path().join("data"))
+        .env("XDG_CACHE_HOME", tmp.path().join("cache"))
+        .output()
+        .unwrap();
+    assert!(indexed.status.success(), "{indexed:?}");
+    tmp
+}
+
+#[test]
+fn mcp_graph_tools_match_the_cli() {
+    let tmp = scip_data_home();
+    let home = tmp.path().join("data");
+    let mut session = Session::start(&home);
+    session.initialize();
+    let cases = [
+        (
+            "references",
+            json!({"symbol": "check"}),
+            vec!["refs", "demo", "check", "--json"],
+        ),
+        (
+            "callers",
+            json!({"symbol": "check", "depth": 3}),
+            vec![
+                "graph", "callers", "demo", "check", "--depth", "3", "--json",
+            ],
+        ),
+        (
+            "callees",
+            json!({"symbol": "login", "depth": 2}),
+            vec![
+                "graph", "callees", "demo", "login", "--depth", "2", "--json",
+            ],
+        ),
+    ];
+    for (id, (tool, arguments, args)) in (2..).zip(cases) {
+        session.call_matches_cli(&home, id, tool, arguments.clone(), &args);
+        // And each answer has something in it to compare.
+        let call = session
+            .send(json!({
+                "jsonrpc": "2.0", "id": id + 10, "method": "tools/call",
+                "params": {"name": tool, "arguments": arguments}
+            }))
+            .unwrap();
+        let results = &call["result"]["structuredContent"]["results"];
+        assert!(!results.as_array().unwrap().is_empty(), "{tool}: {call}");
+    }
+    let (out, _) = session.close();
+    assert!(out.status.success(), "{out:?}");
+}

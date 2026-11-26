@@ -1,0 +1,79 @@
+{
+  "description": "Frozen example labels, source-verified without ranking output. Judged positive questions are deliberately narrow; unadjudicated ambiguous symbols and broad terms are latency-only. Misses are scored as empty-result controls. Rare and broad terms are single lowercase ASCII tokens; 1-200 and at least 10000 matching chunks respectively.",
+  "corpora": {
+    "fhir": [
+      {
+        "id": "fhir-exact-symbol-0",
+        "text": "FhirContext",
+        "answers": [
+          {
+            "path": "hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java",
+            "line": 105
+          }
+        ],
+        "class": "exact-symbol",
+        "score": false
+      },
+      {
+        "id": "fhir-exact-symbol-1",
+        "text": "RestfulServer",
+        "answers": [
+          {
+            "path": "hapi-fhir-server/src/main/java/ca/uhn/fhir/rest/server/RestfulServer.java",
+            "line": 120
+          }
+        ],
+        "class": "exact-symbol",
+        "score": false
+      },
+      {
+        "id": "fhir-behaviour-4",
+        "text": "server handles REST requests",
+        "answers": [
+          {
+            "path": "hapi-fhir-server/src/main/java/ca/uhn/fhir/rest/server/RestfulServer.java",
+            "line": 120
+          }
+        ],
+        "class": "behaviour"
+      },
+      {
+        "id": "fhir-path-filter-5",
+        "text": "FhirContext",
+        "answers": [
+          {
+            "path": "hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java",
+            "line": 105
+          }
+        ],
+        "path": "hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java",
+        "class": "path-filter"
+      },
+      {
+        "id": "fhir-miss",
+        "text": "zzcodecite255notpresentxqz",
+        "answers": [],
+        "class": "miss",
+        "score": false
+      },
+      {
+        "id": "fhir-rare-frozen",
+        "text": "nostructuresforspecifiedversion",
+        "class": "rare-term",
+        "answers": [
+          {
+            "path": "hapi-fhir-base/src/main/java/ca/uhn/fhir/context/FhirContext.java",
+            "line": 204
+          }
+        ]
+      },
+      {
+        "id": "fhir-broad-frozen",
+        "text": "fhir",
+        "class": "broad-term",
+        "answers": [],
+        "score": false
+      }
+    ]
+  }
+}

@@ -1,0 +1,156 @@
+[
+  {
+    "after": {
+      "chunks": 231843,
+      "database_bytes": 826589184,
+      "fts_bytes": 453627904,
+      "fts_data_bytes": 449773568,
+      "segments": 1
+    },
+    "before": {
+      "chunks": 231843,
+      "database_bytes": 806842368,
+      "fts_bytes": 455737344,
+      "fts_data_bytes": 451588096,
+      "segments": 26
+    },
+    "corpus": "fhir",
+    "peak_wal_bytes": 453772712,
+    "stderr": "",
+    "stdout": "0",
+    "wal_sampling_ms": 5,
+    "wall_seconds": 2.738958141
+  },
+  {
+    "after": {
+      "chunks": 12583,
+      "database_bytes": 25300992,
+      "fts_bytes": 5705728,
+      "fts_data_bytes": 5492736,
+      "segments": 1
+    },
+    "before": {
+      "chunks": 12583,
+      "database_bytes": 21577728,
+      "fts_bytes": 5898240,
+      "fts_data_bytes": 5681152,
+      "segments": 11
+    },
+    "corpus": "identity-bench",
+    "peak_wal_bytes": 5763912,
+    "stderr": "",
+    "stdout": "0",
+    "wal_sampling_ms": 5,
+    "wall_seconds": 0.07706258
+  },
+  {
+    "after": {
+      "chunks": 1389,
+      "database_bytes": 4173824,
+      "fts_bytes": 946176,
+      "fts_data_bytes": 913408,
+      "segments": 1
+    },
+    "before": {
+      "chunks": 1389,
+      "database_bytes": 3596288,
+      "fts_bytes": 1028096,
+      "fts_data_bytes": 995328,
+      "segments": 16
+    },
+    "corpus": "history-1",
+    "peak_wal_bytes": 1038272,
+    "stderr": "",
+    "stdout": "0",
+    "wal_sampling_ms": 5,
+    "wall_seconds": 0.021140249
+  },
+  {
+    "after": {
+      "chunks": 2300,
+      "database_bytes": 6651904,
+      "fts_bytes": 1421312,
+      "fts_data_bytes": 1368064,
+      "segments": 1
+    },
+    "before": {
+      "chunks": 2300,
+      "database_bytes": 5599232,
+      "fts_bytes": 1495040,
+      "fts_data_bytes": 1441792,
+      "segments": 17
+    },
+    "corpus": "history-2",
+    "peak_wal_bytes": 1433792,
+    "stderr": "",
+    "stdout": "0",
+    "wal_sampling_ms": 5,
+    "wall_seconds": 0.026074984
+  },
+  {
+    "after": {
+      "chunks": 10001,
+      "database_bytes": 19730432,
+      "fts_bytes": 4055040,
+      "fts_data_bytes": 3883008,
+      "segments": 1
+    },
+    "before": {
+      "chunks": 10001,
+      "database_bytes": 16261120,
+      "fts_bytes": 4206592,
+      "fts_data_bytes": 4030464,
+      "segments": 18
+    },
+    "corpus": "history-3",
+    "peak_wal_bytes": 4062352,
+    "stderr": "",
+    "stdout": "0",
+    "wal_sampling_ms": 5,
+    "wall_seconds": 0.056446908
+  },
+  {
+    "after": {
+      "chunks": 3920,
+      "database_bytes": 8900608,
+      "fts_bytes": 1892352,
+      "fts_data_bytes": 1814528,
+      "segments": 1
+    },
+    "before": {
+      "chunks": 3920,
+      "database_bytes": 7434240,
+      "fts_bytes": 1941504,
+      "fts_data_bytes": 1863680,
+      "segments": 14
+    },
+    "corpus": "history-4",
+    "peak_wal_bytes": 1915832,
+    "stderr": "",
+    "stdout": "0",
+    "wal_sampling_ms": 5,
+    "wall_seconds": 0.031486807
+  },
+  {
+    "after": {
+      "chunks": 3835,
+      "database_bytes": 6135808,
+      "fts_bytes": 1081344,
+      "fts_data_bytes": 1011712,
+      "segments": 1
+    },
+    "before": {
+      "chunks": 3835,
+      "database_bytes": 5246976,
+      "fts_bytes": 1138688,
+      "fts_data_bytes": 1060864,
+      "segments": 14
+    },
+    "corpus": "history-5",
+    "peak_wal_bytes": 1083592,
+    "stderr": "",
+    "stdout": "0",
+    "wal_sampling_ms": 5,
+    "wall_seconds": 0.025844486
+  }
+]

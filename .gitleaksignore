@@ -13,5 +13,11 @@ cff20c0aaffaebc66b85dab75a63a4c2bbb0fa10:experiments/graph-reuse/corpora.toml:so
 cff20c0aaffaebc66b85dab75a63a4c2bbb0fa10:experiments/graph-reuse/corpora.toml:sourcegraph-access-token:59
 cff20c0aaffaebc66b85dab75a63a4c2bbb0fa10:experiments/graph-reuse/corpora.toml:sourcegraph-access-token:72
 cff20c0aaffaebc66b85dab75a63a4c2bbb0fa10:experiments/graph-reuse/corpora.toml:sourcegraph-access-token:84
+# Public hashes keyed by the corpus name keycloak: its pinned commit (line 9)
+# and its generated manifest's SHA-256 (line 17) in the #255 run metadata.
+3d72fa6b0159baca03489b1b8e119b6011cdb3ab:experiments/fts-tuning/results/index-metadata.json:generic-api-key:9
+3d72fa6b0159baca03489b1b8e119b6011cdb3ab:experiments/fts-tuning/results/index-metadata.json:generic-api-key:17
+7227a5c279985e89beefc76c5822704decc0fb16:experiments/fts-tuning/results/detail-column/metadata.json:generic-api-key:9
+7227a5c279985e89beefc76c5822704decc0fb16:experiments/fts-tuning/results/detail-column/metadata.json:generic-api-key:17
 # A pinned commit SHA beside a repository name that an intermediate commit of #287 wrote; the next commit reshaped it.
 08f864131b4f82d53bd21fb807840f054870ff61:experiments/retrieval-generalization/results/metadata.json:generic-api-key:20

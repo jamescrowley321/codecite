@@ -1,0 +1,24 @@
+# Local sources are read in place; the runner verifies each commit before indexing.
+[[corpus]]
+name = "linux"
+commit = "7d0a66e4bb9081d75c82ec4957c50034cb0ea449"
+license = "GPL-2.0-only"
+use = "approach_only"
+include = []
+exclude = []
+
+[[corpus]]
+name = "kubernetes"
+commit = "2b40648ce66b6061d48e8b468e65ee69cc18c424"
+license = "Apache-2.0"
+use = "adapt"
+include = []
+exclude = []
+
+[[corpus]]
+name = "keycloak"
+commit = "d0284ffeb094f3b1e8b2c5a528d2d1c6314a33b1"
+license = "Apache-2.0"
+use = "adapt"
+include = []
+exclude = []
