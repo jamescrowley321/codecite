@@ -8,7 +8,8 @@
     "build": "docusaurus build",
     "serve": "docusaurus serve",
     "clear": "docusaurus clear",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "test": "node --test src/remark/"
   },
   "dependencies": {
     "@docusaurus/core": "3.10.2",
@@ -24,6 +25,7 @@
     "@docusaurus/module-type-aliases": "3.10.2",
     "@docusaurus/tsconfig": "3.10.2",
     "@docusaurus/types": "3.10.2",
+    "@types/node": "26.6.6",
     "@types/react": "19.3.0",
     "typescript": "6.0.3"
   },

@@ -1,6 +1,9 @@
 import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
+import path from 'node:path';
+
+import repoLinks from './src/remark/repo-links.ts';
 
 // Runs in Node.js at build time.
 
@@ -27,7 +30,21 @@ const config: Config = {
     },
   },
 
-  themes: ['@docusaurus/theme-mermaid'],
+  themes: [
+    '@docusaurus/theme-mermaid',
+    [
+      // Search index built at build time and searched in the browser: no
+      // external service.
+      '@easyops-cn/docusaurus-search-local',
+      {
+        indexDocs: true,
+        indexBlog: false,
+        indexPages: false,
+        docsRouteBasePath: '/',
+        hashed: true,
+      },
+    ],
+  ],
 
   i18n: {
     defaultLocale: 'en',
@@ -54,6 +71,10 @@ const config: Config = {
           routeBasePath: '/',
           sidebarPath: './sidebars.ts',
           editUrl: 'https://github.com/jamescrowley321/codecite/edit/main/',
+          // Before Docusaurus resolves links, so it never sees a rewritten one.
+          beforeDefaultRemarkPlugins: [
+            [repoLinks, {repoRoot: path.resolve(__dirname, '..')}],
+          ],
         },
         blog: false,
         theme: {
