@@ -8,9 +8,9 @@ use rusqlite::params;
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use super::Store;
 use super::read::{byte_prefix, copy_instruction, file_lines};
 use super::search::{MAX_SNIPPET_BYTES, Scope, code_citation, document_citation, spec_citation};
+use super::{Store, stored_role};
 use crate::{Error, Result, Role, SectionNumber};
 
 /// A grep: the pattern, how to read it, the filters and how many matches to
@@ -95,6 +95,8 @@ struct DocRow {
     /// Whether the document is stored with its text: every file, and a
     /// fetched document that is not a spec.
     has_text: bool,
+    /// What the document is for, as the write path stored it.
+    role: Role,
 }
 
 impl DocRow {
@@ -109,7 +111,7 @@ impl DocRow {
         GrepMatch {
             citation,
             kind: kind.into(),
-            role: Role::of_stored(&self.path, &self.source_kind, self.has_text).as_str(),
+            role: self.role.as_str(),
             license_class: self.license_class.clone(),
             indexed_at: self.indexed_at.clone(),
             dirty: (!self.is_fetched()).then_some(self.dirty),
@@ -157,7 +159,7 @@ impl Store {
         // file before the first one is scanned.
         let mut docs = self.conn.prepare_cached(
             "SELECT d.id, d.path, d.dirty, s.name, s.kind, s.revision,
-               s.license_class, s.indexed_at, d.text IS NOT NULL
+               s.license_class, s.indexed_at, d.text IS NOT NULL, d.role
              FROM document d JOIN source s ON s.id = d.source_id
              WHERE s.is_current
                AND (?1 IS NULL OR d.language = ?1)
@@ -177,6 +179,7 @@ impl Store {
                 license_class: row.get(6)?,
                 indexed_at: row.get(7)?,
                 has_text: row.get(8)?,
+                role: stored_role(row, 9)?,
             };
             if doc.is_fetched() && !doc.has_text {
                 self.grep_spec(&doc, &re, limit, &mut matches)?;

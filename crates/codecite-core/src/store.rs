@@ -290,6 +290,20 @@ pub const APPLICATION_ID: i32 = 0x6364_6374;
 /// document's role and weight and each symbol's name key.
 const RANK_INPUTS: u32 = 10;
 
+/// The role in column `index` of `row`, a `document.role` that the write
+/// path classified under its source's rules. Readers take this instead of
+/// classifying the path again, so a manifest's role globs reach results
+/// and ranking alike. The column is NULL only between migration 10, which
+/// added it, and the fill that follows in the same transaction; an
+/// unknown name, which no build of codecite writes, reads as source too.
+pub(super) fn stored_role(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<Role> {
+    let name: Option<String> = row.get(index)?;
+    Ok(name
+        .as_deref()
+        .and_then(Role::parse)
+        .unwrap_or(Role::Source))
+}
+
 /// Sets every stored document's `role` and `role_weight` and every
 /// symbol's `name_key`, as the write path sets them, so an upgraded corpus
 /// ranks as a fresh index does. Version [`RANK_INPUTS`] adds the columns.

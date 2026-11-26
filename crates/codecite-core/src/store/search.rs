@@ -9,8 +9,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::Store;
 use super::read::{byte_prefix, copy_instruction};
+use super::{Store, stored_role};
 use crate::{Error, Result, Role, text_terms};
 
 /// The most lines of a chunk a result's snippet holds. Agents read the
@@ -309,7 +309,7 @@ impl Store {
             let fetched = source_kind == "document";
             let is_spec = fetched && !has_text;
             let (snippet, snippet_truncated) = snippet(&text);
-            let role = Role::of_stored(&path, &source_kind, has_text).as_str();
+            let role = stored_role(row, 17)?.as_str();
             let license_class: String = row.get(11)?;
             let citation = if is_spec {
                 spec_citation(&source, &revision, &kind, number, parent_number)
@@ -406,7 +406,9 @@ impl Store {
 /// `codecite_role_weight(path, source_kind, has_text)` and
 /// `codecite_name_key(name)`. Search reads the stored `document.role_weight`
 /// and `symbol.name_key` instead (#251), so no query of codecite's calls
-/// these two; they compute the stored values for ad hoc SQL.
+/// these two; they compute the stored values for ad hoc SQL. The role
+/// weight is the path convention's: a source whose manifest gives role
+/// globs stores weights this function does not know (#300).
 pub(super) fn register_functions(conn: &Connection) -> rusqlite::Result<()> {
     conn.create_scalar_function(
         "codecite_role_weight",
@@ -506,7 +508,7 @@ const RANK_LEGACY: &str = "SELECT c.id,
 const FETCH: &str = "SELECT c.kind, c.start_line, c.end_line, c.number, p.number,
        coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line)), d.path,
        d.dirty, s.name, s.kind, s.revision, s.license_class, s.indexed_at, sym.display_name,
-       d.text IS NOT NULL, c.title, c.anchor
+       d.text IS NOT NULL, c.title, c.anchor, d.role
      FROM chunk c
      JOIN document d ON d.id = c.document_id
      JOIN source s ON s.id = d.source_id
