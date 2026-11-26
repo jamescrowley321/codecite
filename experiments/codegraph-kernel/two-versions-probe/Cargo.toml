@@ -1,0 +1,10 @@
+# Does one binary link tree-sitter 0.25 (the kernel) and 0.27 (codecite)?
+# `cargo build` here answers: no, both declare links = "tree-sitter" (README).
+[package]
+name = "ts-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+[dependencies]
+ts25 = { package = "tree-sitter", version = "0.25" }
+ts27 = { package = "tree-sitter", version = "0.27" }

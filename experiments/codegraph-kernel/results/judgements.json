@@ -1,0 +1,324 @@
+{
+ "_note": "Verdicts on results/samples.md, in sample order (index 0 = item 1). Disagreements: which side is right for a definition row; headers: usable or partial for ranking (none unusable). Read against the pinned source by reviewers working from samples.md and the checkouts.",
+ "c/codecite_only": {
+  "verdicts": [
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "codecite_right"
+  ],
+  "pattern": "typedef struct/union/enum: the kernel keeps only the first typedef name and drops the tag and any later names"
+ },
+ "c/kernel_only": {
+  "verdicts": [
+   "kernel_right",
+   "kernel_right",
+   "kernel_right",
+   "kernel_right",
+   "kernel_right",
+   "codecite_right",
+   "kernel_right",
+   "codecite_right",
+   "kernel_right",
+   "kernel_right"
+  ],
+  "pattern": "function-like #define macros (kind constant) and static tables codecite never emits; misses: an extern declaration and an anonymous nested union field"
+ },
+ "cpp/kernel_only": {
+  "verdicts": [
+   "kernel_right",
+   "kernel_right",
+   "kernel_right",
+   "kernel_right",
+   "kernel_right",
+   "kernel_right",
+   "kernel_right",
+   "kernel_right",
+   "kernel_right",
+   "kernel_right"
+  ],
+  "pattern": "real C++ functions, methods, constructors and operators; codecite has no C++ grammar"
+ },
+ "java/codecite_only": {
+  "verdicts": [
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "codecite_right"
+  ],
+  "pattern": "methods of anonymous classes passed as arguments, which the kernel drops"
+ },
+ "java/kernel_only": {
+  "verdicts": [
+   "both_defensible",
+   "both_defensible",
+   "both_defensible",
+   "codecite_right",
+   "codecite_right",
+   "both_defensible",
+   "both_defensible",
+   "both_defensible",
+   "both_defensible",
+   "both_defensible"
+  ],
+  "pattern": "static final and interface constant fields codecite leaves out by design; a boilerplate logger and a synthetic anonymous-class row"
+ },
+ "python/kernel_only": {
+  "verdicts": [
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "kernel_right",
+   "codecite_right",
+   "codecite_right",
+   "both_defensible"
+  ],
+  "pattern": "temporaries inside module-level for/if/try/__main__ blocks; one real try/except feature flag"
+ },
+ "ruby/kernel_only": {
+  "verdicts": [
+   "kernel_right",
+   "kernel_right",
+   "kernel_right",
+   "kernel_right"
+  ],
+  "pattern": "real classes and methods; codecite has no Ruby grammar"
+ },
+ "rust/codecite_only": {
+  "verdicts": [
+   "both_defensible",
+   "both_defensible",
+   "both_defensible",
+   "both_defensible",
+   "codecite_right",
+   "both_defensible",
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "both_defensible"
+  ],
+  "pattern": "const or static items local to function bodies (optional) and documented trait associated consts the kernel misses"
+ },
+ "rust/kernel_only": {
+  "verdicts": [
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "both_defensible",
+   "codecite_right",
+   "both_defensible",
+   "both_defensible"
+  ],
+  "pattern": "kernel bug: a const named after its initialiser (`Register`, `PhantomData`, `None`) instead of its own name; plus impl associated types"
+ },
+ "javascript/codecite_only": {
+  "verdicts": [
+   "both_defensible",
+   "kernel_right",
+   "kernel_right",
+   "both_defensible",
+   "codecite_right",
+   "both_defensible",
+   "codecite_right",
+   "codecite_right",
+   "kernel_right",
+   "both_defensible"
+  ],
+  "pattern": "single-letter functions in minified files (noise), `var $x = function x` bundle bindings the kernel names differently, object-literal hooks"
+ },
+ "javascript/kernel_only": {
+  "verdicts": [
+   "kernel_right",
+   "codecite_right",
+   "codecite_right",
+   "kernel_right",
+   "codecite_right",
+   "kernel_right",
+   "kernel_right",
+   "kernel_right",
+   "codecite_right",
+   "kernel_right"
+  ],
+  "pattern": "`X.prototype.m = function`, API object methods and block-scoped module tables codecite misses; misses are block-local consts"
+ },
+ "tsx/codecite_only": {
+  "verdicts": [
+   "both_defensible",
+   "kernel_right",
+   "kernel_right",
+   "kernel_right",
+   "both_defensible",
+   "kernel_right",
+   "kernel_right",
+   "both_defensible",
+   "kernel_right",
+   "kernel_right"
+  ],
+  "pattern": "codecite emits props-type member signatures, JSX onClick callbacks and test-local type aliases"
+ },
+ "tsx/kernel_only": {
+  "verdicts": [
+   "codecite_right",
+   "codecite_right",
+   "kernel_right",
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "codecite_right",
+   "kernel_right",
+   "codecite_right"
+  ],
+  "pattern": "kernel emits function-typed props-interface properties as methods and component locals; right on class arrow-function properties"
+ },
+ "typescript/codecite_only": {
+  "verdicts": [
+   "both_defensible",
+   "kernel_right",
+   "both_defensible",
+   "kernel_right",
+   "kernel_right",
+   "kernel_right",
+   "kernel_right",
+   "kernel_right",
+   "kernel_right",
+   "both_defensible"
+  ],
+  "pattern": "codecite emits generated emscripten descriptor getters, config hooks and function-local type aliases"
+ },
+ "typescript/kernel_only": {
+  "verdicts": [
+   "codecite_right",
+   "kernel_right",
+   "kernel_right",
+   "codecite_right",
+   "kernel_right",
+   "kernel_right",
+   "kernel_right",
+   "both_defensible",
+   "kernel_right",
+   "kernel_right"
+  ],
+  "pattern": "class arrow-function properties and arrow members of module-level objects codecite misses"
+ },
+ "c/header": {
+  "verdicts": [
+   "partial",
+   "usable",
+   "partial",
+   "partial",
+   "usable",
+   "partial",
+   "usable",
+   "usable",
+   "partial",
+   "partial"
+  ],
+  "pattern": "signature field always empty (no parameters), return type only when on its own line; doc comments found, once a preprocessor comment"
+ },
+ "java/header": {
+  "verdicts": [
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable"
+  ],
+  "pattern": "return type, typed parameters, Javadoc"
+ },
+ "javascript/header": {
+  "verdicts": [
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "partial",
+   "usable",
+   "usable"
+  ],
+  "pattern": "faithful; line comments above a definition captured only sometimes; much minified vendor code"
+ },
+ "python/header": {
+  "verdicts": [
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable"
+  ],
+  "pattern": "parameters as written, docstrings; base classes left out"
+ },
+ "rust/header": {
+  "verdicts": [
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "partial"
+  ],
+  "pattern": "typed signature, return type, /// docs; one doc block above an attribute missed"
+ },
+ "tsx/header": {
+  "verdicts": [
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable"
+  ],
+  "pattern": "typed parameters incl. destructured props (sometimes very long); type aliases name only"
+ },
+ "typescript/header": {
+  "verdicts": [
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "partial",
+   "usable",
+   "usable",
+   "usable",
+   "usable",
+   "usable"
+  ],
+  "pattern": "typed parameters and return type; generic type parameters dropped; aliases and interfaces name only"
+ }
+}

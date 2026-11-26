@@ -1,0 +1,13 @@
+{
+ "django": {},
+ "excalidraw": {},
+ "keycloak": {},
+ "linux": {
+  "cpp": 7,
+  "ruby": 1
+ },
+ "ripgrep": {
+  "lua": 1,
+  "ruby": 1
+ }
+}

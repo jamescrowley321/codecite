@@ -1,0 +1,398 @@
+{
+ "django": {
+  "kernel_files": {
+   "javascript": {
+    "defer": 2,
+    "files": 112,
+    "non_utf8": 0,
+    "ok": 110,
+    "other": 0,
+    "timeout": 0
+   },
+   "python": {
+    "defer": 1,
+    "files": 2874,
+    "non_utf8": 0,
+    "ok": 2873,
+    "other": 0,
+    "timeout": 0
+   }
+  },
+  "kernel_other_kinds": {
+   "javascript/import": 16,
+   "python/import": 11043
+  },
+  "rows": {
+   "javascript/types": {
+    "codecite_only": 19,
+    "codecite_only_file_deferred": 1,
+    "kernel_only": 442,
+    "matched": 554,
+    "same_end": 554
+   },
+   "javascript/vars": {
+    "kernel_only": 60,
+    "matched": 11,
+    "same_end": 11
+   },
+   "python/types": {
+    "codecite_only_file_deferred": 1,
+    "codecite_only_file_unrouted": 1,
+    "kernel_only": 46,
+    "matched": 41901,
+    "same_end": 41901
+   },
+   "python/vars": {
+    "kernel_only": 164,
+    "matched": 2750,
+    "same_end": 2750
+   }
+  }
+ },
+ "excalidraw": {
+  "kernel_files": {
+   "javascript": {
+    "defer": 0,
+    "files": 28,
+    "non_utf8": 0,
+    "ok": 28,
+    "other": 0,
+    "timeout": 0
+   },
+   "tsx": {
+    "defer": 0,
+    "files": 257,
+    "non_utf8": 0,
+    "ok": 257,
+    "other": 0,
+    "timeout": 0
+   },
+   "typescript": {
+    "defer": 1,
+    "files": 259,
+    "non_utf8": 0,
+    "ok": 258,
+    "other": 0,
+    "timeout": 0
+   }
+  },
+  "kernel_other_kinds": {
+   "javascript/import": 11,
+   "tsx/import": 2336,
+   "tsx/property": 567,
+   "typescript/enum_member": 39,
+   "typescript/import": 1643,
+   "typescript/property": 880
+  },
+  "rows": {
+   "javascript/types": {
+    "codecite_only": 4,
+    "kernel_only": 3,
+    "matched": 34,
+    "same_end": 34
+   },
+   "javascript/vars": {
+    "kernel_only": 14,
+    "matched": 72,
+    "same_end": 72
+   },
+   "tsx/types": {
+    "codecite_only": 21,
+    "kernel_only": 223,
+    "matched": 740,
+    "same_end": 740
+   },
+   "tsx/vars": {
+    "kernel_only": 6,
+    "matched": 453,
+    "same_end": 453
+   },
+   "typescript/types": {
+    "codecite_only": 62,
+    "codecite_only_file_deferred": 3,
+    "kernel_only": 185,
+    "matched": 2033,
+    "same_end": 2033
+   },
+   "typescript/vars": {
+    "codecite_only_file_deferred": 2,
+    "kernel_only": 12,
+    "matched": 381,
+    "same_end": 381
+   }
+  }
+ },
+ "keycloak": {
+  "kernel_files": {
+   "c": {
+    "defer": 1,
+    "files": 1,
+    "non_utf8": 0,
+    "ok": 0,
+    "other": 0,
+    "timeout": 0
+   },
+   "java": {
+    "defer": 0,
+    "files": 8751,
+    "non_utf8": 0,
+    "ok": 8751,
+    "other": 0,
+    "timeout": 0
+   },
+   "javascript": {
+    "defer": 1,
+    "files": 60,
+    "non_utf8": 0,
+    "ok": 59,
+    "other": 0,
+    "timeout": 0
+   },
+   "python": {
+    "defer": 0,
+    "files": 2,
+    "non_utf8": 0,
+    "ok": 2,
+    "other": 0,
+    "timeout": 0
+   },
+   "tsx": {
+    "defer": 1,
+    "files": 632,
+    "non_utf8": 0,
+    "ok": 631,
+    "other": 0,
+    "timeout": 0
+   },
+   "typescript": {
+    "defer": 0,
+    "files": 416,
+    "non_utf8": 0,
+    "ok": 416,
+    "other": 0,
+    "timeout": 0
+   }
+  },
+  "kernel_other_kinds": {
+   "java/enum_member": 2278,
+   "java/field": 17632,
+   "java/import": 109763,
+   "java/namespace": 8748,
+   "javascript/import": 50,
+   "python/import": 14,
+   "tsx/enum_member": 26,
+   "tsx/import": 5685,
+   "tsx/property": 1538,
+   "typescript/enum_member": 56,
+   "typescript/import": 1985,
+   "typescript/property": 1749
+  },
+  "rows": {
+   "c/types": {
+    "codecite_only_file_deferred": 4
+   },
+   "java/types": {
+    "codecite_only": 7,
+    "kernel_only": 1553,
+    "matched": 92262,
+    "same_end": 92262
+   },
+   "java/vars": {
+    "kernel_only": 10388
+   },
+   "javascript/types": {
+    "codecite_only": 2,
+    "kernel_only": 19,
+    "matched": 77,
+    "same_end": 77
+   },
+   "javascript/vars": {
+    "matched": 72,
+    "same_end": 72
+   },
+   "python/types": {
+    "matched": 14,
+    "same_end": 14
+   },
+   "python/vars": {
+    "matched": 9,
+    "same_end": 9
+   },
+   "tsx/types": {
+    "codecite_only": 9,
+    "codecite_only_file_deferred": 5,
+    "kernel_only": 359,
+    "matched": 2378,
+    "same_end": 2378
+   },
+   "tsx/vars": {
+    "kernel_only": 3,
+    "matched": 379,
+    "same_end": 379
+   },
+   "typescript/types": {
+    "codecite_only": 3,
+    "kernel_only": 18,
+    "matched": 1347,
+    "same_end": 1347
+   },
+   "typescript/vars": {
+    "matched": 286,
+    "same_end": 286
+   }
+  }
+ },
+ "linux": {
+  "kernel_files": {
+   "c": {
+    "defer": 30963,
+    "files": 61991,
+    "non_utf8": 0,
+    "ok": 31028,
+    "other": 0,
+    "timeout": 0
+   },
+   "cpp*": {
+    "defer": 3,
+    "files": 7,
+    "non_utf8": 0,
+    "ok": 4,
+    "other": 0,
+    "timeout": 0
+   },
+   "python": {
+    "defer": 1,
+    "files": 333,
+    "non_utf8": 0,
+    "ok": 332,
+    "other": 0,
+    "timeout": 0
+   },
+   "ruby*": {
+    "defer": 0,
+    "files": 1,
+    "non_utf8": 0,
+    "ok": 1,
+    "other": 0,
+    "timeout": 0
+   },
+   "rust": {
+    "defer": 1,
+    "files": 242,
+    "non_utf8": 0,
+    "ok": 241,
+    "other": 0,
+    "timeout": 0
+   }
+  },
+  "kernel_other_kinds": {
+   "c/enum_member": 208857,
+   "c/import": 99683,
+   "cpp/import": 16,
+   "python/import": 1728,
+   "ruby/import": 2,
+   "ruby/module": 2,
+   "rust/enum_member": 128,
+   "rust/import": 772
+  },
+  "rows": {
+   "c/types": {
+    "codecite_only": 1503,
+    "codecite_only_file_deferred": 698476,
+    "kernel_only": 9675,
+    "matched": 184248,
+    "same_end": 184248
+   },
+   "c/vars": {
+    "kernel_only": 114182
+   },
+   "cpp/types": {
+    "kernel_only": 16
+   },
+   "python/types": {
+    "codecite_only_file_deferred": 3,
+    "codecite_only_file_unrouted": 264,
+    "matched": 5947,
+    "same_end": 5947
+   },
+   "python/vars": {
+    "codecite_only_file_deferred": 5,
+    "codecite_only_file_unrouted": 61,
+    "kernel_only": 510,
+    "matched": 1182,
+    "same_end": 1182
+   },
+   "ruby/types": {
+    "kernel_only": 2
+   },
+   "rust/types": {
+    "codecite_only": 1,
+    "codecite_only_file_deferred": 36,
+    "kernel_only": 31,
+    "matched": 3547,
+    "same_end": 3547
+   },
+   "rust/vars": {
+    "codecite_only": 51,
+    "codecite_only_file_deferred": 2,
+    "kernel_only": 58,
+    "matched": 447,
+    "same_end": 417
+   }
+  }
+ },
+ "ripgrep": {
+  "kernel_files": {
+   "lua*": {
+    "defer": 0,
+    "files": 1,
+    "non_utf8": 0,
+    "ok": 1,
+    "other": 0,
+    "timeout": 0
+   },
+   "ruby*": {
+    "defer": 0,
+    "files": 1,
+    "non_utf8": 0,
+    "ok": 1,
+    "other": 0,
+    "timeout": 0
+   },
+   "rust": {
+    "defer": 0,
+    "files": 105,
+    "non_utf8": 0,
+    "ok": 105,
+    "other": 0,
+    "timeout": 0
+   }
+  },
+  "kernel_other_kinds": {
+   "rust/enum_member": 269,
+   "rust/import": 265
+  },
+  "rows": {
+   "python/types": {
+    "codecite_only_file_unrouted": 72
+   },
+   "python/vars": {
+    "codecite_only_file_unrouted": 16
+   },
+   "ruby/types": {
+    "kernel_only": 2
+   },
+   "rust/types": {
+    "kernel_only": 1,
+    "matched": 3468,
+    "same_end": 3468
+   },
+   "rust/vars": {
+    "codecite_only": 28,
+    "kernel_only": 1,
+    "matched": 59,
+    "same_end": 33
+   }
+  }
+ }
+}

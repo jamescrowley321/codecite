@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# Standalone experiment crates with their own lockfiles (see their READMEs).
+exclude = ["experiments/codegraph-kernel"]
 
 [workspace.package]
 version = "0.0.1"
