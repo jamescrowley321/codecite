@@ -32,7 +32,7 @@ on:
         type: string
         default: fastapi-middleware
       arms:
-        description: ab (baseline against codecite), aa (an A/A round, two baseline arms, to measure noise), baseline (calibrate the task on the quick tier, no verdict), assist (baseline against codecite only through the hook on the agent's searches, through grep, glob or the shell), plugin (baseline against Claude Code with the codecite plugin installed: skill, MCP and session note, no prompt note) or tools (baseline, codecite and codegraph)
+        description: ab (baseline against codecite), aa (an A/A round, two baseline arms, to measure noise), baseline (calibrate the task on the quick tier, no verdict), assist (baseline against codecite only through the hook on the agent's searches, through grep, glob or the shell), plugin (baseline against Claude Code with the codecite plugin installed (skill, MCP and session note), no prompt note) or tools (baseline, codecite and codegraph)
         type: choice
         options: [ab, aa, baseline, assist, plugin, tools]
         default: ab
