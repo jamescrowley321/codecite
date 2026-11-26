@@ -47,7 +47,7 @@ from inspect_ai.scorer import Score, Target, accuracy, scorer, stderr
 from inspect_ai.solver import Generate, TaskState, solver
 from inspect_ai.util import OutputLimitExceededError, sandbox, store
 
-from codecite_evals import assist, claude_code, config, scrub
+from codecite_evals import assist, claude_code, config, plugin, scrub
 
 ARMS = {"both": ("baseline", "codecite"), "baseline": ("baseline",)}
 PROJECT = "/work/project"
@@ -233,6 +233,8 @@ def pi_command(condition: str, prompt: str) -> list[str]:
     """pi's command line for an arm. --no-extensions drops the built-in
     extensions too, so the codecite arm loads only the MCP one back, and only
     it lists codecite's tools; the assist arm loads only its hook's."""
+    if condition == "plugin":
+        raise ValueError("the plugin arm has no pi version until the pi package lands (spec step 3)")
     if condition == "codecite":
         flags, tools = [*PI_FLAGS, "-e", "builtin:mcp"], [*PI_TOOLS, *CODECITE_TOOLS]
     elif condition == "assist":
@@ -312,17 +314,21 @@ def coding_agent() -> Agent:
 
 async def prepare_arm(sb, condition: str, mcp_path: str, mcp_config: dict) -> dict[str, str]:
     """Take codecite out of the baseline arm's sandbox, give the assist arm
-    its hook (codecite kept, but off PATH), or give the codecite arm the
+    its hook (codecite kept, but off PATH), give the plugin arm the plugin
+    (codecite on PATH, with its corpus), or give the codecite arm the
     agent's MCP config, and return the arm's base env."""
     if condition == "baseline":
         await sb.exec(["rm", "-rf", "/opt/codecite"])
     elif condition == "assist":
         for path, text in assist.files().items():
             await sb.write_file(path, text)
+    elif condition == "plugin":
+        for path, text in plugin.files().items():
+            await sb.write_file(path, text)
     else:
         await sb.write_file(mcp_path, json.dumps(mcp_config, indent=2))
-    path = ("/opt/codecite/bin:" if condition == "codecite" else "") + "/usr/local/bin:/usr/bin:/bin"
-    return {"PATH": path, "HOME": "/root"}
+    path = ("/opt/codecite/bin:" if condition in ("codecite", "plugin") else "") + "/usr/local/bin:/usr/bin:/bin"
+    return {"PATH": path, "HOME": "/root", **({plugin.CORPUS_ENV: plugin.CORPUS} if condition == "plugin" else {})}
 
 
 async def keep_assist_measures(sb, condition: str) -> None:

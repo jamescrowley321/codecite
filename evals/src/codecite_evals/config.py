@@ -24,6 +24,8 @@ ARMS = {
     "baseline": (("baseline", "baseline"),),
     # codecite only through the hook on the agent's own searches (assist.py).
     "assist": (("baseline", "baseline"), ("assist", "assist")),
+    # Claude Code with the codecite plugin installed (plugin.py).
+    "plugin": (("baseline", "baseline"), ("plugin", "plugin")),
 }
 
 QUERIES = EVALS_DIR / "retrieval" / "queries.toml"

@@ -1,0 +1,64 @@
+"""The plugin arm: Claude Code with the codecite plugin loaded from
+plugins/codecite, installed in the sandbox with --plugin-dir."""
+
+import asyncio
+
+import pytest
+
+from codecite_evals import claude_code, config, plugin, task
+
+
+def test_plugin_arm_is_registered():
+    assert config.ARMS["plugin"] == (("baseline", "baseline"), ("plugin", "plugin"))
+
+
+def test_plugin_files_cover_the_plugin():
+    files = plugin.files()
+    assert f"{plugin.PLUGIN_DIR}/.claude-plugin/plugin.json" in files
+    assert f"{plugin.PLUGIN_DIR}/skills/codecite/SKILL.md" in files
+    assert f"{plugin.PLUGIN_DIR}/.mcp.json" in files
+    assert f"{plugin.PLUGIN_DIR}/hooks/hooks.json" in files
+    source = config.ROOT / "plugins/codecite/skills/codecite/SKILL.md"
+    assert files[f"{plugin.PLUGIN_DIR}/skills/codecite/SKILL.md"] == source.read_text()
+
+
+def test_claude_command_loads_the_plugin_without_strict_mcp():
+    cmd = claude_code.command("plugin", "p", "m", 60)
+    assert cmd[cmd.index("--plugin-dir") + 1] == plugin.PLUGIN_DIR
+    assert "--strict-mcp-config" not in cmd and "--mcp-config" not in cmd and "--settings" not in cmd
+
+
+def test_other_arms_keep_strict_mcp_and_no_plugin():
+    for condition in ("baseline", "codecite", "assist"):
+        cmd = claude_code.command(condition, "p", "m", 60)
+        assert "--strict-mcp-config" in cmd and "--plugin-dir" not in cmd
+
+
+def test_plugin_prompt_has_no_note(tmp_path):
+    (tmp_path / "prompt.md").write_text("Fix it.\n")
+    assert task.prompt(tmp_path, "plugin") == "Fix it.\n"
+
+
+def test_pi_has_no_plugin_arm_yet():
+    with pytest.raises(ValueError, match="pi package"):
+        task.pi_command("plugin", "p")
+
+
+class Sandbox:
+    def __init__(self):
+        self.files, self.commands = {}, []
+
+    async def write_file(self, path, contents):
+        self.files[path] = contents
+
+    async def exec(self, cmd, **kwargs):
+        self.commands.append(cmd)
+
+
+def test_prepare_arm_writes_the_plugin_and_keeps_codecite_on_path():
+    sb = Sandbox()
+    env = asyncio.run(task.prepare_arm(sb, "plugin", claude_code.MCP, claude_code.MCP_CONFIG))
+    assert sb.commands == [] and claude_code.MCP not in sb.files
+    assert sb.files == plugin.files()
+    assert env["PATH"].startswith("/opt/codecite/bin:") and env["HOME"] == "/root"
+    assert env[plugin.CORPUS_ENV] == "eval"

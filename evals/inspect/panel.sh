@@ -35,7 +35,8 @@
 # codecite, the default), aa (an A/A round, two baseline arms, logged to
 # inspect/logs/<tier>-aa/<task>/), assist (baseline against codecite only
 # through the grep and glob hook, logged to inspect/logs/<tier>-assist/<task>/),
-# or baseline (a calibration,
+# plugin (baseline against Claude Code with the codecite plugin, logged to
+# inspect/logs/<tier>-plugin/<task>/), or baseline (a calibration,
 # evals/README.md: quick tier only, logged to inspect/logs/calibration/<task>/
 # and reported with no verdict). CORPUS picks a size-dial task's corpus size
 # (task.json kind "corpus": s, m or l, default the task's own; stage the image
@@ -127,12 +128,13 @@ case "$ARMS" in
   ab) LOG_DIR="inspect/logs/$TIER/$LOG_TASK" ;;
   aa) LOG_DIR="inspect/logs/$TIER-aa/$LOG_TASK" ;;
   assist) LOG_DIR="inspect/logs/$TIER-assist/$LOG_TASK" ;;
+  plugin) LOG_DIR="inspect/logs/$TIER-plugin/$LOG_TASK" ;;
   baseline)
     [[ "$TIER" == quick ]] || { echo "calibrate (ARMS=baseline) on the quick tier" >&2; exit 2; }
     LOG_DIR="inspect/logs/calibration/$LOG_TASK"
     ;;
   *)
-    echo "ARMS must be ab, aa, baseline or assist, not '$ARMS'" >&2
+    echo "ARMS must be ab, aa, baseline, assist or plugin, not '$ARMS'" >&2
     exit 2
     ;;
 esac
