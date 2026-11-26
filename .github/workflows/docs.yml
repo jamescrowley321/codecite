@@ -4,9 +4,11 @@ name: Docs
 # GitHub Pages from main. The build is the broken-link check: a broken
 # internal link, anchor or Markdown link fails it.
 #
-# No `paths:` filter, so `docs-build` reports on every PR and can be a
-# required check; its first step decides whether a site input changed and,
-# when none did, the job ends green without building. No `branches:` filter
+# Builds on every PR and every push to main, with no paths filter and no
+# change detection: the build reads files outside the docs (a doc's link to
+# LICENSE or a source file is checked against the tree), so any change can
+# break it, and the build takes about a minute. It also keeps `docs-build`
+# reporting on every PR, so it can be a required check. No `branches:` filter
 # on pull_request: stacked PRs target other feature branches.
 on:
   pull_request:
@@ -25,88 +27,42 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    outputs:
-      relevant: ${{ steps.paths.outputs.relevant }}
     steps:
-      # Full history, so the paths step can diff the PR or push range.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
-
-      - name: Did a site input change?
-        id: paths
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD: ${{ github.event.pull_request.head.sha }}
-          PUSH_BEFORE: ${{ github.event.before }}
-          PUSH_AFTER: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            range="$PR_BASE...$PR_HEAD"
-          else
-            # A branch's first push has an all-zero `before`; a force push
-            # can leave it unfetchable. Either way, build.
-            if [ -z "$PUSH_BEFORE" ] \
-              || [ "$PUSH_BEFORE" = "0000000000000000000000000000000000000000" ] \
-              || ! git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
-              echo "relevant=true" >> "$GITHUB_OUTPUT"
-              echo "No usable base commit; building."
-              exit 0
-            fi
-            range="$PUSH_BEFORE..$PUSH_AFTER"
-          fi
-          relevant=false
-          while IFS= read -r file; do
-            case "$file" in
-              website/* | README.md | evals/README.md | .github/workflows/docs.yml)
-                relevant=true ;;
-              docs/*/*) ;;
-              docs/*.md)
-                relevant=true ;;
-            esac
-          done < <(git diff --name-only "$range")
-          echo "relevant=$relevant" >> "$GITHUB_OUTPUT"
-          echo "Site input changed: $relevant"
 
       # No setup-node cache: this job's output is deployed, and a restored
       # cache could poison it.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        if: steps.paths.outputs.relevant == 'true'
         with:
           node-version-file: website/.nvmrc
           package-manager-cache: false
 
       # --ignore-scripts: no dependency's install script runs in CI.
       - name: Install
-        if: steps.paths.outputs.relevant == 'true'
         working-directory: website
         run: npm ci --ignore-scripts
 
       - name: Test the remark plugin
-        if: steps.paths.outputs.relevant == 'true'
         working-directory: website
         run: npm test
 
       - name: Build (fails on a broken link or anchor)
-        if: steps.paths.outputs.relevant == 'true'
         working-directory: website
         run: npm run build
 
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        if: steps.paths.outputs.relevant == 'true' && github.event_name == 'push'
+        if: github.event_name == 'push'
         with:
           path: website/build
 
-  # Runs only when the push to main changed a site input, so a Rust-only
-  # merge skips it instead of failing for want of an artifact. Pages deploys
-  # through OIDC; there is no secret.
+  # Deploys every push to main. Pages deploys through OIDC; there is no
+  # secret.
   docs-deploy:
     name: docs-deploy
     needs: docs-build
-    if: github.event_name == 'push' && needs.docs-build.outputs.relevant == 'true'
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       pages: write # deploy to Pages
