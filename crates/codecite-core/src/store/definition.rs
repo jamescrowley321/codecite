@@ -262,11 +262,12 @@ const SIMILAR_GRAPH_NAMES: &str = "SELECT DISTINCT sym.display_name FROM symbol 
 /// chunk's, which the index run wrote with it.
 const DEFINITIONS: &str = "SELECT sym.id, coalesce(sym.kind, c.kind), c.start_line, c.end_line,
        d.path, d.dirty, s.name, s.revision, s.license_class, s.indexed_at,
-       coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line)),
+       coalesce(c.text, codecite_lines(t.text, c.start_line, c.end_line)),
        sym.display_name, sym.provider, sym.local_id, d.role
      FROM symbol sym
      JOIN chunk c ON c.symbol_id = sym.id
      JOIN document d ON d.id = sym.document_id
+     LEFT JOIN document_text t ON t.document_id = d.id
      JOIN source s ON s.id = d.source_id
      WHERE sym.display_name = ?1 AND s.is_current";
 

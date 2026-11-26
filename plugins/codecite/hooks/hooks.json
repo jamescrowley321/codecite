@@ -6,6 +6,22 @@
           { "type": "command", "command": "codecite hook claude session-start", "timeout": 5 }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Grep|Glob|Bash",
+        "hooks": [
+          { "type": "command", "command": "codecite hook claude post-tool-use", "timeout": 10 }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "codecite hook claude pre-tool-use", "timeout": 10 }
+        ]
+      }
     ]
   }
 }

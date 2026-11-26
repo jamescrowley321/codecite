@@ -308,8 +308,10 @@ fn skip_generics(text: &str) -> Option<&str> {
 /// The source's code documents with their text, as `(ID, line count)` by
 /// path.
 fn stored_documents(tx: &Connection, source_id: i64) -> Result<HashMap<String, (i64, u32)>> {
-    let mut stmt = tx
-        .prepare("SELECT id, path, text FROM document WHERE source_id = ?1 AND text IS NOT NULL")?;
+    let mut stmt = tx.prepare(
+        "SELECT d.id, d.path, t.text FROM document d
+             JOIN document_text t ON t.document_id = d.id WHERE d.source_id = ?1",
+    )?;
     let rows = stmt.query_map([source_id], |row| {
         let text: String = row.get(2)?;
         let lines = u32::try_from(file_lines(&text).len()).unwrap_or(u32::MAX);
@@ -619,7 +621,7 @@ fn write_occurrences(
     // Every definition in the file, SCIP's and tree-sitter's.
     let ranges = file_ranges(tx, document_id)?;
     let text: String = tx.query_row(
-        "SELECT text FROM document WHERE id = ?1",
+        "SELECT text FROM document_text WHERE document_id = ?1",
         [document_id],
         |row| row.get(0),
     )?;

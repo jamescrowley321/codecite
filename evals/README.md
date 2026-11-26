@@ -1,7 +1,8 @@
 # evals
 
-Two benchmarks decide whether codecite earns its place (`docs/design.md`,
-Evaluation plan):
+codecite only earns its place if an agent does better with it than without
+it, so it is measured, not assumed. Three benchmarks keep it honest (see
+[Evaluation plan](../docs/design.md#evaluation-plan) in the design):
 
 - **A/B agent eval** (`inspect/`): the same coding agent does the same task
   twice, in a **baseline** arm and in a **codecite** arm with codecite's
@@ -14,7 +15,7 @@ Evaluation plan):
 - **Retrieval benchmark** (`retrieval/`): labelled queries run through
   `codecite-bench`; CI runs it on every PR.
 
-## History benchmark
+## 📈 History benchmark
 
 The question an agent asks most is "where does this change go?". Every merged
 PR answers it: the PR's title, and the issue it closes as it was asked, are
@@ -76,7 +77,7 @@ a symbol, three runs each, the fastest counting. It reports the median and
 `experiments/assist-latency/` runs it on the retrieval corpus against a
 p95 guardrail of 150 ms.
 
-## Layout
+## 🗂️ Layout
 
 | Path | What |
 | --- | --- |
@@ -96,7 +97,7 @@ p95 guardrail of 150 ms.
 | `history/` | The history benchmark: queries mined from merged PRs, one directory per repository, `run.sh`, and `results/` |
 | `tasks/_replay/` | `check.sh`, which proves a replay task sound |
 
-## Tasks
+## 🧪 Tasks
 
 - **`fastapi-middleware`**: protect a FastAPI app with identity-model's
   `TokenValidationMiddleware` and `CurrentUser`. The hidden tests take real
@@ -340,7 +341,7 @@ reported, never gated, and the direct CodeGraph-vs-codecite comparison is
 `not measured` if either tool was used in fewer than half its usable runs.
 The codecite-vs-baseline gate is unchanged.
 
-## The gate run and the rerun
+## 🚦 The gate run and the rerun
 
 The A/B eval runs at one of two tiers. They share the task, the scorer, the
 report and the gating panel; only the number of epochs differs, and the
@@ -412,8 +413,10 @@ The `budget` job counts the runs whose eval job started, so runs skipped by
 another label, and runs it refused, don't count. Over the cap it fails with
 the reason in its summary, and the eval job is skipped.
 
-The only hard dollar limit is outside the repository: the OpenRouter key's
-credit limit, which James sets in the OpenRouter dashboard.
+The only hard dollar limit is outside the repository: the eval OpenRouter
+key's credit limit, $400 a month (its validation caps it at $500). It is set
+in Terraform in the private oss-admin repository, so change it there: a change
+made in the OpenRouter dashboard is reverted on the next apply.
 
 The job builds codecite, fetches identity-model at the task's pinned commit
 and caches the three sandbox images (the sandbox, the IdP and the proxy),
@@ -436,7 +439,7 @@ round, `eval-logs-<tier>-assist-<task>` for the assist arm,
 `eval-logs-calibration-<task>` for a calibration; a size-dial task's `<task>`
 is `<task>-<size>`, as `house-rules-m`).
 
-## A/A rounds
+## 🔁 A/A rounds
 
 An A/A round runs the task with two baseline arms, `baseline-a` and
 `baseline-b`, with the same prompt and the same sandbox. Whatever separates
@@ -447,7 +450,7 @@ runs a tier that way into `inspect/logs/<tier>-aa/<task>/`. The scorecard heads 
 round as A/A and gives it no verdict: it names each measure whose interval
 noise alone pushed past the 5% margin.
 
-## The assist arm
+## 🪝 The assist arm
 
 `-T arms=assist` runs baseline against an `assist` arm, where codecite reaches
 the agent only through `codecite assist` on its own searches (#162,
@@ -467,17 +470,17 @@ and bytes per run, with bytes / 4 as an estimate of the tokens added.
 `ARMS=assist inspect/panel.sh quick` logs to `inspect/logs/<tier>-assist/<task>/`;
 on CI, dispatch with `arms: assist`.
 
-## The plugin arm
+## 🔌 The plugin arm
 
 `-T arms=plugin` runs baseline against a `plugin` arm: Claude Code with the codecite plugin (`plugins/codecite`: the skill, the MCP server and the session-start hook) loaded with `--plugin-dir /opt/codecite-plugin`. `src/codecite_evals/plugin.py` copies the plugin's files into the sandbox. `codecite` stays on `PATH`, since the plugin's MCP server and hook run it, and `CODECITE_CORPUS=eval` names the corpus. The prompt is baseline's: the skill and the session note are the plugin's own. On CI, dispatch with `arms: plugin`.
 
-## The tools arms
+## 🧰 The tools arms
 
 `ARMS=tools inspect/panel.sh quick` logs to `inspect/logs/<tier>-tools/<task>/`;
 on CI, dispatch with `arms: tools`. These paths and artifacts are distinct
 from the default A/B logs, including on retry or resume.
 
-## The scorecard
+## 📊 The scorecard
 
 `codecite-eval-report` prints three tables per task (a calibration prints one):
 
@@ -507,7 +510,7 @@ model's verdict ends `reported, not gated`. The `"gate"`
 key that older replay tasks' `task.json` carry is ignored. Logs whose samples kept no model events leave the
 transcript measures blank.
 
-## Running the A/B eval locally
+## 💻 Running the A/B eval locally
 
 Needs Docker, [uv](https://docs.astral.sh/uv/), a release build of codecite
 and an identity-model checkout (`IDENTITY_MODEL_REPO`, default
@@ -568,7 +571,7 @@ against ~70 s of working time. To do the same locally, add
 `"default-address-pools": [{"base": "10.200.0.0/16", "size": 24}]` to
 `/etc/docker/daemon.json` and restart Docker.
 
-## Calibrating a new task
+## 🎯 Calibrating a new task
 
 A task has to be hard enough that the arms can differ on correctness: one
 every model passes in both arms can't show codecite helping. Getting it there
@@ -602,7 +605,7 @@ benchmark).
    needs changing after that is a new task: copy it to a new id and
    calibrate that.
 
-## How a sample runs
+## ⚙️ How a sample runs
 
 - The sandbox image holds pi, the task's project with its dependencies
   installed, identity-model's source at the task's pinned commit, and codecite

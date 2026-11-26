@@ -21,3 +21,9 @@ cff20c0aaffaebc66b85dab75a63a4c2bbb0fa10:experiments/graph-reuse/corpora.toml:so
 7227a5c279985e89beefc76c5822704decc0fb16:experiments/fts-tuning/results/detail-column/metadata.json:generic-api-key:17
 # A pinned commit SHA beside a repository name that an intermediate commit of #287 wrote; the next commit reshaped it.
 08f864131b4f82d53bd21fb807840f054870ff61:experiments/retrieval-generalization/results/metadata.json:generic-api-key:20
+# The same public hashes keyed by keycloak (pinned commit line 7, manifest
+# SHA-256 line 13) in #308's cold-cache run metadata, base and branch runs.
+00006ac0bf34b8404d54b83122d7dc992b91bde9:experiments/cold-cache-search/results/index-metadata-base.json:generic-api-key:7
+00006ac0bf34b8404d54b83122d7dc992b91bde9:experiments/cold-cache-search/results/index-metadata-base.json:generic-api-key:13
+840428d3894d30de040c27b426aec696b18fb5eb:experiments/cold-cache-search/results/index-metadata-branch.json:generic-api-key:7
+840428d3894d30de040c27b426aec696b18fb5eb:experiments/cold-cache-search/results/index-metadata-branch.json:generic-api-key:13

@@ -407,7 +407,9 @@ impl Store {
         let row: Option<(i64, Option<String>, bool)> = self
             .conn
             .query_row(
-                "SELECT id, text, dirty FROM document WHERE source_id = ?1 AND path = ?2",
+                "SELECT d.id, t.text, d.dirty FROM document d
+                 LEFT JOIN document_text t ON t.document_id = d.id
+                 WHERE d.source_id = ?1 AND d.path = ?2",
                 params![source.id, path],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
@@ -461,7 +463,9 @@ impl Store {
         let row: Option<(i64, Option<String>)> = self
             .conn
             .query_row(
-                "SELECT id, text FROM document WHERE source_id = ?1 ORDER BY id LIMIT 1",
+                "SELECT d.id, t.text FROM document d
+                 LEFT JOIN document_text t ON t.document_id = d.id
+                 WHERE d.source_id = ?1 ORDER BY d.id LIMIT 1",
                 [source.id],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
@@ -753,8 +757,9 @@ impl Store {
             .query_row(
                 &format!(
                     "SELECT c.id, c.number, c.title, c.strength,
-                       coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))
+                       coalesce(c.text, codecite_lines(t.text, c.start_line, c.end_line))
                      FROM chunk c JOIN document d ON d.id = c.document_id
+                     LEFT JOIN document_text t ON t.document_id = d.id
                      WHERE d.source_id = ?1 AND c.kind = 'section' AND c.{column} = ?2
                        AND c.number IS NOT NULL
                      ORDER BY c.id LIMIT 1"
@@ -771,8 +776,9 @@ impl Store {
             .conn
             .query_row(
                 "SELECT c.id, c.number, c.title, c.strength,
-                   coalesce(c.text, codecite_lines(d.text, c.start_line, c.end_line))
+                   coalesce(c.text, codecite_lines(t.text, c.start_line, c.end_line))
                  FROM chunk c JOIN document d ON d.id = c.document_id
+                 LEFT JOIN document_text t ON t.document_id = d.id
                  WHERE c.parent_id = ?1 AND c.kind = 'step' AND c.number = ?2
                  ORDER BY c.id LIMIT 1",
                 params![section_id, k.to_string()],
@@ -1490,7 +1496,7 @@ mod tests {
         let f = fixture();
         rusqlite::Connection::open(f.store.path())
             .unwrap()
-            .execute("UPDATE document SET text = NULL", [])
+            .execute("DELETE FROM document_text", [])
             .unwrap();
         let err = f.read("app@0123456:src/lib.rs#L1").unwrap_err();
         assert!(matches!(err, Error::InvalidCorpus { .. }), "{err:?}");
